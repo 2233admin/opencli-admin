@@ -36,7 +36,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Install opencli globally — available as 'opencli' on PATH
-ARG OPENCLI_VERSION=1.7.4
+ARG OPENCLI_VERSION=1.8.3
 ARG IMAGE_TAG=latest
 RUN npm install -g @jackwener/opencli@${OPENCLI_VERSION} \
     && rm -rf /root/.npm
@@ -50,7 +50,7 @@ COPY alembic.ini .
 
 # Entrypoint handles migrations
 COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+RUN sed -i 's/\r$//' /entrypoint.sh && chmod +x /entrypoint.sh
 
 # Non-root user for security; pre-create /data so the SQLite volume is writable
 RUN useradd -m -u 1000 appuser && \

@@ -25,7 +25,7 @@ RUN if [ "$INSTALL_CHROME" = "true" ]; then \
 fi
 
 # Install opencli globally — available as 'opencli' on PATH
-ARG OPENCLI_VERSION=1.1.1
+ARG OPENCLI_VERSION=1.8.3
 RUN npm install -g @jackwener/opencli@${OPENCLI_VERSION} \
     && rm -rf /root/.npm
 
@@ -50,7 +50,7 @@ COPY backend/agent_server.py ./backend/agent_server.py
 RUN touch ./backend/__init__.py
 
 COPY agent/entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+RUN sed -i 's/\r$//' /entrypoint.sh && chmod +x /entrypoint.sh
 
 RUN useradd -m -u 1000 agent \
     && mkdir -p /home/agent/.config/chromium \
