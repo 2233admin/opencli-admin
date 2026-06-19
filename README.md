@@ -444,3 +444,28 @@ wait && echo "done"
 ## License
 
 [Apache License 2.0](LICENSE)
+
+---
+
+## 接盘侠指南
+
+新手？从这里开始：
+
+```bash
+# 1. 克隆项目
+git clone https://github.com/2233admin/opencli-admin.git
+cd opencli-admin
+
+# 2. 快速了解项目
+cat README_HANDOVER.md      # 接盘完整指南
+cat PONYTAIL.md             # 开发规范摘要
+
+# 3. 启动开发环境
+docker compose --profile nas up -d
+```
+
+详细文档见：
+- [ARCHITECTURE.md](docs/ARCHITECTURE.md) - 架构设计
+- [SURVEY_superset.md](docs/SURVEY_superset.md) - 技术选型
+- [PROJECT_MANAGEMENT.md](docs/PROJECT_MANAGEMENT.md) - 任务看板
+- [DEVELOPMENT_STANDARD.md](docs/DEVELOPMENT_STANDARD.md) - 开发规范
