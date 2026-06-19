@@ -92,11 +92,12 @@ async def test_collect_text_output(channel):
 async def test_collect_timeout(channel):
     """asyncio.TimeoutError returns failed ChannelResult with timeout message."""
     from unittest.mock import AsyncMock, patch
+    import asyncio
 
     mock_proc = AsyncMock()
     with (
         patch("asyncio.create_subprocess_exec", return_value=mock_proc),
-        patch("asyncio.wait_for", side_effect=TimeoutError()),
+        patch("asyncio.wait_for", side_effect=asyncio.TimeoutError()),
     ):
         result = await channel.collect(
             {
