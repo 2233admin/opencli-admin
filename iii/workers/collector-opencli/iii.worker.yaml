@@ -1,0 +1,8 @@
+name: collector-opencli
+runtime:
+  base_image: docker.io/iiidev/python:latest
+env:
+  III_URL: ws://iii-engine:49134
+  OPENCLI_MODE: bridge
+  OPENCLI_DAEMON_HOST: agent-1
+  OPENCLI_DAEMON_PORT: "19825"

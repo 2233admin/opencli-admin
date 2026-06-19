@@ -1,0 +1,8 @@
+name: odp-ingest-bridge
+runtime:
+  base_image: docker.io/iiidev/python:latest
+scripts:
+  install: "pip install -e ."
+  start: "python src/main.py"
+env:
+  ODP_INGEST_URL: http://odp-ingest:8040

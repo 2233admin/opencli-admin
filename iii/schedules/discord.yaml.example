@@ -1,0 +1,14 @@
+# Copy to discord.yaml — every production entry needs channel_id + channel_name.
+# channel_name: substring for `discord recent -c` (emoji optional; use distinctive part).
+#
+# Cron: 6-field (second minute hour day month weekday).
+
+version: 1
+
+schedules:
+  - id: example-smoke
+    enabled: false
+    channel_id: "CHANNEL_SNOWFLAKE"
+    channel_name: "频道名片段"   # required for scoped recent
+    limit: 20
+    expression: "0 */5 * * * *"
