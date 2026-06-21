@@ -73,3 +73,6 @@ chrome/extension-src/store-assets/
 
 # Rust build
 odp-rs/target/
+
+# iii scaffold / quickstart temp output
+.tmp-iii*/
