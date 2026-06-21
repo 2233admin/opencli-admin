@@ -82,7 +82,7 @@ def test_app_has_health_endpoint(client):
             response = await ac.get("/health")
         return response
 
-    response = asyncio.get_event_loop().run_until_complete(_check())
+    response = asyncio.run(_check())
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "ok"
@@ -98,7 +98,7 @@ def test_app_has_openapi_docs():
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             return await ac.get("/openapi.json")
 
-    response = asyncio.get_event_loop().run_until_complete(_check())
+    response = asyncio.run(_check())
     assert response.status_code == 200
     schema = response.json()
     assert "openapi" in schema

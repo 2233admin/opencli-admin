@@ -10,7 +10,6 @@ from typing import TYPE_CHECKING, Any
 import httpx
 
 from backend.processors.base import AbstractProcessor, ProcessingResult
-from backend.processors.registry import register_processor
 
 if TYPE_CHECKING:
     from backend.models.record import CollectedRecord
@@ -53,7 +52,12 @@ def _record_payload(record: "CollectedRecord") -> dict[str, Any]:
     return payload
 
 
-@register_processor
+# NOTE: intentionally NOT registered. The "external_http" processor_type is
+# served by the more capable ExternalProcessor (backend/processors/external_processor.py),
+# which adds response_schema validation, _meta token accounting and trace_id.
+# This class is kept as an alternative implementation (merged from 2233admin/main).
+# To activate it instead, re-add @register_processor here and drop it from
+# ExternalProcessor.
 class ExternalHTTPProcessor(AbstractProcessor):
     """Process records by POSTing them to an external HTTP enrichment service."""
 
