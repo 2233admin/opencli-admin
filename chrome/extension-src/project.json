@@ -1,0 +1,44 @@
+{
+  "name": "extension",
+  "root": "chrome/extension-src",
+  "sourceRoot": "chrome/extension-src",
+  "projectType": "application",
+  "targets": {
+    "dev": {
+      "executor": "nx:run-commands",
+      "options": {
+        "commands": [
+          "npm run dev"
+        ],
+        "cwd": "chrome/extension-src"
+      }
+    },
+    "build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "commands": [
+          "npm run build"
+        ],
+        "cwd": "chrome/extension-src"
+      }
+    },
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "options": {
+        "commands": [
+          "npm run typecheck"
+        ],
+        "cwd": "chrome/extension-src"
+      }
+    },
+    "lint": {
+      "executor": "nx:run-commands",
+      "options": {
+        "commands": [
+          "npm run lint --if-present"
+        ],
+        "cwd": "chrome/extension-src"
+      }
+    }
+  }
+}

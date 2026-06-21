@@ -1,0 +1,19 @@
+{
+  "npmScope": "opencli",
+  "affected": {
+    "defaultBase": "main"
+  },
+  "targetDefaults": {
+    "nx:run-commands": {
+      "cache": false
+    }
+  },
+  "tasksRunnerOptions": {
+    "default": {
+      "runner": "nx/tasks-runners/default",
+      "options": {
+        "cacheableOperations": ["build", "test", "typecheck", "lint"]
+      }
+    }
+  }
+}

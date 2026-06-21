@@ -96,6 +96,17 @@ docker compose up -d   # 启动中心 + agent-1
 
 ## 快速开始
 
+### 方式零：Nx 管理入口（推荐）
+
+本地前端与扩展现在统一到 Nx Workspace，先执行一次安装后可直接用：
+
+```bash
+npm install
+npm run dev           # 同时启动 frontend 与 extension 的 dev 任务
+npm run dev:frontend  # 只启动 frontend（监听 5173）
+npm run build         # 一键构建前端与扩展
+```
+
 ### 方式一：原生 Shell
 
 直接复用本地 opencli 和 Chrome，适合开发和个人使用。
