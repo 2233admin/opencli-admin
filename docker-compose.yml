@@ -2,8 +2,7 @@
 x-backend-common: &backend-common
   image: ${DOCKER_REGISTRY:-docker.io/}xjh1994/opencli-admin-api:${IMAGE_TAG:-0.3.6}
   env_file:
-    - path: .env
-      required: false
+    - .env
   volumes:
     - db_data:/data
     - ./backend:/app/backend
@@ -12,7 +11,7 @@ x-backend-common: &backend-common
 services:
   # ── Infrastructure (only needed for TASK_EXECUTOR=celery) ─────────────────
   redis:
-    profiles: ["celery"]
+    profiles: ["celery", "odp", "nas"]
     image: ${DOCKER_REGISTRY:-}redis:7-alpine
     volumes:
       - redis_data:/data
@@ -25,9 +24,10 @@ services:
 
   postgres:
     image: ${DOCKER_REGISTRY:-}postgres:16-alpine
-    profiles: ["postgres"]
+    profiles: ["postgres", "odp", "nas"]
+    # Host port optional — default off to avoid clashing with NAS Postgres on :5432
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PUBLISH_PORT:-}:5432"
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-opencli_admin}
       POSTGRES_USER: ${POSTGRES_USER:-opencli}
@@ -68,6 +68,10 @@ services:
       PUBLIC_URL: ${PUBLIC_URL:-}
       # Passed to the agent pool manager so it can name containers/networks correctly
       COMPOSE_PROJECT_NAME: ${COMPOSE_PROJECT_NAME:-opencli-admin}
+      # NAS + III: cron 由 III schedule-bootstrap 驱动，API 不再跑内置 scheduler
+      COLLECTION_ORCHESTRATOR: ${COLLECTION_ORCHESTRATOR:-admin}
+      ODP_INGEST_URL: ${ODP_INGEST_URL:-}
+      III_URL: ${III_URL:-}
     volumes:
       - db_data:/data
       - ./backend:/app/backend
@@ -208,6 +212,147 @@ services:
       api:
         condition: service_healthy
     restart: unless-stopped
+
+  # ── Next.js App Router Frontend (现代化前端) ─────────────────────────────────
+  # 使用: docker compose --profile nextjs up
+  web:
+    profiles: ["nextjs"]
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    environment:
+      # API 地址 (Docker 网络内)
+      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://api:8000}
+      # 可选: 自定义 API URL (浏览器访问)
+      # NEXT_PUBLIC_API_URL: http://localhost:8031
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ── ODP data plane (Rust hot path) — docker compose --profile odp up
+  odp-ingest:
+    profiles: ["odp", "nas"]
+    build:
+      context: ./odp-rs
+      dockerfile: Dockerfile.ingest
+    environment:
+      ODP_INGEST_HOST: 0.0.0.0
+      ODP_INGEST_PORT: 8040
+      ODP_REDIS_URL: redis://redis:6379/2
+      RUST_LOG: info,odp_ingest=debug
+    ports:
+      - "${ODP_INGEST_PORT:-8040}:8040"
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  odp-store:
+    profiles: ["odp", "nas"]
+    build:
+      context: ./odp-rs
+      dockerfile: Dockerfile.store
+    environment:
+      ODP_REDIS_URL: redis://redis:6379/2
+      ODP_DATABASE_URL: postgresql://${POSTGRES_USER:-opencli}:${POSTGRES_PASSWORD:-opencli_secret}@postgres:5432/${POSTGRES_DB:-opencli_admin}
+      ODP_STORE_BATCH_SIZE: ${ODP_STORE_BATCH_SIZE:-500}
+      RUST_LOG: info,odp_store=debug
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      odp-ingest:
+        condition: service_started
+    restart: unless-stopped
+
+  # ── III control plane (M0+M1) — docker compose --profile iii --profile odp up
+  iii-engine:
+    profiles: ["iii", "nas"]
+    image: ${DOCKER_REGISTRY:-}iiidev/iii:latest
+    ports:
+      - "${III_WS_PORT:-49134}:49134"
+      - "${III_HTTP_PORT:-3111}:3111"
+      - "${III_STREAM_PORT:-3112}:3112"
+    volumes:
+      - ./iii/config.yaml:/app/config.yaml:ro
+    environment:
+      RUST_LOG: info
+      III_EXECUTION_CONTEXT: docker
+    restart: unless-stopped
+
+  iii-odp-ingest-bridge:
+    profiles: ["iii", "nas"]
+    build:
+      context: ./iii
+      dockerfile: workers/odp-ingest-bridge/Dockerfile
+    environment:
+      III_URL: ws://iii-engine:49134
+      ODP_INGEST_URL: http://odp-ingest:8040
+    depends_on:
+      iii-engine:
+        condition: service_started
+      odp-ingest:
+        condition: service_started
+    restart: unless-stopped
+
+  iii-schedule-bootstrap:
+    profiles: ["iii", "nas"]
+    build:
+      context: ./iii
+      dockerfile: workers/schedule-bootstrap/Dockerfile
+    environment:
+      III_URL: ws://iii-engine:49134
+      DISCORD_SCHEDULES_PATH: /app/schedules/discord.yaml
+      OPENCLI_SCHEDULES_PATH: /app/schedules/opencli.yaml
+    volumes:
+      - ./iii/schedules:/app/schedules:ro
+    depends_on:
+      iii-engine:
+        condition: service_started
+    restart: unless-stopped
+
+  iii-collector-opencli:
+    profiles: ["iii", "nas"]
+    build:
+      context: ./iii
+      dockerfile: workers/collector-opencli/Dockerfile
+    environment:
+      III_URL: ws://iii-engine:49134
+      OPENCLI_MODE: ${OPENCLI_MODE:-bridge}
+      OPENCLI_DAEMON_HOST: agent-1
+      OPENCLI_DAEMON_PORT: ${OPENCLI_DAEMON_PORT:-19825}
+      OPENCLI_TIMEOUT: ${OPENCLI_TIMEOUT:-120}
+    depends_on:
+      iii-engine:
+        condition: service_started
+      agent-1:
+        condition: service_started
+    restart: unless-stopped
+
+  # Discord auth lives on the host — run collector-discord locally when using discord-cli.
+  # Uncomment on NAS only if discord-cli + token are baked into the image/volume.
+  # iii-collector-discord:
+  #   profiles: ["iii"]
+  #   build:
+  #     context: ./iii
+  #     dockerfile: workers/collector-discord/Dockerfile
+  #   environment:
+  #     III_URL: ws://iii-engine:49134
+  #     DISCORD_CLI_BIN: discord
+  #   depends_on:
+  #     iii-engine:
+  #       condition: service_started
+  #   restart: unless-stopped
 
   # ── Frontend dev server (Vite HMR) — run with: docker compose --profile dev up frontend-dev
   frontend-dev:

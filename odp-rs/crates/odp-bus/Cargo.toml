@@ -1,0 +1,15 @@
+[package]
+name = "odp-bus"
+description = "ODP message bus adapters (Redis Streams)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+odp-contracts = { path = "../odp-contracts" }
+redis = { version = "0.27", features = ["tokio-comp", "connection-manager"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }

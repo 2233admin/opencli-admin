@@ -1,0 +1,7 @@
+name: math-worker
+runtime:
+  # Base OCI image used as the worker rootfs. Override to pin a version.
+  base_image: docker.io/iiidev/python:latest
+scripts:
+  install: "pip install -e ."
+  start: "watchfiles 'python src/math_worker.py'"

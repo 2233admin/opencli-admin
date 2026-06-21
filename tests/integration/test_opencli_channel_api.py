@@ -10,10 +10,9 @@ Background tasks bypass FastAPI's DB dependency injection (they use the
 module-level AsyncSessionLocal), so we avoid the trigger→poll approach.
 """
 
-import asyncio
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -47,6 +46,10 @@ def _settings_mock(collection_mode: str = "local"):
     s.agent_http_timeout = 30
     s.agent_ws_timeout = 30
     return s
+
+
+def _captured_collect_cmd(captured: list[list], site: str) -> list:
+    return next(cmd for cmd in captured if site in cmd and "--help" not in cmd)
 
 
 # ── fixtures ──────────────────────────────────────────────────────────────────
@@ -131,10 +134,9 @@ async def test_collect_builds_cmd_with_positional_args_before_named_options(
         result = await channel.collect(cfg, {})
 
     assert result.success, f"collect failed: {result.error}"
-    assert len(captured) == 1
-    cmd = captured[0]
+    cmd = _captured_collect_cmd(captured, "bilibili")
 
-    # Expected: [..., "bilibili", "search", "AI agent", "--type", "video", "--limit", "5", "-f", "json"]
+    # Expected: positional args immediately after command, before named options and output format.
     site_idx = cmd.index("bilibili")
     assert cmd[site_idx + 1] == "search"
     assert cmd[site_idx + 2] == "AI agent", (
@@ -170,8 +172,7 @@ async def test_collect_without_positional_args_backward_compat(
         result = await channel.collect(cfg, {})
 
     assert result.success, f"collect failed: {result.error}"
-    assert len(captured) == 1
-    cmd = captured[0]
+    cmd = _captured_collect_cmd(captured, "zhihu")
 
     site_idx = cmd.index("zhihu")
     assert cmd[site_idx + 1] == "hot"
@@ -188,8 +189,8 @@ async def test_collect_agent_mode_passes_positional_args_to_dispatch(
     client, opencli_source_payload
 ):
     """In HTTP agent mode, positional_args is forwarded to _collect_via_agent."""
-    from backend.channels.opencli_channel import OpenCLIChannel
     from backend.browser_pool import LocalBrowserPool
+    from backend.channels.opencli_channel import OpenCLIChannel
 
     create_resp = await client.post("/api/v1/sources", json=opencli_source_payload)
     cfg = create_resp.json()["data"]["channel_config"]

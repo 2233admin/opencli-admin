@@ -1,0 +1,7 @@
+name: caller-worker
+runtime:
+  # Base OCI image used as the worker rootfs. Override to pin a version.
+  base_image: docker.io/iiidev/node:latest
+scripts:
+  install: 'npm install'
+  start: 'npm run start'

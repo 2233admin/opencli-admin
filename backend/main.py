@@ -127,17 +127,22 @@ async def lifespan(app: FastAPI):
         await session.commit()
     logger.info("Recovered stale tasks on startup")
 
-    if settings.task_executor == "local":
+    use_admin_scheduler = (
+        settings.collection_orchestrator == "admin"
+        and settings.task_executor == "local"
+    )
+    if use_admin_scheduler:
         from backend.scheduler import start_scheduler
         start_scheduler()
     logger.info(
-        "OpenCLI Admin started (env=%s, executor=%s)",
+        "OpenCLI Admin started (env=%s, executor=%s, orchestrator=%s)",
         settings.app_env,
         settings.task_executor,
+        settings.collection_orchestrator,
     )
     yield
     # Shutdown
-    if settings.task_executor == "local":
+    if use_admin_scheduler:
         from backend.scheduler import stop_scheduler
         stop_scheduler()
 
@@ -176,7 +181,12 @@ def create_app() -> FastAPI:
 
     @app.get("/health")
     async def health() -> dict:
-        return {"status": "ok", "version": "0.1.0", "task_executor": settings.task_executor}
+        return {
+            "status": "ok",
+            "version": "0.1.0",
+            "task_executor": settings.task_executor,
+            "collection_orchestrator": settings.collection_orchestrator,
+        }
 
     return app
 

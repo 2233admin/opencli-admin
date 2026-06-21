@@ -1,5 +1,7 @@
 """Unit tests for the CLI channel."""
 
+import sys
+
 import pytest
 
 from backend.channels.cli_channel import CLIChannel, _render_template
@@ -56,13 +58,16 @@ async def test_collect_binary_not_found(channel):
 
 @pytest.mark.asyncio
 async def test_collect_json_output(channel):
-    # Use `echo` to simulate JSON output
     import json
     data = [{"title": "Test"}, {"title": "Other"}]
     json_str = json.dumps(data)
 
     result = await channel.collect(
-        {"binary": "sh", "command": ["-c", f"echo '{json_str}'"], "output_format": "json"},
+        {
+            "binary": sys.executable,
+            "command": ["-c", f"print({json_str!r})"],
+            "output_format": "json",
+        },
         {},
     )
     assert result.success is True
@@ -72,7 +77,11 @@ async def test_collect_json_output(channel):
 @pytest.mark.asyncio
 async def test_collect_text_output(channel):
     result = await channel.collect(
-        {"binary": "sh", "command": ["-c", "printf 'line1\\nline2\\nline3'"], "output_format": "text"},
+        {
+            "binary": sys.executable,
+            "command": ["-c", "print('line1'); print('line2'); print('line3')"],
+            "output_format": "text",
+        },
         {},
     )
     assert result.success is True
@@ -82,8 +91,8 @@ async def test_collect_text_output(channel):
 @pytest.mark.asyncio
 async def test_collect_timeout(channel):
     """asyncio.TimeoutError returns failed ChannelResult with timeout message."""
-    import asyncio
     from unittest.mock import AsyncMock, patch
+    import asyncio
 
     mock_proc = AsyncMock()
     with (
@@ -91,7 +100,11 @@ async def test_collect_timeout(channel):
         patch("asyncio.wait_for", side_effect=asyncio.TimeoutError()),
     ):
         result = await channel.collect(
-            {"binary": "sh", "command": ["-c", "sleep 10"], "timeout": 1},
+            {
+                "binary": sys.executable,
+                "command": ["-c", "import time; time.sleep(10)"],
+                "timeout": 1,
+            },
             {},
         )
 
@@ -106,7 +119,7 @@ async def test_collect_generic_exception(channel):
 
     with patch("asyncio.create_subprocess_exec", side_effect=OSError("unexpected error")):
         result = await channel.collect(
-            {"binary": "sh", "command": ["-c", "echo hi"]},
+            {"binary": sys.executable, "command": ["-c", "print('hi')"]},
             {},
         )
 
@@ -118,7 +131,7 @@ async def test_collect_generic_exception(channel):
 async def test_collect_nonzero_exit_code(channel):
     """Non-zero exit code from subprocess returns failed ChannelResult."""
     result = await channel.collect(
-        {"binary": "sh", "command": ["-c", "exit 1"]},
+        {"binary": sys.executable, "command": ["-c", "import sys; sys.exit(1)"]},
         {},
     )
     assert result.success is False
@@ -129,7 +142,11 @@ async def test_collect_nonzero_exit_code(channel):
 async def test_collect_invalid_json_output(channel):
     """Invalid JSON output returns failed ChannelResult."""
     result = await channel.collect(
-        {"binary": "sh", "command": ["-c", "echo 'not valid json'"], "output_format": "json"},
+        {
+            "binary": sys.executable,
+            "command": ["-c", "print('not valid json')"],
+            "output_format": "json",
+        },
         {},
     )
     assert result.success is False

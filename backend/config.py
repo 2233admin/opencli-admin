@@ -24,6 +24,11 @@ class Settings(BaseSettings):
     # Task execution mode: "local" (in-process asyncio) or "celery" (distributed)
     task_executor: Literal["local", "celery"] = "local"
 
+    # Collection orchestrator:
+    # admin — API内置 scheduler.py / Celery Beat 驱动定时采集（默认）
+    # iii   — III engine + schedule-bootstrap 驱动 cron；API 仅保留 UI/手动任务
+    collection_orchestrator: Literal["admin", "iii"] = "admin"
+
     # Redis / Celery — only required when task_executor="celery"
     redis_url: str = "redis://localhost:6379/0"
     celery_broker_url: str = "redis://localhost:6379/0"

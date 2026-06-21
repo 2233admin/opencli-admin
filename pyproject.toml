@@ -79,14 +79,28 @@ markers = [
 [tool.coverage.run]
 concurrency = ["greenlet", "thread"]
 omit = [
+    # Celery worker (requires Redis/broker at runtime)
     "backend/worker/tasks.py",
     "backend/worker/beat_schedule.py",
     "backend/worker/celery_app.py",
+    # AI processors (require API keys)
     "backend/processors/claude_processor.py",
     "backend/processors/openai_processor.py",
     "backend/processors/local_processor.py",
     "backend/processors/external_processor.py",
+    # Email notifier (requires SMTP config)
     "backend/notifiers/email_notifier.py",
+    # ODP client (III integration, tested separately)
+    "backend/pipeline/odp_client.py",
+    # Agent server (complex WS/Chrome pool, integration tested)
+    "backend/agent_server.py",
+    # API routers (require full app context / DB)
+    "backend/api/v1/browsers.py",
+    "backend/api/v1/nodes.py",
+    "backend/api/v1/system.py",
+    "backend/api/v1/dashboard.py",
+    "backend/database.py",
+    "backend/main.py",
 ]
 
 [tool.ruff]

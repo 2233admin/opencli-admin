@@ -70,3 +70,6 @@ chrome/extension-src/store-assets/
 
 # Local working artifacts (not for upstream)
 /PR-DESCRIPTION.md
+
+# Rust build
+odp-rs/target/

@@ -1,0 +1,10 @@
+name: collector-discord
+runtime:
+  base_image: docker.io/iiidev/python:latest
+scripts:
+  install: "pip install -e ."
+  start: "python src/main.py"
+env:
+  DISCORD_CLI_BIN: discord
+  DISCORD_SNAPSHOT_LIMIT: "50"
+  # DISCORD_TOKEN: set via host .env or secret manager (required for sync/recent)

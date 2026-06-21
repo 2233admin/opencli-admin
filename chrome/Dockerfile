@@ -6,7 +6,7 @@ RUN sed -i 's|http://deb.debian.org|http://mirrors.aliyun.com|g' /etc/apt/source
     sed -i 's|http://deb.debian.org|http://mirrors.aliyun.com|g' /etc/apt/sources.list 2>/dev/null || true
 
 # OPENCLI_VERSION: pin the opencli release; patch-opencli.js adds DAEMON_HOST/LISTEN env hooks
-ARG OPENCLI_VERSION=1.7.4
+ARG OPENCLI_VERSION=1.8.3
 COPY scripts/patch-opencli.js /tmp/patch-opencli.js
 RUN apt-get update && apt-get install -y --no-install-recommends \
     chromium x11vnc xvfb novnc websockify procps nginx \
@@ -31,7 +31,7 @@ RUN useradd -m -u 1000 chrome \
     && ln -sf /usr/share/novnc/vnc_lite.html /usr/share/novnc/index.html
 
 COPY chrome/entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+RUN sed -i 's/\r$//' /entrypoint.sh && chmod +x /entrypoint.sh
 
 # Install Browser Bridge extension (pre-built dist/background.js is committed).
 # To update: sync chrome/extension-src/ from the opencli repo and rebuild.

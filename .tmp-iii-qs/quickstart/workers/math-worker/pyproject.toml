@@ -1,0 +1,20 @@
+[project]
+name = "math-worker"
+version = "0.1.0"
+description = "Math worker exposing math::add over iii"
+requires-python = ">=3.11"
+dependencies = [
+    "iii-sdk==0.19.0",
+    "iii-observability==0.19.0",
+    "watchfiles",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+# Single-module worker: the entry point is src/math_worker.py rather than a
+# package. Tell hatchling to build exactly that module so `pip install -e .`
+# succeeds.
+[tool.hatch.build.targets.wheel]
+only-include = ["src/math_worker.py"]

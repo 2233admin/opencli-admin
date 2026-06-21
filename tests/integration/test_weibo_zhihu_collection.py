@@ -12,16 +12,17 @@ Run:
     #        .venv/bin/uvicorn backend.main:app --host 0.0.0.0 --port 8000
     #
     # 2. Run these tests:
-    #    BASE_URL=http://localhost:8000 pytest tests/integration/test_weibo_zhihu_collection.py -v -m live
+    #    BASE_URL=http://localhost:8000 pytest \
+    #      tests/integration/test_weibo_zhihu_collection.py -v -m live
 """
 
 import asyncio
 import os
 import shutil
 
+import httpx
 import pytest
 import pytest_asyncio
-import httpx
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -55,7 +56,7 @@ skip_no_server = pytest.mark.skipif(
 
 skip_no_opencli = pytest.mark.skipif(
     not _opencli_installed(),
-    reason="opencli not found in PATH — run: npm install -g @jackwener/opencli@1.7.4",
+    reason="opencli not found in PATH — run: npm install -g @jackwener/opencli@1.8.3",
 )
 
 pytestmark = [pytest.mark.live, skip_no_server, skip_no_opencli]

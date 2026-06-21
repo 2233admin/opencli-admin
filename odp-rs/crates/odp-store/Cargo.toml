@@ -1,0 +1,22 @@
+[package]
+name = "odp-store"
+description = "ODP Postgres batch writer (Redis Stream consumer)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "odp-store"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+odp-bus = { path = "../odp-bus" }
+odp-contracts = { path = "../odp-contracts" }
+serde_json = { workspace = true }
+sqlx = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+uuid = { workspace = true }

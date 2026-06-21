@@ -1,0 +1,48 @@
+name: 🐛 Bug Report
+description: 报告 bug
+title: "[Bug] "
+labels: ["bug"]
+assignees: ''
+
+---
+
+## 描述
+
+简明描述问题。
+
+## 复现步骤
+
+1. Go to '...'
+2. Click on '...'
+3. Scroll to '...'
+4. See error
+
+## 预期行为
+
+应该发生什么？
+
+## 实际行为
+
+实际发生了什么？
+
+## 截图
+
+如果有截图，添加到此处。
+
+## 环境
+
+- OS: [e.g. Windows 11, macOS 14]
+- Browser: [e.g. Chrome 126, Safari 18]
+- Version: [e.g. 0.1.0]
+
+## 日志
+
+如果有错误日志，添加到此处。
+
+```
+Paste logs here
+```
+
+## 附加上下文
+
+其他补充信息。

@@ -140,7 +140,9 @@ async def run_pipeline(
     logger.info("[task:%s] step3/store start | items=%d", task_id, len(triples))
     try:
         async with AsyncSessionLocal() as session:
-            new_records, skipped = await storer.store_records(session, task_id, source.id, triples)
+            new_records, skipped = await storer.store_records(
+                session, task_id, source.id, triples, channel_type=source.channel_type
+            )
             await session.commit()
     except Exception as exc:
         logger.exception("[task:%s] step3/store exception | %s", task_id, exc)
