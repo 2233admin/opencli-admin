@@ -139,6 +139,8 @@ describe('topology model', () => {
     assert.equal(graph.summary.total, 8)
     assert.equal(graph.summary.active, 2)
     assert.equal(graph.summary.warning, 1)
+    assert.equal(graph.summary.skills.missing, 4)
+    assert.equal(graph.summary.skills.running, 3)
 
     const edgeIds = graph.edges.map((edge) => edge.id)
     assert.ok(edgeIds.includes(`${nodeId('source', source.id)}->${nodeId('schedule', schedule.id)}:plans`))
@@ -146,6 +148,18 @@ describe('topology model', () => {
     assert.ok(edgeIds.includes(`${nodeId('task', task.id)}->${nodeId('agent', agent.id)}:enriches`))
     assert.ok(edgeIds.includes(`${nodeId('task', task.id)}->${nodeId('record', record.id)}:writes`))
     assert.ok(edgeIds.includes(`${nodeId('record', record.id)}->${nodeId('notification', rule.id)}:sent`))
+
+    const sourceNode = graph.nodes.find((node) => node.id === nodeId('source', source.id))
+    assert.deepEqual(
+      sourceNode?.data.skills.map((item) => [item.id, item.state]),
+      [
+        ['collect', 'ready'],
+        ['schedule', 'ready'],
+        ['process', 'ready'],
+        ['notify', 'ready'],
+        ['records', 'ready'],
+      ],
+    )
   })
 
   it('marks disabled and failed states in the graph summary', () => {
@@ -163,6 +177,7 @@ describe('topology model', () => {
 
     assert.equal(graph.summary.failed, 4)
     assert.equal(graph.summary.disabled, 4)
+    assert.equal(graph.summary.skills.blocked, 7)
   })
 
   it('provides a deterministic fallback layout', () => {
