@@ -102,11 +102,13 @@ docker compose up -d   # 启动中心 + agent-1
 
 ```bash
 npm install
-npm run env:check    # 校验 Node/Nx/依赖环境
 npm run dev           # 同时启动 frontend 与 extension 的 dev 任务
 npm run dev:frontend  # 只启动 frontend（监听 5173）
 npm run build         # 一键构建前端与扩展
 ```
+
+仓库的持续编译与产物归档交给 GitHub Actions（`.github/workflows/ci.yml`），
+本地不再要求固定启动脚本去做同样职责。
 
 ### 方式一：原生 Shell
 
