@@ -4,23 +4,12 @@ import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import {
-  Background,
-  Controls,
-  Handle,
-  MarkerType,
-  MiniMap,
-  Panel,
-  Position,
-  ReactFlow,
-} from '@xyflow/react'
-import type { Edge, Node, NodeProps } from '@xyflow/react'
-import '@xyflow/react/dist/style.css'
+import type { Edge, Node } from '@xyflow/react'
+import { MarkerType } from '@xyflow/react'
 import {
   Bell,
   Bot,
   Calendar,
-  CheckCircle2,
   CircleAlert,
   Database,
   FileText,
@@ -28,8 +17,8 @@ import {
   Network,
   RefreshCw,
   Server,
-  Workflow,
   SlidersHorizontal,
+  X,
   Zap,
   type LucideIcon,
 } from 'lucide-react'
@@ -49,6 +38,7 @@ import Card from '../components/Card'
 import ErrorAlert from '../components/ErrorAlert'
 import { PageLoader } from '../components/LoadingSpinner'
 import PageHeader from '../components/PageHeader'
+import { FlowGramTopologyCanvas } from '../components/opencli/FlowGramTopologyCanvas'
 import { OperatorCard, WorkbenchPanel } from '../components/opencli'
 import type { OperatorTone } from '../components/opencli'
 import {
@@ -76,8 +66,8 @@ type TopologyActionState = 'loading' | 'ok' | 'err'
 const actionStateKey = (nodeId: string, actionId: string) => `${nodeId}:${actionId}`
 const TOPOLOGY_NODE_WIDTH = 252
 const TOPOLOGY_NODE_HEIGHT = 220
-const TOPOLOGY_COLUMN_GAP = 304
-const TOPOLOGY_ROW_GAP = 252
+const TOPOLOGY_COLUMN_GAP = 296
+const TOPOLOGY_ROW_GAP = 236
 
 interface TopologyRunActionPayload extends Omit<NodeActionRunRequest, 'payload'> {
   nodeKind: string
@@ -85,10 +75,6 @@ interface TopologyRunActionPayload extends Omit<NodeActionRunRequest, 'payload'>
   entityId: string
   nodeUiId: string
   payload?: Record<string, unknown>
-}
-
-const nodeTypes = {
-  topologyNode: TopologyNodeView,
 }
 
 type ElkLayoutEngine = {
@@ -136,6 +122,7 @@ export default function TopologyPage() {
   const [searchParams] = useSearchParams()
   const sourceFilter = searchParams.get('source')
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
+  const [inspectorOpen, setInspectorOpen] = useState(false)
   const [viewMode, setViewMode] = useState<TopologyMode>('flow')
   const [actionStates, setActionStates] = useState<Record<string, TopologyActionState>>({})
   const [layouted, setLayouted] = useState<{ nodes: TopologyFlowNode[]; edges: TopologyFlowEdge[] }>({
@@ -322,6 +309,11 @@ export default function TopologyPage() {
     })
   }
 
+  const selectTopologyNode = (nodeId: string) => {
+    setSelectedNodeId(nodeId)
+    setInspectorOpen(true)
+  }
+
   if (isInitialLoading) return <PageLoader />
   if (error) return <ErrorAlert error={error as Error} onRetry={refetchAll} />
 
@@ -354,13 +346,13 @@ export default function TopologyPage() {
         }
       />
 
-      <div className="grid gap-4 xl:grid-cols-[340px_minmax(0,1fr)_360px]">
+      <div className="grid gap-4 xl:grid-cols-[320px_minmax(0,1fr)]">
         <TopologyOperations
           graph={graph}
           isFetching={isFetching}
           mode={viewMode}
           selectedNodeId={selectedNodeId}
-          onSelectNode={setSelectedNodeId}
+          onSelectNode={selectTopologyNode}
           onSetMode={setViewMode}
         />
 
@@ -381,6 +373,16 @@ export default function TopologyPage() {
               <span className="border border-white/10 bg-black/30 px-2 py-1 font-code text-[10px] uppercase text-zinc-500">
                 {viewMode}
               </span>
+              {selectedNode && (
+                <button
+                  type="button"
+                  onClick={() => setInspectorOpen(true)}
+                  className="inline-flex h-8 items-center gap-1.5 rounded-md border border-white/[0.12] bg-white/[0.04] px-2.5 text-xs font-semibold text-zinc-200 hover:border-white/[0.25] hover:bg-white/[0.08]"
+                >
+                  <FileText className="h-3.5 w-3.5" />
+                  详情
+                </button>
+              )}
               {isFetching && (
                 <span className="border border-signal-cyan/30 bg-signal-cyan/10 px-2 py-1 text-[10px] uppercase text-sky-100">
                   Syncing
@@ -389,139 +391,43 @@ export default function TopologyPage() {
             </div>
           </div>
           <div className="h-[calc(100vh-245px)] min-h-[680px] bg-black">
-            <ReactFlow
+            <FlowGramTopologyCanvas
               nodes={layouted.nodes}
               edges={layouted.edges}
-              nodeTypes={nodeTypes}
-              fitView
-              fitViewOptions={{ padding: 0.18 }}
-              minZoom={0.3}
-              maxZoom={1.4}
-              nodesDraggable
-              nodesFocusable
-              edgesFocusable
-              onNodeClick={(_, node) => setSelectedNodeId(node.id)}
-              onPaneClick={() => setSelectedNodeId(null)}
-            >
-              <Background color="rgba(255,255,255,0.08)" gap={32} />
-              <Controls position="bottom-left" />
-              <MiniMap
-                position="bottom-right"
-                nodeColor={(node) => healthColor((node.data as TopologyNodeData).health, 'mini')}
-                maskColor="rgba(0, 0, 0, 0.72)"
-                style={{ backgroundColor: '#0a0a0a', border: '1px solid rgba(255,255,255,0.1)' }}
-                pannable
-                zoomable
-              />
-              <Panel position="top-left">
-                <div className="rounded-md border border-white/10 bg-black/90 px-3 py-2 text-xs text-zinc-300 shadow-lg">
-                  <span className="font-mono text-zinc-500">Ctrl/⌘ K</span>
-                  <span className="ml-2">{t('topology.quickJump')}</span>
-                </div>
-              </Panel>
-            </ReactFlow>
+              selectedNodeId={selectedNodeId}
+              onSelectNode={selectTopologyNode}
+            />
           </div>
         </Card>
-
-        <NodeInspector
-          node={selectedNode}
-          actionStates={actionStates}
-          onRunAction={runNodeKindAction}
-        />
       </div>
-    </div>
-  )
-}
 
-function TopologyNodeView({ data, selected }: NodeProps<TopologyFlowNode>) {
-  const { t } = useTranslation()
-  const Icon = KIND_ICONS[data.kind]
-  const stateLabel = healthLabel(t, data.health)
-
-  return (
-    <div
-      className={[
-        'relative w-[252px] rounded-md border bg-[#0a0a0a] px-3 py-3 text-left shadow-[0_1px_2px_rgba(0,0,0,0.16)] transition',
-        selected ? 'border-blue-500 ring-2 ring-blue-500/[0.25]' : 'border-white/[0.12]',
-      ].join(' ')}
-    >
-      <Handle type="target" position={Position.Left} className="!h-2.5 !w-2.5 !border-black" />
-      <Handle type="source" position={Position.Right} className="!h-2.5 !w-2.5 !border-black" />
-      <div className="flex items-start gap-3">
-        <div className={`grid h-9 w-9 shrink-0 place-items-center rounded-md ${healthSoftClass(data.health)}`}>
-          <Icon className="h-4 w-4" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <span className="truncate text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-              {kindLabel(t, data.kind)}
-            </span>
-            <span className={`h-2 w-2 rounded-full ${healthDotClass(data.health)}`} title={stateLabel} />
-          </div>
-          <div className="mt-1 truncate text-sm font-semibold text-white" title={data.title}>
-            {data.title}
-          </div>
-          <div className="mt-0.5 truncate text-xs text-slate-400" title={data.subtitle}>
-            {data.subtitle}
-          </div>
-        </div>
-      </div>
-      <div className="mt-3 flex flex-wrap gap-1.5">
-        {[stateLabel, ...data.badges].slice(0, 4).map((badge) => (
-          <span
-            key={badge}
-            className="max-w-[104px] truncate rounded-sm border border-white/10 bg-white/[0.04] px-1.5 py-0.5 text-[10px] text-zinc-300"
-            title={badge}
+      {inspectorOpen && selectedNode && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex justify-end bg-black/55 p-4 backdrop-blur-sm"
+          onClick={() => setInspectorOpen(false)}
+        >
+          <div
+            className="relative h-full w-full max-w-[420px]"
+            onClick={(event) => event.stopPropagation()}
           >
-            {badge}
-          </span>
-        ))}
-      </div>
-      <div className="mt-3 border-t border-white/10 pt-3">
-        <div className="grid grid-cols-3 gap-1.5">
-          {data.skills.slice(0, 3).map((item) => (
-            <span
-              key={item.id}
-              className={`truncate rounded-sm border px-1.5 py-1 text-center text-[10px] font-semibold ${skillChipClass(item.state)}`}
-              title={`${item.label}: ${item.description}`}
+            <button
+              type="button"
+              aria-label="Close node details"
+              onClick={() => setInspectorOpen(false)}
+              className="absolute right-3 top-3 z-10 inline-flex h-8 w-8 items-center justify-center rounded-md border border-white/[0.12] bg-black/80 text-zinc-300 hover:border-white/[0.28] hover:text-white"
             >
-              {item.label}
-            </span>
-          ))}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function TopologySummary({ graph, isFetching }: { graph: TopologyGraph; isFetching: boolean }) {
-  const { t } = useTranslation()
-  const items = [
-    { id: 'all', label: t('topology.allNodes'), value: graph.summary.total, icon: Workflow, tone: 'text-blue-300' },
-    { id: 'running', label: t('topology.running'), value: graph.summary.active, icon: Zap, tone: 'text-blue-300' },
-    { id: 'focus', label: t('topology.needsFocus'), value: graph.summary.failed + graph.summary.warning, icon: CircleAlert, tone: 'text-amber-300' },
-    { id: 'ready', label: t('topology.ready'), value: graph.summary.total - graph.summary.failed - graph.summary.warning - graph.summary.disabled, icon: CheckCircle2, tone: 'text-emerald-300' },
-    { id: 'skills', label: t('topology.missingSkills'), value: graph.summary.skills.missing + graph.summary.skills.blocked, icon: CircleAlert, tone: 'text-red-300' },
-  ]
-
-  return (
-    <div className="grid gap-3 md:grid-cols-5">
-      {items.map(({ id, label, value, icon: Icon, tone }) => (
-        <Card key={id} className="border-white/[0.1] bg-[#0a0a0a]">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="telemetry-label">{label}</p>
-              <p className="mt-1 text-2xl font-semibold text-zinc-50">{value}</p>
-            </div>
-            <Icon className={`h-5 w-5 ${tone}`} />
+              <X className="h-4 w-4" />
+            </button>
+            <NodeInspector
+              node={selectedNode}
+              actionStates={actionStates}
+              onRunAction={runNodeKindAction}
+            />
           </div>
-          {id === 'all' && (
-            <p className="mt-3 text-xs text-gray-400">
-              {isFetching ? t('topology.refreshing') : t('topology.edgeCount', { count: graph.edges.length })}
-            </p>
-          )}
-        </Card>
-      ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -872,13 +778,13 @@ async function layoutGraph(graph: TopologyGraph): Promise<{ nodes: TopologyFlowN
     const elk = await getElkEngine()
     const result = await elk.layout({
       id: 'root',
-      layoutOptions: {
-        'elk.algorithm': 'layered',
-        'elk.direction': 'RIGHT',
-        'elk.spacing.nodeNode': '96',
-        'elk.layered.spacing.nodeNodeBetweenLayers': '108',
-        'elk.layered.nodePlacement.strategy': 'NETWORK_SIMPLEX',
-      },
+        layoutOptions: {
+          'elk.algorithm': 'layered',
+          'elk.direction': 'RIGHT',
+          'elk.spacing.nodeNode': '72',
+          'elk.layered.spacing.nodeNodeBetweenLayers': '64',
+          'elk.layered.nodePlacement.strategy': 'NETWORK_SIMPLEX',
+        },
       children: graph.nodes.map((node) => ({
         id: node.id,
         width: TOPOLOGY_NODE_WIDTH,
