@@ -1,16 +1,16 @@
 import { clsx } from 'clsx'
 
 const STATUS_STYLES: Record<string, string> = {
-  pending:       'border-amber-400/40 bg-amber-400/10 text-amber-200',
+  pending:       'border-signal-amber/40 bg-signal-amber/10 text-amber-200',
   running:       'border-zinc-200/50 bg-zinc-100/10 text-zinc-100',
   ai_processing: 'border-primary-500/50 bg-primary-500/10 text-primary-100',
-  completed:     'border-emerald-400/40 bg-emerald-400/10 text-emerald-200',
-  failed:        'border-primary-500/60 bg-primary-500/15 text-primary-100',
+  completed:     'border-signal-green/40 bg-signal-green/10 text-emerald-200',
+  failed:        'border-signal-red/60 bg-signal-red/15 text-red-100',
   cancelled:     'border-zinc-500/40 bg-zinc-500/10 text-zinc-300',
-  online:        'border-emerald-400/40 bg-emerald-400/10 text-emerald-200',
+  online:        'border-signal-green/40 bg-signal-green/10 text-emerald-200',
   offline:       'border-zinc-500/40 bg-zinc-500/10 text-zinc-300',
-  sent:          'border-emerald-400/40 bg-emerald-400/10 text-emerald-200',
-  acked:         'border-emerald-400/40 bg-emerald-400/10 text-emerald-200',
+  sent:          'border-signal-green/40 bg-signal-green/10 text-emerald-200',
+  acked:         'border-signal-green/40 bg-signal-green/10 text-emerald-200',
   not_required:  'border-zinc-500/40 bg-zinc-500/10 text-zinc-300',
   raw:           'border-zinc-500/40 bg-zinc-500/10 text-zinc-300',
   normalized:    'border-zinc-200/50 bg-zinc-100/10 text-zinc-100',

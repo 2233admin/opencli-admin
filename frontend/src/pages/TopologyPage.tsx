@@ -50,6 +50,7 @@ import ErrorAlert from '../components/ErrorAlert'
 import { PageLoader } from '../components/LoadingSpinner'
 import PageHeader from '../components/PageHeader'
 import { OperatorCard, WorkbenchPanel } from '../components/opencli'
+import type { OperatorTone } from '../components/opencli'
 import {
   buildTopologyGraph,
   fallbackLayout,
@@ -536,7 +537,7 @@ function TopologyOperations({
     value: number
     hint: string
     icon: LucideIcon
-    tone: string
+  tone: OperatorTone
     mode: TopologyMode
   }> = [
     {
@@ -545,7 +546,7 @@ function TopologyOperations({
       value: attentionNodes.length,
       hint: '失败、警告节点优先看',
       icon: CircleAlert,
-      tone: 'border-amber-400/35 bg-amber-400/10 text-amber-100',
+      tone: 'warning',
       mode: 'health',
     },
     {
@@ -554,7 +555,7 @@ function TopologyOperations({
       value: runningNodes.length,
       hint: '正在采集或执行',
       icon: Zap,
-      tone: 'border-sky-400/35 bg-sky-400/10 text-sky-100',
+      tone: 'info',
       mode: 'health',
     },
     {
@@ -563,7 +564,7 @@ function TopologyOperations({
       value: skillGapNodes.length,
       hint: '缺配置、缺节点、阻塞项',
       icon: Network,
-      tone: 'border-red-400/35 bg-red-400/10 text-red-100',
+      tone: 'danger',
       mode: 'skills',
     },
     {
@@ -572,7 +573,7 @@ function TopologyOperations({
       value: actionReadyNodes.length,
       hint: '可触发、可补全、可跳转',
       icon: ListChecks,
-      tone: 'border-emerald-400/35 bg-emerald-400/10 text-emerald-100',
+      tone: 'success',
       mode: 'flow',
     },
   ]

@@ -2,125 +2,121 @@
 
 ## Source of truth
 - Status: Active
-- Last refreshed: 2026-06-22
-- Primary product surfaces: Dashboard, Topology Workbench, Sources Workflow, Tasks, Records, Settings
+- Last refreshed: 2026-06-25
+- Primary product surfaces: Dashboard, Topology Workbench, Source Configuration, Run Inbox, Live Collection View, Tasks, Records, Settings.
 - Evidence reviewed:
-  - `https://vercel.com/design.md` and `https://vercel.com/design.dark.md`
   - `frontend/src/index.css`
-  - `frontend/src/components/Card.tsx`
-  - `frontend/src/components/PageHeader.tsx`
+  - `frontend/tailwind.config.js`
+  - `frontend/src/components/opencli/OperatorCard.tsx`
+  - `frontend/src/components/opencli/WorkbenchPanel.tsx`
+  - `frontend/src/components/opencli/MetricTile.tsx`
   - `frontend/src/pages/TopologyPage.tsx`
-  - `frontend/src/pages/SettingsPage.tsx`
-  - `docs/dashboard.png`
+  - `frontend/src/pages/SourcesPage.tsx`
 
 ## Brand
-- Personality: Calm, precise, technical, operator-focused, and trustworthy.
-- Trust signals: Clear status language, visible execution state, stable density, readable IDs, and predictable controls.
-- Avoid: Decorative gradients, busy dashboard ornament, oversized marketing composition, unclear action labels, and color-only state.
+- Personality: Calm, precise, technical, operator-focused, trustworthy.
+- Trust signals: Clear status language, visible execution state, stable density, readable IDs, predictable controls.
+- Avoid: Decorative gradients, busy dashboard ornament, oversized marketing composition, unclear action labels, color-only state, visual novelty for its own sake.
 
 ## Product goals
 - Goals:
-  - Make data collection operations understandable to humans and callable by AI.
-  - Treat sources, tasks, schedules, agents, records, and notifications as inspectable nodes.
-  - Keep preferences and language controls centralized in Settings.
+  - Make Topology Workbench the core operational workspace.
+  - Keep Source Configuration focused on source identity, parameters, schedules, and health.
+  - Show live collection telemetry only when a run or pipeline needs it.
+  - Reuse existing local components and proven libraries instead of creating a separate component library.
 - Non-goals:
-  - Do not turn the app into a marketing page.
-  - Do not hide critical operational state behind decoration.
-  - Do not introduce a separate design-system package until repeated local patterns justify it.
+  - Do not make the data-source page the primary graph/node workspace.
+  - Do not copy OpenBB design-system source code; treat it as product reference only.
+  - Do not replace the existing yUI/dark console base with a new visual theme.
 - Success signals:
-  - Users can identify unhealthy nodes quickly.
-  - Users can run node actions from the same registry used by AI-facing flows.
-  - Key routes remain usable in zh/en without missing text.
+  - Operators can find unhealthy nodes quickly.
+  - Source setup remains calmer than the topology workspace.
+  - Primary, danger, warning, success, and informational states are consistent.
 
-## Personas and jobs
+## Personas jobs
 - Primary personas:
-  - Operator: monitors runs, failures, and source health.
+  - Operator: monitors runs, failures, source health.
   - Builder: configures sources, schedules, and agent workflows.
-  - AI operator: invokes node actions through structured or conversational payloads.
+  - AI operator: invokes node actions through structured conversational payloads.
 - User jobs:
-  - Understand what is running, blocked, missing, or ready.
+  - Understand what is running, blocked, missing, ready, or stale.
   - Trigger or retry collection safely.
-  - Jump from graph context to concrete configuration screens.
-- Key contexts of use:
-  - Desktop-first operations console.
-  - Long-running monitoring sessions.
-  - Mixed human/AI control loops.
+  - Watch live collected information without keeping every telemetry pane permanently open.
+- Key contexts of use: desktop-first operations console, long-running collection sessions, mixed human/AI control loops.
 
 ## Information architecture
-- Primary navigation: Dashboard, Topology, Sources, Tasks, Records, Schedules, Agents, Providers, Nodes, Notifications, Workers, Settings.
+- Primary navigation: Dashboard, Topology Workbench, Data Sources, Tasks, Records, Settings.
 - Core routes/screens:
-  - `/topology`: global runtime graph and node capability matrix.
-  - `/sources`: source workflow canvas and source inspector.
-  - `/settings`: language, theme, density, and conversational execution.
+  - Topology Workbench: core graph, next nodes, selected details, node actions.
+  - Source Configuration: source catalog, channel metadata, schedules, and optional diagnostics canvas.
+  - Run Inbox: recent work, failed work, running work, review queue.
+  - Live Collection View: streaming run data, logs, records, tokens, and costs.
 - Content hierarchy:
-  - Page title and intent.
-  - Global metrics or filters.
-  - Primary work surface.
-  - Contextual inspector or action rail.
+  - Topology: operational state first, selected node detail second, actions third.
+  - Sources: configuration first, workflow/diagnostics second.
 
 ## Design principles
-- Principle 1: Make state legible before making it expressive.
-- Principle 2: Make every tool action available as a node action, then expose it through UI and AI paths.
-- Principle 3: Prefer neutral surfaces, sparse accent color, and exact labels.
+- Principle 1: State legibility before visual expression.
+- Principle 2: Work should feel direct and low-friction; follow Linear's product discipline more than its surface styling.
+- Principle 3: Topology owns node thinking; Sources owns configuration.
 - Tradeoffs:
-  - Dense operational screens are preferred over hero-style visual drama.
-  - A restrained Vercel/Geist base should still allow Houdini-like graph thinking through nodes, ports, capability chips, and execution actions.
+  - Dense operational screens are acceptable when they reduce clicks.
+  - Popovers, drawers, and panes should appear when useful rather than living on screen all the time.
 
 ## Visual language
 - Color:
-  - Base on Geist dark tokens: near-black surfaces, `#ededed` primary text, `#a0a0a0` secondary text, translucent white borders.
-  - Use blue for focus/link/primary action, red for errors, amber for warnings, green for healthy/success, and gray for disabled/unknown.
-  - Do not use color alone; pair status with labels or icons.
+  - Keep the existing near-black console base and translucent borders.
+  - Use blue for focus/link/primary action.
+  - Use red for danger/error, amber for warning/pending, green for success/healthy, cyan/gold/violet as secondary signals only.
+  - Do not let the signal palette become a loud theme.
 - Typography:
-  - Use the existing UI font stack with Geist-compatible sizing.
-  - Use 12-14px labels for dense metadata, 14px body text, and 20-24px page headings.
-  - Keep letter spacing at 0 except small telemetry labels already used for compact table-like metadata.
+  - Use existing UI, code, and telemetry font variables.
+  - Keep letter spacing 0 except compact telemetry labels already used in the app.
 - Spacing/layout rhythm:
   - Follow a 4px scale.
-  - Use 8px inside tight groups, 16px between groups, 24-32px between major panels.
+  - Prefer stable panel dimensions and compact grouping over decorative spacing.
 - Shape/radius/elevation:
-  - Use 6px as the default radius for controls and cards.
-  - Use 12px only for dialogs/menus if needed.
-  - Use borders and surface tone before shadows.
+  - Use 6px radius for panels, cards, buttons, and inputs.
+  - Use borders and subtle surface contrast before shadows.
 - Motion:
   - Keep transitions short and functional.
   - Honor reduced motion.
 - Imagery/iconography:
-  - Use lucide icons only when they clarify action or state.
-  - No decorative abstract imagery in operational screens.
+  - Use lucide icons when they clarify action or state.
+  - Do not add decorative abstract imagery to operational screens.
 
 ## Components
 - Existing components to reuse:
-  - `Card`, `PageHeader`, `CommandPalette`, `MetricTile`, `PanelHeader`, `Button`, `Input`, `StatusBadge`, `EmptyState`.
+  - `Card`, `PageHeader`, `CommandPalette`, `MetricTile`, `PanelHeader`, `OperatorCard`, `WorkbenchPanel`, `Button`, `Input`, `StatusBadge`, `EmptyState`.
 - New/changed components:
-  - Topology node cards should act as compact node capsules with title, kind, state, badges, and capability chips.
-  - Inspectors should group status, capability matrix, node actions, and raw detail in a predictable order.
+  - `OperatorCard` should receive semantic tones, not raw color class strings.
+  - `MetricTile`, `StatusBadge`, `Button`, and `Badge` should keep danger red separate from primary blue.
+  - `WorkbenchPanel` can structure topology/source work areas without becoming a decorative card system.
 - Variants and states:
-  - Primary action: solid blue/neutral high contrast.
-  - Secondary action: neutral surface with translucent border.
-  - Disabled: low-contrast gray text plus disabled cursor.
-  - Loading: spinner plus present-participle label where space allows.
+  - Tones: `neutral`, `accent`, `info`, `gold`, `success`, `warning`, `danger`, `violet`.
+  - Active/focus remains blue. Error/failure remains red.
 - Token/component ownership:
-  - Global color, font, radius, focus ring, and panel defaults live in `frontend/src/index.css`.
-  - Route-specific layout and graph details stay in page files until patterns repeat.
+  - Global base styles live in `frontend/src/index.css`.
+  - Tailwind color names live in `frontend/tailwind.config.js`.
+  - OpenCLI reusable workbench components live in `frontend/src/components/opencli/`.
+  - Route-specific layout stays in page files until repetition proves a component is needed.
 
 ## Accessibility
 - Target standard: WCAG AA for body text and controls.
 - Keyboard/focus behavior:
-  - All interactive controls need visible `:focus-visible` treatment.
+  - All interactive controls need visible `:focus-visible`.
   - Command Palette remains accessible by `Ctrl/Cmd+K`.
 - Contrast/readability:
-  - Avoid low-contrast text below `text-zinc-500` for important labels.
-  - Use icons or text with color-coded state.
+  - Avoid low-contrast text for important labels.
+  - Do not use color alone for status.
 - Screen-reader semantics:
-  - Buttons must use action-specific labels.
-  - Status-only dots need title/label context.
-- Reduced motion and sensory considerations:
-  - Existing `prefers-reduced-motion` rule is required.
+  - Buttons need action-specific labels.
+  - Status-only dots need text context.
+- Reduced motion sensory considerations:
+  - Keep the existing `prefers-reduced-motion` rule.
 
 ## Responsive behavior
-- Supported breakpoints/devices:
-  - Desktop is primary; tablet and mobile should remain readable.
+- Supported breakpoints/devices: Desktop primary; tablet and mobile should remain readable.
 - Layout adaptations:
   - Work surfaces may stack on smaller viewports.
   - Fixed graph/tool panels need minimum heights and overflow behavior.
@@ -128,38 +124,37 @@
   - Hover should enhance, not reveal essential actions.
 
 ## Interaction states
-- Loading: Show spinner and keep the surrounding layout stable.
+- Loading: Keep surrounding layout stable.
 - Empty: Explain the first useful action, not the feature.
 - Error: Say what happened and where the user can recover.
-- Success: Toasts name what changed without filler.
-- Disabled: Explain through state labels or disabled control context.
-- Offline/slow network: Keep cached/previous state visible when possible.
+- Success: Toasts name the changed object without filler.
+- Disabled: Explain through state labels or nearby context.
+- Offline/slow network: Keep cached or previous state visible when possible.
 
 ## Content voice
 - Tone: Precise, calm, direct.
 - Terminology:
-  - Use "Node", "Action", "Capability", "Run", "Source", "Task", and "Agent" consistently.
-  - In Chinese UI, prefer "节点", "动作", "能力", "运行", "数据源", "任务", "智能体".
+  - English: Node, Action, Capability, Run, Source, Task, Agent, Pipeline.
+  - Chinese: 节点, 动作, 能力, 运行, 数据源, 任务, 智能体, 管线.
 - Microcopy rules:
-  - Action labels should include a verb and object when space allows.
-  - Toasts should be short and specific.
-  - In-progress labels should use an ellipsis.
+  - Action labels should include verb and object when space allows.
+  - Avoid explaining the UI inside the UI.
 
 ## Implementation constraints
-- Framework/styling system: React, Vite, Tailwind, shadcn-style primitives where already present.
+- Framework/styling system: React, Vite, Tailwind, shadcn/Radix-style primitives already present.
 - Design-token constraints:
-  - Keep tokens CSS-first in `frontend/src/index.css`.
-  - Do not add a new theme dependency for this pass.
+  - Use signal colors for state semantics, not for broad decoration.
+  - Do not pass raw color class strings through reusable component props.
 - Performance constraints:
-  - Graph rendering must avoid unnecessary layout shifts and large animations.
+  - Graph and live-run views should avoid unnecessary remounts during streaming updates.
 - Compatibility constraints:
-  - Keep zh/en working and preserve current localStorage keys.
+  - FlowGram is a reference/bottom-layer direction; keep current topology behavior working while integrating.
+  - `react-grid-layout` owns adaptive live-run panes.
 - Test/screenshot expectations:
-  - Run `npm run -C frontend test`.
-  - Run `npm run -C frontend build`.
-  - Use browser smoke checks when the dev server is available.
+  - Run frontend tests and build after token/component changes.
+  - Smoke `/sources`, `/topology`, and `/tasks` when a dev server is available.
 
 ## Open questions
-- [ ] Should the product brand stay close to "OpenCLI" or become a more independent console identity?
-- [ ] How far should the Topology Workbench move toward Houdini-style node editing versus observability-first graph inspection?
-- [ ] Which node actions should become backend-backed first after the frontend registry proves the model?
+- [ ] How far should Topology Workbench move toward FlowGram-style editing versus observability-first graph inspection?
+- [ ] Which live collection pipelines deserve persistent panes versus temporary popovers/drawers?
+- [ ] Should the Source Configuration diagnostics canvas be drawer, modal, or secondary route?

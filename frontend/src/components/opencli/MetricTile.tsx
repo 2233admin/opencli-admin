@@ -1,7 +1,7 @@
 import type { LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-type MetricTone = 'neutral' | 'accent' | 'success' | 'warning' | 'danger'
+type MetricTone = 'neutral' | 'accent' | 'info' | 'gold' | 'success' | 'warning' | 'danger' | 'violet'
 
 const TONE_STYLES: Record<MetricTone, { rail: string; icon: string; value: string }> = {
   neutral: {
@@ -14,20 +14,35 @@ const TONE_STYLES: Record<MetricTone, { rail: string; icon: string; value: strin
     icon: 'border-primary-500/40 bg-primary-500/10 text-primary-100',
     value: 'text-zinc-50',
   },
+  info: {
+    rail: 'bg-signal-cyan',
+    icon: 'border-signal-cyan/40 bg-signal-cyan/10 text-sky-100',
+    value: 'text-sky-100',
+  },
+  gold: {
+    rail: 'bg-signal-gold',
+    icon: 'border-signal-gold/40 bg-signal-gold/10 text-yellow-100',
+    value: 'text-yellow-100',
+  },
   success: {
-    rail: 'bg-emerald-400',
-    icon: 'border-emerald-400/35 bg-emerald-400/10 text-emerald-200',
+    rail: 'bg-signal-green',
+    icon: 'border-signal-green/40 bg-signal-green/10 text-emerald-100',
     value: 'text-emerald-100',
   },
   warning: {
-    rail: 'bg-amber-400',
-    icon: 'border-amber-400/35 bg-amber-400/10 text-amber-200',
+    rail: 'bg-signal-amber',
+    icon: 'border-signal-amber/40 bg-signal-amber/10 text-amber-100',
     value: 'text-amber-100',
   },
   danger: {
-    rail: 'bg-primary-500',
-    icon: 'border-primary-500/50 bg-primary-500/15 text-primary-100',
-    value: 'text-primary-100',
+    rail: 'bg-signal-red',
+    icon: 'border-signal-red/50 bg-signal-red/14 text-red-100',
+    value: 'text-red-100',
+  },
+  violet: {
+    rail: 'bg-signal-violet',
+    icon: 'border-signal-violet/40 bg-signal-violet/10 text-violet-100',
+    value: 'text-violet-100',
   },
 }
 
@@ -51,7 +66,7 @@ export function MetricTile({
   const style = TONE_STYLES[tone]
 
   return (
-    <div className={cn('relative overflow-hidden border border-white/10 bg-black/20 p-3', className)}>
+    <div className={cn('operator-surface relative overflow-hidden p-3', className)}>
       <div className={cn('absolute inset-y-0 left-0 w-[2px]', style.rail)} />
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">

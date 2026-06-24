@@ -46,6 +46,7 @@ import { TableSkeleton } from '../components/SkeletonLoader'
 import ConfirmDialog from '../components/ConfirmDialog'
 import Pagination from '../components/Pagination'
 import { MetricTile, OperatorCard, PanelHeader, WorkbenchPanel } from '../components/opencli'
+import type { OperatorTone } from '../components/opencli'
 import { cn } from '@/lib/utils'
 import {
   SOURCE_WORKFLOW_LAYOUT_KEY,
@@ -114,42 +115,42 @@ const CHANNEL_META: Record<ChannelType, {
   short: string
   hint: string
   icon: LucideIcon
-  tone: string
+  tone: OperatorTone
 }> = {
   opencli: {
     label: 'OpenCLI',
     short: 'CLI',
     hint: '账号环境 / 浏览器采集',
     icon: RadioTower,
-    tone: 'border-primary-500/40 bg-primary-500/12 text-primary-100',
+    tone: 'accent',
   },
   rss: {
     label: 'RSS',
     short: 'RSS',
     hint: '订阅流',
     icon: FileInput,
-    tone: 'border-amber-400/35 bg-amber-400/10 text-amber-100',
+    tone: 'gold',
   },
   api: {
     label: 'API',
     short: 'API',
     hint: '结构化接口',
     icon: Braces,
-    tone: 'border-emerald-400/35 bg-emerald-400/10 text-emerald-100',
+    tone: 'success',
   },
   web_scraper: {
     label: 'Web',
     short: 'WEB',
     hint: '网页抓取',
     icon: Globe2,
-    tone: 'border-cyan-400/35 bg-cyan-400/10 text-cyan-100',
+    tone: 'info',
   },
   cli: {
     label: 'Command',
     short: 'CMD',
     hint: '本地命令',
     icon: Cable,
-    tone: 'border-violet-400/35 bg-violet-400/10 text-violet-100',
+    tone: 'violet',
   },
 }
 
@@ -1920,21 +1921,21 @@ function SourceConfigurationPanel({
             value={`${enabledCount}/${sources.length}`}
             hint="这里只看采集源配置"
             icon={Database}
-            tone="border-primary-500/40 bg-primary-500/12 text-primary-100"
+            tone="accent"
           />
           <OperatorCard
             label="采集计划"
             value={scheduleCount}
             hint="计划仍在源上配置"
             icon={Calendar}
-            tone="border-emerald-400/35 bg-emerald-400/10 text-emerald-100"
+            tone="success"
           />
           <OperatorCard
             label="失败任务"
             value={failedCount}
             hint="处理入口在 Run Inbox"
             icon={Filter}
-            tone={failedCount > 0 ? 'border-red-400/35 bg-red-400/10 text-red-100' : 'border-white/10 bg-white/[0.035] text-zinc-300'}
+            tone={failedCount > 0 ? 'danger' : 'neutral'}
           />
         </div>
       </div>

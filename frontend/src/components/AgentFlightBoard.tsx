@@ -91,7 +91,7 @@ const KIND_META: Record<FlightKind, {
 const STATUS_RING: Record<FlightStatus, string> = {
   done: 'border-white/14 bg-white/[0.045]',
   running: 'border-zinc-100/45 bg-zinc-100/[0.075]',
-  failed: 'border-primary-500/60 bg-primary-500/[0.12]',
+  failed: 'border-signal-red/60 bg-signal-red/[0.12]',
   queued: 'border-white/10 bg-black/20 opacity-60',
 }
 
@@ -319,7 +319,7 @@ function FlightNode({
             </p>
             <StatusIcon
               size={13}
-              className={step.status === 'failed' ? 'text-primary-300' : step.status === 'done' ? 'text-emerald-300' : 'text-zinc-200'}
+              className={step.status === 'failed' ? 'text-red-300' : step.status === 'done' ? 'text-emerald-300' : 'text-zinc-200'}
             />
           </div>
           <h3 className="mt-1 truncate text-sm font-semibold text-zinc-100">{step.title}</h3>
