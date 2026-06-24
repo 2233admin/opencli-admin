@@ -31,6 +31,7 @@ import {
   Workflow,
   SlidersHorizontal,
   Zap,
+  type LucideIcon,
 } from 'lucide-react'
 
 import {
@@ -351,7 +352,13 @@ export default function TopologyPage() {
         }
       />
 
-      <TopologySummary graph={graph} isFetching={isFetching} />
+      <TopologyOperations
+        graph={graph}
+        isFetching={isFetching}
+        selectedNodeId={selectedNodeId}
+        onSelectNode={setSelectedNodeId}
+        onSetMode={setViewMode}
+      />
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
         <Card padding={false} className="overflow-hidden">
@@ -490,6 +497,179 @@ function TopologySummary({ graph, isFetching }: { graph: TopologyGraph; isFetchi
         </Card>
       ))}
     </div>
+  )
+}
+
+function TopologyOperations({
+  graph,
+  isFetching,
+  selectedNodeId,
+  onSelectNode,
+  onSetMode,
+}: {
+  graph: TopologyGraph
+  isFetching: boolean
+  selectedNodeId: string | null
+  onSelectNode: (nodeId: string) => void
+  onSetMode: (mode: TopologyMode) => void
+}) {
+  const { t } = useTranslation()
+  const attentionNodes = graph.nodes.filter((node) => (
+    node.data.health === 'failed' || node.data.health === 'warning'
+  ))
+  const runningNodes = graph.nodes.filter((node) => node.data.health === 'active')
+  const skillGapNodes = graph.nodes.filter((node) => (
+    node.data.skills.some((item) => item.state === 'missing' || item.state === 'blocked')
+  ))
+  const actionReadyNodes = graph.nodes.filter((node) => node.data.actions.some((action) => action.enabled))
+  const priorityNodes = [
+    ...attentionNodes,
+    ...runningNodes,
+    ...skillGapNodes,
+    ...actionReadyNodes,
+  ].filter((node, index, nodes) => nodes.findIndex((item) => item.id === node.id) === index).slice(0, 6)
+
+  const cards: Array<{
+    id: string
+    label: string
+    value: number
+    hint: string
+    icon: LucideIcon
+    tone: string
+    mode: TopologyMode
+  }> = [
+    {
+      id: 'attention',
+      label: '需要处理',
+      value: attentionNodes.length,
+      hint: '失败、警告节点优先看',
+      icon: CircleAlert,
+      tone: 'border-amber-400/35 bg-amber-400/10 text-amber-100',
+      mode: 'health',
+    },
+    {
+      id: 'running',
+      label: '运行中',
+      value: runningNodes.length,
+      hint: '正在采集或执行',
+      icon: Zap,
+      tone: 'border-sky-400/35 bg-sky-400/10 text-sky-100',
+      mode: 'health',
+    },
+    {
+      id: 'skills',
+      label: '能力缺口',
+      value: skillGapNodes.length,
+      hint: '缺配置、缺节点、阻塞项',
+      icon: Network,
+      tone: 'border-red-400/35 bg-red-400/10 text-red-100',
+      mode: 'skills',
+    },
+    {
+      id: 'actions',
+      label: '可执行动作',
+      value: actionReadyNodes.length,
+      hint: '可触发、可补全、可跳转',
+      icon: ListChecks,
+      tone: 'border-emerald-400/35 bg-emerald-400/10 text-emerald-100',
+      mode: 'flow',
+    },
+  ]
+
+  return (
+    <Card padding={false} className="overflow-hidden">
+      <div className="border-b border-white/10 p-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <p className="telemetry-label">OPERATIONS QUEUE</p>
+            <h2 className="mt-1 text-lg font-semibold text-zinc-100">先处理工作，再打开诊断画布</h2>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-zinc-500">
+              拓扑页现在先回答“哪里需要人介入”，画布负责解释关系和定位根因。
+            </p>
+          </div>
+          <div className="shrink-0 border border-white/10 bg-black/25 px-3 py-2 text-xs text-zinc-500">
+            {isFetching ? t('topology.refreshing') : t('topology.edgeCount', { count: graph.edges.length })}
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-4">
+          {cards.map((card) => {
+            const Icon = card.icon
+            return (
+              <button
+                key={card.id}
+                type="button"
+                onClick={() => onSetMode(card.mode)}
+                className="group min-h-28 border border-white/10 bg-black/20 p-3 text-left transition-colors hover:border-primary-500/45 hover:bg-white/[0.04]"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <span className={`grid h-9 w-9 shrink-0 place-items-center border ${card.tone}`}>
+                    <Icon size={16} />
+                  </span>
+                  <span className="font-code text-2xl text-zinc-50">{card.value}</span>
+                </div>
+                <p className="mt-3 text-sm font-semibold text-zinc-100">{card.label}</p>
+                <p className="mt-1 text-xs leading-5 text-zinc-500">{card.hint}</p>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      <div className="p-4">
+        <div className="flex items-center justify-between gap-3">
+          <p className="telemetry-label">NEXT NODES</p>
+          <span className="font-code text-[11px] text-zinc-600">{graph.summary.total} nodes</span>
+        </div>
+        {priorityNodes.length === 0 ? (
+          <div className="mt-3 border border-dashed border-white/12 bg-black/20 px-4 py-6 text-sm text-zinc-500">
+            当前没有需要优先处理的拓扑节点。
+          </div>
+        ) : (
+          <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+            {priorityNodes.map((node) => {
+              const Icon = KIND_ICONS[node.data.kind]
+              const missingCount = node.data.skills.filter((item) => item.state === 'missing' || item.state === 'blocked').length
+              return (
+                <button
+                  key={node.id}
+                  type="button"
+                  data-active={selectedNodeId === node.id}
+                  onClick={() => onSelectNode(node.id)}
+                  className="min-w-0 border border-white/10 bg-black/20 p-3 text-left transition-colors hover:border-primary-500/45 hover:bg-white/[0.04] data-[active=true]:border-primary-500/65 data-[active=true]:bg-primary-500/[0.075]"
+                >
+                  <div className="flex min-w-0 items-start gap-3">
+                    <span className={`grid h-9 w-9 shrink-0 place-items-center border ${healthSoftClass(node.data.health)}`}>
+                      <Icon size={15} />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className={`h-2 w-2 shrink-0 rounded-full ${healthDotClass(node.data.health)}`} />
+                        <p className="truncate text-sm font-semibold text-zinc-100">{node.data.title}</p>
+                      </div>
+                      <p className="mt-1 truncate text-xs text-zinc-500">{node.data.subtitle}</p>
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        <span className="border border-white/10 bg-white/[0.035] px-1.5 py-0.5 text-[10px] uppercase text-zinc-400">
+                          {kindLabel(t, node.data.kind)}
+                        </span>
+                        <span className="border border-white/10 bg-white/[0.035] px-1.5 py-0.5 text-[10px] uppercase text-zinc-400">
+                          {healthLabel(t, node.data.health)}
+                        </span>
+                        {missingCount > 0 && (
+                          <span className="border border-red-400/30 bg-red-400/10 px-1.5 py-0.5 text-[10px] uppercase text-red-100">
+                            {missingCount} gaps
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    </Card>
   )
 }
 
