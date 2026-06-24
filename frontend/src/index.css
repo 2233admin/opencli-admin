@@ -185,14 +185,39 @@
     color: #fff;
   }
 
-  .telemetry-input {
-    border: 1px solid rgba(255, 255, 255, 0.14);
-    border-radius: 6px;
-    background: rgba(0, 0, 0, 0.35);
-    color: #fff;
-    font-family: var(--font-code);
-    font-size: 0.75rem;
-  }
+.telemetry-input {
+border: 1px solid rgba(255, 255, 255, 0.14);
+border-radius: 6px;
+background: rgba(0, 0, 0, 0.35);
+color: #fff;
+font-family: var(--font-code);
+font-size: 0.75rem;
+}
+
+.live-run-surface-grid {
+min-height: 680px;
+}
+
+.live-run-surface-grid .react-grid-item {
+transition: border-color 160ms cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.live-run-surface-grid .react-grid-item.react-draggable-dragging,
+.live-run-surface-grid .react-grid-item.resizing {
+z-index: 30;
+box-shadow: 0 18px 48px rgba(0, 0, 0, 0.38);
+}
+
+.live-run-surface-grid .react-grid-placeholder {
+border: 1px solid rgba(0, 110, 254, 0.55);
+border-radius: 6px;
+background: rgba(0, 110, 254, 0.12);
+opacity: 1;
+}
+
+.live-run-surface-grid .react-resizable-handle::after {
+border-color: rgba(161, 161, 170, 0.72);
+}
 }
 
 @media (prefers-reduced-motion: reduce) {

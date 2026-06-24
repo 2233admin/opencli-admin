@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { formatInTimeZone } from 'date-fns-tz'
+import ReactGridLayout, { useContainerWidth, type Layout } from 'react-grid-layout'
+import 'react-grid-layout/css/styles.css'
+import 'react-resizable/css/styles.css'
 import {
   Activity,
   AlertTriangle,
@@ -46,6 +49,15 @@ import { cn } from '../lib/utils'
 type RunInboxFilter = 'active' | RunInboxState | 'all'
 
 const HANDLED_STORAGE_KEY = 'opencli.runInbox.handled.v1'
+const RUN_SURFACE_LAYOUT_STORAGE_KEY = 'opencli.liveCollection.surfaceLayout.v1'
+
+const DEFAULT_RUN_SURFACE_LAYOUT: Layout = [
+  { i: 'events', x: 0, y: 0, w: 7, h: 12, minW: 5, minH: 8 },
+  { i: 'render', x: 7, y: 0, w: 5, h: 4, minW: 3, minH: 3 },
+  { i: 'records', x: 7, y: 4, w: 5, h: 4, minW: 3, minH: 3 },
+  { i: 'diagnosis', x: 7, y: 8, w: 5, h: 4, minW: 3, minH: 3 },
+  { i: 'metrics', x: 0, y: 12, w: 12, h: 3, minW: 6, minH: 3 },
+]
 
 const FILTERS: Array<{ value: RunInboxFilter; label: string; hint: string }> = [
   { value: 'active', label: '处理中', hint: '运行、异常、待复核' },
@@ -128,6 +140,40 @@ function loadHandledStates(): Record<string, LocalHandlingState> {
     )
   } catch {
     return {}
+  }
+}
+
+function cloneDefaultRunSurfaceLayout() {
+  return DEFAULT_RUN_SURFACE_LAYOUT.map((item) => ({ ...item }))
+}
+
+function isRunSurfaceLayout(value: unknown): value is Layout {
+  return Array.isArray(value) && DEFAULT_RUN_SURFACE_LAYOUT.every((defaultItem) => (
+    value.some((item) => (
+      item &&
+      typeof item === 'object' &&
+      (item as { i?: unknown }).i === defaultItem.i &&
+      typeof (item as { x?: unknown }).x === 'number' &&
+      typeof (item as { y?: unknown }).y === 'number' &&
+      typeof (item as { w?: unknown }).w === 'number' &&
+      typeof (item as { h?: unknown }).h === 'number'
+    ))
+  ))
+}
+
+function loadRunSurfaceLayout(): Layout {
+  try {
+    const raw = window.localStorage.getItem(RUN_SURFACE_LAYOUT_STORAGE_KEY)
+    if (!raw) return cloneDefaultRunSurfaceLayout()
+    const parsed = JSON.parse(raw)
+    if (!isRunSurfaceLayout(parsed)) return cloneDefaultRunSurfaceLayout()
+
+    return DEFAULT_RUN_SURFACE_LAYOUT.map((defaultItem) => ({
+      ...defaultItem,
+      ...(parsed as Layout).find((item) => item.i === defaultItem.i),
+    }))
+  } catch {
+    return cloneDefaultRunSurfaceLayout()
   }
 }
 
@@ -369,6 +415,228 @@ function EventTimeline({ events }: { events: TaskRunEvent[] }) {
   )
 }
 
+function SurfacePanel({
+  title,
+  label,
+  icon: Icon,
+  children,
+  action,
+}: {
+  title: string
+  label: string
+  icon: typeof Activity
+  children: React.ReactNode
+  action?: React.ReactNode
+}) {
+  return (
+    <section className="flex h-full min-h-0 flex-col overflow-hidden border border-white/10 bg-black/20">
+      <header className="run-surface-handle flex cursor-move items-center justify-between gap-3 border-b border-white/10 bg-white/[0.025] px-3 py-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="grid h-7 w-7 shrink-0 place-items-center border border-white/10 bg-black/25 text-zinc-400">
+            <Icon size={14} />
+          </span>
+          <div className="min-w-0">
+            <p className="telemetry-label">{label}</p>
+            <h3 className="truncate text-sm font-semibold text-zinc-100">{title}</h3>
+          </div>
+        </div>
+        {action}
+      </header>
+      <div className="min-h-0 flex-1 overflow-hidden p-3">{children}</div>
+    </section>
+  )
+}
+
+function MetricsSurface({ selectedRun, events, errors, warnings }: {
+  selectedRun?: TaskRun
+  events: TaskRunEvent[]
+  errors: TaskRunEvent[]
+  warnings: TaskRunEvent[]
+}) {
+  const items = [
+    { label: 'EVENTS', value: events.length, tone: 'text-zinc-100' },
+    { label: 'ERRORS', value: errors.length, tone: 'text-red-200' },
+    { label: 'WARNINGS', value: warnings.length, tone: 'text-amber-100' },
+    { label: 'RECORDS', value: selectedRun?.records_collected ?? 'N/A', tone: 'text-emerald-100' },
+    { label: 'DURATION', value: formatDuration(selectedRun?.duration_ms), tone: 'text-zinc-100' },
+  ]
+
+  return (
+    <div className="grid h-full grid-cols-2 gap-2 md:grid-cols-5">
+      {items.map((item) => (
+        <div key={item.label} className="min-w-0 border border-white/10 bg-black/20 p-3">
+          <p className="telemetry-label">{item.label}</p>
+          <p className={cn('mt-1 truncate font-code text-lg', item.tone)}>{item.value}</p>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function RenderSurface({ links }: { links: Array<{ label: string; href: string }> }) {
+  if (links.length === 0) {
+    return (
+      <div className="grid h-full min-h-32 place-items-center border border-white/10 bg-black/20 p-4 text-center">
+        <p className="max-w-xs text-xs leading-relaxed text-zinc-500">
+          当前事件还没有浏览器、noVNC、截图或 artifact 链接；采集管线写入这些字段后会自动出现。
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-2">
+      {links.map((link) => (
+        <a
+          key={link.href}
+          href={link.href}
+          target="_blank"
+          rel="noreferrer"
+          className="flex items-center gap-2 border border-white/10 bg-black/25 px-3 py-2 text-xs text-sky-200 hover:border-sky-400/30 hover:text-sky-100"
+        >
+          <Server size={13} />
+          <span className="truncate">{link.label}</span>
+        </a>
+      ))}
+    </div>
+  )
+}
+
+function RecordPreviewSurface({ recordPreview }: { recordPreview: unknown }) {
+  return (
+    <pre className="h-full min-h-32 overflow-auto border border-white/10 bg-black/30 p-3 font-code text-[11px] leading-relaxed text-zinc-500">
+      {recordPreview ? JSON.stringify(recordPreview, null, 2) : 'N/A'}
+    </pre>
+  )
+}
+
+function DiagnosisSurface({ errors, warnings }: { errors: TaskRunEvent[]; warnings: TaskRunEvent[] }) {
+  const items = [...errors, ...warnings].slice(-5)
+  if (items.length === 0) {
+    return (
+      <div className="grid h-full min-h-32 place-items-center border border-emerald-400/25 bg-emerald-400/10 p-4 text-xs text-emerald-100">
+        暂无错误事件
+      </div>
+    )
+  }
+
+  return (
+    <div className="h-full space-y-2 overflow-y-auto">
+      {items.map((event) => (
+        <div key={event.id} className={cn('border p-3 text-xs leading-relaxed', levelTone(event.level))}>
+          <p className="font-semibold">{STEP_LABELS[event.step] ?? event.step}</p>
+          <p className="mt-1">{event.message}</p>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function AdaptiveRunSurface({
+  selectedRun,
+  events,
+  links,
+  recordPreview,
+  errors,
+  warnings,
+}: {
+  selectedRun?: TaskRun
+  events: TaskRunEvent[]
+  links: Array<{ label: string; href: string }>
+  recordPreview: unknown
+  errors: TaskRunEvent[]
+  warnings: TaskRunEvent[]
+}) {
+  const { width, containerRef, mounted } = useContainerWidth({ initialWidth: 960 })
+  const [layout, setLayout] = useState<Layout>(() => loadRunSurfaceLayout())
+
+  const handleLayoutChange = (nextLayout: Layout) => {
+    setLayout(nextLayout)
+    window.localStorage.setItem(RUN_SURFACE_LAYOUT_STORAGE_KEY, JSON.stringify(nextLayout))
+  }
+
+  const resetLayout = () => {
+    const nextLayout = cloneDefaultRunSurfaceLayout()
+    setLayout(nextLayout)
+    window.localStorage.setItem(RUN_SURFACE_LAYOUT_STORAGE_KEY, JSON.stringify(nextLayout))
+  }
+
+  const panels = (
+    <>
+      <div key="events" className="overflow-hidden">
+        <SurfacePanel title="采集事件流" label="EVENT STREAM" icon={Radio}>
+          <EventTimeline events={events} />
+        </SurfacePanel>
+      </div>
+      <div key="render" className="overflow-hidden">
+        <SurfacePanel title="渲染面" label="RENDER" icon={Server}>
+          <RenderSurface links={links} />
+        </SurfacePanel>
+      </div>
+      <div key="records" className="overflow-hidden">
+        <SurfacePanel title="记录预览" label="RECORDS" icon={FileJson}>
+          <RecordPreviewSurface recordPreview={recordPreview} />
+        </SurfacePanel>
+      </div>
+      <div key="diagnosis" className="overflow-hidden">
+        <SurfacePanel title="诊断" label="DIAGNOSIS" icon={AlertTriangle}>
+          <DiagnosisSurface errors={errors} warnings={warnings} />
+        </SurfacePanel>
+      </div>
+      <div key="metrics" className="overflow-hidden">
+        <SurfacePanel
+          title="运行指标"
+          label="METRICS"
+          icon={Activity}
+          action={(
+            <Button type="button" size="xs" variant="ghost" onClick={resetLayout}>
+              <RotateCcw size={13} />
+              重置
+            </Button>
+          )}
+        >
+          <MetricsSurface selectedRun={selectedRun} events={events} errors={errors} warnings={warnings} />
+        </SurfacePanel>
+      </div>
+    </>
+  )
+
+  return (
+    <>
+      <div ref={containerRef} className="hidden min-h-[680px] lg:block">
+        {mounted && width > 0 && (
+          <ReactGridLayout
+            className="live-run-surface-grid"
+            layout={layout}
+            width={width}
+            gridConfig={{ cols: 12, rowHeight: 42, margin: [12, 12], containerPadding: [0, 0] }}
+            dragConfig={{ enabled: true, handle: '.run-surface-handle', bounded: true }}
+            resizeConfig={{ enabled: true, handles: ['se'] }}
+            onLayoutChange={handleLayoutChange}
+          >
+            {panels}
+          </ReactGridLayout>
+        )}
+      </div>
+      <div className="space-y-4 lg:hidden">
+        <MetricsSurface selectedRun={selectedRun} events={events} errors={errors} warnings={warnings} />
+        <SurfacePanel title="采集事件流" label="EVENT STREAM" icon={Radio}>
+          <EventTimeline events={events} />
+        </SurfacePanel>
+        <SurfacePanel title="渲染面" label="RENDER" icon={Server}>
+          <RenderSurface links={links} />
+        </SurfacePanel>
+        <SurfacePanel title="记录预览" label="RECORDS" icon={FileJson}>
+          <RecordPreviewSurface recordPreview={recordPreview} />
+        </SurfacePanel>
+        <SurfacePanel title="诊断" label="DIAGNOSIS" icon={AlertTriangle}>
+          <DiagnosisSurface errors={errors} warnings={warnings} />
+        </SurfacePanel>
+      </div>
+    </>
+  )
+}
+
 function LiveCollectionView({
   open,
   task,
@@ -429,7 +697,7 @@ function LiveCollectionView({
           </div>
         </DialogHeader>
 
-        <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[230px_minmax(0,1fr)_310px]">
+        <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[230px_minmax(0,1fr)]">
           <aside className="min-h-0 overflow-y-auto border-b border-white/10 p-4 lg:border-b-0 lg:border-r">
             <p className="telemetry-label">RUN INBOX</p>
             <div className="mt-3 space-y-2">
@@ -458,86 +726,15 @@ function LiveCollectionView({
           </aside>
 
           <main className="min-h-0 overflow-y-auto p-4">
-            <div className="grid gap-3 md:grid-cols-4">
-              <div className="border border-white/10 bg-black/20 p-3">
-                <p className="telemetry-label">EVENTS</p>
-                <p className="mt-1 font-code text-lg text-zinc-100">{events.length}</p>
-              </div>
-              <div className="border border-white/10 bg-black/20 p-3">
-                <p className="telemetry-label">ERRORS</p>
-                <p className="mt-1 font-code text-lg text-red-200">{errors.length}</p>
-              </div>
-              <div className="border border-white/10 bg-black/20 p-3">
-                <p className="telemetry-label">WARNINGS</p>
-                <p className="mt-1 font-code text-lg text-amber-100">{warnings.length}</p>
-              </div>
-              <div className="border border-white/10 bg-black/20 p-3">
-                <p className="telemetry-label">DURATION</p>
-                <p className="mt-1 font-code text-lg text-zinc-100">{formatDuration(selectedRun?.duration_ms)}</p>
-              </div>
-            </div>
-
-            <div className="mt-4 flex items-center gap-2">
-              <Radio size={15} className={connectionState === 'live' ? 'text-sky-300' : 'text-zinc-600'} />
-              <p className="text-sm font-medium text-zinc-100">采集事件流</p>
-            </div>
-            <div className="mt-3">
-              <EventTimeline events={events} />
-            </div>
+            <AdaptiveRunSurface
+              selectedRun={selectedRun}
+              events={events}
+              links={links}
+              recordPreview={recordPreview}
+              errors={errors}
+              warnings={warnings}
+            />
           </main>
-
-          <aside className="min-h-0 overflow-y-auto border-t border-white/10 p-4 lg:border-l lg:border-t-0">
-            <div>
-              <p className="telemetry-label">RENDER SURFACE</p>
-              <div className="mt-2 border border-white/10 bg-black/20 p-3">
-                {links.length > 0 ? (
-                  <div className="space-y-2">
-                    {links.map((link) => (
-                      <a
-                        key={link.href}
-                        href={link.href}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="flex items-center gap-2 text-xs text-sky-200 hover:text-sky-100"
-                      >
-                        <Server size={13} />
-                        <span className="truncate">{link.label}</span>
-                      </a>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-xs leading-relaxed text-zinc-500">
-                    当前事件还没有浏览器、noVNC、截图或 artifact 链接；采集管线写入这些字段后会自动出现在这里。
-                  </p>
-                )}
-              </div>
-            </div>
-
-            <div className="mt-5">
-              <p className="telemetry-label">RECORD PREVIEW</p>
-              <pre className="mt-2 max-h-48 overflow-auto border border-white/10 bg-black/30 p-3 font-code text-[11px] leading-relaxed text-zinc-500">
-                {recordPreview ? JSON.stringify(recordPreview, null, 2) : 'N/A'}
-              </pre>
-            </div>
-
-            <div className="mt-5">
-              <p className="telemetry-label">DIAGNOSIS</p>
-              <div className="mt-2 space-y-2">
-                {errors.length === 0 && warnings.length === 0 ? (
-                  <div className="border border-emerald-400/25 bg-emerald-400/10 p-3 text-xs text-emerald-100">
-                    暂无错误事件
-                  </div>
-                ) : (
-                  [...errors, ...warnings].slice(-4).map((event) => (
-                    <div key={event.id} className={cn('border p-3 text-xs leading-relaxed', levelTone(event.level))}>
-                      <p className="font-semibold">{STEP_LABELS[event.step] ?? event.step}</p>
-                      <p className="mt-1">{event.message}</p>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-          </aside>
         </div>
       </DialogContent>
     </Dialog>
