@@ -354,17 +354,41 @@ export default function TopologyPage() {
         }
       />
 
-      <TopologyOperations
-        graph={graph}
-        isFetching={isFetching}
-        selectedNodeId={selectedNodeId}
-        onSelectNode={setSelectedNodeId}
-        onSetMode={setViewMode}
-      />
+      <div className="grid gap-4 xl:grid-cols-[340px_minmax(0,1fr)_360px]">
+        <TopologyOperations
+          graph={graph}
+          isFetching={isFetching}
+          mode={viewMode}
+          selectedNodeId={selectedNodeId}
+          onSelectNode={setSelectedNodeId}
+          onSetMode={setViewMode}
+        />
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
-        <Card padding={false} className="overflow-hidden">
-          <div className="h-[calc(100vh-270px)] min-h-[620px] bg-black">
+        <Card padding={false} className="overflow-hidden border-white/[0.1] bg-[#060606]">
+          <div className="flex min-h-16 items-center justify-between gap-3 border-b border-white/[0.08] px-4 py-3">
+            <div className="min-w-0">
+              <p className="telemetry-label">TOPOLOGY CANVAS</p>
+              <div className="mt-1 flex min-w-0 flex-wrap items-center gap-2">
+                <h2 className="truncate text-sm font-semibold text-zinc-100">
+                  {selectedNode ? selectedNode.data.title : '全局运行拓扑'}
+                </h2>
+                <span className="border border-white/10 bg-white/[0.035] px-2 py-0.5 font-code text-[10px] text-zinc-500">
+                  {layouted.nodes.length} nodes / {layouted.edges.length} edges
+                </span>
+              </div>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <span className="border border-white/10 bg-black/30 px-2 py-1 font-code text-[10px] uppercase text-zinc-500">
+                {viewMode}
+              </span>
+              {isFetching && (
+                <span className="border border-signal-cyan/30 bg-signal-cyan/10 px-2 py-1 text-[10px] uppercase text-sky-100">
+                  Syncing
+                </span>
+              )}
+            </div>
+          </div>
+          <div className="h-[calc(100vh-245px)] min-h-[680px] bg-black">
             <ReactFlow
               nodes={layouted.nodes}
               edges={layouted.edges}
@@ -505,12 +529,14 @@ function TopologySummary({ graph, isFetching }: { graph: TopologyGraph; isFetchi
 function TopologyOperations({
   graph,
   isFetching,
+  mode,
   selectedNodeId,
   onSelectNode,
   onSetMode,
 }: {
   graph: TopologyGraph
   isFetching: boolean
+  mode: TopologyMode
   selectedNodeId: string | null
   onSelectNode: (nodeId: string) => void
   onSetMode: (mode: TopologyMode) => void
@@ -537,7 +563,7 @@ function TopologyOperations({
     value: number
     hint: string
     icon: LucideIcon
-  tone: OperatorTone
+    tone: OperatorTone
     mode: TopologyMode
   }> = [
     {
@@ -581,16 +607,17 @@ function TopologyOperations({
   return (
     <WorkbenchPanel
       label="OPERATIONS QUEUE"
-      title="先处理工作，再打开诊断画布"
-      description="拓扑页现在先回答“哪里需要人介入”，画布负责解释关系和定位根因。"
+      title="拓扑工作台"
+      description="先处理队列，再看画布；数据源配置不再抢占这里的节点工作。"
       action={(
-        <div className="border border-white/10 bg-black/25 px-3 py-2 text-xs text-zinc-500">
+        <div className="border border-white/10 bg-black/25 px-2 py-1 font-code text-[10px] uppercase text-zinc-500">
           {isFetching ? t('topology.refreshing') : t('topology.edgeCount', { count: graph.edges.length })}
         </div>
       )}
+      className="h-full"
     >
-      <div className="border-b border-white/10 p-4">
-        <div className="grid gap-3 md:grid-cols-4">
+      <div className="border-b border-white/10 p-3">
+        <div className="grid grid-cols-2 gap-2">
           {cards.map((card) => (
             <OperatorCard
               key={card.id}
@@ -599,13 +626,14 @@ function TopologyOperations({
               hint={card.hint}
               icon={card.icon}
               tone={card.tone}
+              active={mode === card.mode}
               onClick={() => onSetMode(card.mode)}
             />
           ))}
         </div>
       </div>
 
-      <div className="p-4">
+      <div className="p-3">
         <div className="flex items-center justify-between gap-3">
           <p className="telemetry-label">NEXT NODES</p>
           <span className="font-code text-[11px] text-zinc-600">{graph.summary.total} nodes</span>
@@ -615,7 +643,7 @@ function TopologyOperations({
             当前没有需要优先处理的拓扑节点。
           </div>
         ) : (
-          <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+          <div className="mt-3 space-y-2">
             {priorityNodes.map((node) => {
               const Icon = KIND_ICONS[node.data.kind]
               const missingCount = node.data.skills.filter((item) => item.state === 'missing' || item.state === 'blocked').length
@@ -625,10 +653,10 @@ function TopologyOperations({
                   type="button"
                   data-active={selectedNodeId === node.id}
                   onClick={() => onSelectNode(node.id)}
-                  className="min-w-0 border border-white/10 bg-black/20 p-3 text-left transition-colors hover:border-primary-500/45 hover:bg-white/[0.04] data-[active=true]:border-primary-500/65 data-[active=true]:bg-primary-500/[0.075]"
+                  className="w-full min-w-0 border border-white/10 bg-black/20 p-3 text-left transition-colors hover:border-primary-500/45 hover:bg-white/[0.04] data-[active=true]:border-primary-500/65 data-[active=true]:bg-primary-500/[0.075]"
                 >
                   <div className="flex min-w-0 items-start gap-3">
-                    <span className={`grid h-9 w-9 shrink-0 place-items-center border ${healthSoftClass(node.data.health)}`}>
+                    <span className={`grid h-8 w-8 shrink-0 place-items-center border ${healthSoftClass(node.data.health)}`}>
                       <Icon size={15} />
                     </span>
                     <div className="min-w-0 flex-1">
@@ -720,6 +748,36 @@ function NodeInspector({
   const entries = Object.entries(node.data.detail).filter(([, value]) => value != null && value !== '')
   const missingSkills = node.data.skills.filter((item) => item.state === 'missing' || item.state === 'blocked')
   const readySkills = node.data.skills.filter((item) => item.state === 'ready' || item.state === 'running')
+  const actionSection = node.data.actions.length > 0 ? (
+    <section className="mt-5 rounded-md border border-white/[0.1] bg-black/30 p-3">
+      <p className="telemetry-label">{t('topology.inspector.actions')}</p>
+      <div className="mt-3 space-y-2">
+        {node.data.actions.map((action) => {
+          const state = actionStates[actionStateKey(node.id, action.id)]
+          return (
+            <button
+              key={action.id}
+              type="button"
+              onClick={() => onRunAction(node, action.id)}
+              disabled={!!state || !action.enabled}
+              className="inline-flex w-full items-center justify-between rounded-md border border-white/[0.12] px-2.5 py-2 text-xs transition hover:border-white/[0.3] hover:bg-white/[0.04] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <span className="truncate">{action.label}</span>
+              {state === 'loading' ? (
+                <span className="inline-block h-3 w-3 animate-spin rounded-full border border-current border-t-transparent" />
+              ) : state === 'ok' ? (
+                t('topology.inspector.done')
+              ) : state === 'err' ? (
+                t('topology.inspector.failed')
+              ) : (
+                <span className="font-medium text-slate-300">{t('topology.inspector.run')}</span>
+              )}
+            </button>
+          )
+        })}
+      </div>
+    </section>
+  ) : null
 
   return (
     <Card className="h-full border-white/[0.1] bg-[#0a0a0a]">
@@ -744,6 +802,8 @@ function NodeInspector({
           </span>
         ))}
       </div>
+
+      {actionSection}
 
       <section className="mt-5 rounded-md border border-white/[0.1] bg-black/35 p-3">
         <div className="flex items-center justify-between gap-3">
@@ -781,37 +841,6 @@ function NodeInspector({
           ))}
         </div>
       </section>
-
-      {node.data.actions.length > 0 && (
-        <section className="mt-5 rounded-md border border-white/[0.1] bg-black/30 p-3">
-          <p className="telemetry-label">{t('topology.inspector.actions')}</p>
-          <div className="mt-3 space-y-2">
-            {node.data.actions.map((action) => {
-              const state = actionStates[actionStateKey(node.id, action.id)]
-              return (
-                <button
-                  key={action.id}
-                  type="button"
-                  onClick={() => onRunAction(node, action.id)}
-                  disabled={!!state || !action.enabled}
-                  className="inline-flex w-full items-center justify-between rounded-md border border-white/[0.12] px-2.5 py-2 text-xs transition hover:border-white/[0.3] hover:bg-white/[0.04] disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  <span className="truncate">{action.label}</span>
-                  {state === 'loading' ? (
-                    <span className="inline-block h-3 w-3 animate-spin rounded-full border border-current border-t-transparent" />
-                  ) : state === 'ok' ? (
-                    t('topology.inspector.done')
-                  ) : state === 'err' ? (
-                    t('topology.inspector.failed')
-                  ) : (
-                    <span className="font-medium text-slate-300">{t('topology.inspector.run')}</span>
-                  )}
-                </button>
-              )
-            })}
-          </div>
-        </section>
-      )}
 
       <dl className="mt-5 space-y-3">
         <dt className="telemetry-label">{t('topology.inspector.detail')}</dt>
