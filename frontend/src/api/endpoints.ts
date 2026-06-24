@@ -1,4 +1,4 @@
-import { apiClient } from './client'
+import { apiClient, rootClient } from './client.ts'
 import type {
   AIAgent,
   ApiResponse,
@@ -20,7 +20,7 @@ import type {
   TaskRun,
   TaskRunEvent,
   WorkerNode,
-} from './types'
+} from './types.ts'
 
 // ── Dashboard ──────────────────────────────────────────────────────────────────
 export const getDashboardStats = (params?: { range?: string; start?: string; end?: string }) =>
@@ -193,7 +193,7 @@ export const restartApi = () =>
 
 // ── System ─────────────────────────────────────────────────────────────────────
 export const getHealth = () =>
-  apiClient.get<{ status: string; version: string; task_executor: string }>('/health').then((r) => r.data)
+  rootClient.get<{ status: string; version: string; task_executor: string }>('/health').then((r) => r.data)
 
 export const getSystemConfig = () =>
   apiClient.get<ApiResponse<SystemConfig>>('/system/config').then((r) => r.data.data)

@@ -1,7 +1,55 @@
 # opencli-admin 项目管理
 
 > 版本: v0.1.0
-> 日期: 2026-06-19
+> 日期: 2026-06-24
+
+---
+
+## 0. 当前进度快照（2026-06-24）
+
+### 0.1 当前状态
+
+| 项 | 状态 |
+|---|---|
+| 当前工作目录 | `D:\projects\opencli-admin` |
+| 当前分支 | `codex/sources-canvas-topology-view-mode` |
+| 最近提交 | `f9e90b1 chore: add ...` |
+| 本地改动 | 前端工作区存在未提交改动，集中在拓扑、Sources、Settings、i18n、节点动作和布局 |
+| 验证结果 | `npm test`、`npm run typecheck`、`npm run lint`、`npm run build:frontend` 均通过 |
+| 构建提示 | Vite 报 chunk 大于 500 kB 的体积警告，非阻塞 |
+| code-intel | 2026-06-24 normal 模式已生成报告；hospital=red，score=66 |
+
+code-intel 的 red 不是因为当前测试失败，而是诊断链路还缺两个治理信号：
+
+- Understand graph 缺失，需要手动运行 `/understand D:\projects\opencli-admin --language zh`。
+- Sentrux baseline/rules 缺失，架构 gate 只能停在 triage，不能作为合并前治理结论。
+
+### 0.2 已完成或基本落地
+
+- Nx workspace 可用，`frontend` 与扩展的 test/typecheck/lint/build 任务能通过统一入口运行。
+- 前端主界面仍以 React 18 + Vite + Tailwind 为当前可运行产品面，README 已记录 Nx 入口。
+- `DESIGN.md` 已作为设计源，明确默认深色、操作台密度、拓扑/节点动作/Settings 的方向。
+- Topology Workbench 已扩展为流程、健康、技能视图，并支持聚焦节点、模式切换和执行动作。
+- Sources 页面已向“工作流画布 + Inspector + node actions”方向推进，任务/数据源/计划动作开始统一。
+- Settings 页面已新增，承载语言、主题、密度偏好和对话触发节点动作的实验入口。
+- zh/en i18n 字典已大幅扩展，并新增本地化审计文件用于后续清理硬编码中文。
+- `nodeActions` 与 `nodeRunService` 已新增，包含对话指令解析与节点动作执行的单元测试。
+
+### 0.3 进行中
+
+- 前端改动尚未提交，需要先做一次 diff review，必要时拆成 UI、node action、i18n 三个提交。
+- `docs/PROJECT_MANAGEMENT.md` 后续历史章节仍保留 2026-06-19 的 Next/Turborepo 迁移计划；该计划和当前 Nx/Vite 路线存在偏差，需要产品/技术路线确认后再整体重写。
+- i18n 审计仍显示多个页面存在硬编码中文，尤其是运行故事板、数据源、Settings、任务页等，需要分批清理。
+- Sentrux gate 缺 baseline/rules，若后续要用架构门禁，需要先创建基线和规则。
+- Understand graph 需要补跑，补齐后再看 code-intel hospital 是否能从 red 降级。
+
+### 0.4 下一步建议
+
+1. 完成当前前端 diff review，确认没有交互回归。
+2. 对 Dashboard、Topology、Sources、Settings 做一次浏览器 smoke check。
+3. 提交当前前端功能分支，提交信息建议围绕 `feat(topology)` / `feat(settings)` / `refactor(sources)` 拆分。
+4. 决定项目路线：继续推进当前 Nx/Vite 产品面，还是恢复旧文档里的 Next/Turborepo 迁移线。
+5. 补齐 Sentrux baseline/rules 和 Understand graph，让 code-intel 报告可以作为后续进度门禁。
 
 ---
 

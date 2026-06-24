@@ -21,6 +21,7 @@ env/
 htmlcov/
 *.coveragerc
 coverage.xml
+.tmp-smoke/
 
 # Database files
 *.db
@@ -58,6 +59,7 @@ frontend/tsconfig.tsbuildinfo
 *.log
 logs/
 .omx/
+.serena/
 
 # Docker volumes / data
 data/

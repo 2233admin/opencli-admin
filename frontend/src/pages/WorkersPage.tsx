@@ -8,7 +8,12 @@ import DataTable from '../components/DataTable'
 import StatusBadge from '../components/StatusBadge'
 import PageHeader from '../components/PageHeader'
 import { formatInTimeZone } from 'date-fns-tz'
-import { Server } from 'lucide-react'
+import { AlertTriangle, Server } from 'lucide-react'
+
+function getStatsError(stats?: Record<string, unknown>) {
+  const error = stats?.error
+  return typeof error === 'string' && error.trim() ? error : null
+}
 
 export default function WorkersPage() {
   const { t } = useTranslation()
@@ -36,6 +41,7 @@ export default function WorkersPage() {
   })
 
   const workers = workersQ.data?.data ?? []
+  const statsError = getStatsError(statsQ.data)
 
   if (healthQ.isLoading) return <PageLoader />
 
@@ -49,10 +55,14 @@ export default function WorkersPage() {
               <Server size={32} className="text-gray-400" />
             </div>
             <div>
-              <p className="text-base font-medium text-gray-700 dark:text-gray-200">单机模式运行中</p>
+              <p className="text-base font-medium text-gray-700 dark:text-gray-200">{t('workers.localModeTitle')}</p>
               <p className="mt-1 text-sm text-gray-500 dark:text-gray-400 max-w-sm">
-                当前使用本地 asyncio 执行任务，不支持查看工作节点状态。
-                如需分布式部署，请将 <code className="px-1 py-0.5 bg-gray-100 dark:bg-gray-700 rounded text-xs">TASK_EXECUTOR</code> 改为 <code className="px-1 py-0.5 bg-gray-100 dark:bg-gray-700 rounded text-xs">celery</code> 并启动分布式任务服务。
+                {t('workers.localModeDescription')}{' '}
+                {t('workers.localModeHint')}{' '}
+                <code className="px-1 py-0.5 bg-gray-100 dark:bg-gray-700 rounded text-xs">TASK_EXECUTOR</code>{' '}
+                {t('workers.localModeSetTo')}{' '}
+                <code className="px-1 py-0.5 bg-gray-100 dark:bg-gray-700 rounded text-xs">celery</code>
+                {t('workers.localModeSuffix')}
               </p>
             </div>
           </div>
@@ -69,6 +79,19 @@ export default function WorkersPage() {
         <h2 className="font-semibold text-gray-900 dark:text-white mb-3">{t('workers.liveStats')}</h2>
         {statsQ.isLoading ? (
           <p className="text-sm text-gray-400">{t('workers.statsLoading')}</p>
+        ) : statsError ? (
+          <div className="rounded-md border border-amber-500/25 bg-amber-500/10 p-4">
+            <div className="flex items-start gap-3">
+              <AlertTriangle size={18} className="mt-0.5 text-amber-400" />
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-amber-100">{t('workers.statsUnavailableTitle')}</p>
+                <p className="mt-1 text-sm text-amber-100/75">{t('workers.statsUnavailableDetail')}</p>
+                <code className="mt-3 block break-words rounded bg-black/20 px-3 py-2 text-xs text-amber-50/80">
+                  {statsError}
+                </code>
+              </div>
+            </div>
+          </div>
         ) : statsQ.data ? (
           <pre className="text-xs bg-gray-50 dark:bg-gray-900 p-3 rounded-lg overflow-auto max-h-48">
             {JSON.stringify(statsQ.data, null, 2)}

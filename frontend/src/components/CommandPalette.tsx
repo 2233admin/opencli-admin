@@ -13,6 +13,7 @@ import {
   Network,
   Search,
   Server,
+  Settings,
   Workflow,
   X,
 } from 'lucide-react'
@@ -104,6 +105,14 @@ export default function CommandPalette() {
         keywords: ['notifications', 'webhook', 'ack', '通知', '回执'],
         to: '/notifications',
         icon: Bell,
+      },
+      {
+        id: 'settings',
+        label: t('nav.settings'),
+        hint: t('command.openSettings'),
+        keywords: ['settings', 'preferences', 'configure', '设置', '偏好'],
+        to: '/settings',
+        icon: Settings,
       },
       {
         id: 'workers',

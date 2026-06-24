@@ -59,6 +59,10 @@ import {
   type WorkflowNodeData,
 } from '../lib/collectionWorkflowModel'
 import {
+  runNodeAction,
+  type NodeActionRunRequest,
+} from '../lib/nodeActions'
+import {
   Activity,
   Braces,
   Cable,
@@ -98,6 +102,12 @@ function chromeNovncPort(cdpUrl: string, basePort = 3010): number {
 
 const CHANNEL_TYPES: ChannelType[] = ['opencli', 'rss', 'api', 'web_scraper', 'cli']
 type FilterType = 'all' | ChannelType
+
+type ActionState = 'loading' | 'ok' | 'err'
+
+const actionStateKey = (nodeId: string, actionId: string) => `${nodeId}:${actionId}`
+const makeNodeActionStateKey = (nodeKind: string, entityId: string, actionId: string) =>
+  actionStateKey(`${nodeKind}:${entityId}`, actionId)
 
 const CHANNEL_META: Record<ChannelType, {
   label: string
@@ -1541,8 +1551,8 @@ function WorkflowInspector({
   schedule,
   task,
   stats,
-  triggerState,
-  onTrigger,
+  actionStates,
+  onRunAction,
   onEditSource,
   onDeleteSource,
   onToggleSource,
@@ -1556,8 +1566,8 @@ function WorkflowInspector({
   schedule: CronSchedule | null
   task: CollectionTask | null
   stats?: SourceWorkflowStats
-  triggerState?: 'loading' | 'ok' | 'err'
-  onTrigger: () => void
+  actionStates: Record<string, ActionState>
+  onRunAction: (actionId: string) => void
   onEditSource: () => void
   onDeleteSource: () => void
   onToggleSource: () => void
@@ -1666,14 +1676,26 @@ function WorkflowInspector({
             </p>
           )}
           <div className="grid gap-2">
-            <Button type="button" onClick={onTrigger} disabled={!!triggerState}>
-              {triggerState === 'loading' ? (
-                <span className="inline-block h-3 w-3 animate-spin rounded-full border border-current border-t-transparent" />
-              ) : (
-                <Play size={14} />
-              )}
-              {triggerState === 'ok' ? '任务已触发' : triggerState === 'err' ? '触发失败' : '再触发一次'}
-            </Button>
+            {node.data.actions.length > 0 ? node.data.actions.map((action) => {
+              const actionState = actionStates[actionStateKey(node.id, action.id)]
+              return (
+                <Button
+                  key={action.id}
+                  type="button"
+                  onClick={() => onRunAction(action.id)}
+                  disabled={!!actionState || !action.enabled}
+                >
+                  {actionState === 'loading' ? (
+                    <span className="inline-block h-3 w-3 animate-spin rounded-full border border-current border-t-transparent" />
+                  ) : (
+                    <Play size={14} />
+                  )}
+                  {actionState === 'ok' ? '任务已触发' : actionState === 'err' ? '触发失败' : action.label}
+                </Button>
+              )
+            }) : (
+              <Button type="button" onClick={() => onRunAction('')} disabled>无可执行动作</Button>
+            )}
             <Link className="inline-flex items-center justify-center gap-2 rounded-md border border-white/10 px-3 py-2 text-sm font-medium text-zinc-200 hover:bg-white/[0.04]" to={`/topology?source=${source.id}`}>
               <ExternalLink size={14} /> 查看全局拓扑
             </Link>
@@ -1733,14 +1755,29 @@ function WorkflowInspector({
               )}
               {testStatus.state === 'ok' ? '连接可达' : testStatus.state === 'err' ? '连接失败' : '测试'}
             </Button>
-            <Button type="button" onClick={onTrigger} disabled={!!triggerState}>
-              {triggerState === 'loading' ? (
-                <span className="inline-block h-3 w-3 animate-spin rounded-full border border-current border-t-transparent" />
-              ) : (
-                <Play size={14} />
+            <div className="col-span-1 grid gap-2">
+              {node.data.actions.length > 0 ? node.data.actions.map((action) => {
+                const actionState = actionStates[actionStateKey(node.id, action.id)]
+                return (
+                  <Button
+                    key={action.id}
+                    type="button"
+                    onClick={() => onRunAction(action.id)}
+                    disabled={!!actionState || !action.enabled}
+                    variant="outline"
+                  >
+                    {actionState === 'loading' ? (
+                      <span className="inline-block h-3 w-3 animate-spin rounded-full border border-current border-t-transparent" />
+                    ) : (
+                      <Play size={14} />
+                    )}
+                    {actionState === 'ok' ? '已触发' : actionState === 'err' ? '触发失败' : action.label}
+                  </Button>
+                )
+              }) : (
+                <Button type="button" onClick={() => onRunAction('')} disabled>无可执行动作</Button>
               )}
-              {triggerState === 'ok' ? '已触发' : triggerState === 'err' ? '失败' : '触发'}
-            </Button>
+            </div>
           </div>
           <div className="grid grid-cols-3 gap-2">
             <Button type="button" variant="outline" onClick={onToggleSource}>
@@ -1828,7 +1865,7 @@ export default function SourcesPage() {
   const [showAdd, setShowAdd] = useState(false)
   const [draftType, setDraftType] = useState<ChannelType>('opencli')
   const [editSource, setEditSource] = useState<DataSource | null>(null)
-  const [triggerSource, setTriggerSource] = useState<DataSource | null>(null)
+  const [pendingActionSource, setPendingActionSource] = useState<{ source: DataSource; actionId: string; payload?: Record<string, unknown> } | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<DataSource | null>(null)
   const [scheduleDraftSourceId, setScheduleDraftSourceId] = useState<string | null>(null)
   const [editSchedule, setEditSchedule] = useState<CronSchedule | null>(null)
@@ -1838,7 +1875,7 @@ export default function SourcesPage() {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
   const [flowNodes, setFlowNodes] = useState<WorkflowFlowNode[]>([])
   const [layoutVersion, setLayoutVersion] = useState(0)
-  const [triggerStates, setTriggerStates] = useState<Record<string, 'loading' | 'ok' | 'err'>>({})
+  const [actionStates, setActionStates] = useState<Record<string, ActionState>>({})
   const qc = useQueryClient()
 
   const { data: sysConfig } = useQuery({
@@ -2054,33 +2091,125 @@ export default function SourcesPage() {
     onError: (err) => toast.error(err instanceof Error ? err.message : '删除计划失败'),
   })
 
-  const triggerMut = useMutation({
-    mutationFn: ({ id, agentId, parameters }: { id: string; agentId?: string; parameters?: Record<string, unknown> }) =>
-      triggerTask(id, parameters ?? {}, agentId),
-    onMutate: ({ id }) => setTriggerStates((states) => ({ ...states, [id]: 'loading' })),
-    onSuccess: (_data, { id }) => {
-      qc.invalidateQueries({ queryKey: ['tasks'] })
-      qc.invalidateQueries({ queryKey: ['topology'] })
-      setTriggerStates((states) => ({ ...states, [id]: 'ok' }))
-      setTimeout(() => setTriggerStates((states) => {
-        const next = { ...states }
-        delete next[id]
-        return next
-      }), 2000)
-      setTriggerSource(null)
-      toast.success('任务已触发')
+  const runActionMut = useMutation({
+    mutationFn: ({ nodeKind, entityId, actionId, payload }: NodeActionRunRequest) =>
+      runNodeAction({ nodeKind, entityId, actionId, payload }),
+    onMutate: ({ nodeKind, entityId, actionId }) => {
+      const key = makeNodeActionStateKey(nodeKind, entityId, actionId)
+      setActionStates((states) => ({ ...states, [key]: 'loading' }))
     },
-    onError: (err, { id }) => {
-      setTriggerStates((states) => ({ ...states, [id]: 'err' }))
-      setTimeout(() => setTriggerStates((states) => {
-        const next = { ...states }
-        delete next[id]
-        return next
-      }), 3000)
-      setTriggerSource(null)
-      toast.error(err instanceof Error ? err.message : '触发失败')
+    onSuccess: (result, request) => {
+      const key = makeNodeActionStateKey(request.nodeKind, request.entityId, request.actionId)
+      const nextState: ActionState = result.ok ? 'ok' : 'err'
+      setActionStates((states) => ({ ...states, [key]: nextState }))
+
+      if (!result.ok) {
+        toast.error(result.message)
+      } else {
+        qc.invalidateQueries({ queryKey: ['tasks'] })
+        qc.invalidateQueries({ queryKey: ['topology'] })
+        qc.invalidateQueries({ queryKey: ['sources'] })
+        qc.invalidateQueries({ queryKey: ['schedules'] })
+        toast.success(result.message)
+      }
+
+      setTimeout(() => {
+        setActionStates((states) => {
+          const next = { ...states }
+          delete next[key]
+          return next
+        })
+      }, 2400)
+      setPendingActionSource(null)
+    },
+    onError: (err, request) => {
+      const key = makeNodeActionStateKey(request.nodeKind, request.entityId, request.actionId)
+      setActionStates((states) => ({ ...states, [key]: 'err' }))
+      setTimeout(() => {
+        setActionStates((states) => {
+          const next = { ...states }
+          delete next[key]
+          return next
+        })
+      }, 3000)
+      toast.error(err instanceof Error ? err.message : '执行失败')
+      setPendingActionSource(null)
     },
   })
+
+  const runSourceAction = (
+    source: DataSource,
+    actionId: string,
+    payload?: Record<string, unknown>,
+  ) => {
+    runActionMut.mutate({
+      nodeKind: 'source',
+      entityId: source.id,
+      actionId,
+      payload,
+    })
+  }
+
+  const runTaskAction = (task: CollectionTask, actionId: string) => {
+    runActionMut.mutate({
+      nodeKind: 'task',
+      entityId: task.id,
+      actionId,
+    })
+  }
+
+  const runWorkflowAction = (actionId: string, payload?: Record<string, unknown>) => {
+    if (!selectedNode) return
+    const action = selectedNode.data.actions.find((item) => item.id === actionId) ?? selectedNode.data.actions[0]
+    if (!action || !action.enabled) {
+      toast.error('动作暂不可执行')
+      return
+    }
+
+    if (selectedNode.data.kind === 'source') {
+      if (!selectedSource) {
+        toast.error('未找到数据源')
+        return
+      }
+      if (action.id === 'source.trigger') {
+        setPendingActionSource({ source: selectedSource, actionId: action.id, payload })
+        return
+      }
+      runSourceAction(selectedSource, action.id, payload)
+      return
+    }
+
+    if (selectedNode.data.kind === 'task') {
+      if (!selectedTask) {
+        toast.error('未找到任务')
+        return
+      }
+      runTaskAction(selectedTask, action.id)
+      return
+    }
+
+    // Fallback for unsupported kinds in this canvas path.
+    runActionMut.mutate({
+      nodeKind: selectedNode.data.kind,
+      entityId: String(selectedNode.data.entityId),
+      actionId: action.id,
+      ...(payload ? { payload } : {}),
+    })
+  }
+
+  const runPendingSourceAction = (agentId: string | undefined, parameters?: Record<string, unknown>) => {
+    if (!pendingActionSource) return
+    runSourceAction(
+      pendingActionSource.source,
+      pendingActionSource.actionId,
+      {
+        ...(pendingActionSource.payload ?? {}),
+        ...(parameters ?? {}),
+        ...(agentId ? { agent_id: agentId } : {}),
+      },
+    )
+    setPendingActionSource(null)
+  }
 
   if (isInitialLoading) return (
     <div className="space-y-5">
@@ -2274,8 +2403,8 @@ export default function SourcesPage() {
           schedule={selectedSchedule}
           task={selectedTask}
           stats={selectedStats}
-          triggerState={selectedSource ? triggerStates[selectedSource.id] : undefined}
-          onTrigger={() => { if (selectedSource) setTriggerSource(selectedSource) }}
+          actionStates={actionStates}
+          onRunAction={runWorkflowAction}
           onEditSource={() => { if (selectedSource) setEditSource(selectedSource) }}
           onDeleteSource={() => { if (selectedSource) setDeleteTarget(selectedSource) }}
           onToggleSource={() => {
@@ -2327,14 +2456,12 @@ export default function SourcesPage() {
         />
       )}
 
-      {triggerSource && (
+      {pendingActionSource && (
         <TriggerModal
-          source={triggerSource}
+          source={pendingActionSource.source}
           isAgentMode={isAgentMode}
-          onClose={() => setTriggerSource(null)}
-          onTrigger={(agentId, parameters) =>
-            triggerMut.mutate({ id: triggerSource.id, agentId, parameters })
-          }
+          onClose={() => setPendingActionSource(null)}
+          onTrigger={runPendingSourceAction}
         />
       )}
 

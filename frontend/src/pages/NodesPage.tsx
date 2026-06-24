@@ -16,6 +16,7 @@ import {
   getSystemConfig,
   updateSystemConfig,
   getWsAgentStatus,
+  getHealth,
   restartApi,
 } from '../api/endpoints'
 import type { EdgeNode, EdgeNodeEvent, BrowserBinding, ChromeEndpoint } from '../api/types'
@@ -880,9 +881,13 @@ export default function NodesPage() {
     onSuccess: () => {
       setRestartMsg(t('browsers.restarting'))
       const poll = setInterval(() => {
-        fetch('/api/v1/health').then((r) => {
-          if (r.ok) { clearInterval(poll); setRestartMsg(null); invalidatePool() }
-        }).catch(() => {})
+        getHealth()
+          .then(() => {
+            clearInterval(poll)
+            setRestartMsg(null)
+            invalidatePool()
+          })
+          .catch(() => {})
       }, 2000)
       setTimeout(() => { clearInterval(poll); setRestartMsg(null) }, 30_000)
     },

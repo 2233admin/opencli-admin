@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { useQuery } from '@tanstack/react-query'
+import type { TFunction } from 'i18next'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import {
   Background,
   Controls,
@@ -56,11 +58,31 @@ import {
   type TopologyNodeData,
   type TopologySkillState,
 } from '../lib/topologyModel'
+import {
+  listExecutableNodeActions,
+  runNodeAction,
+  type NodeActionRunRequest,
+} from '../lib/nodeActions'
 
 type TopologyMode = 'flow' | 'health' | 'skills'
 
 type TopologyFlowNode = Node<TopologyNodeData, 'topologyNode'>
 type TopologyFlowEdge = Edge<{ health: TopologyHealth }>
+type TopologyActionState = 'loading' | 'ok' | 'err'
+
+const actionStateKey = (nodeId: string, actionId: string) => `${nodeId}:${actionId}`
+const TOPOLOGY_NODE_WIDTH = 252
+const TOPOLOGY_NODE_HEIGHT = 220
+const TOPOLOGY_COLUMN_GAP = 304
+const TOPOLOGY_ROW_GAP = 252
+
+interface TopologyRunActionPayload extends Omit<NodeActionRunRequest, 'payload'> {
+  nodeKind: string
+  actionId: string
+  entityId: string
+  nodeUiId: string
+  payload?: Record<string, unknown>
+}
 
 const nodeTypes = {
   topologyNode: TopologyNodeView,
@@ -84,15 +106,15 @@ async function getElkEngine(): Promise<ElkLayoutEngine> {
   return elkEngine
 }
 
-const KIND_LABELS: Record<TopologyKind, string> = {
-  source: 'Source',
-  schedule: 'Plan',
-  task: 'Task',
-  agent: 'Agent',
-  record: 'Record',
-  notification: 'Notify',
-  'edge-node': 'Edge',
-  worker: 'Worker',
+const KIND_LABEL_KEYS: Record<TopologyKind, string> = {
+  source: 'topology.kinds.source',
+  schedule: 'topology.kinds.schedule',
+  task: 'topology.kinds.task',
+  agent: 'topology.kinds.agent',
+  record: 'topology.kinds.record',
+  notification: 'topology.kinds.notification',
+  'edge-node': 'topology.kinds.edgeNode',
+  worker: 'topology.kinds.worker',
 }
 
 const KIND_ICONS: Record<TopologyKind, typeof Database> = {
@@ -112,10 +134,12 @@ export default function TopologyPage() {
   const sourceFilter = searchParams.get('source')
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
   const [viewMode, setViewMode] = useState<TopologyMode>('flow')
+  const [actionStates, setActionStates] = useState<Record<string, TopologyActionState>>({})
   const [layouted, setLayouted] = useState<{ nodes: TopologyFlowNode[]; edges: TopologyFlowEdge[] }>({
     nodes: [],
     edges: [],
   })
+  const qc = useQueryClient()
 
   const sourcesQuery = useQuery({
     queryKey: ['topology', 'sources'],
@@ -236,6 +260,65 @@ export default function TopologyPage() {
     for (const query of queries) query.refetch()
   }
 
+  const runActionMut = useMutation({
+    mutationFn: ({ nodeKind, entityId, actionId, payload }: TopologyRunActionPayload) =>
+      runNodeAction({ actionId, nodeKind, entityId, payload }),
+    onMutate: ({ nodeUiId, actionId }) => {
+      const key = actionStateKey(nodeUiId, actionId)
+      setActionStates((state) => ({ ...state, [key]: 'loading' }))
+    },
+    onSuccess: (result, { nodeUiId, actionId }) => {
+      const key = actionStateKey(nodeUiId, actionId)
+      if (result.ok) {
+        setActionStates((state) => ({ ...state, [key]: 'ok' }))
+        qc.invalidateQueries({ queryKey: ['topology'] })
+        toast.success(result.message)
+      } else {
+        setActionStates((state) => ({ ...state, [key]: 'err' }))
+        toast.error(result.message)
+      }
+      setTimeout(() => {
+        setActionStates((state) => {
+          const next = { ...state }
+          delete next[key]
+          return next
+        })
+      }, 2200)
+    },
+    onError: (_error, { nodeUiId, actionId }) => {
+      const key = actionStateKey(nodeUiId, actionId)
+      setActionStates((state) => ({ ...state, [key]: 'err' }))
+      setTimeout(() => {
+        setActionStates((state) => {
+          const next = { ...state }
+          delete next[key]
+          return next
+        })
+      }, 2600)
+      toast.error(_error instanceof Error ? _error.message : t('topology.errors.actionFailed'))
+    },
+  })
+
+  const runNodeKindAction = (node: TopologyFlowNode, actionId?: string) => {
+    const executable = listExecutableNodeActions(node.data.kind)
+    const targetAction = executable.find((item) => item.id === actionId) ?? executable[0]
+    if (!targetAction) {
+      toast.error(t('topology.errors.noExecutableAction'))
+      return
+    }
+    const action = node.data.actions.find((candidate) => candidate.id === targetAction.id)
+    if (!action || !action.enabled) {
+      toast.error(t('topology.errors.actionUnavailable'))
+      return
+    }
+    runActionMut.mutate({
+      nodeKind: node.data.kind,
+      entityId: String(node.data.detail.id ?? node.id),
+      nodeUiId: node.id,
+      actionId: targetAction.id,
+    })
+  }
+
   if (isInitialLoading) return <PageLoader />
   if (error) return <ErrorAlert error={error as Error} onRetry={refetchAll} />
 
@@ -244,7 +327,7 @@ export default function TopologyPage() {
       <PageHeader
         title={t('topology.title')}
         description={sourceFilter
-          ? `按数据源聚焦：${focusedSource?.name ?? sourceFilter}`
+          ? t('topology.focusDescription', { name: focusedSource?.name ?? sourceFilter })
           : t('topology.description')}
         action={
           <div className="flex flex-wrap items-center gap-2">
@@ -252,14 +335,14 @@ export default function TopologyPage() {
             {sourceFilter && (
               <Link
                 to="/topology"
-                className="inline-flex items-center gap-2 rounded-md border border-cyan-300/40 bg-cyan-300/10 px-3 py-2 text-sm font-medium text-cyan-700 hover:bg-cyan-300/20 dark:text-cyan-200"
+                className="inline-flex h-10 items-center gap-2 rounded-md border border-white/[0.12] bg-white/[0.03] px-3 text-sm font-medium text-zinc-200 hover:border-white/[0.24] hover:bg-white/[0.06]"
               >
-                清除聚焦
+                {t('topology.clearFocus')}
               </Link>
             )}
             <button
               onClick={refetchAll}
-              className="inline-flex items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+              className="inline-flex h-10 items-center gap-2 rounded-md border border-blue-500/[0.45] bg-blue-500/[0.15] px-3 text-sm font-medium text-blue-100 hover:border-blue-400/[0.7] hover:bg-blue-500/[0.2]"
             >
               <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
               {t('topology.refresh')}
@@ -272,7 +355,7 @@ export default function TopologyPage() {
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
         <Card padding={false} className="overflow-hidden">
-          <div className="h-[calc(100vh-270px)] min-h-[620px] bg-slate-950">
+          <div className="h-[calc(100vh-270px)] min-h-[620px] bg-black">
             <ReactFlow
               nodes={layouted.nodes}
               edges={layouted.edges}
@@ -287,18 +370,19 @@ export default function TopologyPage() {
               onNodeClick={(_, node) => setSelectedNodeId(node.id)}
               onPaneClick={() => setSelectedNodeId(null)}
             >
-              <Background color="#334155" gap={22} />
+              <Background color="rgba(255,255,255,0.08)" gap={32} />
               <Controls position="bottom-left" />
               <MiniMap
                 position="bottom-right"
                 nodeColor={(node) => healthColor((node.data as TopologyNodeData).health, 'mini')}
-                maskColor="rgba(2, 6, 23, 0.72)"
+                maskColor="rgba(0, 0, 0, 0.72)"
+                style={{ backgroundColor: '#0a0a0a', border: '1px solid rgba(255,255,255,0.1)' }}
                 pannable
                 zoomable
               />
               <Panel position="top-left">
-                <div className="rounded-md border border-white/10 bg-slate-950/90 px-3 py-2 text-xs text-slate-300 shadow-lg">
-                  <span className="font-mono text-slate-500">Ctrl/⌘ K</span>
+                <div className="rounded-md border border-white/10 bg-black/90 px-3 py-2 text-xs text-zinc-300 shadow-lg">
+                  <span className="font-mono text-zinc-500">Ctrl/⌘ K</span>
                   <span className="ml-2">{t('topology.quickJump')}</span>
                 </div>
               </Panel>
@@ -306,25 +390,30 @@ export default function TopologyPage() {
           </div>
         </Card>
 
-        <NodeInspector node={selectedNode} />
+        <NodeInspector
+          node={selectedNode}
+          actionStates={actionStates}
+          onRunAction={runNodeKindAction}
+        />
       </div>
     </div>
   )
 }
 
 function TopologyNodeView({ data, selected }: NodeProps<TopologyFlowNode>) {
+  const { t } = useTranslation()
   const Icon = KIND_ICONS[data.kind]
-  const stateLabel = healthLabel(data.health)
+  const stateLabel = healthLabel(t, data.health)
 
   return (
     <div
       className={[
-        'relative w-[238px] rounded-lg border bg-slate-900 px-3 py-3 text-left shadow-lg transition',
-        selected ? 'border-cyan-300 ring-2 ring-cyan-300/30' : 'border-slate-700',
+        'relative w-[252px] rounded-md border bg-[#0a0a0a] px-3 py-3 text-left shadow-[0_1px_2px_rgba(0,0,0,0.16)] transition',
+        selected ? 'border-blue-500 ring-2 ring-blue-500/[0.25]' : 'border-white/[0.12]',
       ].join(' ')}
     >
-      <Handle type="target" position={Position.Left} className="!h-2.5 !w-2.5 !border-slate-950" />
-      <Handle type="source" position={Position.Right} className="!h-2.5 !w-2.5 !border-slate-950" />
+      <Handle type="target" position={Position.Left} className="!h-2.5 !w-2.5 !border-black" />
+      <Handle type="source" position={Position.Right} className="!h-2.5 !w-2.5 !border-black" />
       <div className="flex items-start gap-3">
         <div className={`grid h-9 w-9 shrink-0 place-items-center rounded-md ${healthSoftClass(data.health)}`}>
           <Icon className="h-4 w-4" />
@@ -332,7 +421,7 @@ function TopologyNodeView({ data, selected }: NodeProps<TopologyFlowNode>) {
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className="truncate text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-              {KIND_LABELS[data.kind]}
+              {kindLabel(t, data.kind)}
             </span>
             <span className={`h-2 w-2 rounded-full ${healthDotClass(data.health)}`} title={stateLabel} />
           </div>
@@ -348,7 +437,7 @@ function TopologyNodeView({ data, selected }: NodeProps<TopologyFlowNode>) {
         {[stateLabel, ...data.badges].slice(0, 4).map((badge) => (
           <span
             key={badge}
-            className="max-w-[98px] truncate rounded border border-white/10 bg-white/[0.04] px-1.5 py-0.5 text-[10px] text-slate-300"
+            className="max-w-[104px] truncate rounded-sm border border-white/10 bg-white/[0.04] px-1.5 py-0.5 text-[10px] text-zinc-300"
             title={badge}
           >
             {badge}
@@ -360,7 +449,7 @@ function TopologyNodeView({ data, selected }: NodeProps<TopologyFlowNode>) {
           {data.skills.slice(0, 3).map((item) => (
             <span
               key={item.id}
-              className={`truncate rounded border px-1.5 py-1 text-center text-[10px] font-semibold ${skillChipClass(item.state)}`}
+              className={`truncate rounded-sm border px-1.5 py-1 text-center text-[10px] font-semibold ${skillChipClass(item.state)}`}
               title={`${item.label}: ${item.description}`}
             >
               {item.label}
@@ -375,21 +464,21 @@ function TopologyNodeView({ data, selected }: NodeProps<TopologyFlowNode>) {
 function TopologySummary({ graph, isFetching }: { graph: TopologyGraph; isFetching: boolean }) {
   const { t } = useTranslation()
   const items = [
-    { id: 'all', label: t('topology.allNodes'), value: graph.summary.total, icon: Workflow, tone: 'text-cyan-300' },
+    { id: 'all', label: t('topology.allNodes'), value: graph.summary.total, icon: Workflow, tone: 'text-blue-300' },
     { id: 'running', label: t('topology.running'), value: graph.summary.active, icon: Zap, tone: 'text-blue-300' },
     { id: 'focus', label: t('topology.needsFocus'), value: graph.summary.failed + graph.summary.warning, icon: CircleAlert, tone: 'text-amber-300' },
     { id: 'ready', label: t('topology.ready'), value: graph.summary.total - graph.summary.failed - graph.summary.warning - graph.summary.disabled, icon: CheckCircle2, tone: 'text-emerald-300' },
-    { id: 'skills', label: '缺技能', value: graph.summary.skills.missing + graph.summary.skills.blocked, icon: CircleAlert, tone: 'text-red-300' },
+    { id: 'skills', label: t('topology.missingSkills'), value: graph.summary.skills.missing + graph.summary.skills.blocked, icon: CircleAlert, tone: 'text-red-300' },
   ]
 
   return (
     <div className="grid gap-3 md:grid-cols-5">
       {items.map(({ id, label, value, icon: Icon, tone }) => (
-        <Card key={id} className="border-gray-200 bg-white/95 dark:border-slate-700 dark:bg-slate-900">
+        <Card key={id} className="border-white/[0.1] bg-[#0a0a0a]">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-slate-400">{label}</p>
-              <p className="mt-1 text-2xl font-semibold text-gray-900 dark:text-white">{value}</p>
+              <p className="telemetry-label">{label}</p>
+              <p className="mt-1 text-2xl font-semibold text-zinc-50">{value}</p>
             </div>
             <Icon className={`h-5 w-5 ${tone}`} />
           </div>
@@ -411,22 +500,23 @@ function TopologyModeSwitcher({
   mode: TopologyMode
   onChange: (mode: TopologyMode) => void
 }) {
+  const { t } = useTranslation()
   const items = [
-    { mode: 'flow', label: '流程', icon: SlidersHorizontal },
-    { mode: 'health', label: '健康', icon: CircleAlert },
-    { mode: 'skills', label: '缺能力', icon: CircleAlert },
+    { mode: 'flow', label: t('topology.modes.flow'), icon: SlidersHorizontal },
+    { mode: 'health', label: t('topology.modes.health'), icon: CircleAlert },
+    { mode: 'skills', label: t('topology.modes.skills'), icon: CircleAlert },
   ] as const
 
   return (
-    <div className="inline-flex overflow-hidden rounded-md border border-gray-200 bg-white">
+    <div className="inline-flex h-10 overflow-hidden rounded-md border border-white/[0.12] bg-white/[0.03]">
       {items.map(({ mode: itemMode, label, icon: Icon }) => (
         <button
           key={itemMode}
           onClick={() => onChange(itemMode)}
-          className={`flex items-center gap-2 px-2.5 py-2 text-xs font-semibold transition ${
+          className={`flex items-center gap-2 px-3 text-xs font-semibold transition ${
             itemMode === mode
-              ? 'bg-cyan-500 text-slate-950'
-              : 'text-gray-700 hover:bg-gray-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800'
+              ? 'bg-zinc-100 text-black'
+              : 'text-zinc-400 hover:bg-white/[0.06] hover:text-zinc-100'
           }`}
         >
           <Icon className="h-4 w-4" />
@@ -437,7 +527,15 @@ function TopologyModeSwitcher({
   )
 }
 
-function NodeInspector({ node }: { node: TopologyFlowNode | null }) {
+function NodeInspector({
+  node,
+  actionStates,
+  onRunAction,
+}: {
+  node: TopologyFlowNode | null
+  actionStates: Record<string, TopologyActionState>
+  onRunAction: (node: TopologyFlowNode, actionId?: string) => void
+}) {
   const { t } = useTranslation()
 
   if (!node) {
@@ -455,15 +553,15 @@ function NodeInspector({ node }: { node: TopologyFlowNode | null }) {
   const readySkills = node.data.skills.filter((item) => item.state === 'ready' || item.state === 'running')
 
   return (
-    <Card className="h-full dark:border-slate-700 dark:bg-slate-900">
-      <div className="flex items-start justify-between gap-3 border-b border-gray-100 pb-4 dark:border-slate-800">
+    <Card className="h-full border-white/[0.1] bg-[#0a0a0a]">
+      <div className="flex items-start justify-between gap-3 border-b border-white/[0.08] pb-4">
         <div className="min-w-0">
-          <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">{KIND_LABELS[node.data.kind]}</p>
-          <h2 className="mt-1 truncate text-lg font-semibold text-gray-900 dark:text-white">{node.data.title}</h2>
-          <p className="mt-1 truncate text-sm text-gray-500 dark:text-slate-400">{node.data.subtitle}</p>
+          <p className="telemetry-label">{kindLabel(t, node.data.kind)}</p>
+          <h2 className="mt-1 truncate text-lg font-semibold text-zinc-50">{node.data.title}</h2>
+          <p className="mt-1 truncate text-sm text-zinc-400">{node.data.subtitle}</p>
         </div>
         <span className={`shrink-0 rounded-full px-2 py-1 text-xs font-medium ${healthPillClass(node.data.health)}`}>
-          {healthLabel(node.data.health)}
+          {healthLabel(t, node.data.health)}
         </span>
       </div>
 
@@ -471,33 +569,33 @@ function NodeInspector({ node }: { node: TopologyFlowNode | null }) {
         {node.data.badges.map((badge) => (
           <span
             key={badge}
-            className="mr-1.5 inline-flex rounded-md border border-gray-200 px-2 py-1 text-xs text-gray-600 dark:border-slate-700 dark:text-slate-300"
+            className="mr-1.5 inline-flex rounded-md border border-white/[0.1] bg-white/[0.03] px-2 py-1 text-xs text-zinc-300"
           >
             {badge}
           </span>
         ))}
       </div>
 
-      <section className="mt-5 border border-slate-800 bg-slate-950/40 p-3">
+      <section className="mt-5 rounded-md border border-white/[0.1] bg-black/35 p-3">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Skill Matrix</p>
+            <p className="telemetry-label">{t('topology.inspector.skillMatrix')}</p>
             <p className="mt-1 text-xs text-slate-400">
-              {readySkills.length} ready · {missingSkills.length} missing
+              {t('topology.inspector.skillSummary', { ready: readySkills.length, missing: missingSkills.length })}
             </p>
           </div>
           <span
             className={`shrink-0 border px-2 py-1 text-[10px] font-semibold uppercase ${missingSkills.length > 0 ? 'border-amber-400/35 bg-amber-400/10 text-amber-200' : 'border-emerald-400/35 bg-emerald-400/10 text-emerald-200'}`}
           >
-            {missingSkills.length > 0 ? 'Needs skill' : 'Ready'}
+            {missingSkills.length > 0 ? t('topology.inspector.needsSkill') : t('topology.inspector.ready')}
           </span>
         </div>
         <div className="mt-3 space-y-2">
           {node.data.skills.map((item) => (
-            <div key={item.id} className="grid gap-2 border border-white/10 bg-black/20 p-2">
+            <div key={item.id} className="grid gap-2 rounded-md border border-white/[0.1] bg-white/[0.025] p-2">
               <div className="flex items-center justify-between gap-2">
                 <span className="truncate text-xs font-semibold text-slate-200">{item.label}</span>
-                <span className={`shrink-0 border px-1.5 py-0.5 text-[10px] uppercase ${skillChipClass(item.state)}`}>
+                <span className={`shrink-0 rounded-sm border px-1.5 py-0.5 text-[10px] uppercase ${skillChipClass(item.state)}`}>
                   {item.state}
                 </span>
               </div>
@@ -505,9 +603,9 @@ function NodeInspector({ node }: { node: TopologyFlowNode | null }) {
               {(item.state === 'missing' || item.state === 'blocked') && item.targetPath && (
                 <Link
                   to={item.targetPath}
-                  className="inline-flex w-fit items-center justify-center border border-cyan-300/35 bg-cyan-300/10 px-2 py-1 text-[11px] font-semibold text-cyan-200 hover:bg-cyan-300/20"
+                  className="inline-flex w-fit items-center justify-center rounded-md border border-blue-400/[0.35] bg-blue-500/[0.12] px-2 py-1 text-[11px] font-semibold text-blue-100 hover:bg-blue-500/[0.18]"
                 >
-                  补齐能力
+                  {t('topology.inspector.completeCapability')}
                 </Link>
               )}
             </div>
@@ -515,10 +613,42 @@ function NodeInspector({ node }: { node: TopologyFlowNode | null }) {
         </div>
       </section>
 
+      {node.data.actions.length > 0 && (
+        <section className="mt-5 rounded-md border border-white/[0.1] bg-black/30 p-3">
+          <p className="telemetry-label">{t('topology.inspector.actions')}</p>
+          <div className="mt-3 space-y-2">
+            {node.data.actions.map((action) => {
+              const state = actionStates[actionStateKey(node.id, action.id)]
+              return (
+                <button
+                  key={action.id}
+                  type="button"
+                  onClick={() => onRunAction(node, action.id)}
+                  disabled={!!state || !action.enabled}
+                  className="inline-flex w-full items-center justify-between rounded-md border border-white/[0.12] px-2.5 py-2 text-xs transition hover:border-white/[0.3] hover:bg-white/[0.04] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <span className="truncate">{action.label}</span>
+                  {state === 'loading' ? (
+                    <span className="inline-block h-3 w-3 animate-spin rounded-full border border-current border-t-transparent" />
+                  ) : state === 'ok' ? (
+                    t('topology.inspector.done')
+                  ) : state === 'err' ? (
+                    t('topology.inspector.failed')
+                  ) : (
+                    <span className="font-medium text-slate-300">{t('topology.inspector.run')}</span>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+        </section>
+      )}
+
       <dl className="mt-5 space-y-3">
+        <dt className="telemetry-label">{t('topology.inspector.detail')}</dt>
         {entries.map(([key, value]) => (
           <div key={key}>
-            <dt className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">{key}</dt>
+            <dt className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">{key}</dt>
             <dd className="mt-1 break-words font-mono text-xs text-gray-700 dark:text-slate-300">
               {formatDetailValue(value)}
             </dd>
@@ -529,7 +659,7 @@ function NodeInspector({ node }: { node: TopologyFlowNode | null }) {
       {node.data.targetPath && (
         <Link
           to={node.data.targetPath}
-          className="mt-5 inline-flex w-full items-center justify-center rounded-md bg-cyan-500 px-3 py-2 text-sm font-semibold text-slate-950 hover:bg-cyan-400"
+          className="mt-5 inline-flex h-10 w-full items-center justify-center rounded-md bg-zinc-100 px-3 text-sm font-semibold text-black hover:bg-white"
         >
           {t('topology.openDetail')}
         </Link>
@@ -539,7 +669,7 @@ function NodeInspector({ node }: { node: TopologyFlowNode | null }) {
 }
 
 async function layoutGraph(graph: TopologyGraph): Promise<{ nodes: TopologyFlowNode[]; edges: TopologyFlowEdge[] }> {
-  const fallback = fallbackLayout(graph)
+  const fallback = fallbackLayout(graph, TOPOLOGY_COLUMN_GAP, TOPOLOGY_ROW_GAP)
   try {
     const elk = await getElkEngine()
     const result = await elk.layout({
@@ -547,14 +677,14 @@ async function layoutGraph(graph: TopologyGraph): Promise<{ nodes: TopologyFlowN
       layoutOptions: {
         'elk.algorithm': 'layered',
         'elk.direction': 'RIGHT',
-        'elk.spacing.nodeNode': '64',
-        'elk.layered.spacing.nodeNodeBetweenLayers': '92',
+        'elk.spacing.nodeNode': '96',
+        'elk.layered.spacing.nodeNodeBetweenLayers': '108',
         'elk.layered.nodePlacement.strategy': 'NETWORK_SIMPLEX',
       },
       children: graph.nodes.map((node) => ({
         id: node.id,
-        width: 238,
-        height: 112,
+        width: TOPOLOGY_NODE_WIDTH,
+        height: TOPOLOGY_NODE_HEIGHT,
       })),
       edges: graph.edges.map((edge) => ({
         id: edge.id,
@@ -575,7 +705,7 @@ function toFlowElements(graph: TopologyGraph, positions: Map<string, { x: number
   const nodes: TopologyFlowNode[] = graph.nodes.map((node) => ({
     id: node.id,
     type: 'topologyNode',
-    position: positions.get(node.id) ?? { x: node.column * 280, y: node.row * 136 },
+    position: positions.get(node.id) ?? { x: node.column * TOPOLOGY_COLUMN_GAP, y: node.row * TOPOLOGY_ROW_GAP },
     data: node.data,
   }))
   const edges: TopologyFlowEdge[] = graph.edges.map((edge) => ({
@@ -594,12 +724,12 @@ function toFlowElements(graph: TopologyGraph, positions: Map<string, { x: number
       strokeDasharray: edge.health === 'unknown' ? '5 5' : undefined,
     },
     labelStyle: {
-      fill: '#94a3b8',
+      fill: '#a0a0a0',
       fontSize: 11,
       fontWeight: 600,
     },
     labelBgStyle: {
-      fill: '#020617',
+      fill: '#000000',
       fillOpacity: 0.85,
     },
   }))
@@ -699,16 +829,12 @@ function summarizeTopologyGraph(graph: TopologyGraph) {
   }
 }
 
-function healthLabel(health: TopologyHealth) {
-  const labels: Record<TopologyHealth, string> = {
-    healthy: 'healthy',
-    active: 'running',
-    warning: 'attention',
-    failed: 'failed',
-    disabled: 'disabled',
-    unknown: 'unknown',
-  }
-  return labels[health]
+function kindLabel(t: TFunction, kind: TopologyKind) {
+  return t(KIND_LABEL_KEYS[kind])
+}
+
+function healthLabel(t: TFunction, health: TopologyHealth) {
+  return t(`topology.health.${health}`)
 }
 
 function skillChipClass(state: TopologySkillState) {
@@ -723,12 +849,12 @@ function skillChipClass(state: TopologySkillState) {
 
 function healthColor(health: TopologyHealth, context: 'line' | 'mini') {
   const colors: Record<TopologyHealth, string> = {
-    healthy: context === 'line' ? '#22c55e' : '#16a34a',
-    active: '#38bdf8',
-    warning: '#f59e0b',
-    failed: '#ef4444',
+    healthy: context === 'line' ? '#00ac3a' : '#009432',
+    active: '#47a8ff',
+    warning: '#ffae00',
+    failed: '#ff565f',
     disabled: '#64748b',
-    unknown: '#94a3b8',
+    unknown: '#a0a0a0',
   }
   return colors[health]
 }

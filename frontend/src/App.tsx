@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import Layout from './components/Layout'
 import { PageLoader } from './components/LoadingSpinner'
 import DashboardPage from './pages/DashboardPage'
+import SettingsPage from './pages/SettingsPage'
 import SourcesPage from './pages/SourcesPage'
 import TasksPage from './pages/TasksPage'
 import RecordsPage from './pages/RecordsPage'
@@ -17,11 +18,12 @@ const TopologyPage = lazy(() => import('./pages/TopologyPage'))
 
 export default function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
       <Routes>
         <Route path="/" element={<Layout />}>
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="dashboard" element={<DashboardPage />} />
+          <Route path="settings" element={<SettingsPage />} />
           <Route
             path="topology"
             element={

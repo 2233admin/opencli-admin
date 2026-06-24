@@ -23,17 +23,17 @@ import {
 type RangeKey = 'all' | 'today' | 'yesterday' | '7d' | '30d' | 'custom'
 
 const RANGE_LABELS: Record<RangeKey, string> = {
-  all: '全部',
-  today: '今天',
-  yesterday: '昨天',
-  '7d': '7 天内',
-  '30d': '30 天内',
-  custom: '自定义',
+  all: 'dashboard.range.all',
+  today: 'dashboard.range.today',
+  yesterday: 'dashboard.range.yesterday',
+  '7d': 'dashboard.range.7d',
+  '30d': 'dashboard.range.30d',
+  custom: 'dashboard.range.custom',
 }
 
 const TRIGGER_LABELS: Record<string, string> = {
-  manual: '手动',
-  scheduled: '定时',
+  manual: 'tasks.steps.manual',
+  scheduled: 'tasks.steps.scheduled',
   webhook: 'Webhook',
 }
 
@@ -75,13 +75,14 @@ const TONE_STYLES: Record<ToneKey, { rail: string; icon: string; dot: string }> 
 }
 
 function TimeRangeBar({
-  range, customStart, customEnd, onChange, onCustomChange,
+  range, customStart, customEnd, onChange, onCustomChange, translateRangeLabel,
 }: {
   range: RangeKey
   customStart: string
   customEnd: string
   onChange: (r: RangeKey) => void
   onCustomChange: (start: string, end: string) => void
+  translateRangeLabel: (key: string) => string
 }) {
   const keys: RangeKey[] = ['all', 'today', 'yesterday', '7d', '30d', 'custom']
   return (
@@ -94,7 +95,7 @@ function TimeRangeBar({
             onClick={() => onChange(k)}
             className="telemetry-button px-3 py-1.5 font-telemetry text-[11px] font-semibold uppercase tracking-[0.12em]"
           >
-            {RANGE_LABELS[k]}
+            {translateRangeLabel(RANGE_LABELS[k])}
           </button>
         ))}
       </div>
@@ -121,7 +122,15 @@ function TimeRangeBar({
 
 // ── Trend badge ───────────────────────────────────────────────────────────────
 
-function TrendBadge({ current, previous }: { current: number; previous: number }) {
+function TrendBadge({
+  current,
+  previous,
+  noTrendLabel,
+}: {
+  current: number
+  previous: number
+  noTrendLabel: string
+}) {
   if (previous === 0 && current === 0) return null
   const diff = current - previous
   const pct = previous > 0 ? Math.round((diff / previous) * 100) : null
@@ -145,7 +154,7 @@ function TrendBadge({ current, previous }: { current: number; previous: number }
   return (
     <span className="inline-flex items-center gap-1 font-telemetry text-[11px] font-semibold uppercase tracking-[0.1em] text-zinc-500">
       <Minus size={12} />
-      持平
+      {noTrendLabel}
     </span>
   )
 }
@@ -162,6 +171,7 @@ function StatCard({
   tone?: ToneKey
   trend?: { current: number; previous: number }
 }) {
+  const { t } = useTranslation()
   const toneStyle = TONE_STYLES[tone]
   return (
     <Card className="min-h-[138px] p-4">
@@ -182,7 +192,7 @@ function StatCard({
       </div>
       <div className="mt-4 flex flex-wrap items-center gap-2">
         {sub && <p className="text-xs text-zinc-500">{sub}</p>}
-        {trend && <TrendBadge current={trend.current} previous={trend.previous} />}
+        {trend && <TrendBadge current={trend.current} previous={trend.previous} noTrendLabel={t('dashboard.noChange')} />}
       </div>
     </Card>
   )
@@ -259,6 +269,7 @@ export default function DashboardPage() {
         customEnd={customEnd}
         onChange={setRange}
         onCustomChange={(s, e) => { setCustomStart(s); setCustomEnd(e) }}
+        translateRangeLabel={(key) => t(key)}
       />
 
       {/* Stat cards — row 1 */}
@@ -281,9 +292,12 @@ export default function DashboardPage() {
             : undefined}
         />
         <StatCard
-          label="今日执行"
+          label={t('dashboard.runsToday')}
           value={todayData?.total_runs ?? 0}
-          sub={`成功 ${todayData?.success_runs ?? 0} · 失败 ${todayData?.failed_runs ?? 0}`}
+          sub={t('dashboard.todayOutcomeSummary', {
+            success: todayData?.success_runs ?? 0,
+            failed: todayData?.failed_runs ?? 0,
+          })}
           icon={Activity}
           tone="success"
           trend={todayData && yesterdayData
@@ -302,23 +316,25 @@ export default function DashboardPage() {
       {/* Stat cards — row 2: run stats */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
         <StatCard
-          label="成功执行次数"
+          label={t('dashboard.successRuns')}
           value={runs.success}
-          sub={`共 ${runs.total} 次执行`}
+          sub={t('dashboard.totalExecutions', { count: runs.total })}
           icon={CheckCircle}
           tone="success"
         />
         <StatCard
-          label="失败执行次数"
+          label={t('dashboard.failedRuns')}
           value={runs.failed}
-          sub={`共 ${runs.total} 次执行`}
+          sub={t('dashboard.totalExecutions', { count: runs.total })}
           icon={XCircle}
           tone={runs.failed > 0 ? 'danger' : 'neutral'}
         />
         <StatCard
-          label="成功率"
+          label={t('dashboard.successRate')}
           value={`${runs.success_rate}%`}
-          sub={runs.total > 0 ? `${runs.success} / ${runs.total}` : '暂无数据'}
+          sub={runs.total > 0
+            ? t('dashboard.ratio', { numerator: runs.success, denominator: runs.total })
+            : t('dashboard.noData')}
           icon={Activity}
           tone={runs.success_rate >= 90 ? 'success' : runs.success_rate >= 70 ? 'warning' : 'danger'}
         />
@@ -332,7 +348,7 @@ export default function DashboardPage() {
           <Card padding={false}>
             <div className="border-b border-white/10 px-5 py-4">
               <p className="telemetry-label">RUNS / 7D</p>
-              <h3 className="mt-1 text-sm font-semibold text-zinc-100">7 天任务执行趋势</h3>
+      <h3 className="mt-1 text-sm font-semibold text-zinc-100">{t('dashboard.chart.title7d')}</h3>
             </div>
             <div className="p-4">
               <ResponsiveContainer width="100%" height={230}>
@@ -352,9 +368,9 @@ export default function DashboardPage() {
                   />
                   <Tooltip content={<ChartTooltip />} />
                   <Legend wrapperStyle={{ color: CHART_AXIS, fontSize: 11, paddingTop: 8 }} />
-                  <Line type="monotone" dataKey="total_runs" name="总执行" stroke={CHART_TOTAL} strokeWidth={2} dot={false} />
-                  <Line type="monotone" dataKey="success_runs" name="成功" stroke={CHART_SUCCESS} strokeWidth={2} dot={false} />
-                  <Line type="monotone" dataKey="failed_runs" name="失败" stroke={CHART_FAILED} strokeWidth={2} dot={false} />
+                  <Line type="monotone" dataKey="total_runs" name={t('dashboard.chart.total.total')} stroke={CHART_TOTAL} strokeWidth={2} dot={false} />
+                  <Line type="monotone" dataKey="success_runs" name={t('dashboard.chart.total.success')} stroke={CHART_SUCCESS} strokeWidth={2} dot={false} />
+                  <Line type="monotone" dataKey="failed_runs" name={t('dashboard.chart.total.failed')} stroke={CHART_FAILED} strokeWidth={2} dot={false} />
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -363,7 +379,7 @@ export default function DashboardPage() {
           <Card padding={false}>
             <div className="border-b border-white/10 px-5 py-4">
               <p className="telemetry-label">RECORD INTAKE</p>
-              <h3 className="mt-1 text-sm font-semibold text-zinc-100">7 天新增采集量</h3>
+              <h3 className="mt-1 text-sm font-semibold text-zinc-100">{t('dashboard.newRecords7d')}</h3>
             </div>
             <div className="p-4">
               <ResponsiveContainer width="100%" height={230}>
@@ -382,7 +398,7 @@ export default function DashboardPage() {
                     tickLine={false}
                   />
                 <Tooltip content={<ChartTooltip />} />
-                  <Bar dataKey="new_records" name="新增记录" fill={CHART_RECORDS} radius={[0, 0, 0, 0]} />
+                  <Bar dataKey="new_records" name={t('dashboard.chart.newRecords')} fill={CHART_RECORDS} radius={[0, 0, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -407,9 +423,9 @@ export default function DashboardPage() {
               <tr className="border-b border-white/10 bg-white/[0.025]">
                 <th className="px-5 py-2.5 text-left font-telemetry text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-500" style={{ width: '100px' }}>{t('common.status')}</th>
                 <th className="px-5 py-2.5 text-left font-telemetry text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-500" style={{ width: '220px' }}>{t('sources.title')}</th>
-                <th className="px-5 py-2.5 text-left font-telemetry text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-500" style={{ width: '90px' }}>触发方式</th>
+                <th className="px-5 py-2.5 text-left font-telemetry text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-500" style={{ width: '90px' }}>{t('tasks.trigger')}</th>
                 <th className="px-5 py-2.5 text-right font-telemetry text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-500" style={{ width: '80px' }}>{t('dashboard.records')}</th>
-                <th className="px-5 py-2.5 text-right font-telemetry text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-500" style={{ width: '70px' }}>耗时</th>
+                <th className="px-5 py-2.5 text-right font-telemetry text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-500" style={{ width: '70px' }}>{t('dashboard.duration')}</th>
                 <th className="px-5 py-2.5 text-right font-telemetry text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-500" style={{ width: '140px' }}>{t('common.createdAt')}</th>
               </tr>
             </thead>
@@ -428,7 +444,7 @@ export default function DashboardPage() {
                     </td>
                     <td className="overflow-hidden px-5 py-3">
                       <span className="text-xs text-zinc-500">
-                        {TRIGGER_LABELS[run.task_trigger_type] ?? run.task_trigger_type}
+                        {TRIGGER_LABELS[run.task_trigger_type] ? t(TRIGGER_LABELS[run.task_trigger_type]) : run.task_trigger_type}
                       </span>
                     </td>
                     <td className="overflow-hidden px-5 py-3 text-right text-zinc-400">{run.records_collected}</td>

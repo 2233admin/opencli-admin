@@ -1,4 +1,10 @@
 import type { CollectionTask, CronSchedule, DataSource } from '../api/types'
+import {
+  getDefaultActionIdForKind,
+  listExecutableNodeActions,
+  type NodeActionDescriptor,
+} from './nodeActions.ts'
+import { t as i18nT } from 'i18next'
 
 export const SOURCE_WORKFLOW_LAYOUT_KEY = 'opencli-admin.sourcesCanvasLayout.v1'
 
@@ -26,8 +32,20 @@ export interface WorkflowNodeData extends Record<string, unknown> {
   health: WorkflowHealth
   sourceId: string
   entityId: string
+  actions: WorkflowNodeAction[]
   badges: string[]
   detail: Record<string, unknown>
+}
+
+export interface WorkflowNodeAction {
+  id: string
+  label: string
+  description: string
+  enabled: boolean
+}
+
+function t(key: string, defaultValue: string) {
+  return i18nT(key, { defaultValue })
 }
 
 export interface WorkflowGraphNode {
@@ -140,6 +158,9 @@ export function buildCollectionWorkflow(
           `${stats.taskCount} tasks`,
           `${stats.enabledScheduleCount}/${stats.scheduleCount} plans`,
         ]),
+        actions: getActionsForKind('source', {
+          enabled: source.enabled,
+        }),
         detail: {
           id: source.id,
           channel_type: source.channel_type,
@@ -174,6 +195,7 @@ export function buildCollectionWorkflow(
             schedule.timezone,
             schedule.next_run_at ? `next ${formatShortDate(schedule.next_run_at)}` : undefined,
           ]),
+          actions: [],
           detail: {
             id: schedule.id,
             source_id: schedule.source_id,
@@ -216,6 +238,9 @@ export function buildCollectionWorkflow(
           sourceId: source.id,
           entityId: task.id,
           badges: compact([task.status, `P${task.priority}`, formatShortDate(task.updated_at)]),
+          actions: getActionsForKind('task', {
+            enabled: task.status !== 'cancelled' && source.enabled,
+          }),
           detail: {
             id: task.id,
             source_id: task.source_id,
@@ -252,6 +277,48 @@ export function buildCollectionWorkflow(
       runningTasks: input.tasks.filter((task) => sourceIds.has(task.source_id) && task.status === 'running').length,
       failedTasks: input.tasks.filter((task) => sourceIds.has(task.source_id) && isFailedTask(task)).length,
     },
+  }
+}
+
+interface SourceTaskActionContext {
+  enabled: boolean
+}
+
+function getActionsForKind(kind: WorkflowNodeKind, context: SourceTaskActionContext): WorkflowNodeAction[] {
+  const actionId = getDefaultActionIdForKind(kind)
+  if (!actionId) {
+    return []
+  }
+
+  const item = listExecutableNodeActions(kind).find((candidate) => candidate.id === actionId)
+  if (!item) {
+    return [fallbackAction(actionId, context.enabled)]
+  }
+
+  return [nodeActionFromDescriptor(item, context.enabled)]
+}
+
+function fallbackAction(actionId: string, enabled: boolean): WorkflowNodeAction {
+  return {
+    id: actionId,
+    label:
+      actionId === 'task.trigger'
+        ? t('nodeActions.task.trigger.label', '再次触发')
+        : t('nodeActions.source.trigger.label', '触发采集'),
+    description:
+      actionId === 'task.trigger'
+        ? t('nodeActions.task.trigger.description', '再次触发一次采集任务')
+        : t('nodeActions.source.trigger.description', '触发一次采集'),
+    enabled,
+  }
+}
+
+function nodeActionFromDescriptor(descriptor: NodeActionDescriptor, enabled: boolean): WorkflowNodeAction {
+  return {
+    id: descriptor.id,
+    label: descriptor.label,
+    description: descriptor.description,
+    enabled,
   }
 }
 

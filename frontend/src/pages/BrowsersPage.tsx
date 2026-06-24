@@ -15,6 +15,7 @@ import {
   getSystemConfig,
   updateSystemConfig,
   getWsAgentStatus,
+  getHealth,
 } from '../api/endpoints'
 import { PageLoader } from '../components/LoadingSpinner'
 import ErrorAlert from '../components/ErrorAlert'
@@ -779,9 +780,13 @@ export default function BrowsersPage() {
     onSuccess: () => {
       setRestartMsg(t('browsers.restarting'))
       const poll = setInterval(() => {
-        fetch('/api/v1/health').then((r) => {
-          if (r.ok) { clearInterval(poll); setRestartMsg(null); invalidatePool() }
-        }).catch(() => {})
+        getHealth()
+          .then(() => {
+            clearInterval(poll)
+            setRestartMsg(null)
+            invalidatePool()
+          })
+          .catch(() => {})
       }, 2000)
       setTimeout(() => { clearInterval(poll); setRestartMsg(null) }, 30_000)
     },

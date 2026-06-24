@@ -9,6 +9,8 @@ import type {
   NotificationRule,
   WorkerNode,
 } from '../api/types'
+import { listExecutableNodeActions } from './nodeActions.ts'
+import { t as i18nT } from 'i18next'
 
 export type TopologyKind =
   | 'source'
@@ -50,6 +52,7 @@ export interface TopologyNodeData extends Record<string, unknown> {
   health: TopologyHealth
   badges: string[]
   skills: TopologySkill[]
+  actions: TopologyNodeAction[]
   ports: TopologyPorts
   targetPath?: string
   detail: Record<string, unknown>
@@ -61,9 +64,21 @@ interface TopologyNodeBody {
   health: TopologyHealth
   badges: string[]
   skills: TopologySkill[]
+  actions?: TopologyNodeAction[]
   ports: TopologyPorts
   targetPath?: string
   detail: Record<string, unknown>
+}
+
+export interface TopologyNodeAction {
+  id: string
+  label: string
+  description: string
+  enabled: boolean
+}
+
+interface TopologyNodeActionContext {
+  enabled: boolean
 }
 
 export interface TopologyGraphNode {
@@ -128,6 +143,13 @@ const KIND_COLUMN: Record<TopologyKind, number> = {
   worker: 3,
 }
 
+function t(key: string, defaultValue: string, options: Record<string, unknown> = {}) {
+  const translated = i18nT(key, { defaultValue, ...options })
+  return typeof translated === 'string' && translated !== key && translated !== 'Error'
+    ? translated
+    : defaultValue
+}
+
 export function buildTopologyGraph(input: TopologyInput, options: TopologyOptions = {}): TopologyGraph {
   const maxRecords = options.maxRecords ?? 18
   const maxNotifications = options.maxNotifications ?? 20
@@ -153,7 +175,7 @@ export function buildTopologyGraph(input: TopologyInput, options: TopologyOption
     const column = KIND_COLUMN[kind]
     const row = rowsByColumn.get(column) ?? 0
     rowsByColumn.set(column, row + 1)
-    nodes.push({ id, column, row, data: { ...data, kind } })
+    nodes.push({ id, column, row, data: { ...data, kind, actions: data.actions ?? [] } })
     seenNodes.add(id)
     return id
   }
@@ -176,38 +198,57 @@ export function buildTopologyGraph(input: TopologyInput, options: TopologyOption
       title: source.name,
       subtitle: source.channel_type,
       health: source.enabled ? 'healthy' : 'disabled',
-      badges: compact([source.enabled ? 'enabled' : 'disabled', ...source.tags.slice(0, 2)]),
+      badges: compact([enabledLabel(source.enabled), ...source.tags.slice(0, 2)]),
       skills: [
-        skill('collect', 'Collect', source.enabled ? 'ready' : 'blocked', source.enabled ? 'Channel can be triggered' : 'Source is disabled', '/sources'),
+        skill(
+          'collect',
+          t('topology.skills.collect.label', 'Collect'),
+          source.enabled ? 'ready' : 'blocked',
+          source.enabled
+            ? t('topology.skills.collect.ready', 'Channel can be triggered')
+            : t('topology.skills.collect.blocked', 'Source is disabled'),
+          '/sources',
+        ),
         skill(
           'schedule',
-          'Schedule',
+          t('topology.skills.schedule.label', 'Schedule'),
           sourceSchedules.length > 0 ? 'ready' : 'missing',
-          sourceSchedules.length > 0 ? `${sourceSchedules.length} plan(s) attached` : 'No schedule attached',
+          sourceSchedules.length > 0
+            ? t('topology.skills.schedule.ready', '{{count}} plan(s) attached', { count: sourceSchedules.length })
+            : t('topology.skills.schedule.missing', 'No schedule attached'),
           `/schedules?source_id=${encodeURIComponent(source.id)}`,
         ),
         skill(
           'process',
-          'Process',
+          t('topology.skills.process.label', 'Process'),
           sourceTasks.some((task) => task.agent_id) ? 'ready' : 'missing',
-          sourceTasks.some((task) => task.agent_id) ? 'Recent task used an agent' : 'No agent-linked run yet',
+          sourceTasks.some((task) => task.agent_id)
+            ? t('topology.skills.process.ready', 'Recent task used an agent')
+            : t('topology.skills.process.missing', 'No agent-linked run yet'),
           '/agents',
         ),
         skill(
           'notify',
-          'Notify',
+          t('topology.skills.notify.label', 'Notify'),
           sourceRules.length > 0 ? 'ready' : 'missing',
-          sourceRules.length > 0 ? `${sourceRules.length} notification rule(s)` : 'No notification rule attached',
+          sourceRules.length > 0
+            ? t('topology.skills.notify.ready', '{{count}} notification rule(s)', { count: sourceRules.length })
+            : t('topology.skills.notify.missing', 'No notification rule attached'),
           '/notifications',
         ),
         skill(
           'records',
-          'Records',
+          t('topology.skills.records.label', 'Records'),
           sourceRecords.length > 0 ? 'ready' : 'missing',
-          sourceRecords.length > 0 ? `${sourceRecords.length} record(s) observed` : 'No records observed yet',
+          sourceRecords.length > 0
+            ? t('topology.skills.records.ready', '{{count}} record(s) observed', { count: sourceRecords.length })
+            : t('topology.skills.records.missing', 'No records observed yet'),
           '/records',
         ),
       ],
+      actions: getTopologyNodeActions('source', {
+        enabled: source.enabled,
+      }),
       ports: {
         inputs: ['topic'],
         outputs: ['collect'],
@@ -227,7 +268,7 @@ export function buildTopologyGraph(input: TopologyInput, options: TopologyOption
       subtitle: schedule.cron_expression,
       health: healthFromSchedule(schedule),
       badges: compact([
-        schedule.enabled ? 'enabled' : 'disabled',
+        enabledLabel(schedule.enabled),
         schedule.timezone,
         schedule.next_run_at ? `next ${shortDate(schedule.next_run_at)}` : undefined,
       ]),
@@ -298,6 +339,9 @@ export function buildTopologyGraph(input: TopologyInput, options: TopologyOption
         ),
         skill('priority', 'Priority', task.priority > 0 ? 'ready' : 'missing', `Priority ${task.priority}`, '/tasks'),
       ],
+      actions: getTopologyNodeActions('task', {
+        enabled: task.status !== 'failed' && task.status !== 'cancelled',
+      }),
       ports: {
         inputs: ['trigger'],
         outputs: ['enrich'],
@@ -320,7 +364,7 @@ export function buildTopologyGraph(input: TopologyInput, options: TopologyOption
       title: agent.name,
       subtitle: agent.model || agent.processor_type,
       health: agent.enabled ? 'healthy' : 'disabled',
-      badges: compact([agent.enabled ? 'enabled' : 'disabled', agent.processor_type]),
+      badges: compact([enabledLabel(agent.enabled), agent.processor_type]),
       skills: [
         skill(
           'prompt',
@@ -423,7 +467,7 @@ export function buildTopologyGraph(input: TopologyInput, options: TopologyOption
       title: rule.name,
       subtitle: rule.notifier_type,
       health: healthFromNotification(rule, ruleLogs),
-      badges: compact([rule.enabled ? 'enabled' : 'disabled', rule.trigger_event]),
+      badges: compact([enabledLabel(rule.enabled), rule.trigger_event]),
       skills: [
         skill('deliver', 'Deliver', rule.enabled ? 'ready' : 'blocked', rule.enabled ? rule.notifier_type : 'Rule is disabled', '/notifications'),
         skill(
@@ -554,6 +598,20 @@ export function buildTopologyGraph(input: TopologyInput, options: TopologyOption
   return { nodes, edges, summary }
 }
 
+function getTopologyNodeActions(kind: TopologyKind, context: TopologyNodeActionContext): TopologyNodeAction[] {
+  const actions = listExecutableNodeActions(kind)
+  if (actions.length === 0) {
+    return []
+  }
+
+  return actions.map((action) => ({
+    id: action.id,
+    label: action.label,
+    description: action.description,
+    enabled: context.enabled,
+  }))
+}
+
 export function fallbackLayout(graph: TopologyGraph, columnGap = 280, rowGap = 136) {
   return graph.nodes.map((node) => ({
     ...node,
@@ -570,6 +628,10 @@ export function nodeId(kind: TopologyKind, rawId: string) {
 
 export function shortId(value?: string | null, length = 8) {
   return value ? value.slice(0, length) : ''
+}
+
+function enabledLabel(enabled: boolean) {
+  return enabled ? t('common.enabled', 'enabled') : t('common.disabled', 'disabled')
 }
 
 function healthFromTaskStatus(status: CollectionTask['status']): TopologyHealth {

@@ -30,6 +30,10 @@ export default defineConfig({
           })
         },
       },
+      '/health': {
+        target: process.env.VITE_API_PROXY_TARGET ?? 'http://localhost:8031',
+        changeOrigin: true,
+      },
     },
   },
 })
