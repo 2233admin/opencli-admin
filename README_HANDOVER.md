@@ -5,6 +5,13 @@
 
 ---
 
+## 当前 v0.4 基线
+
+- `frontend/` 是唯一生产前端主线，使用 React + Vite。
+- `experiments/next-web/` 只是旧 `apps/web` 的 Next.js 实验壳，不参与默认 Docker、CI 或导航。
+- 默认 `docker compose up --build` 会构建仓库内的 `frontend/`。
+- 旧文档中关于 Next.js/Turborepo 的内容只作为历史迁移设想，不能作为当前实现事实。
+
 ## 🚀 快速开始
 
 ### 5 分钟了解项目
@@ -17,7 +24,7 @@ cd opencli-admin
 # 2. 查看项目结构
 cat .claude-project.md    # 项目配置
 cat PONYTAIL.md           # 开发规范摘要
-ls -la apps/ packages/ docs/
+ls -la frontend/ chrome/ backend/ docs/
 
 # 3. 启动开发环境
 docker compose --profile nas up -d
@@ -34,7 +41,7 @@ cat docs/SURVEY_superset.md # 技术选型
 cat docs/PROJECT_MANAGEMENT.md
 
 # 3. 启动前端开发
-cd apps/web && npm run dev
+cd frontend && npm ci --legacy-peer-deps && npm run dev
 
 # 4. 启动后端开发
 cd backend && ./start.sh
@@ -48,8 +55,8 @@ cd backend && ./start.sh
 
 | 模块 | 状态 | 说明 |
 |------|------|------|
-| Monorepo 结构 | ✅ | Turborepo 配置 |
-| Next.js 骨架 | ✅ | App Router |
+| Monorepo 结构 | ✅ | npm workspace + Nx wrapper |
+| Vite 前端主线 | ✅ | `frontend/` 是生产前端 |
 | Docker 支持 | ✅ | 多阶段构建 |
 | 架构文档 | ✅ | ARCHITECTURE.md v0.2.0 |
 | 调研文档 | ✅ | SURVEY_superset.md |
@@ -62,14 +69,14 @@ cd backend && ./start.sh
 
 | 模块 | 状态 | 说明 |
 |------|------|------|
-| Turborepo CI/CD | 🔄 | 需要完善 |
+| 分离式 CI/CD | 🔄 | frontend / extension / backend 独立流水线 |
 | ESLint/Prettier | 🔄 | 待配置 |
 
 ### 待开发 ⬜
 
 | 模块 | 优先级 | 说明 |
 |------|--------|------|
-| 组件迁移 | 🔴 高 | Vite SPA → Next.js |
+| 组件收敛 | 🔴 高 | 拆分 Vite SPA 页面与设计系统 |
 | Hono API | 🔴 高 | FastAPI → Hono |
 | 认证系统 | 🔴 高 | Better Auth |
 | Drizzle ORM | 🟡 中 | SQLAlchemy → Drizzle |
@@ -92,18 +99,14 @@ opencli-admin/
 └── docker-compose.yml  # Docker 部署
 ```
 
-### 目标技术栈
+### 暂停的实验方向
 
 ```
 opencli-admin/
-├── apps/
-│   ├── web/           # Next.js 15 + React 19 (新)
-│   └── api/            # Hono (新)
-├── packages/
-│   ├── shared/        # 共享类型 (新)
-│   └── db/             # Drizzle ORM (新)
-├── frontend/           # React 18 (待迁移)
-├── backend/            # FastAPI (待迁移)
+├── experiments/
+│   └── next-web/       # Next.js shell, not production
+├── frontend/           # React + Vite production frontend
+├── backend/            # FastAPI production backend
 ├── iii/               # Python 调度 (保留)
 └── odp-rs/            # Rust 数据面 (保留)
 ```
@@ -118,8 +121,8 @@ opencli-admin/
 
 ```
 opencli-admin/
-├── apps/
-│   └── web/                    # 🆕 Next.js App Router
+├── experiments/
+│   └── next-web/               # Next.js 实验壳
 │       ├── src/
 │       │   ├── app/          # App Router
 │       │   ├── components/     # 组件
@@ -130,7 +133,7 @@ opencli-admin/
 │   └── shared/                # 🆕 共享类型
 │       ├── src/
 │       └── package.json
-├── frontend/                     # 现有 Vite SPA
+├── frontend/                     # React + Vite 生产前端
 │   └── src/
 ├── backend/                     # 现有 FastAPI
 │   ├── api/v1/               # API 路由
@@ -161,7 +164,7 @@ opencli-admin/
 │   ├── workflows/ci.yml      # CI/CD
 │   └── ISSUE_TEMPLATE/       # Issue 模板
 ├── docker-compose.yml         # Docker 配置
-├── turbo.json                # Turborepo 配置
+├── nx.json                   # Nx wrapper 配置
 ├── package.json              # Workspace root
 └── PONYTAIL.md              # 开发规范摘要
 ```
@@ -188,9 +191,9 @@ cd backend
 pip install -e ".[dev]"
 uvicorn backend.main:app --reload
 
-# 前端 (Next.js)
-cd apps/web
-npm install
+# 前端 (Vite)
+cd frontend
+npm ci --legacy-peer-deps
 npm run dev
 
 # 或者用 Docker
@@ -201,7 +204,7 @@ docker compose --profile nas up -d
 
 | 服务 | 端口 | URL |
 |------|------|-----|
-| Next.js | 3000 | http://localhost:3000 |
+| Vite frontend | 8030 | http://localhost:8030 |
 | FastAPI | 8000 | http://localhost:8000 |
 | FastAPI Docs | 8000 | http://localhost:8000/docs |
 | III Engine | 49134 | ws://localhost:49134 |
@@ -255,15 +258,15 @@ docker compose --profile nas up -d
 ### 生产环境 (NAS)
 
 ```bash
-docker compose --profile nas --profile nextjs up -d
+docker compose --profile nas up --build -d
 ```
 
 ### 独立部署前端
 
 ```bash
-cd apps/web
-docker build -t opencli-admin-web .
-docker run -p 3000:3000 opencli-admin-web
+cd frontend
+docker build -t opencli-admin-frontend:local .
+docker run -p 8030:80 opencli-admin-frontend:local
 ```
 
 ---

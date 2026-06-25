@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { formatInTimeZone } from 'date-fns-tz'
 import ReactGridLayout, { useContainerWidth, type Layout } from 'react-grid-layout'
@@ -548,6 +548,13 @@ function AdaptiveRunSurface({
   warnings: TaskRunEvent[]
 }) {
   const { width, containerRef, mounted } = useContainerWidth({ initialWidth: 960 })
+  const setContainerRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      const mutableContainerRef = containerRef as { current: HTMLDivElement | null }
+      mutableContainerRef.current = node
+    },
+    [containerRef],
+  )
   const [layout, setLayout] = useState<Layout>(() => loadRunSurfaceLayout())
 
   const handleLayoutChange = (nextLayout: Layout) => {
@@ -603,7 +610,7 @@ function AdaptiveRunSurface({
 
   return (
     <>
-      <div ref={containerRef} className="hidden min-h-[680px] lg:block">
+      <div ref={setContainerRef} className="hidden min-h-[680px] lg:block">
         {mounted && width > 0 && (
           <ReactGridLayout
             className="live-run-surface-grid"

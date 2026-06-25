@@ -1,0 +1,17 @@
+title = "opencli-admin gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Ignore generated local artifacts that are not part of the repository."
+paths = [
+  '''(^|/)\.venv/''',
+  '''(^|/)venv/''',
+  '''(^|/)env/''',
+  '''(^|/)\.tmp-smoke/''',
+  '''(^|/)node_modules/''',
+  '''(^|/)frontend/node_modules/''',
+  '''(^|/)frontend/dist/''',
+  '''(^|/)chrome/extension-src/node_modules/''',
+]

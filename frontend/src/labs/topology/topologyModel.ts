@@ -8,8 +8,8 @@ import type {
   NotificationLog,
   NotificationRule,
   WorkerNode,
-} from '../api/types'
-import { listExecutableNodeActions } from './nodeActions.ts'
+} from '../../api/types'
+import { listExecutableNodeActions } from '../../lib/nodeActions.ts'
 import { t as i18nT } from 'i18next'
 
 export type TopologyKind =

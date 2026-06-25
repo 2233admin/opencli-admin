@@ -7,6 +7,13 @@
 
 ---
 
+## 当前实现基线（v0.4 前）
+
+- 生产前端主线是 `frontend/`：React + Vite + nginx Dockerfile。
+- `experiments/next-web/` 是 Next.js 实验壳，不参与默认 Docker、CI 或导航。
+- 默认 `docker-compose.yml` 会从 `./frontend` 构建前端镜像。
+- 本文后续关于 Next.js/Hono/Turborepo 的章节属于历史目标架构或迁移设想，不能覆盖当前实现事实。
+
 ## 1. 概述
 
 ### 1.1 项目定位
@@ -264,10 +271,10 @@ odp-rs/
 - PostgreSQL 写入
 - Redis Streams 缓冲
 
-### 3.4 前端 (Next.js)
+### 3.4 前端实验壳 (Next.js, 非生产主线)
 
 ```
-apps/web/
+experiments/next-web/
 ├── src/
 │   ├── app/                   # App Router
 │   │   ├── (auth)/           # 认证路由组

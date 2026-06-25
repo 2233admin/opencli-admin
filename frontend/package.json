@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "test": "node --test src/lib/*.test.ts",
+    "test": "node --test src/lib/*.test.ts src/labs/topology/*.test.ts",
     "build": "tsc -b && vite build",
     "preview": "vite preview"
   },
@@ -39,6 +39,7 @@
     "react-router-dom": "^6.28.0",
     "recharts": "^2.13.3",
     "sonner": "^1.7.0",
+    "styled-components": "^6.4.3",
     "tailwind-merge": "^2.6.1"
   },
   "devDependencies": {

@@ -1,20 +1,25 @@
-import { lazy, Suspense } from 'react'
+import { lazy, Suspense, type ReactNode } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import Layout from './components/Layout'
 import { PageLoader } from './components/LoadingSpinner'
-import DashboardPage from './pages/DashboardPage'
-import SettingsPage from './pages/SettingsPage'
-import SourcesPage from './pages/SourcesPage'
-import TasksPage from './pages/TasksPage'
-import RecordsPage from './pages/RecordsPage'
-import SchedulesPage from './pages/SchedulesPage'
-import NotificationsPage from './pages/NotificationsPage'
-import WorkersPage from './pages/WorkersPage'
-import AgentsPage from './pages/AgentsPage'
-import ProvidersPage from './pages/ProvidersPage'
-import NodesPage from './pages/NodesPage'
+import { isTopologyLabEnabled } from './labs/topology/flags'
 
-const TopologyPage = lazy(() => import('./pages/TopologyPage'))
+const DashboardPage = lazy(() => import('./pages/DashboardPage'))
+const SettingsPage = lazy(() => import('./pages/SettingsPage'))
+const SourcesPage = lazy(() => import('./pages/SourcesPage'))
+const TasksPage = lazy(() => import('./pages/TasksPage'))
+const RecordsPage = lazy(() => import('./pages/RecordsPage'))
+const SchedulesPage = lazy(() => import('./pages/SchedulesPage'))
+const NotificationsPage = lazy(() => import('./pages/NotificationsPage'))
+const WorkersPage = lazy(() => import('./pages/WorkersPage'))
+const AgentsPage = lazy(() => import('./pages/AgentsPage'))
+const ProvidersPage = lazy(() => import('./pages/ProvidersPage'))
+const NodesPage = lazy(() => import('./pages/NodesPage'))
+const TopologyPage = lazy(() => import('./labs/topology/TopologyPage'))
+
+function LazyRoute({ children }: { children: ReactNode }) {
+  return <Suspense fallback={<PageLoader />}>{children}</Suspense>
+}
 
 export default function App() {
   return (
@@ -22,26 +27,31 @@ export default function App() {
       <Routes>
         <Route path="/" element={<Layout />}>
           <Route index element={<Navigate to="/dashboard" replace />} />
-          <Route path="dashboard" element={<DashboardPage />} />
-          <Route path="settings" element={<SettingsPage />} />
+          <Route path="dashboard" element={<LazyRoute><DashboardPage /></LazyRoute>} />
+          <Route path="settings" element={<LazyRoute><SettingsPage /></LazyRoute>} />
           <Route
-            path="topology"
+            path="labs/topology"
             element={
-              <Suspense fallback={<PageLoader />}>
-                <TopologyPage />
-              </Suspense>
+              isTopologyLabEnabled ? (
+                <LazyRoute>
+                  <TopologyPage />
+                </LazyRoute>
+              ) : (
+                <Navigate to="/dashboard" replace />
+              )
             }
           />
-          <Route path="sources" element={<SourcesPage />} />
-          <Route path="tasks" element={<TasksPage />} />
-          <Route path="records" element={<RecordsPage />} />
-          <Route path="schedules" element={<SchedulesPage />} />
-          <Route path="notifications" element={<NotificationsPage />} />
-          <Route path="workers" element={<WorkersPage />} />
-          <Route path="agents" element={<AgentsPage />} />
-          <Route path="providers" element={<ProvidersPage />} />
+          <Route path="topology" element={<Navigate to={isTopologyLabEnabled ? '/labs/topology' : '/dashboard'} replace />} />
+          <Route path="sources" element={<LazyRoute><SourcesPage /></LazyRoute>} />
+          <Route path="tasks" element={<LazyRoute><TasksPage /></LazyRoute>} />
+          <Route path="records" element={<LazyRoute><RecordsPage /></LazyRoute>} />
+          <Route path="schedules" element={<LazyRoute><SchedulesPage /></LazyRoute>} />
+          <Route path="notifications" element={<LazyRoute><NotificationsPage /></LazyRoute>} />
+          <Route path="workers" element={<LazyRoute><WorkersPage /></LazyRoute>} />
+          <Route path="agents" element={<LazyRoute><AgentsPage /></LazyRoute>} />
+          <Route path="providers" element={<LazyRoute><ProvidersPage /></LazyRoute>} />
           <Route path="browsers" element={<Navigate to="/nodes" replace />} />
-          <Route path="nodes" element={<NodesPage />} />
+          <Route path="nodes" element={<LazyRoute><NodesPage /></LazyRoute>} />
         </Route>
       </Routes>
     </BrowserRouter>

@@ -12,7 +12,7 @@ import type {
   NotificationLog,
   NotificationRule,
   WorkerNode,
-} from '../api/types.ts'
+} from '../../api/types.ts'
 
 const now = '2026-06-21T08:00:00Z'
 

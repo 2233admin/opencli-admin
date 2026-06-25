@@ -3,14 +3,15 @@
 ## Source of truth
 - Status: Active
 - Last refreshed: 2026-06-25
-- Primary product surfaces: Dashboard, Topology Workbench, Source Configuration, Run Inbox, Live Collection View, Tasks, Records, Settings.
+- Primary product surfaces: Dashboard, Source Configuration, Run Inbox, Live Collection View, Tasks, Records, Settings.
+- Labs surfaces: Topology Workbench is available only behind `VITE_ENABLE_TOPOLOGY_LAB=true`.
 - Evidence reviewed:
   - `frontend/src/index.css`
   - `frontend/tailwind.config.js`
   - `frontend/src/components/opencli/OperatorCard.tsx`
   - `frontend/src/components/opencli/WorkbenchPanel.tsx`
   - `frontend/src/components/opencli/MetricTile.tsx`
-  - `frontend/src/pages/TopologyPage.tsx`
+  - `frontend/src/labs/topology/TopologyPage.tsx`
   - `frontend/src/pages/SourcesPage.tsx`
 
 ## Brand
@@ -20,7 +21,7 @@
 
 ## Product goals
 - Goals:
-  - Make Topology Workbench the core operational workspace.
+  - Keep Topology Workbench as an experimental read-only/lab surface until the core collection loop is stable.
   - Keep Source Configuration focused on source identity, parameters, schedules, and health.
   - Show live collection telemetry only when a run or pipeline needs it.
   - Reuse existing local components and proven libraries instead of creating a separate component library.
@@ -152,7 +153,7 @@
   - `react-grid-layout` owns adaptive live-run panes.
 - Test/screenshot expectations:
   - Run frontend tests and build after token/component changes.
-  - Smoke `/sources`, `/topology`, and `/tasks` when a dev server is available.
+- Smoke `/sources`, `/tasks`, and `/labs/topology` with `VITE_ENABLE_TOPOLOGY_LAB=true` when a dev server is available.
 
 ## Open questions
 - [ ] How far should Topology Workbench move toward FlowGram-style editing versus observability-first graph inspection?

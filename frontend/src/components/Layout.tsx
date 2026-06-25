@@ -28,10 +28,11 @@ import {
   applyThemePreference,
   getThemePreference,
 } from '../lib/preferences'
+import { isTopologyLabEnabled } from '../labs/topology/flags'
 
 const ROUTE_LABEL_KEYS: Record<string, string> = {
   '/dashboard': 'nav.dashboard',
-  '/topology': 'nav.topology',
+  '/labs/topology': 'nav.topology',
   '/sources': 'nav.sources',
   '/tasks': 'nav.tasks',
   '/records': 'nav.records',
@@ -117,7 +118,7 @@ export default function Layout() {
 
   const NAV_ITEMS = [
     { to: '/dashboard',      label: t('nav.dashboard'),     icon: LayoutDashboard },
-    { to: '/topology',       label: t('nav.topology'),      icon: Network },
+    ...(isTopologyLabEnabled ? [{ to: '/labs/topology', label: t('nav.topology'), icon: Network }] : []),
     { to: '/sources',        label: t('nav.sources'),       icon: Database },
     { to: '/tasks',          label: t('nav.tasks'),         icon: ListChecks },
     { to: '/records',        label: t('nav.records'),       icon: FileText },

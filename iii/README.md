@@ -115,7 +115,7 @@ Trigger functions:
 ```powershell
 ~\.local\iii\iii.exe trigger odp.ingest::health
 ~\.local\iii\iii.exe trigger discord::status
-~\.local\iii\iii.exe trigger odp.collect::discord_snapshot channel_id=195654289811570688 limit=20
+~\.local\iii\iii.exe trigger odp.collect::discord_snapshot channel_id=<DISCORD_CHANNEL_ID> limit=20
 ~\.local\iii\iii.exe trigger odp.schedule::list
 ```
 

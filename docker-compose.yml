@@ -2,7 +2,8 @@
 x-backend-common: &backend-common
   image: ${DOCKER_REGISTRY:-docker.io/}xjh1994/opencli-admin-api:${IMAGE_TAG:-0.3.6}
   env_file:
-    - .env
+    - path: .env
+      required: false
   volumes:
     - db_data:/data
     - ./backend:/app/backend
@@ -137,7 +138,6 @@ services:
   #   • macOS/Linux: open -a "Google Chrome" --args --remote-debugging-port=9222
   #   • Or start the Bridge daemon: node $(npm root -g)/@jackwener/opencli/dist/daemon.js
   agent-1:
-    container_name: agent-1
     image: ${DOCKER_REGISTRY:-docker.io/}xjh1994/opencli-admin-agent:${IMAGE_TAG:-0.3.6}${CHROME_SUFFIX:-}
     environment:
       CENTRAL_API_URL: http://api:8000
@@ -205,38 +205,16 @@ services:
 
   # ── Frontend (nginx + built React) — production ───────────────────────────
   frontend:
-    image: ${DOCKER_REGISTRY:-docker.io/}xjh1994/opencli-admin-frontend:${IMAGE_TAG:-0.3.6}
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    image: ${FRONTEND_IMAGE:-opencli-admin-frontend:local}
     ports:
       - "${FRONTEND_PORT:-8030}:80"
     depends_on:
       api:
         condition: service_healthy
     restart: unless-stopped
-
-  # ── Next.js App Router Frontend (现代化前端) ─────────────────────────────────
-  # 使用: docker compose --profile nextjs up
-  web:
-    profiles: ["nextjs"]
-    build:
-      context: ./apps/web
-      dockerfile: Dockerfile
-    ports:
-      - "${WEB_PORT:-3000}:3000"
-    environment:
-      # API 地址 (Docker 网络内)
-      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://api:8000}
-      # 可选: 自定义 API URL (浏览器访问)
-      # NEXT_PUBLIC_API_URL: http://localhost:8031
-    depends_on:
-      api:
-        condition: service_healthy
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
 
   # ── ODP data plane (Rust hot path) — docker compose --profile odp up
   odp-ingest:

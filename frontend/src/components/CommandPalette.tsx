@@ -17,6 +17,7 @@ import {
   Workflow,
   X,
 } from 'lucide-react'
+import { isTopologyLabEnabled } from '../labs/topology/flags'
 
 interface CommandAction {
   id: string
@@ -42,14 +43,18 @@ export default function CommandPalette() {
         to: '/dashboard',
         icon: Gauge,
       },
-      {
-        id: 'topology',
-        label: t('nav.topology'),
-        hint: 'node graph data flow',
-        keywords: ['topology', 'graph', 'node', 'flow', '拓扑', '节点'],
-        to: '/topology',
-        icon: Workflow,
-      },
+      ...(isTopologyLabEnabled
+        ? [
+            {
+              id: 'topology',
+              label: t('nav.topology'),
+              hint: 'node graph data flow',
+              keywords: ['topology', 'graph', 'node', 'flow', '拓扑', '节点'],
+              to: '/labs/topology',
+              icon: Workflow,
+            },
+          ]
+        : []),
       {
         id: 'records',
         label: t('nav.records'),
