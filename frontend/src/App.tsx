@@ -16,6 +16,9 @@ const AgentsPage = lazy(() => import('./pages/AgentsPage'))
 const ProvidersPage = lazy(() => import('./pages/ProvidersPage'))
 const NodesPage = lazy(() => import('./pages/NodesPage'))
 const TopologyPage = lazy(() => import('./labs/topology/TopologyPage'))
+const NetworkPage = lazy(() => import('./labs/topology/NetworkPage'))
+const NodeKitPage = lazy(() => import('./labs/topology/NodeKitPage'))
+const WorkflowPage = lazy(() => import('./labs/topology/workflow/WorkflowPage'))
 
 function LazyRoute({ children }: { children: ReactNode }) {
   return <Suspense fallback={<PageLoader />}>{children}</Suspense>
@@ -26,11 +29,48 @@ export default function App() {
     <BrowserRouter future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
       <Routes>
         <Route path="/" element={<Layout />}>
-          <Route index element={<Navigate to="/dashboard" replace />} />
+          <Route index element={<Navigate to={isTopologyLabEnabled ? '/labs/topology' : '/dashboard'} replace />} />
           <Route path="dashboard" element={<LazyRoute><DashboardPage /></LazyRoute>} />
           <Route path="settings" element={<LazyRoute><SettingsPage /></LazyRoute>} />
           <Route
             path="labs/topology"
+            element={
+              isTopologyLabEnabled ? (
+                <LazyRoute>
+                  <NetworkPage />
+                </LazyRoute>
+              ) : (
+                <Navigate to="/dashboard" replace />
+              )
+            }
+          />
+          <Route
+            path="labs/node-kit"
+            element={
+              isTopologyLabEnabled ? (
+                <LazyRoute>
+                  <NodeKitPage />
+                </LazyRoute>
+              ) : (
+                <Navigate to="/dashboard" replace />
+              )
+            }
+          />
+          <Route
+            path="labs/topology-editor"
+            element={
+              isTopologyLabEnabled ? (
+                <LazyRoute>
+                  <WorkflowPage />
+                </LazyRoute>
+              ) : (
+                <Navigate to="/dashboard" replace />
+              )
+            }
+          />
+          <Route path="labs/workflow" element={<Navigate to={isTopologyLabEnabled ? '/labs/topology-editor' : '/dashboard'} replace />} />
+          <Route
+            path="labs/topology-legacy"
             element={
               isTopologyLabEnabled ? (
                 <LazyRoute>

@@ -35,6 +35,38 @@
   animation: fadeSlideIn 0.2s ease-out;
 }
 
+/* ── M3 motion: emphasized easing + standard durations ──────────────── */
+:root {
+  --m3-ease-emphasized: cubic-bezier(0.2, 0, 0, 1);
+  --m3-ease-decel: cubic-bezier(0.05, 0.7, 0.1, 1);   /* enter */
+  --m3-ease-accel: cubic-bezier(0.3, 0, 0.8, 0.15);   /* exit */
+  --m3-dur-short: 200ms;
+  --m3-dur-medium: 300ms;
+  --m3-dur-long: 450ms;
+}
+@keyframes m3SheetIn {
+  from { opacity: 0; transform: translateX(28px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes m3LevelIn {
+  from { opacity: 0; transform: scale(0.985); }
+  to   { opacity: 1; transform: scale(1); }
+}
+.m3-sheet-in { animation: m3SheetIn var(--m3-dur-medium) var(--m3-ease-decel) both; }
+.m3-level-in { animation: m3LevelIn var(--m3-dur-long) var(--m3-ease-decel) both; }
+
+/* node-kit: collision feedback (xyflow getIntersectingNodes) */
+@keyframes kitCollide {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-2px); }
+  75% { transform: translateX(2px); }
+}
+.react-flow__node.kit-collide { animation: kitCollide 0.16s ease-in-out infinite; }
+.react-flow__node.kit-collide > div {
+  box-shadow: 0 0 0 2px rgba(244, 63, 94, 0.85), 0 0 18px rgba(244, 63, 94, 0.35);
+  border-radius: 10px;
+}
+
 @layer base {
   :root {
     --background: 210 10% 3%;
@@ -78,6 +110,68 @@
     --font-ui: 'Source Han Sans Local', 'Geist', 'Geist Sans', 'Source Han Sans CN', 'Source Han Sans SC', 'Noto Sans SC', 'Noto Sans CJK SC', 'Microsoft YaHei UI', 'Microsoft YaHei', 'PingFang SC', 'Hiragino Sans GB', system-ui, sans-serif;
     --font-telemetry: 'ToaHI Local', 'Geist Mono', 'ToaHI-Rg', 'ToaHI Rg', 'Source Han Sans Local', 'Source Han Sans CN', 'Noto Sans SC', 'Microsoft YaHei UI', system-ui, sans-serif;
     --font-code: 'ToaHI Local', 'Geist Mono', 'ToaHI-Rg', 'ToaHI Rg', 'Cascadia Mono', 'SFMono-Regular', 'JetBrains Mono', ui-monospace, monospace;
+  }
+
+  /* ── Design skins (data-skin on <html>) ─────────────────────────── */
+  [data-skin='spacex'] {
+    --primary: 0 0% 82%;
+    --primary-foreground: 0 0% 8%;
+    --accent: 0 0% 82%;
+    --accent-foreground: 0 0% 8%;
+    --ring: 0 0% 72%;
+    --radius: 0;
+    --oc-bg: #000000;
+    --oc-surface: #050505;
+    --oc-surface-raised: #0c0c0c;
+    --oc-line: rgba(255, 255, 255, 0.14);
+    --oc-line-strong: rgba(255, 255, 255, 0.28);
+    --oc-line-hot: rgba(255, 255, 255, 0.55);
+    --oc-primary: #e4e4e7;
+    --oc-info: #d4d4d8;
+  }
+
+  [data-skin='nvidia'] {
+    --primary: 82 100% 36%;
+    --primary-foreground: 0 0% 5%;
+    --accent: 82 100% 40%;
+    --accent-foreground: 0 0% 5%;
+    --ring: 82 100% 40%;
+    --oc-bg: #080b06;
+    --oc-surface: #0d1109;
+    --oc-surface-raised: #12170c;
+    --oc-line: rgba(118, 185, 0, 0.16);
+    --oc-line-strong: rgba(118, 185, 0, 0.32);
+    --oc-line-hot: rgba(118, 185, 0, 0.55);
+    --oc-primary: #76b900;
+    --oc-info: #8fd400;
+    --oc-success: #76b900;
+  }
+
+  [data-skin='binance'] {
+    --primary: 45 91% 49%;
+    --primary-foreground: 0 0% 6%;
+    --accent: 45 91% 52%;
+    --accent-foreground: 0 0% 6%;
+    --ring: 45 91% 50%;
+    --oc-bg: #0b0e11;
+    --oc-surface: #12161b;
+    --oc-surface-raised: #181d23;
+    --oc-line: rgba(240, 185, 11, 0.16);
+    --oc-line-strong: rgba(240, 185, 11, 0.3);
+    --oc-line-hot: rgba(240, 185, 11, 0.5);
+    --oc-primary: #f0b90b;
+    --oc-gold: #f0b90b;
+    --oc-info: #f0b90b;
+  }
+
+  [data-skin='spacex'] body {
+    background: #000000;
+  }
+  [data-skin='nvidia'] body {
+    background: #080b06;
+  }
+  [data-skin='binance'] body {
+    background: #0b0e11;
   }
 
   .dark {
@@ -282,6 +376,56 @@ opacity: 1;
 .live-run-surface-grid .react-resizable-handle::after {
 border-color: rgba(161, 161, 170, 0.72);
 }
+}
+
+/* React Flow dark theme — UNLAYERED + specificity to beat react-flow's own style.css */
+.react-flow .react-flow__controls {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  overflow: hidden;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+
+.react-flow .react-flow__controls-button {
+  background: rgba(14, 14, 18, 0.96);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  fill: #d4d4d8;
+  color: #d4d4d8;
+  width: 26px;
+  height: 26px;
+}
+
+.react-flow .react-flow__controls-button:hover {
+  background: rgba(40, 40, 48, 0.96);
+}
+
+.react-flow .react-flow__controls-button svg {
+  fill: currentColor;
+}
+
+.react-flow .react-flow__minimap {
+  background: rgba(8, 8, 11, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+}
+
+.react-flow .react-flow__minimap-mask {
+  fill: rgba(6, 6, 8, 0.7);
+}
+
+.react-flow .react-flow__edge-text {
+  fill: #a1a1aa;
+  font-family: var(--font-code);
+  font-size: 10px;
+}
+
+.react-flow .react-flow__edge-textbg {
+  fill: #050505;
+  fill-opacity: 0.85;
+}
+
+.react-flow .react-flow__attribution {
+  display: none;
 }
 
 @media (prefers-reduced-motion: reduce) {

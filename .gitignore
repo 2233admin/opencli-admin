@@ -75,3 +75,4 @@ chrome/extension-src/store-assets/
 
 # Rust build
 odp-rs/target/
+.gstack/

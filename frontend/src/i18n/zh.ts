@@ -3,6 +3,8 @@ const zh = {
     home: '首页',
     dashboard: '仪表盘',
     topology: '拓扑工作台',
+    workspace: '采集网络',
+    advanced: '高级 · 原始数据',
     sources: '数据源',
     tasks: '任务',
     records: '采集记录',

@@ -139,8 +139,8 @@ const KIND_COLUMN: Record<TopologyKind, number> = {
   agent: 3,
   record: 4,
   notification: 5,
-  'edge-node': 2,
-  worker: 3,
+  'edge-node': 6,
+  worker: 6,
 }
 
 function t(key: string, defaultValue: string, options: Record<string, unknown> = {}) {
@@ -356,7 +356,14 @@ export function buildTopologyGraph(input: TopologyInput, options: TopologyOption
         error: task.error_message,
       },
     })
-    addEdge(nodeId('source', task.source_id), taskNode, 'triggers', healthFromTaskStatus(task.status))
+    const sourceSchedules = schedulesBySource.get(task.source_id) ?? []
+    if (task.trigger_type === 'scheduled' && sourceSchedules.length > 0) {
+      for (const schedule of sourceSchedules) {
+        addEdge(nodeId('schedule', schedule.id), taskNode, 'triggers', healthFromTaskStatus(task.status))
+      }
+    } else {
+      addEdge(nodeId('source', task.source_id), taskNode, 'manual', healthFromTaskStatus(task.status))
+    }
   }
 
   for (const agent of input.agents) {
@@ -455,7 +462,6 @@ export function buildTopologyGraph(input: TopologyInput, options: TopologyOption
       },
     })
     addEdge(nodeId('task', record.task_id), recordNode, 'writes', healthFromRecordStatus(record.status))
-    addEdge(nodeId('source', record.source_id), recordNode, 'collects', healthFromRecordStatus(record.status))
   }
 
   for (const rule of input.notificationRules.slice(0, maxNotifications)) {

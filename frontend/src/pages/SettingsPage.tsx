@@ -18,10 +18,15 @@ import {
   setThemePreference,
   ThemeMode,
   UiDensity,
+  SkinId,
   applyThemePreference,
   applyDensityPreference,
+  applySkinPreference,
+  getSkinPreference,
+  setSkinPreference,
   DEFAULT_THEME,
   DEFAULT_DENSITY,
+  DEFAULT_SKIN,
   LANGUAGE_DEFAULT,
 } from '../lib/preferences'
 import { getEnabledLocales } from '../i18n/locales'
@@ -33,6 +38,13 @@ const DENSITY_OPTIONS = [
   { value: 'spacious' as const, token: 'settings.density.spacious' },
 ] as const
 
+const SKIN_OPTIONS: Array<{ value: SkinId; label: string; desc: string; accent: string; bg: string }> = [
+  { value: 'default', label: 'OpenCLI', desc: '默认蓝 · 工程暗色', accent: '#2f7df6', bg: '#050708' },
+  { value: 'spacex', label: 'SpaceX', desc: '纯黑极简 · 银白直角', accent: '#e4e4e7', bg: '#000000' },
+  { value: 'nvidia', label: 'NVIDIA', desc: '黑绿科技 · 信号绿', accent: '#76b900', bg: '#080b06' },
+  { value: 'binance', label: 'Binance', desc: '黑金交易 · 币安金', accent: '#f0b90b', bg: '#0b0e11' },
+]
+
 export default function SettingsPage() {
   const { t, i18n } = useTranslation()
   const qc = useQueryClient()
@@ -41,6 +53,7 @@ export default function SettingsPage() {
   const [language, setLanguage] = useState<string>(getLanguagePreference())
   const [theme, setTheme] = useState<ThemeMode>(getThemePreference())
   const [density, setDensity] = useState<UiDensity>(getDensityPreference())
+  const [skin, setSkin] = useState<SkinId>(getSkinPreference())
   const [conversationInput, setConversationInput] = useState('')
   const [conversationFeedback, setConversationFeedback] = useState('')
   const [conversationStatus, setConversationStatus] = useState<'idle' | 'loading' | 'ok' | 'err'>('idle')
@@ -97,14 +110,22 @@ export default function SettingsPage() {
     applyDensityPreference(next)
   }
 
+  const onSkinChange = (next: SkinId) => {
+    setSkin(next)
+    setSkinPreference(next)
+    applySkinPreference(next)
+  }
+
   const onResetPreferences = () => {
     clearStoredPreferences()
     setLanguage(LANGUAGE_DEFAULT)
     setTheme(DEFAULT_THEME)
     setDensity(DEFAULT_DENSITY)
+    setSkin(DEFAULT_SKIN)
     i18n.changeLanguage(LANGUAGE_DEFAULT)
     applyThemePreference(DEFAULT_THEME)
     applyDensityPreference(DEFAULT_DENSITY)
+    applySkinPreference(DEFAULT_SKIN)
   }
 
   useEffect(() => {
@@ -112,6 +133,7 @@ export default function SettingsPage() {
       setLanguage(getLanguagePreference())
       setTheme(getThemePreference())
       setDensity(getDensityPreference())
+      setSkin(getSkinPreference())
     }
 
     syncFromStorage()
@@ -200,6 +222,35 @@ export default function SettingsPage() {
               >
                 <Palette size={16} />
                 {t(item.token)}
+              </button>
+            ))}
+          </div>
+        </Card>
+
+        <Card className="space-y-4">
+          <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-zinc-100">设计风格</h2>
+          <p className="text-sm text-zinc-400">切换整站配色皮肤，画布与控制台同步换肤。</p>
+          <div className="grid grid-cols-2 gap-2">
+            {SKIN_OPTIONS.map((item) => (
+              <button
+                key={item.value}
+                onClick={() => onSkinChange(item.value)}
+                className={`flex items-center gap-3 rounded border px-3 py-2.5 text-left transition ${
+                  skin === item.value
+                    ? 'border-primary-400/80 bg-primary-500/15'
+                    : 'border-white/10 hover:border-white/25 hover:bg-white/[0.03]'
+                }`}
+              >
+                <span
+                  className="grid h-9 w-9 shrink-0 place-items-center rounded border border-white/15"
+                  style={{ background: item.bg }}
+                >
+                  <span className="h-4 w-4 rounded-full" style={{ background: item.accent }} />
+                </span>
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-semibold text-zinc-100">{item.label}</span>
+                  <span className="block truncate text-xs text-zinc-500">{item.desc}</span>
+                </span>
               </button>
             ))}
           </div>

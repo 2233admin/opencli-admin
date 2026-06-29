@@ -17,8 +17,11 @@ import {
   KeyRound,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   Home,
   Settings,
+  SlidersHorizontal,
+  Blocks,
 } from 'lucide-react'
 import { clsx } from 'clsx'
 import { getDashboardStats } from '../api/endpoints'
@@ -70,6 +73,7 @@ export default function Layout() {
   const location = useLocation()
   const navigate = useNavigate()
   const [collapsed, setCollapsed] = useState(false)
+  const [advancedOpen, setAdvancedOpen] = useState(false)
   const [dark, setDark] = useState(() => getThemePreference() === 'dark')
   const [isNarrow, setIsNarrow] = useState(() =>
     typeof window !== 'undefined' ? window.matchMedia('(max-width: 767px)').matches : false
@@ -116,19 +120,97 @@ export default function Layout() {
 
   const sidebarCollapsed = collapsed || isNarrow
 
-  const NAV_ITEMS = [
-    { to: '/dashboard',      label: t('nav.dashboard'),     icon: LayoutDashboard },
-    ...(isTopologyLabEnabled ? [{ to: '/labs/topology', label: t('nav.topology'), icon: Network }] : []),
-    { to: '/sources',        label: t('nav.sources'),       icon: Database },
-    { to: '/tasks',          label: t('nav.tasks'),         icon: ListChecks },
-    { to: '/records',        label: t('nav.records'),       icon: FileText },
-    { to: '/schedules',      label: t('nav.schedules'),     icon: Clock },
-    { to: '/agents',         label: t('nav.agents'),        icon: Bot },
-    { to: '/providers',      label: t('nav.providers'),     icon: KeyRound },
-    { to: '/nodes',          label: t('nav.browsers'),      icon: Chrome },
-    { to: '/notifications',  label: t('nav.notifications'), icon: Bell },
-    { to: '/workers',        label: t('nav.workers'),       icon: Server },
+  type NavItem = { to: string; label: string; icon: typeof Database; stage?: string }
+  type NavGroup = { label: string | null; items: NavItem[] }
+
+  const PIPELINE_GROUP: NavGroup = {
+    label: '采集管线',
+    items: [
+      { to: '/sources',       label: t('nav.sources'),       icon: Database,  stage: 'IN' },
+      { to: '/schedules',     label: t('nav.schedules'),     icon: Clock,     stage: 'TR' },
+      { to: '/tasks',         label: t('nav.tasks'),         icon: ListChecks, stage: 'EX' },
+      { to: '/agents',        label: t('nav.agents'),        icon: Bot,       stage: 'PR' },
+      { to: '/records',       label: t('nav.records'),       icon: FileText,  stage: 'DB' },
+      { to: '/notifications', label: t('nav.notifications'), icon: Bell,      stage: 'OUT' },
+    ],
+  }
+  const INFRA_GROUP: NavGroup = {
+    label: '基础设施',
+    items: [
+      { to: '/nodes',     label: t('nav.browsers'),  icon: Chrome },
+      { to: '/workers',   label: t('nav.workers'),   icon: Server },
+      { to: '/providers', label: t('nav.providers'), icon: KeyRound },
+    ],
+  }
+
+  // Folded IA (new design philosophy): the canvas + agent dock are HOME; the
+  // 11 CRUD admin pages are demoted into a collapsible "advanced / raw data"
+  // drawer. Day-to-day = look at the graph, talk to the agent. Routes kept.
+  const PRIMARY_ITEMS: NavItem[] = [
+    { to: '/labs/topology', label: t('nav.workspace'), icon: Network },
+    { to: '/labs/node-kit', label: '节点工作台', icon: Blocks },
+    { to: '/dashboard',     label: t('nav.dashboard'), icon: LayoutDashboard },
   ]
+  const ADVANCED_GROUPS: NavGroup[] = [PIPELINE_GROUP, INFRA_GROUP]
+
+  // Legacy IA (topology lab off): original flat 3-group nav, unchanged.
+  const NAV_GROUPS: NavGroup[] = [
+    {
+      label: null,
+      items: [{ to: '/dashboard', label: t('nav.dashboard'), icon: LayoutDashboard }],
+    },
+    PIPELINE_GROUP,
+    INFRA_GROUP,
+  ]
+
+  const renderNavItem = ({ to, label, icon: Icon, stage }: NavItem) => {
+    const showBadge = to === '/tasks' && failedCount > 0
+    return (
+      <NavLink
+        key={to}
+        to={to}
+        className={({ isActive }) =>
+          clsx(
+            'group flex items-center gap-3 border border-transparent px-3 py-2 text-sm transition-colors',
+            isActive
+              ? 'border-primary-500/45 bg-primary-500/10 text-white'
+              : 'text-zinc-500 hover:border-white/10 hover:bg-white/[0.04] hover:text-zinc-100'
+          )
+        }
+        title={sidebarCollapsed ? label : undefined}
+      >
+        <Icon size={18} className="shrink-0" />
+        {!sidebarCollapsed && (
+          <span className="flex flex-1 items-center justify-between gap-2">
+            <span className="truncate">{label}</span>
+            {showBadge ? (
+              <span className="flex h-[18px] min-w-[18px] items-center justify-center border border-primary-500/50 bg-primary-500/20 px-1.5 text-center text-[10px] leading-[18px] text-primary-100">
+                {failedCount}
+              </span>
+            ) : stage ? (
+              <span className="shrink-0 font-code text-[9px] tracking-wider text-zinc-600 group-hover:text-zinc-400">
+                {stage}
+              </span>
+            ) : null}
+          </span>
+        )}
+      </NavLink>
+    )
+  }
+
+  const renderNavGroup = (group: NavGroup, groupIndex: number) => (
+    <div key={group.label ?? `group-${groupIndex}`} className="space-y-1">
+      {group.label && !sidebarCollapsed && (
+        <p className="px-3 pb-1 pt-2 font-telemetry text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-600">
+          {group.label}
+        </p>
+      )}
+      {group.label && sidebarCollapsed && (
+        <div className="mx-3 my-2 border-t border-white/[0.06]" />
+      )}
+      {group.items.map(renderNavItem)}
+    </div>
+  )
 
   return (
     <div className={clsx('flex h-screen overflow-hidden bg-[#070809] text-zinc-100', dark && 'dark')}>
@@ -157,39 +239,45 @@ export default function Layout() {
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 space-y-1 px-2 py-4">
-          {NAV_ITEMS.map(({ to, label, icon: Icon }) => {
-            const isTasksItem = to === '/tasks'
-            const showBadge = isTasksItem && failedCount > 0
+        <nav className="flex-1 space-y-3 overflow-y-auto px-2 py-4">
+          {isTopologyLabEnabled ? (
+            <>
+              {/* Primary: canvas + dock are home */}
+              <div className="space-y-1">{PRIMARY_ITEMS.map(renderNavItem)}</div>
 
-            return (
-              <NavLink
-                key={to}
-                to={to}
-                className={({ isActive }) =>
-                  clsx(
-                    'group flex items-center gap-3 border border-transparent px-3 py-2 text-sm transition-colors',
-                    isActive
-                      ? 'border-primary-500/45 bg-primary-500/10 text-white'
+              {/* Advanced drawer: the 11 CRUD admin pages, collapsed by default */}
+              <div className="space-y-1">
+                {!sidebarCollapsed && <div className="mx-3 my-2 border-t border-white/[0.06]" />}
+                <button
+                  onClick={() => setAdvancedOpen((o) => !o)}
+                  className={clsx(
+                    'group flex w-full items-center gap-3 border border-transparent px-3 py-2 text-sm transition-colors',
+                    advancedOpen
+                      ? 'text-zinc-300'
                       : 'text-zinc-500 hover:border-white/10 hover:bg-white/[0.04] hover:text-zinc-100'
-                  )
-                }
-                title={sidebarCollapsed ? label : undefined}
-              >
-                <Icon size={18} className="shrink-0" />
-                {!sidebarCollapsed && (
-                  <span className="flex-1 flex items-center justify-between">
-                    <span className="truncate">{label}</span>
-                    {showBadge && (
-                      <span className="flex h-[18px] min-w-[18px] items-center justify-center border border-primary-500/50 bg-primary-500/20 px-1.5 text-center text-[10px] leading-[18px] text-primary-100">
-                        {failedCount}
+                  )}
+                  title={sidebarCollapsed ? t('nav.advanced') : undefined}
+                >
+                  <SlidersHorizontal size={18} className="shrink-0" />
+                  {!sidebarCollapsed && (
+                    <span className="flex flex-1 items-center justify-between gap-2">
+                      <span className="truncate font-telemetry text-[11px] font-semibold uppercase tracking-[0.14em]">
+                        {t('nav.advanced')}
                       </span>
-                    )}
-                  </span>
-                )}
-              </NavLink>
-            )
-          })}
+                      {advancedOpen ? (
+                        <ChevronDown size={14} className="shrink-0" />
+                      ) : (
+                        <ChevronRight size={14} className="shrink-0" />
+                      )}
+                    </span>
+                  )}
+                </button>
+                {advancedOpen && ADVANCED_GROUPS.map(renderNavGroup)}
+              </div>
+            </>
+          ) : (
+            NAV_GROUPS.map(renderNavGroup)
+          )}
         </nav>
 
         {/* Bottom controls */}

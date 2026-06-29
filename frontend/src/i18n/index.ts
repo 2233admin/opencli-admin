@@ -1,7 +1,14 @@
 import i18n from 'i18next'
 import { initReactI18next } from 'react-i18next'
 import { DEFAULT_LOCALE, LOCALE_KEY, i18nInitOptions } from './locales'
-import { getThemePreference, applyThemePreference } from '../lib/preferences'
+import {
+  getThemePreference,
+  applyThemePreference,
+  getSkinPreference,
+  applySkinPreference,
+  getDensityPreference,
+  applyDensityPreference,
+} from '../lib/preferences'
 
 const savedLanguage = (() => {
   try {
@@ -15,6 +22,8 @@ i18n.use(initReactI18next).init(i18nInitOptions(savedLanguage))
 
 if (typeof document !== 'undefined') {
   applyThemePreference(getThemePreference())
+  applySkinPreference(getSkinPreference())
+  applyDensityPreference(getDensityPreference())
 }
 
 export { LOCALE_KEY, DEFAULT_LOCALE }

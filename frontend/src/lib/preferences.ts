@@ -1,17 +1,22 @@
 export type ThemeMode = 'light' | 'dark'
 export type UiDensity = 'compact' | 'comfortable' | 'spacious'
+export type SkinId = 'default' | 'spacex' | 'nvidia' | 'binance'
+
+export const SKIN_IDS: SkinId[] = ['default', 'spacex', 'nvidia', 'binance']
 
 export const SETTINGS_EVENT = 'opencli:settings-changed'
 export const THEME_KEY = 'theme'
 export const DENSITY_KEY = 'uiDensity'
+export const SKIN_KEY = 'uiSkin'
 export const LANGUAGE_KEY = 'lang'
 export const LANGUAGE_DEFAULT = 'zh'
 export const DEFAULT_THEME: ThemeMode = 'dark'
 export const DEFAULT_DENSITY: UiDensity = 'comfortable'
+export const DEFAULT_SKIN: SkinId = 'default'
 
-const STORAGE_KEYS = [THEME_KEY, DENSITY_KEY, LANGUAGE_KEY] as const
+const STORAGE_KEYS = [THEME_KEY, DENSITY_KEY, SKIN_KEY, LANGUAGE_KEY] as const
 
-type PreferenceKey = 'lang' | 'theme' | 'uiDensity'
+type PreferenceKey = 'lang' | 'theme' | 'uiDensity' | 'uiSkin'
 
 interface PreferenceChange {
   key: PreferenceKey
@@ -58,6 +63,11 @@ export function getDensityPreference(): UiDensity {
     : DEFAULT_DENSITY
 }
 
+export function getSkinPreference(): SkinId {
+  const raw = safeGetItem(SKIN_KEY)
+  return raw && (SKIN_IDS as string[]).includes(raw) ? (raw as SkinId) : DEFAULT_SKIN
+}
+
 export function getLanguagePreference(): string {
   return safeGetItem(LANGUAGE_KEY) ?? LANGUAGE_DEFAULT
 }
@@ -70,6 +80,11 @@ export function setThemePreference(theme: ThemeMode) {
 export function setDensityPreference(density: UiDensity) {
   safeSetItem(DENSITY_KEY, density)
   emitChanges([{ key: 'uiDensity', value: density }])
+}
+
+export function setSkinPreference(skin: SkinId) {
+  safeSetItem(SKIN_KEY, skin)
+  emitChanges([{ key: 'uiSkin', value: skin }])
 }
 
 export function setLanguagePreference(lang: string) {
@@ -104,4 +119,11 @@ export function applyDensityPreference(density: UiDensity) {
   }
   const attr = document.documentElement
   attr.setAttribute('data-ui-density', density)
+}
+
+export function applySkinPreference(skin: SkinId) {
+  if (typeof document === 'undefined') {
+    return
+  }
+  document.documentElement.setAttribute('data-skin', skin)
 }

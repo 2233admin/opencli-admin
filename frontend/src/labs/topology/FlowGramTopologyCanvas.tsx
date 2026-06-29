@@ -18,6 +18,7 @@ interface FlowGramTopologyCanvasProps {
   edges: Array<Edge<{ health: TopologyHealth }>>
   selectedNodeId: string | null
   onSelectNode: (nodeId: string) => void
+  onNodeDoubleClick?: (nodeId: string) => void
 }
 
 interface FlowGramNodeData {
@@ -28,7 +29,7 @@ interface FlowGramNodeData {
 const FLOWGRAM_NODE_WIDTH = 272
 const FLOWGRAM_NODE_HEIGHT = 190
 const FLOWGRAM_CANVAS_PADDING = 20
-const FLOWGRAM_POSITION_SCALE = 0.86
+const FLOWGRAM_POSITION_SCALE = 0.72
 
 function compactCanvasPosition(position: { x: number; y: number }, origin: { x: number; y: number }) {
   return {
@@ -41,10 +42,12 @@ function FlowGramTopologyNode({
   node,
   selectedNodeId,
   onSelectNode,
+  onNodeDoubleClick,
 }: {
   node: WorkflowNodeEntity
   selectedNodeId: string | null
   onSelectNode: (nodeId: string) => void
+  onNodeDoubleClick?: (nodeId: string) => void
 }) {
   const { data: rawData } = useNodeRender(node)
   const data = rawData as FlowGramNodeData | undefined
@@ -52,6 +55,7 @@ function FlowGramTopologyNode({
 
   const { nodeId, topology } = data
   const selected = nodeId === selectedNodeId
+  const isProject = readDetailString(topology.detail, 'kind', '') === 'project'
   const status = readDetailString(topology.detail, 'current_status', topology.health)
   const gap = readDetailString(topology.detail, 'capability_gap', '暂无能力缺口')
   const responsibility = readDetailString(topology.detail, 'responsibility', topology.subtitle)
@@ -71,8 +75,9 @@ function FlowGramTopologyNode({
       <button
         type="button"
         onClick={() => onSelectNode(nodeId)}
+        onDoubleClick={() => onNodeDoubleClick?.(nodeId)}
         className={[
-          'block min-h-[190px] w-[272px] rounded-md border bg-[#0a0a0a] px-3 py-3 text-left shadow-[0_1px_2px_rgba(0,0,0,0.16)] transition',
+          'block min-h-[190px] w-[272px] rounded-md border bg-[#0a0a0a] px-3 py-3 text-left shadow-[0_1px_2px_rgba(0,0,0,0.16)] transition duration-200 ease-[var(--m3-ease-emphasized)] hover:border-white/[0.22] active:scale-[0.99]',
           selected ? 'border-blue-500 ring-2 ring-blue-500/[0.25]' : 'border-white/[0.12]',
         ].join(' ')}
       >
@@ -99,7 +104,22 @@ function FlowGramTopologyNode({
         <div className="mt-3 grid gap-1.5 text-[10px] leading-4">
           <NodeFact label="状态" value={status} />
           <NodeFact label="缺口" value={gap} tone={missingCount > 0 ? 'warning' : 'neutral'} />
-          <NodeFact label="动作" value={actionLabel} tone="action" />
+          {isProject ? (
+            <span
+              role="button"
+              tabIndex={0}
+              onClick={(e) => {
+                e.stopPropagation()
+                onNodeDoubleClick?.(nodeId)
+              }}
+              className="flex items-center justify-between gap-2 border border-sky-500/40 bg-sky-500/[0.12] px-2 py-1 font-medium text-sky-100 transition hover:bg-sky-500/20"
+            >
+              <span>进入子网</span>
+              <span aria-hidden className="text-sky-300">›</span>
+            </span>
+          ) : (
+            <NodeFact label="动作" value={actionLabel} tone="action" />
+          )}
         </div>
 
         <div className="mt-3 flex flex-wrap gap-1.5">
@@ -149,6 +169,7 @@ export function FlowGramTopologyCanvas({
   edges,
   selectedNodeId,
   onSelectNode,
+  onNodeDoubleClick,
 }: FlowGramTopologyCanvasProps) {
   const compactedNodes = useMemo(() => {
     if (nodes.length === 0) return []
@@ -236,11 +257,16 @@ export function FlowGramTopologyCanvas({
       renderDefaultNode: () => null,
       renderNodes: {
         'topology-node': ({ node }: { node: WorkflowNodeEntity }) => (
-          <FlowGramTopologyNode node={node} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} />
+          <FlowGramTopologyNode
+            node={node}
+            selectedNodeId={selectedNodeId}
+            onSelectNode={onSelectNode}
+            onNodeDoubleClick={onNodeDoubleClick}
+          />
         ),
       },
     }),
-    [onSelectNode, selectedNodeId],
+    [onNodeDoubleClick, onSelectNode, selectedNodeId],
   )
 
   return (
@@ -250,7 +276,7 @@ export function FlowGramTopologyCanvas({
       initialData={initialData}
       nodeRegistries={nodeRegistries}
       materials={materials}
-      playground={{ autoResize: true }}
+      playground={{ autoResize: true, autoFit: true }}
     >
       <div className="h-full w-full [&_.gedit-playground]:bg-black">
         <EditorRenderer className="h-full w-full" />

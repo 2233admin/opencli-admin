@@ -10,6 +10,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/utilities": "^3.2.2",
     "@flowgram.ai/editor": "1.0.11",
     "@flowgram.ai/fixed-layout-editor": "1.0.11",
     "@flowgram.ai/free-layout-editor": "1.0.11",
@@ -38,6 +40,14 @@
     "react-i18next": "^15.1.0",
     "react-router-dom": "^6.28.0",
     "recharts": "^2.13.3",
+    "rete": "^2.0.6",
+    "rete-area-plugin": "^2.1.5",
+    "rete-connection-plugin": "^2.0.5",
+    "rete-context-menu-plugin": "^2.0.6",
+    "rete-engine": "^2.1.1",
+    "rete-react-plugin": "^2.1.0",
+    "rete-render-utils": "^2.0.3",
+    "rete-scopes-plugin": "^2.1.1",
     "sonner": "^1.7.0",
     "styled-components": "^6.4.3",
     "tailwind-merge": "^2.6.1"

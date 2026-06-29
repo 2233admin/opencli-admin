@@ -5,6 +5,8 @@ const en: Translations = {
     home: 'HOME',
     dashboard: 'Dashboard',
     topology: 'Topology',
+    workspace: 'Collection Network',
+    advanced: 'Advanced · Raw Data',
     sources: 'Sources',
     tasks: 'Tasks',
     records: 'Records',

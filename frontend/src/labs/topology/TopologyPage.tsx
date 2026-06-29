@@ -48,7 +48,8 @@ import ErrorAlert from '../../components/ErrorAlert'
 import PageHeader from '../../components/PageHeader'
 import { OperatorCard, WorkbenchPanel } from '../../components/opencli'
 import type { OperatorTone } from '../../components/opencli'
-import { FlowGramTopologyCanvas } from './FlowGramTopologyCanvas'
+import { ReactFlowTopologyCanvas } from './ReactFlowTopologyCanvas'
+import { StageOperationPanel, type StageDataBundle } from './nodes/StageOperations'
 import {
   fallbackLayout,
   type TopologyGraph,
@@ -315,6 +316,25 @@ export default function TopologyPage() {
     ],
   )
 
+  const stageData = useMemo<StageDataBundle>(
+    () => ({
+      sources: asArray(sourcesQuery.data),
+      schedules: asArray(schedulesQuery.data),
+      tasks: asArray(tasksQuery.data),
+      agents: asArray(agentsQuery.data),
+      records: asArray(recordsQuery.data),
+      rules: asArray(rulesQuery.data),
+    }),
+    [
+      sourcesQuery.data,
+      schedulesQuery.data,
+      tasksQuery.data,
+      agentsQuery.data,
+      recordsQuery.data,
+      rulesQuery.data,
+    ],
+  )
+
   const graph = useMemo(() => buildPrototypePipelineGraph(stats), [stats])
   const flowGraph = useMemo(() => toFlowGraph(graph), [graph])
   const selectedNode = flowGraph.nodes.find((node) => node.id === selectedNodeId) ?? flowGraph.nodes[0] ?? null
@@ -357,7 +377,7 @@ export default function TopologyPage() {
     <div className="space-y-4">
       <PageHeader
         title="采集管线工作台"
-        description="以采集管线为主语义组织拓扑画布、实时窗口和操作队列。当前版本使用原型数据验证工作区结构，不新增后端依赖。"
+        description="采集管线可视化工作台，原型模式验证结构，真实 API 统计同步。"
         action={
           <div className="flex items-center gap-2">
             {sourceFilter && (
@@ -424,8 +444,8 @@ export default function TopologyPage() {
                 )}
               </div>
             </div>
-            <div className="h-[46vh] min-h-[430px] max-h-[560px] bg-black">
-              <FlowGramTopologyCanvas
+            <div className="h-[52vh] min-h-[440px] bg-black">
+              <ReactFlowTopologyCanvas
                 nodes={flowGraph.nodes}
                 edges={flowGraph.edges}
                 selectedNodeId={selectedNode?.id ?? null}
@@ -445,7 +465,7 @@ export default function TopologyPage() {
           className="fixed inset-0 z-50 flex justify-end bg-black/55 p-4 backdrop-blur-sm"
           onClick={() => setInspectorOpen(false)}
         >
-          <div className="relative h-full w-full max-w-[440px]" onClick={(event) => event.stopPropagation()}>
+          <div className="relative h-full w-full max-w-[600px]" onClick={(event) => event.stopPropagation()}>
             <button
               type="button"
               aria-label="Close node details"
@@ -454,7 +474,12 @@ export default function TopologyPage() {
             >
               <X className="h-4 w-4" />
             </button>
-            <PipelineNodeInspector node={selectedNode} onRunAction={runPrototypeAction} />
+            <PipelineNodeInspector
+              node={selectedNode}
+              onRunAction={runPrototypeAction}
+              stageData={stageData}
+              onChanged={refetchAll}
+            />
           </div>
         </div>
       )}
@@ -552,8 +577,8 @@ function buildPrototypePipelineGraph(stats: PrototypeStats): TopologyGraph {
       primaryAction: '查看处理器',
       targetPath: '/agents',
       stageCode: 'PR',
-      column: 2,
-      row: 1,
+      column: 3,
+      row: 0,
       telemetry: `${stats.agents} agents available`,
       configEntries: [
         { label: '处理器/Agent', to: '/agents', hint: '配置解析提示词和模型' },
@@ -577,8 +602,8 @@ function buildPrototypePipelineGraph(stats: PrototypeStats): TopologyGraph {
       primaryAction: '查看记录',
       targetPath: '/records',
       stageCode: 'DB',
-      column: 1,
-      row: 1,
+      column: 4,
+      row: 0,
       telemetry: `${stats.records} records sampled`,
       configEntries: [
         { label: '记录列表', to: '/records', hint: '检查采集结果和 normalized data' },
@@ -602,8 +627,8 @@ function buildPrototypePipelineGraph(stats: PrototypeStats): TopologyGraph {
       primaryAction: '配置通知',
       targetPath: '/notifications',
       stageCode: 'OUT',
-      column: 0,
-      row: 1,
+      column: 5,
+      row: 0,
       telemetry: `${stats.notificationRules} rules / ${stats.notificationLogs} logs`,
       configEntries: [
         { label: '通知规则', to: '/notifications', hint: '配置接收人和触发条件' },
@@ -678,7 +703,7 @@ function link(source: string, target: string, label: string, health: TopologyHea
 }
 
 function toFlowGraph(graph: TopologyGraph): { nodes: TopologyFlowNode[]; edges: TopologyFlowEdge[] } {
-  const layoutedNodes = fallbackLayout(graph, 320, 210)
+  const layoutedNodes = fallbackLayout(graph, 240, 210)
   return {
     nodes: layoutedNodes.map((node) => ({
       id: node.id,
@@ -804,25 +829,20 @@ function TopologyOperations({
   )
 }
 
-function PipelineStats({ stats, isFetching }: { stats: PrototypeStats; isFetching: boolean }) {
+function PipelineStats({ stats, isFetching: _isFetching }: { stats: PrototypeStats; isFetching: boolean }) {
   const items = [
-    { label: 'SOURCES', value: stats.sources, icon: Network, tone: 'info' as OperatorTone },
-    { label: 'TASKS', value: stats.tasks, icon: Workflow, tone: 'accent' as OperatorTone },
-    { label: 'RECORDS', value: stats.records, icon: Database, tone: 'success' as OperatorTone },
-    { label: 'RULES', value: stats.notificationRules, icon: Bell, tone: 'warning' as OperatorTone },
+    { label: 'SOURCES', value: stats.sources, icon: Network, tone: 'info' as OperatorTone, to: '/sources', hint: '采集入口数量，点击配置数据源' },
+    { label: 'TASKS', value: stats.tasks, icon: Workflow, tone: 'accent' as OperatorTone, to: '/tasks', hint: '历史采集任务，点击查看运行队列' },
+    { label: 'RECORDS', value: stats.records, icon: Database, tone: 'success' as OperatorTone, to: '/records', hint: '已存储记录数，点击检查采集结果' },
+    { label: 'RULES', value: stats.notificationRules, icon: Bell, tone: 'warning' as OperatorTone, to: '/notifications', hint: '通知规则数量，点击配置交付出口' },
   ]
 
   return (
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-      {items.map(({ label, value, icon: Icon, tone }) => (
-        <OperatorCard
-          key={label}
-          label={label}
-          value={isFetching ? `${value}*` : value}
-          icon={Icon}
-          tone={tone}
-          hint="真实 API 统计，画布仍使用固定原型管线"
-        />
+      {items.map(({ label, value, icon: Icon, tone, to, hint }) => (
+        <Link key={label} to={to} className="block transition hover:opacity-80">
+          <OperatorCard label={label} value={value} icon={Icon} tone={tone} hint={hint} />
+        </Link>
       ))}
     </div>
   )
@@ -1076,71 +1096,68 @@ function DiagnosisPanel({ selectedNode }: { selectedNode: TopologyFlowNode | nul
 function PipelineNodeInspector({
   node,
   onRunAction,
+  stageData,
+  onChanged,
 }: {
   node: TopologyFlowNode
   onRunAction: (node: TopologyFlowNode, action?: TopologyNodeAction) => void
+  stageData: StageDataBundle
+  onChanged: () => void
 }) {
   const responsibility = readDetailString(node.data.detail, 'responsibility', node.data.subtitle)
   const status = readDetailString(node.data.detail, 'current_status', healthLabel(node.data.health))
   const gap = readDetailString(node.data.detail, 'capability_gap', '暂无能力缺口')
-  const telemetry = readDetailString(node.data.detail, 'telemetry', 'prototype telemetry')
-  const configEntries = readConfigEntries(node.data.detail)
-  const missingSkills = node.data.skills.filter((item) => item.state === 'missing' || item.state === 'blocked')
-  const readySkills = node.data.skills.filter((item) => item.state === 'ready' || item.state === 'running')
+  const stageCode = readDetailString(node.data.detail, 'stage_code', node.data.kind.slice(0, 2).toUpperCase())
+  const primaryAction = node.data.actions.find((action) => action.enabled) ?? node.data.actions[0]
 
   return (
-    <Card className="h-full overflow-auto border-white/[0.1] bg-[#0a0a0a]">
-      <div className="pr-10">
-        <p className="telemetry-label">NODE DETAILS</p>
-        <h2 className="mt-2 text-xl font-semibold text-white">{node.data.title}</h2>
-        <p className="mt-1 text-sm text-zinc-500">{node.data.subtitle}</p>
+    <Card padding={false} className="flex h-full flex-col overflow-hidden border-white/[0.1] bg-[#0a0a0a]">
+      {/* NDV header */}
+      <div className="flex items-start gap-3 border-b border-white/[0.08] px-4 py-4 pr-12">
+        <div className="grid h-10 w-10 shrink-0 place-items-center border border-white/15 bg-white/[0.04]">
+          <span className="font-code text-xs font-semibold text-zinc-200">{stageCode}</span>
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <p className="telemetry-label">NODE · {stageCode}</p>
+            <span className={cn('h-1.5 w-1.5 rounded-full', healthDotClass(node.data.health))} />
+          </div>
+          <h2 className="mt-0.5 truncate text-lg font-semibold text-white" title={node.data.title}>
+            {node.data.title}
+          </h2>
+          <p className="truncate text-xs text-zinc-500">{node.data.subtitle}</p>
+        </div>
       </div>
 
-      <section className="mt-5 space-y-3">
-        <DetailRow label="节点说明" value={responsibility} />
-        <DetailRow label="当前状态" value={status} />
-        <DetailRow label="能力缺口" value={gap} tone="warning" />
-        <DetailRow label="运行遥测" value={telemetry} />
-      </section>
-
-      <section className="mt-5 rounded-md border border-white/[0.1] bg-black/30 p-3">
-        <p className="telemetry-label">ACTIONS</p>
-        <div className="mt-3 space-y-2">
-          {node.data.actions.map((action) => (
-            <button
-              key={action.id}
-              type="button"
-              onClick={() => onRunAction(node, action)}
-              disabled={!action.enabled}
-              className="inline-flex w-full items-center justify-between rounded-md border border-white/[0.12] px-2.5 py-2 text-xs transition hover:border-white/[0.3] hover:bg-white/[0.04] disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              <span className="truncate">{action.label}</span>
-              <span className="font-medium text-slate-300">加入队列</span>
-            </button>
-          ))}
+      {/* scroll body */}
+      <div className="flex-1 space-y-4 overflow-auto px-4 py-4">
+        <div className="space-y-2 border border-white/[0.08] bg-black/25 p-3 text-xs leading-5">
+          <p className="text-zinc-400">{responsibility}</p>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pt-1 text-[11px]">
+            <span className="text-zinc-500">
+              状态 <span className="text-zinc-300">{status}</span>
+            </span>
+            <span className="text-amber-200/80">缺口 {gap}</span>
+          </div>
         </div>
-      </section>
 
-      <section className="mt-5 rounded-md border border-white/[0.1] bg-black/30 p-3">
-        <p className="telemetry-label">RELATED CONFIG</p>
-        <div className="mt-3 space-y-2">
-          {configEntries.map((entry) => (
-            <Link
-              key={`${entry.label}:${entry.to}`}
-              to={entry.to}
-              className="block rounded-md border border-white/[0.1] px-3 py-2 text-xs text-zinc-300 transition hover:border-white/[0.25] hover:bg-white/[0.04]"
-            >
-              <span className="block font-semibold text-zinc-100">{entry.label}</span>
-              <span className="mt-1 block text-zinc-500">{entry.hint}</span>
-            </Link>
-          ))}
+        <StageOperationPanel node={node.data} stageCode={stageCode} data={stageData} onChanged={onChanged} />
+      </div>
+
+      {/* footer · prototype action queue */}
+      {primaryAction && (
+        <div className="border-t border-white/[0.08] px-4 py-3">
+          <button
+            type="button"
+            onClick={() => onRunAction(node, primaryAction)}
+            disabled={!primaryAction.enabled}
+            className="inline-flex w-full items-center justify-between border border-white/[0.12] px-3 py-2 text-xs transition hover:border-white/[0.3] hover:bg-white/[0.04] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <span className="truncate">{primaryAction.label}</span>
+            <span className="font-medium text-slate-300">加入原型队列</span>
+          </button>
         </div>
-      </section>
-
-      <section className="mt-5 grid gap-3 sm:grid-cols-2">
-        <SkillList title="READY" skills={readySkills} />
-        <SkillList title="GAPS" skills={missingSkills} />
-      </section>
+      )}
     </Card>
   )
 }
@@ -1215,6 +1232,15 @@ function collectionSize(value: unknown): number {
   if (!value || typeof value !== 'object') return 0
   const data = (value as { data?: unknown }).data
   return Array.isArray(data) ? data.length : 0
+}
+
+function asArray<T>(value: unknown): T[] {
+  if (Array.isArray(value)) return value as T[]
+  if (value && typeof value === 'object') {
+    const data = (value as { data?: unknown }).data
+    if (Array.isArray(data)) return data as T[]
+  }
+  return []
 }
 
 function summarizeGraph(nodes: TopologyGraph['nodes']): TopologyGraph['summary'] {
