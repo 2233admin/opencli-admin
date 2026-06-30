@@ -147,13 +147,18 @@ async def run_collection_pipeline(
                 {k: v for k, v in (agent_config or {}).items() if k != "prompt_template"})
 
     # ── Phase 3: run pipeline (no session held during collection) ─────────────
-    pipeline_result = await run_pipeline(
-        task_id=task_id,
-        source=source,
-        parameters=merged_params,
-        agent_config=agent_config,
-        run_id=run_id,
-    )
+    # Hold a per-domain slot for the run so the fleet stays polite to a site even
+    # when many sources target it (in-process cap; cross-worker would need Redis).
+    from backend.pipeline.domain_limiter import domain_slot
+
+    async with domain_slot(source):
+        pipeline_result = await run_pipeline(
+            task_id=task_id,
+            source=source,
+            parameters=merged_params,
+            agent_config=agent_config,
+            run_id=run_id,
+        )
 
     # ── Phase 4: persist final status ────────────────────────────────────────
     async with AsyncSessionLocal() as session:
