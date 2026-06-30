@@ -56,11 +56,17 @@ async def store_records(
 
     new_records: list[CollectedRecord] = []
     skipped = 0
+    # Dedup within this batch too: two triples can share a content_hash (e.g. two
+    # CLI sub-commands that normalize to identical content). Without this, both
+    # pass the existing_hashes check, both get added, and flush() fails the whole
+    # batch atomically on the UNIQUE(source_id, content_hash) constraint.
+    seen_in_batch: set[str] = set()
 
     for raw, normalized, content_hash in normalized_triples:
-        if content_hash in existing_hashes:
+        if content_hash in existing_hashes or content_hash in seen_in_batch:
             skipped += 1
             continue
+        seen_in_batch.add(content_hash)
 
         record = CollectedRecord(
             task_id=task_id,
