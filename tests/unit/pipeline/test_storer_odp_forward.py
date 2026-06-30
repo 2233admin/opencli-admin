@@ -65,6 +65,24 @@ async def test_forward_called_when_url_set(db_session, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_forward_suppressed_when_flag_false(db_session, monkeypatch):
+    # The forward_to_odp gate (PR3) lets DualSink's legacy leg suppress the
+    # storer forward even when ODP_INGEST_URL is set — no double-send.
+    monkeypatch.setenv("ODP_INGEST_URL", "http://odp:8040")
+    source, task = await _seed(db_session)
+
+    post_mock = AsyncMock(return_value=(1, 0, 0))
+    with patch("backend.pipeline.odp_client.post_batch", new=post_mock):
+        new_records, _ = await storer.store_records(
+            db_session, task.id, source.id, [_triple(source.id, 1)],
+            channel_type="rss", forward_to_odp=False,
+        )
+
+    assert len(new_records) == 1
+    post_mock.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_forward_skipped_when_url_unset(db_session, monkeypatch):
     monkeypatch.delenv("ODP_INGEST_URL", raising=False)
     source, task = await _seed(db_session)
