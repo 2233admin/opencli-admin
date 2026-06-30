@@ -34,13 +34,12 @@ import time
 from dataclasses import asdict, dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
-from backend.api.v1.chat import (
+from backend.skills import actions
+from backend.skills.toolcall import (
     _is_xml_tool_model,
     _parse_tool_use,
     _safe_json,
 )
-from backend.pipeline import events
-from backend.skills import actions
 from backend.skills.prompt import (
     SKILL_TOOLS,
     SKILL_TOOLS_TEXT,
@@ -209,6 +208,7 @@ async def run_skill_loop(
     skill: Any = None,
     auto_confirm: bool = False,
     run_id: str | None = None,
+    emit: Any = None,
 ) -> LoopResult:
     """Run the perceive → propose → act loop until ``done`` or ``max_steps``.
 
@@ -382,8 +382,8 @@ async def run_skill_loop(
             # round-trip) is issues 05/06; here the testable behavior is the abort
             # + the awaiting_confirm signal surfaced for the channel to lift onto
             # ChannelResult.metadata (and later runner Phase 4 → run.status).
-            if run_id:
-                await events.emit(
+            if run_id and emit is not None:
+                await emit(
                     run_id,
                     AWAITING_CONFIRM,
                     f"awaiting confirm: {verb} ({decision.reason})",

@@ -444,6 +444,7 @@ class SkillChannel(AbstractChannel):
                         skill=elements or config,
                         auto_confirm=auto_confirm,
                         run_id=run_id,
+                        emit=events.emit,
                     )
                 finally:
                     await skill_page.aclose()
