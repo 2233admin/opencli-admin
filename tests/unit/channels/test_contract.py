@@ -19,7 +19,6 @@ from backend.channels.base import (
     FetchContext,
     FetchResult,
 )
-from backend.channels.rss_channel import RSSChannel
 
 
 class CollectOnlyChannel(AbstractChannel):
@@ -90,10 +89,16 @@ def test_default_identity_is_none():
 # ── existing channels inherit the contract unchanged ─────────────────────────
 
 def test_existing_channel_inherits_contract():
-    """The six real channels (RSSChannel as the witness) inherit the thick contract;
-    in Phase 0 they have not overridden anything, so behaviour is unchanged."""
-    chan = RSSChannel()
+    """A still-unmigrated real channel (CLIChannel as the witness) inherits the
+    thick contract via the defaults — collect-only, no cursor, no native id.
+
+    RSSChannel was migrated onto fetch()/identity()/capabilities in PR5, so it is
+    no longer a default witness (see test_rss_fetch); CLIChannel still is."""
+    from backend.channels.cli_channel import CLIChannel
+
+    chan = CLIChannel()
     assert isinstance(chan.capabilities, Capabilities)
+    assert chan.capabilities.incremental is False
     assert chan.capabilities.paginated is False
     assert chan.identity({"id": "abc"}) is None
     assert hasattr(chan, "fetch")
