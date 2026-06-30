@@ -424,3 +424,48 @@ async def test_collect_unknown_skill_fails_cleanly(spine_db, monkeypatch):
     missing = await SkillChannel().collect({"skill_id": "nope-404"}, {})
     assert missing.success is False
     assert "not found" in (missing.error or "")
+
+
+# ── Universal Studio bridge: /skill/invoke maps collect() into the wire envelope ─
+async def test_skill_bridge_invoke_maps_envelope(monkeypatch):
+    """The kernel's PythonBridge POSTs ``{capability, params, inputs}``; the
+    endpoint maps a ``collect()`` run into ``{ok, outputs, events}``. Mirrors the
+    self-contained collect path (inline skill_md, no run_id) — no DB/browser
+    needed. Proves the Python half of the brick-2 wire contract (universal-studio
+    ``platform/docs/PHASE-1-horizontal-slice.md``)."""
+    from backend.api.v1.skill_bridge import skill_invoke
+
+    fake_page = FakePage()
+    script = [
+        ("extract", {"data": {"title": "Solo"}}),
+        ("done", {"status": "success", "note": "list page shown"}),
+    ]
+    _patch_browser_and_model(monkeypatch, fake_page, script)
+
+    body = {
+        "capability": "browser.skill.execute",
+        "params": {"skill_md": SKILL_MD, "elements": ELEMENTS},
+        "inputs": {"task": {"type": {"kind": "Value", "of": "string"}, "value": "list the rows"}},
+    }
+    env = await skill_invoke(body)
+
+    # ok + three typed output ports mapped from ChannelResult.items + metadata.
+    assert env["ok"] is True
+    outputs = env["outputs"]
+    assert outputs["records"]["type"] == {"kind": "DataRef", "of": "Record"}
+    assert outputs["records"]["value"] == [{"title": "Solo"}]
+    assert outputs["trace"]["type"]["of"] == "JourneyTrace"
+    assert isinstance(outputs["trace"]["value"], dict)
+    assert outputs["self_eval"]["type"] == {"kind": "Value", "of": "SelfEval"}
+    assert outputs["self_eval"]["value"] is not None
+
+    # events = faithful projection of the trace steps (post-hoc node.progress).
+    steps = outputs["trace"]["value"].get("steps") or []
+    assert steps  # the run produced at least one step
+    assert isinstance(env["events"], list)
+    assert len(env["events"]) == len(steps)
+
+    # unknown capability → clean failure envelope (HTTP 200, ok:false), not a 500.
+    bad = await skill_invoke({"capability": "nope", "params": {}, "inputs": {}})
+    assert bad["ok"] is False
+    assert "unknown capability" in (bad["error"] or "")
