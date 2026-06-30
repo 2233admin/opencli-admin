@@ -1,5 +1,5 @@
 import { useRef, useState, type KeyboardEvent } from 'react'
-import { Bot, Check, Loader2, Send, Sparkles, User, X } from 'lucide-react'
+import { Bot, Check, Loader2, RefreshCw, Send, Sparkles, User, X } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { apiClient } from '../../api/client'
@@ -35,6 +35,17 @@ export interface DockContextNode {
   title: string
 }
 
+/* A re-distill target: the failing skill + its journey_trace_v1 trace. Surfaced
+ * when the dock's context is a failing skill (kind === 'skill', optionally with a
+ * run's self_eval.passed === false). Reuses the proposal→confirm contract — the
+ * 重蒸技能 button shows the SAME amber confirm card, and on confirm POSTs to
+ * /skills/{id}/redistill (re-distillation, never an auto-trigger). */
+interface RedistillTarget {
+  skillId: string
+  title: string
+  trace: Record<string, unknown>
+}
+
 const GREETING: ChatMsg = {
   role: 'assistant',
   content: '我是采集网络助手。想看懂某条采集逻辑、或要改配置(如启停数据源), 直接跟我说。改动会先给你确认再落库。',
@@ -43,14 +54,21 @@ const GREETING: ChatMsg = {
 export function AgentDock({
   contextNode,
   onApplied,
+  failingTrace = null,
 }: {
   contextNode: DockContextNode | null
   onApplied: () => void
+  /* Optional failing journey_trace_v1 from a run, passed by the parent run view.
+   * When the context is a skill and a trace is available, the 重蒸技能 action can
+   * re-distill it. Absent → a minimal context-only trace is used so the
+   * human-triggered flow is still exercisable. */
+  failingTrace?: Record<string, unknown> | null
 }) {
   const [messages, setMessages] = useState<ChatMsg[]>([GREETING])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [proposal, setProposal] = useState<Proposal | null>(null)
+  const [redistill, setRedistill] = useState<RedistillTarget | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
 
   const scrollToBottom = () => {
@@ -119,6 +137,50 @@ export function AgentDock({
     append({ role: 'assistant', content: '已取消, 没有改动。' })
   }
 
+  /* 重蒸技能 — re-distill a failing skill. Reuses the SAME proposal→confirm
+   * contract: clicking opens an amber confirm card (it does NOT auto-fire), and
+   * on confirm POSTs the failing trace to /skills/{id}/redistill. */
+  const proposeRedistill = () => {
+    if (!contextNode || contextNode.kind !== 'skill' || loading) return
+    const trace: Record<string, unknown> = failingTrace ?? {
+      schema: 'journey_trace_v1',
+      trace_id: `dock-${contextNode.id}`,
+      label: contextNode.title,
+      summary: { domain: 'unknown' },
+      steps: [],
+      outcome: { status: 'failed', milestones_hit: [], terminal_check: false },
+    }
+    setProposal(null)
+    setRedistill({ skillId: contextNode.id, title: contextNode.title, trace })
+  }
+
+  const confirmRedistill = async () => {
+    if (!redistill || loading) return
+    setLoading(true)
+    try {
+      const res = await apiClient
+        .post<ApiResponse<{ version: number }>>(`/skills/${redistill.skillId}/redistill`, {
+          trace: redistill.trace,
+        })
+        .then((r) => r.data.data)
+      toast.success(`已重蒸技能「${redistill.title}」→ v${res.version}`)
+      append({ role: 'assistant', content: `✅ 已重蒸技能「${redistill.title}」, 新版本 v${res.version}。` })
+      setRedistill(null)
+      onApplied()
+    } catch (err) {
+      const detail = extractDetail(err)
+      toast.error(`重蒸失败: ${detail}`)
+      append({ role: 'assistant', content: `❌ 重蒸失败: ${detail}` })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const cancelRedistill = () => {
+    setRedistill(null)
+    append({ role: 'assistant', content: '已取消重蒸, 技能未改动。' })
+  }
+
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
@@ -141,6 +203,17 @@ export function AgentDock({
           <span className="max-w-[140px] truncate border border-white/10 bg-white/[0.04] px-2 py-0.5 font-mono text-[10px] text-zinc-400" title={`${contextNode.kind}: ${contextNode.title}`}>
             @ {contextNode.title}
           </span>
+        )}
+        {contextNode?.kind === 'skill' && (
+          <button
+            type="button"
+            onClick={proposeRedistill}
+            disabled={loading || !!redistill}
+            title="用失败轨迹重新蒸馏这个技能 (version n+1)"
+            className="inline-flex shrink-0 items-center gap-1 border border-amber-400/35 bg-amber-400/10 px-2 py-0.5 font-mono text-[10px] font-semibold text-amber-100 transition hover:bg-amber-400/20 disabled:opacity-40"
+          >
+            <RefreshCw size={11} /> 重蒸技能
+          </button>
         )}
       </div>
 
@@ -174,6 +247,33 @@ export function AgentDock({
           </div>
         )}
       </div>
+
+      {/* 重蒸技能 confirm card — same amber confirm contract as proposals */}
+      {redistill && (
+        <div className="border-t border-amber-400/25 bg-amber-400/[0.06] px-3 py-2.5">
+          <p className="font-mono text-[9px] uppercase tracking-wider text-amber-200/70">待确认重蒸</p>
+          <p className="mt-1 text-xs font-semibold text-amber-100">重新蒸馏技能「{redistill.title}」→ version n+1</p>
+          <p className="mt-0.5 font-mono text-[11px] text-amber-200/80">用失败轨迹重蒸, 旧版本保留, 确认后生成新版本。</p>
+          <div className="mt-2 flex gap-2">
+            <button
+              type="button"
+              onClick={confirmRedistill}
+              disabled={loading}
+              className="inline-flex items-center gap-1 border border-emerald-400/40 bg-emerald-400/15 px-2.5 py-1 text-[11px] font-semibold text-emerald-100 transition hover:bg-emerald-400/25 disabled:opacity-50"
+            >
+              <Check size={12} /> 确认重蒸
+            </button>
+            <button
+              type="button"
+              onClick={cancelRedistill}
+              disabled={loading}
+              className="inline-flex items-center gap-1 border border-white/12 px-2.5 py-1 text-[11px] text-zinc-300 transition hover:border-white/25 disabled:opacity-50"
+            >
+              <X size={12} /> 取消
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* proposal confirm card */}
       {proposal && (
