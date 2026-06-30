@@ -1,7 +1,7 @@
 // L3 atoms — the smallest reusable node-body building blocks. Every node (in any
 // system) composes from these, so they own the node look-and-feel once. Pure,
 // presentational, dark-themed. No app/data coupling.
-import type { ReactNode } from 'react'
+import type { PointerEvent as ReactPointerEvent, ReactNode } from 'react'
 import { Handle, Position } from '@xyflow/react'
 import {
   Box,
@@ -9,7 +9,7 @@ import {
 } from 'lucide-react'
 import * as Icons from 'lucide-react'
 
-import type { PortDef } from '../spec'
+import type { FieldDef, PortDef } from '../spec'
 
 /** Resolve a lucide icon by name ('database' -> Database). Falls back to Box. */
 export function iconByName(name?: string): LucideIcon {
@@ -57,6 +57,99 @@ export function NodeField({ label, value }: { label: string; value: ReactNode })
       <span className="truncate font-medium text-zinc-300">{value}</span>
     </div>
   )
+}
+
+/** Editable config field — the inline form control for one FieldDef. Writes via
+ *  onChange to the host (KitNode → updateNodeData). `nodrag nopan` + a pointer
+ *  guard stop xyflow from dragging the node / panning while you edit. */
+export function NodeFieldEdit({
+  field,
+  value,
+  onChange,
+}: {
+  field: FieldDef
+  value: unknown
+  onChange: (value: unknown) => void
+}) {
+  const label = field.label ?? field.key
+  const stop = (e: ReactPointerEvent) => e.stopPropagation()
+  const base =
+    'nodrag nopan w-full rounded-sm border border-white/10 bg-black/50 px-1.5 py-1 text-[11px] text-zinc-100 outline-none transition focus:border-sky-500/60'
+
+  if (field.type === 'boolean') {
+    return (
+      <div className="flex items-center justify-between gap-2 px-0.5 py-0.5">
+        <span className="text-[10px] text-zinc-500">{label}</span>
+        <NodeToggle on={Boolean(value)} onClick={() => onChange(!value)} />
+      </div>
+    )
+  }
+
+  let control: ReactNode
+  if (field.type === 'select') {
+    control = (
+      <select className={base} value={String(value ?? '')} onPointerDown={stop} onChange={(e) => onChange(e.target.value)}>
+        {(field.options ?? []).map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label ?? o.value}
+          </option>
+        ))}
+      </select>
+    )
+  } else if (field.type === 'json') {
+    control = (
+      <textarea
+        className={`${base} resize-none font-code`}
+        rows={2}
+        value={typeof value === 'string' ? value : value == null ? '' : JSON.stringify(value)}
+        placeholder={field.placeholder}
+        onPointerDown={stop}
+        onChange={(e) => onChange(tryParseJson(e.target.value))}
+      />
+    )
+  } else if (field.type === 'number') {
+    control = (
+      <input
+        type="number"
+        className={base}
+        value={value == null || value === '' ? '' : String(value)}
+        placeholder={field.placeholder}
+        onPointerDown={stop}
+        onChange={(e) => onChange(e.target.value === '' ? undefined : Number(e.target.value))}
+      />
+    )
+  } else {
+    control = (
+      <input
+        type="text"
+        className={base}
+        value={value == null ? '' : String(value)}
+        placeholder={field.placeholder}
+        onPointerDown={stop}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    )
+  }
+
+  return (
+    <label className="grid gap-1">
+      <span className="text-[10px] text-zinc-500">
+        {label}
+        {field.required && <span className="text-red-400/80"> *</span>}
+      </span>
+      {control}
+    </label>
+  )
+}
+
+/** Keep raw text if it isn't valid JSON yet, so a half-typed value isn't lost. */
+function tryParseJson(s: string): unknown {
+  if (s.trim() === '') return undefined
+  try {
+    return JSON.parse(s)
+  } catch {
+    return s
+  }
 }
 
 export function NodeStat({ label, value }: { label: string; value: ReactNode }) {

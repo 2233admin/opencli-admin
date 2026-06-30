@@ -1,8 +1,11 @@
 // The one generic renderer. Give it a NodeSpec + instance config/facts and it
 // draws a complete node — header, ports, body, ops — with zero per-node React.
 // spec.render() overrides the auto-body when a node needs something custom.
+import { useCallback } from 'react'
+import { useReactFlow } from '@xyflow/react'
+
 import type { ConfigValues, NodeRenderContext, NodeSpec } from '../spec'
-import { NodeField, NodeHeader, NodeOpButton, NodePort } from './atoms'
+import { NodeField, NodeFieldEdit, NodeHeader, NodeOpButton, NodePort } from './atoms'
 
 export interface KitNodeData<C extends ConfigValues = ConfigValues> {
   config: C
@@ -20,8 +23,17 @@ export function KitNode<C extends ConfigValues = ConfigValues>({
   data: KitNodeData<C>
   selected?: boolean
 }) {
+  const { updateNodeData } = useReactFlow()
   const config = (data.config ?? {}) as C
   const facts = data.facts ?? {}
+
+  // Inline config edit: write the changed field back onto this node's data.config.
+  const setField = useCallback(
+    (key: string, value: unknown) => {
+      updateNodeData(id, { config: { ...(data.config ?? {}), [key]: value } })
+    },
+    [updateNodeData, id, data.config],
+  )
 
   const ctx: NodeRenderContext<C> = {
     id,
@@ -53,7 +65,7 @@ export function KitNode<C extends ConfigValues = ConfigValues>({
         {spec.render ? (
           spec.render(ctx)
         ) : (
-          <AutoBody spec={spec} config={config} facts={facts} />
+          <AutoBody spec={spec} config={config} facts={facts} onField={setField} />
         )}
       </div>
 
@@ -79,26 +91,26 @@ function AutoBody<C extends ConfigValues>({
   spec,
   config,
   facts,
+  onField,
 }: {
   spec: NodeSpec<C>
   config: C
   facts: Record<string, unknown>
+  onField: (key: string, value: unknown) => void
 }) {
-  const rows = [
-    ...(spec.config?.fields ?? []).map((f) => ({
-      label: f.label ?? f.key,
-      value: formatValue(config[f.key]),
-    })),
-    ...Object.entries(facts).map(([k, v]) => ({ label: k, value: formatValue(v) })),
-  ].slice(0, 5)
+  const fields = spec.config?.fields ?? []
+  const factRows = Object.entries(facts)
 
-  if (rows.length === 0) {
+  if (fields.length === 0 && factRows.length === 0) {
     return <div className="text-[11px] text-zinc-600">{spec.category}</div>
   }
   return (
     <div className="grid gap-1.5">
-      {rows.map((r, i) => (
-        <NodeField key={i} label={r.label} value={r.value} />
+      {fields.map((f) => (
+        <NodeFieldEdit key={f.key} field={f} value={config[f.key]} onChange={(v) => onField(f.key, v)} />
+      ))}
+      {factRows.slice(0, 5).map(([k, v]) => (
+        <NodeField key={k} label={k} value={formatValue(v)} />
       ))}
     </div>
   )

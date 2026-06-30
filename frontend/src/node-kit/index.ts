@@ -45,6 +45,7 @@ export {
   NodeHeader,
   NodePort,
   NodeField,
+  NodeFieldEdit,
   NodeStat,
   NodeBadge,
   NodeOpButton,
