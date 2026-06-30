@@ -22,7 +22,7 @@ from typing import Any
 
 import httpx
 
-from backend.channels.base import AbstractChannel, AuthContext, FetchContext
+from backend.channels.base import AbstractChannel, FetchContext
 from backend.channels.registry import get_channel
 from backend.pipeline.cursor_store import CursorStore, InMemoryCursorStore
 from backend.pipeline.http_client import RateLimitedClient, TokenBucket, parse_rate
@@ -53,7 +53,11 @@ async def run_channel(
     store = cursor_store or InMemoryCursorStore()
 
     cursor = await store.load(source.id) if cap.incremental else None
-    auth = AuthContext(kind=cap.auth_kind)  # Phase 2 resolves real credentials here
+    # Phase 2: resolve real (decrypted) credentials into the AuthContext the channel
+    # sees. auth_kind="none" short-circuits without a DB hit.
+    from backend.auth.manager import AuthManager
+
+    auth = await AuthManager().resolve_context(source.id, cap.auth_kind)
 
     owns_http = http is None
     client = http or RateLimitedClient(

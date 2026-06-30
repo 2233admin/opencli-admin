@@ -1,5 +1,6 @@
 """API channel: direct REST/GraphQL API calls."""
 
+import logging
 import os
 import re
 from typing import Any
@@ -8,6 +9,8 @@ import httpx
 
 from backend.channels.base import AbstractChannel, ChannelResult
 from backend.channels.registry import register_channel
+
+logger = logging.getLogger(__name__)
 
 _SECRET_RE = re.compile(r"\{\{secret:([A-Z_][A-Z0-9_]*)\}\}")
 
@@ -88,19 +91,37 @@ class ApiChannel(AbstractChannel):
         if auth_type == "bearer":
             token_env = auth.get("token_env", "")
             token = os.environ.get(token_env, auth.get("token", ""))
+            self._warn_inline(auth, "token", token_env)
             return {"Authorization": f"Bearer {token}"}
         if auth_type == "basic":
             import base64
+            raw_pw = auth.get("password", "")
             user = _resolve_secrets(auth.get("username", ""))
-            pw = _resolve_secrets(auth.get("password", ""))
+            pw = _resolve_secrets(raw_pw)
+            if raw_pw and "{{secret:" not in raw_pw:
+                self._warn_inline(auth, "password", "")
             encoded = base64.b64encode(f"{user}:{pw}".encode()).decode()
             return {"Authorization": f"Basic {encoded}"}
         if auth_type == "api_key":
             header_name = auth.get("header", "X-API-Key")
             key_env = auth.get("key_env", "")
             key = os.environ.get(key_env, auth.get("key", ""))
+            self._warn_inline(auth, "key", key_env)
             return {header_name: key}
         return {}
+
+    @staticmethod
+    def _warn_inline(auth: dict, field: str, env_key: str) -> None:
+        """Deprecation: an inline plaintext secret in ``channel_config.auth``.
+        Prefer env indirection (``<field>_env`` / ``{{secret:ENV}}``) or the
+        encrypted credential store (``backend.auth.AuthManager``)."""
+        if auth.get(field) and not (env_key and env_key in os.environ):
+            logger.warning(
+                "api channel: inline plaintext '%s' in channel_config.auth is "
+                "deprecated; use %s_env or the encrypted credential store",
+                field,
+                field,
+            )
 
     async def validate_config(self, config: dict[str, Any]) -> list[str]:
         errors: list[str] = []
