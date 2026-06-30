@@ -167,7 +167,19 @@ async def run_collection_pipeline(
             if pipeline_result.metadata.get("node_url"):
                 run.node_url = pipeline_result.metadata["node_url"]
 
-        if pipeline_result.success:
+        # Paused outcome (skill execute loop hit the confirm gate in headless v1):
+        # a successful pipeline run that stopped at a confirm-required action.
+        # collect/normalize/store all ran (finished_at/duration/records above are
+        # still set); the run just paused, so it is neither completed nor failed.
+        # TaskRun.status / CollectionTask.status are free-text String(50) so
+        # storing "awaiting_confirm" needs no migration (anchor is issue 04).
+        if pipeline_result.metadata.get("awaiting_confirm"):
+            if task:
+                task.status = "awaiting_confirm"
+                task.error_message = None
+            if run:
+                run.status = "awaiting_confirm"
+        elif pipeline_result.success:
             if task:
                 task.status = "completed"
                 task.error_message = None

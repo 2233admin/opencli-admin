@@ -165,6 +165,14 @@ async def test_run_pipeline_success():
 
     session2.get = AsyncMock(side_effect=p2_get)
     session2.expunge = MagicMock()
+    # No agent_id on the task → runner falls back to the auto-default-agent query
+    # (select first enabled ModelProvider). session.execute is async; its result's
+    # .scalars().first() must be sync. Configure it to return no provider so the
+    # auto-default branch is skipped cleanly (MagicMock.scalars() would otherwise
+    # surface as a coroutine on an AsyncMock and AttributeError on .first()).
+    _p2_no_provider = MagicMock()
+    _p2_no_provider.scalars.return_value.first.return_value = None
+    session2.execute = AsyncMock(return_value=_p2_no_provider)
 
     # Phase 4 session: finalize
     session4 = AsyncMock()
@@ -215,6 +223,11 @@ async def test_run_pipeline_failure_recorded():
     session2 = AsyncMock()
     session2.get = AsyncMock(return_value=source)
     session2.expunge = MagicMock()
+    # See test_run_pipeline_success: no agent_id → auto-default-agent provider
+    # query; return no provider so .scalars().first() is a sync None.
+    _p2_no_provider = MagicMock()
+    _p2_no_provider.scalars.return_value.first.return_value = None
+    session2.execute = AsyncMock(return_value=_p2_no_provider)
 
     session4 = AsyncMock()
     session4.get = AsyncMock(return_value=task)

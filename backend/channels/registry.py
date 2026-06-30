@@ -33,6 +33,7 @@ def _load_all_channels() -> None:
         cli_channel,
         opencli_channel,
         rss_channel,
+        skill_channel,
         web_scraper_channel,
     )
 

@@ -12,6 +12,7 @@ from backend.api.v1 import (
     providers,
     records,
     schedules,
+    skills,
     sources,
     system,
     tasks,
@@ -30,6 +31,7 @@ v1_router.include_router(sources.router)
 v1_router.include_router(tasks.router)
 v1_router.include_router(records.router)
 v1_router.include_router(schedules.router)
+v1_router.include_router(skills.router)
 v1_router.include_router(webhooks.router)
 v1_router.include_router(notifications.router)
 v1_router.include_router(workers.router)

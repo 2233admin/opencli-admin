@@ -456,3 +456,84 @@ docker logs agent-1 --tail=20
 - **COLLECTION_MODE 切换需重启 API**：这是系统级配置，对应用户修改 `.env` 后执行 `docker compose up -d api` 的正常运维操作。bridge/cdp 模式切换则无需重启，通过 `PATCH /mode` 接口实时生效。
 - **Docker 测试前需在宿主机启动 Chrome**：agent 镜像默认使用无 Chrome 变体（约 400 MB），Tests 5-8 依赖宿主机 Chrome 通过 `host.docker.internal` 提供浏览器能力。如需完全自包含，在 `.env` 中设置 `INSTALL_CHROME=true` 和 `CHROME_SUFFIX=-chrome`，重启后会拉取 `-chrome` 变体（约 1.2 GB）。
 - **切换 agent 容器后需清理旧节点**：手动 `docker stop/rm` 旧 agent 后，旧 endpoint 仍残留在 in-memory pool 中（节点 DB 也未清理）。切换前需通过 `DELETE /api/v1/nodes/{id}` 主动删除旧节点，或重启 API 让新 agent 重新注册后再清理。Tests 9-10 中切换到 `-chrome` 镜像时需先删除旧 `agent-1` 节点。
+
+---
+
+## Skill 执行回路（CDP 浏览器驱动）
+
+Skill 执行回路（`backend/skills/page.py` + `backend/skills/perception.py`）通过 Playwright
+**连接已在运行的 Chrome**（`connect_over_cdp`）来驱动页面 —— 复用 `browser_pool` 提供的、
+与上面 Tests 1–10 相同的那个 Chrome（用 `--remote-debugging-port=9222` 启动）。它**不会**另起
+一个浏览器，运行时只需要 Playwright **驱动**本身，不需要第二个 Chrome。
+
+```bash
+# 安装 Playwright 驱动（Windows / win32 开发或 CI 都需要执行一次）
+playwright install chromium
+```
+
+- Playwright 是新的后端依赖（`pyproject.toml` 已加入 `playwright>=1.40.0`）。`playwright install
+  chromium` 只装**驱动**；执行回路是 `connect_over_cdp` **挂接**到 `browser_pool` 里那个已经运行
+  的 Chrome（沿用其已登录会话），所以运行时不需要额外的浏览器实例。
+- 仅支持本地 + LAN 的 CDP endpoint（ADR-0003 D1）；通过 `agent_server` 驱动 NAT 边缘节点是 v2。
+- 依赖真实浏览器的路径走既有的 `live` pytest marker；默认的 `pytest -m "not live"` **不需要浏览器**
+  —— 感知快照的纯解析逻辑（`project_snapshot`）和页面包装器的 ref 解析都用 mock 覆盖（见
+  `tests/skills/test_perception.py`）。
+
+---
+
+## 技能执行环路 e2e（live marker，Windows）
+
+`tests/skills/test_execute_loop_live.py` 是唯一一个跑**真实本地 Chrome**的端到端测试：它通过
+CDP 把整条 `perceive → act → extract → done` 环路、以及 headless 写前确认闸门，对着一个**本机静态
+页面**真跑一遍（issue 07）。整个文件标了 `@pytest.mark.live`，所以默认的 `pytest -m "not live"`
+（带 `--cov-fail-under=80`）**永远不需要浏览器**。浏览器是真的；只有便宜模型的**动作选择**被脚本
+固定（patch `backend.channels.skill_channel._build_model_call`），避免模型抖动让 live 测试变 flaky。
+
+为新机器（win32）从零复现：
+
+1. 安装 Playwright + 其 Chromium 驱动（每台机器一次性）：
+
+   ```bash
+   uv pip install playwright      # 或 pip install playwright（issue 01 起已是后端依赖）
+   playwright install chromium
+   ```
+
+   说明（PRD §7）：执行环路是 `connect_over_cdp` **挂接**到一个已经在跑的 Chrome，所以这里装的
+   Chromium 是给 Playwright **驱动**用的，不一定要再开第二个浏览器。
+
+2. 用 CDP 调试端口启动一个本地 Chrome（Windows 路径）：
+
+   ```powershell
+   & "C:\Program Files\Google\Chrome\Application\chrome.exe" `
+     --remote-debugging-port=9222 --remote-debugging-address=127.0.0.1 `
+     --no-first-run --no-default-browser-check
+   ```
+
+3. 指向它，并**只**跑这个 live 技能测试：
+
+   ```powershell
+   $env:SKILL_LIVE_CDP_ENDPOINT = "http://127.0.0.1:9222"
+   uv run pytest -m live tests/skills/test_execute_loop_live.py
+   ```
+
+   测试从 `SKILL_LIVE_CDP_ENDPOINT` 读 endpoint（回退到 `OPENCLI_CDP_ENDPOINT`）。**未设置时**它会
+   `pytest.skip(...)` 并给出可操作的提示，而不是 fail。被测页面由测试内嵌的 `ThreadingHTTPServer`
+   起在 `127.0.0.1:<随机端口>`，不依赖任何外部站点。
+
+4. 默认套件**不含**它（CI / 本地日常都走这条，不需要 Chrome）：
+
+   ```powershell
+   uv run pytest -m "not live"   # 带 --cov-fail-under=80；无需浏览器
+   ```
+
+   确认它确实被默认排除：
+
+   ```powershell
+   uv run pytest -m "not live" --collect-only -q | Select-String "test_execute_loop_live"   # 应无匹配
+   ```
+
+5. DB 说明：live 测试把一个**临时 SQLite**（默认内存库，`StaticPool` 单连接共享）绑进
+   `backend.database.AsyncSessionLocal` 和 runner 的那份拷贝，这样环路通过 `events.emit` 写的
+   `TaskRunEvent` 行对测试自己的查询可见（conftest 里那个 per-test 内存 `db_session` 是**另一个**库，
+   环路不会写它）。需要事后翻库时，可改设 `DATABASE_URL` 指向一个一次性文件库。`playwright install
+   chromium` 是每台机器一次性的准备步骤。

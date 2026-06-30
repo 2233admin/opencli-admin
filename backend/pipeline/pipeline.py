@@ -42,8 +42,15 @@ async def run_pipeline(
     started = datetime.now(timezone.utc)
     params = parameters or {}
 
-    # Pre-step: auto-resolve chrome endpoint from browser binding (opencli only)
-    if source.channel_type == "opencli" and not params.get("chrome_endpoint"):
+    # Pre-step: auto-resolve chrome endpoint from a browser binding. Both the
+    # opencli and skill channels drive a real Chrome from the shared pool, so a
+    # site-keyed binding lets them attach to a logged-in browser. Best-effort: a
+    # missing binding is not an error (browser_pool.acquire(endpoint=None) picks a
+    # default), so we only override chrome_endpoint when a binding exists.
+    if (
+        source.channel_type in ("opencli", "skill")
+        and not params.get("chrome_endpoint")
+    ):
         site = source.channel_config.get("site", "")
         if site:
             from backend.services import browser_service
@@ -60,7 +67,20 @@ async def run_pipeline(
     step1_start = datetime.now(timezone.utc)
 
     if run_id:
+        # Skill channel: inject run_id into params BEFORE dispatch so the loop can
+        # emit per-step events via events.emit(run_id, ...). Scoped to "skill" —
+        # other channels don't expect a run_id param. (chrome_endpoint, if any,
+        # was already injected by the pre-step binding above.)
+        if source.channel_type == "skill":
+            params = {**params, "run_id": run_id}
         collect_detail: dict = {"channel_type": source.channel_type, "params": params}
+        if source.channel_type == "skill":
+            _skill_md = source.channel_config.get("skill_md") or ""
+            collect_detail["skill"] = {
+                "skill_chars": len(_skill_md),
+                "has_chrome_endpoint": bool(params.get("chrome_endpoint")),
+                "auto_confirm": bool(source.channel_config.get("auto_confirm", False)),
+            }
         if source.channel_type == "opencli":
             from backend.channels.opencli_channel import _get_named_options, _OPENCLI_BIN
             cfg = source.channel_config
