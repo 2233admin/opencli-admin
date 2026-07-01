@@ -35,18 +35,27 @@ async def _request(method: str, path: str, **kwargs: Any) -> dict:
 
     FastAPI's default HTTPException body is ``{"detail": ...}``, this project's
     own ``ApiResponse.fail`` is ``{"success": false, "error": ...}`` — callers
-    (agents) shouldn't have to know which one they got.
+    (agents) shouldn't have to know which one they got. Network-level failures
+    (backend down, DNS, timeout) and non-JSON error bodies are normalized the
+    same way rather than raising — a tool call should report a clean error to
+    the agent, not crash the MCP process.
     """
-    async with httpx.AsyncClient(base_url=API_BASE_URL, timeout=30.0) as client:
-        resp = await client.request(method, path, **kwargs)
-        try:
-            body = resp.json()
-        except ValueError:
-            resp.raise_for_status()
-            raise
-        if resp.status_code >= 400:
-            return {"success": False, "error": body.get("detail") or body.get("error") or resp.text}
-        return body
+    try:
+        async with httpx.AsyncClient(base_url=API_BASE_URL, timeout=30.0) as client:
+            resp = await client.request(method, path, **kwargs)
+            try:
+                body = resp.json()
+            except ValueError:
+                if resp.status_code >= 400:
+                    return {"success": False, "error": resp.text}
+                resp.raise_for_status()
+                raise
+            if resp.status_code >= 400:
+                err = body.get("detail") or body.get("error") or resp.text
+                return {"success": False, "error": err}
+            return body
+    except httpx.HTTPError as exc:
+        return {"success": False, "error": f"request to {API_BASE_URL}{path} failed: {exc}"}
 
 
 @mcp.tool()

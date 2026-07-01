@@ -48,28 +48,35 @@ async def sync_from_cookiecloud(url: str, uuid: str, password: str) -> int:
     cookie_data: dict[str, list[dict[str, Any]]] = data.get("cookie_data", {})
 
     from backend.auth.manager import AuthManager
+    from backend.database import AsyncSessionLocal
 
     manager = AuthManager()
     synced = 0
-    for cookies in cookie_data.values():
-        for cookie in cookies:
-            domain = (cookie.get("domain") or "").lstrip(".")
-            name = cookie.get("name")
-            if not domain or not name:
-                continue
-            same_site = cookie.get("sameSite")
-            if same_site == "unspecified":  # CookieCloud's own normalization note
-                same_site = "Lax"
-            attrs = {
-                "value": cookie.get("value", ""),
-                "path": cookie.get("path", "/"),
-                "expires": cookie.get("expires"),
-                "httpOnly": cookie.get("httpOnly", False),
-                "secure": cookie.get("secure", False),
-                "sameSite": same_site,
-            }
-            await manager.store_cookie(domain, name, attrs)
-            synced += 1
+    # One session/transaction for the whole sync (can be hundreds of cookies) —
+    # store_cookie(session=...) only flushes per cookie, we commit once at the end.
+    async with AsyncSessionLocal() as session:
+        for cookies in cookie_data.values():
+            for cookie in cookies:
+                domain = (cookie.get("domain") or "").lstrip(".")
+                name = cookie.get("name")
+                if not domain or not name:
+                    continue
+                same_site = cookie.get("sameSite")
+                if same_site == "unspecified":  # CookieCloud's own normalization note
+                    same_site = "Lax"
+                attrs = {
+                    "value": cookie.get("value", ""),
+                    "path": cookie.get("path", "/"),
+                    "expires": cookie.get("expires"),
+                    "httpOnly": cookie.get("httpOnly", False),
+                    "secure": cookie.get("secure", False),
+                    "sameSite": same_site,
+                }
+                await manager.store_cookie(domain, name, attrs, session=session)
+                synced += 1
+        await session.commit()
 
-    logger.info("cookiecloud sync | %d cookies synced across %d domain groups", synced, len(cookie_data))
+    logger.info(
+        "cookiecloud sync | %d cookies synced across %d domain groups", synced, len(cookie_data)
+    )
     return synced

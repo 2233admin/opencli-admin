@@ -72,10 +72,15 @@ async def populate_all() -> None:
     from sqlalchemy import select
 
     from backend.database import AsyncSessionLocal
+    from backend.models.source import DataSource
 
     try:
         async with AsyncSessionLocal() as session:
-            result = await session.execute(select(CronSchedule).where(CronSchedule.enabled.is_(True)))
+            result = await session.execute(
+                select(CronSchedule)
+                .join(DataSource, CronSchedule.source_id == DataSource.id)
+                .where(CronSchedule.enabled.is_(True), DataSource.enabled.is_(True))
+            )
             schedules = list(result.scalars().all())
     except Exception as exc:
         logger.warning("redbeat populate_all: could not load DB schedules: %s", exc)

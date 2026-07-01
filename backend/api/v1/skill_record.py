@@ -73,6 +73,21 @@ async def record_start(body: RecordStartBody) -> ApiResponse:
     """
     from backend.browser_pool import get_pool
 
+    # This subsystem is single-user/local (ADR-0003) — at most one recording is
+    # ever meant to be in flight. A session whose /stop was never called (human
+    # abandoned the tab, browser crashed) would otherwise hold its browser_pool
+    # slot forever; clear any such leftovers before acquiring a new one.
+    for stale_id in list(_SESSIONS.keys()):
+        stale_session, stale_acquire_cm = _SESSIONS.pop(stale_id)
+        try:
+            await stale_session.page.aclose()
+        except Exception as exc:
+            logger.warning("record start | closing stale session %s page failed: %s", stale_id, exc)
+        try:
+            await stale_acquire_cm.__aexit__(None, None, None)
+        except Exception as exc:
+            logger.warning("record start | releasing stale session %s failed: %s", stale_id, exc)
+
     pool = get_pool()
     acquire_cm = pool.acquire(endpoint=body.cdp_endpoint)
     try:

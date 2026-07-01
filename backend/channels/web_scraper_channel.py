@@ -153,11 +153,20 @@ class WebScraperChannel(AbstractChannel):
         if not url:
             return False
 
+        headers = {
+            "User-Agent": "Mozilla/5.0 (compatible; opencli-admin/1.0)",
+            **config.get("headers", {}),
+        }
+        if config.get("auth", {}).get("type") == "cookie":
+            cookie_header = await self._resolve_cookie_header(url)
+            if cookie_header:
+                headers["Cookie"] = cookie_header
+
         try:
             async with httpx.AsyncClient(follow_redirects=True, timeout=5) as client:
-                response = await client.head(url)
+                response = await client.head(url, headers=headers)
                 if response.status_code in (404, 405):
-                    response = await client.get(url)
+                    response = await client.get(url, headers=headers)
                 response.raise_for_status()
             return True
         except Exception as exc:

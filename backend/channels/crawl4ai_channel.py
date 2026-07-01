@@ -230,8 +230,13 @@ class Crawl4AIChannel(AbstractChannel):
         if not url:
             return False
 
+        cookies: list[dict] = []
+        if config.get("auth", {}).get("type") == "cookie":
+            cookies = await self._resolve_cookies(url)
+
         try:
-            async with AsyncWebCrawler(config=BrowserConfig(headless=True)) as crawler:
+            browser_config = BrowserConfig(headless=True, cookies=cookies or None)
+            async with AsyncWebCrawler(config=browser_config) as crawler:
                 result = await crawler.arun(
                     url=url, config=CrawlerRunConfig(cache_mode=CacheMode.BYPASS, page_timeout=5000)
                 )

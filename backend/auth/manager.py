@@ -9,6 +9,8 @@ raw secrets.
 
 from __future__ import annotations
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from backend.auth import crypto
 from backend.channels.base import AuthContext
 
@@ -117,37 +119,59 @@ class AuthManager:
             ).scalars().all()
         return {r.key_name: crypto.decrypt(r.ciphertext) for r in rows}
 
-    async def store_cookie(self, domain: str, cookie_name: str, attrs: dict) -> None:
+    async def store_cookie(
+        self, domain: str, cookie_name: str, attrs: dict, *, session: AsyncSession | None = None
+    ) -> None:
         """Encrypt ``attrs`` (value/path/expires/httpOnly/secure/sameSite) and
         upsert under ``(domain, cookie_name)``. Same select-then-insert /
         IntegrityError-recovery shape as :meth:`store` (a sync that races a
-        concurrent sync of the same cookie must not 500)."""
+        concurrent sync of the same cookie must not 500).
+
+        ``session``, when given (e.g. a CookieCloud bulk sync writing hundreds
+        of cookies), reuses the caller's session/transaction instead of opening
+        one per call — this only flushes, the caller commits once at the end.
+        The caller then owns IntegrityError recovery for its own transaction.
+        """
         import json
 
-        from sqlalchemy.exc import IntegrityError
-
-        from backend.database import AsyncSessionLocal
         from backend.models.cookie_jar import CookieJarEntry
 
         ciphertext = crypto.encrypt(json.dumps(attrs))
 
-        async with AsyncSessionLocal() as session:
+        if session is not None:
             row = await self._find_cookie_row(session, domain, cookie_name)
             if row is not None:
                 row.ciphertext = ciphertext
-                await session.commit()
+            else:
+                session.add(
+                    CookieJarEntry(domain=domain, cookie_name=cookie_name, ciphertext=ciphertext)
+                )
+            await session.flush()
+            return
+
+        from sqlalchemy.exc import IntegrityError
+
+        from backend.database import AsyncSessionLocal
+
+        async with AsyncSessionLocal() as owned_session:
+            row = await self._find_cookie_row(owned_session, domain, cookie_name)
+            if row is not None:
+                row.ciphertext = ciphertext
+                await owned_session.commit()
                 return
 
-            session.add(CookieJarEntry(domain=domain, cookie_name=cookie_name, ciphertext=ciphertext))
+            owned_session.add(
+                CookieJarEntry(domain=domain, cookie_name=cookie_name, ciphertext=ciphertext)
+            )
             try:
-                await session.commit()
+                await owned_session.commit()
             except IntegrityError:
-                await session.rollback()
-                row = await self._find_cookie_row(session, domain, cookie_name)
+                await owned_session.rollback()
+                row = await self._find_cookie_row(owned_session, domain, cookie_name)
                 if row is None:
                     raise
                 row.ciphertext = ciphertext
-                await session.commit()
+                await owned_session.commit()
 
     @staticmethod
     async def _find_cookie_row(session, domain: str, cookie_name: str):

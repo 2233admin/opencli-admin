@@ -105,12 +105,16 @@ async def store_records(
             if record.content_hash in already_there:
                 skipped += 1
                 continue
-            session.add(record)
+            # Nested transaction (SAVEPOINT) per record: a plain session.rollback()
+            # here would undo every earlier survivor's flush too, since they all
+            # share this one session/transaction — begin_nested() scopes the
+            # rollback to just this record's failed insert.
             try:
-                await session.flush()
+                async with session.begin_nested():
+                    session.add(record)
+                    await session.flush()
                 survivors.append(record)
             except IntegrityError:
-                await session.rollback()
                 skipped += 1
         new_records = survivors
 
