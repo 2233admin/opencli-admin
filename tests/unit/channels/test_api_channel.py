@@ -436,6 +436,67 @@ async def test_fetch_falls_back_to_inline_config_when_no_stored_credential(chann
 
 
 @pytest.mark.asyncio
+async def test_fetch_basic_auth_stored_creds_used(channel):
+    response = _make_mock_response(json_data=[{"ok": True}])
+    http = _FetchHttp(response)
+    ctx = FetchContext(
+        config={
+            "base_url": "https://api.example.com",
+            "endpoint": "/secure",
+            "auth": {"type": "basic", "username": "should-not-be-used", "password": "x"},
+        },
+        params={},
+        source_id="src-basic",
+        http=http,
+    )
+
+    with patch(
+        "backend.auth.manager.AuthManager.resolve",
+        AsyncMock(return_value={"username": "stored-user", "password": "stored-pass"}),
+    ):
+        result = await channel.fetch(ctx)
+
+    import base64
+
+    expected = base64.b64encode(b"stored-user:stored-pass").decode()
+    assert result.items == [{"ok": True}]
+    assert http.calls[0][2]["headers"]["Authorization"] == f"Basic {expected}"
+
+
+@pytest.mark.asyncio
+async def test_fetch_basic_auth_empty_stored_creds_falls_back_to_legacy(channel, monkeypatch):
+    """Neither username nor password stored via AuthManager — must fall back to
+    legacy inline config rather than sending an empty 'Basic <base64 of \":\">'
+    header (this is the divergence that used to exist between AuthManager.
+    resolve_context() and ApiChannel._resolve_auth_headers(); both now delegate
+    to the same build_auth_header() and agree)."""
+    response = _make_mock_response(json_data=[{"ok": True}])
+    http = _FetchHttp(response)
+    ctx = FetchContext(
+        config={
+            "base_url": "https://api.example.com",
+            "endpoint": "/secure",
+            "auth": {"type": "basic", "username": "legacy-user", "password": "legacy-pass"},
+        },
+        params={},
+        source_id="src-basic-empty",
+        http=http,
+    )
+
+    with patch(
+        "backend.auth.manager.AuthManager.resolve",
+        AsyncMock(return_value={}),  # nothing stored
+    ):
+        result = await channel.fetch(ctx)
+
+    import base64
+
+    expected = base64.b64encode(b"legacy-user:legacy-pass").decode()
+    assert result.items == [{"ok": True}]
+    assert http.calls[0][2]["headers"]["Authorization"] == f"Basic {expected}"
+
+
+@pytest.mark.asyncio
 async def test_fetch_no_source_id_skips_credential_store(channel, monkeypatch):
     """fetch() called standalone (no source_id, e.g. a config test/preview) never
     hits the DB — falls straight to the legacy inline/env resolution."""

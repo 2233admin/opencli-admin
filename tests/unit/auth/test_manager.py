@@ -80,6 +80,31 @@ async def test_resolve_context_api_key(db_engine, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_resolve_context_basic(db_engine, monkeypatch):
+    monkeypatch.setenv(crypto.ENV_KEY, KEY)
+    with patch("backend.database.AsyncSessionLocal", _sessionmaker(db_engine)):
+        mgr = AuthManager()
+        await mgr.store("src-1", "username", "u")
+        await mgr.store("src-1", "password", "p")
+        ctx = await mgr.resolve_context("src-1", "basic")
+    import base64
+
+    expected = base64.b64encode(b"u:p").decode()
+    assert ctx.headers == {"Authorization": f"Basic {expected}"}
+
+
+@pytest.mark.asyncio
+async def test_resolve_context_basic_no_stored_creds_sends_no_header(db_engine, monkeypatch):
+    """Neither username nor password stored — must not send a placeholder
+    'Basic <base64 of \":\">' header (matches ApiChannel._resolve_auth_headers'
+    same empty-credential guard via the shared build_auth_header helper)."""
+    monkeypatch.setenv(crypto.ENV_KEY, KEY)
+    with patch("backend.database.AsyncSessionLocal", _sessionmaker(db_engine)):
+        ctx = await AuthManager().resolve_context("src-empty", "basic")
+    assert ctx.headers == {}
+
+
+@pytest.mark.asyncio
 async def test_list_keys_returns_names_not_values(db_engine, monkeypatch):
     monkeypatch.setenv(crypto.ENV_KEY, KEY)
     with patch("backend.database.AsyncSessionLocal", _sessionmaker(db_engine)):

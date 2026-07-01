@@ -102,27 +102,15 @@ class AuthManager:
         if auth_kind == "none":
             return AuthContext(kind="none")
 
-        creds = await self.resolve(source_id)
-        if auth_kind == "bearer":
-            token = creds.get("token", "")
-            return AuthContext(
-                kind="bearer",
-                token=token,
-                headers={"Authorization": f"Bearer {token}"} if token else {},
-            )
-        if auth_kind == "api_key":
-            key = creds.get("key", "")
-            return AuthContext(
-                kind="api_key",
-                token=key,
-                headers={"X-API-Key": key} if key else {},
-            )
-        if auth_kind == "basic":
-            import base64
+        from backend.auth.header_builder import build_auth_header
 
-            user = creds.get("username", "")
-            pw = creds.get("password", "")
-            encoded = base64.b64encode(f"{user}:{pw}".encode()).decode()
-            return AuthContext(kind="basic", headers={"Authorization": f"Basic {encoded}"})
+        creds = await self.resolve(source_id)
+        headers = build_auth_header(auth_kind, creds)
+        if auth_kind == "bearer":
+            return AuthContext(kind="bearer", token=creds.get("token", ""), headers=headers)
+        if auth_kind == "api_key":
+            return AuthContext(kind="api_key", token=creds.get("key", ""), headers=headers)
+        if auth_kind == "basic":
+            return AuthContext(kind="basic", headers=headers)
 
         return AuthContext(kind=auth_kind)

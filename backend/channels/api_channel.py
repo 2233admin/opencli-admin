@@ -163,21 +163,13 @@ class ApiChannel(AbstractChannel):
         (``_build_auth_headers``) so unmigrated sources keep working as-is."""
         auth_type = auth.get("type", "")
         if source_id and auth_type in ("bearer", "api_key", "basic"):
+            from backend.auth.header_builder import build_auth_header
             from backend.auth.manager import AuthManager
 
             creds = await AuthManager().resolve(source_id)
-            if auth_type == "bearer" and creds.get("token"):
-                return {"Authorization": f"Bearer {creds['token']}"}
-            if auth_type == "api_key" and creds.get("key"):
-                header_name = auth.get("header", "X-API-Key")
-                return {header_name: creds["key"]}
-            if auth_type == "basic" and (creds.get("username") or creds.get("password")):
-                import base64
-
-                user = creds.get("username", "")
-                pw = creds.get("password", "")
-                encoded = base64.b64encode(f"{user}:{pw}".encode()).decode()
-                return {"Authorization": f"Basic {encoded}"}
+            headers = build_auth_header(auth_type, creds, header_name=auth.get("header", "X-API-Key"))
+            if headers:
+                return headers
         return self._build_auth_headers(auth)
 
     def _build_auth_headers(self, auth: dict) -> dict[str, str]:
