@@ -52,6 +52,7 @@ dependencies = [
     # Browser automation (skill execute loop over CDP)
     "playwright>=1.40.0",
     "cryptography>=46.0.5",
+    "celery-redbeat>=2.3.3",
 ]
 
 [project.optional-dependencies]

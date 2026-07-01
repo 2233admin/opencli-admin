@@ -134,6 +134,19 @@ async def lifespan(app: FastAPI):
     if use_admin_scheduler:
         from backend.scheduler import start_scheduler
         start_scheduler()
+    elif settings.task_executor == "celery":
+        # Bulk-sync redis with the current DB state at startup. redbeat's
+        # entries are otherwise only kept current by the schedule CRUD
+        # endpoints (backend.services.schedule_service._sync_redbeat) — this
+        # catches drift from anything that changed the DB without going
+        # through them (a migration, a direct DB edit, a fresh deploy against
+        # an existing DB). Best-effort: a redis hiccup here must not block
+        # the app from starting.
+        try:
+            from backend.worker.redbeat_sync import populate_all
+            await populate_all()
+        except Exception as exc:
+            logger.warning("redbeat populate_all failed at startup: %s", exc)
     logger.info(
         "OpenCLI Admin started (env=%s, executor=%s, orchestrator=%s)",
         settings.app_env,
