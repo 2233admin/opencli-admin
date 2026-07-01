@@ -1,6 +1,7 @@
 """Phase 1 runner tests: run_channel owns the cross-cutting concerns (pagination,
 cursor load/save) so channels stay thin and only implement fetch()."""
 
+import logging
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, patch
@@ -130,6 +131,46 @@ class MetadataChannel(AbstractChannel):
 
     async def validate_config(self, config):
         return []
+
+
+class FailsOnSecondPageChannel(AbstractChannel):
+    """Incremental + paginated: succeeds on page 0, raises on page 1 — exercises
+    a mid-pagination failure after the cursor has already advanced once."""
+
+    channel_type = "fail2"
+    capabilities = Capabilities(incremental=True, paginated=True)
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def fetch(self, ctx):
+        self.calls += 1
+        if self.calls == 1:
+            return FetchResult(items=[{"id": "p0"}], next_cursor={"page": 1}, has_more=True)
+        raise RuntimeError("boom")
+
+    async def collect(self, config, parameters):  # pragma: no cover - unused
+        raise AssertionError("must not be called")
+
+    async def validate_config(self, config):
+        return []
+
+
+@pytest.mark.asyncio
+async def test_pagination_failure_after_first_page_logs_discarded_items(caplog):
+    """A mid-pagination failure must not silently discard the items already
+    fetched this call — at minimum, log what's being lost and why."""
+    chan = FailsOnSecondPageChannel()
+    store = InMemoryCursorStore()
+
+    with caplog.at_level(logging.WARNING):
+        with pytest.raises(RuntimeError, match="boom"):
+            await run_channel(_source(), {}, channel=chan, cursor_store=store, http=object())
+
+    assert any("already-fetched" in r.getMessage() for r in caplog.records)
+    # Exception propagation and cursor-commit timing are unchanged — page 0's
+    # cursor is still persisted even though the call as a whole raises.
+    assert await store.load("s1") == {"page": 1}
 
 
 @pytest.mark.asyncio

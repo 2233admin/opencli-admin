@@ -98,7 +98,24 @@ async def run_channel(
                 http=client,
                 log=log,
             )
-            result = await chan.fetch(ctx)
+            try:
+                result = await chan.fetch(ctx)
+            except Exception:
+                # A mid-pagination failure discards items already accumulated
+                # this call (the caller never sees a partial batch) even
+                # though the cursor may already reflect an earlier page's
+                # progress (persisted just below, before the next iteration's
+                # fetch). That's an existing tension between resumability and
+                # exactly-once delivery this doesn't resolve — just makes it
+                # visible instead of a silent loss.
+                if pages > 0:
+                    log.warning(
+                        "run_channel failed on page %s for source %s: %s already-fetched "
+                        "item(s) from this call are discarded; cursor may already reflect "
+                        "page %s's progress (%r)",
+                        pages, source.id, len(items), pages, cursor,
+                    )
+                raise
             items.extend(result.items)
             # Last-page-wins on key collision — intentional, not an oversight.
             # No current channel is both paginated and metadata-bearing (RSS
