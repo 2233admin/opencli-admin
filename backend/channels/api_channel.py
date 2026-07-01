@@ -136,6 +136,8 @@ class ApiChannel(AbstractChannel):
                 raise ChannelFetchError(
                     f"HTTP {exc.response.status_code}: {exc.response.text[:200]}"
                 ) from exc
+            except Exception as exc:
+                raise ChannelFetchError(f"API request failed: {exc}") from exc
         finally:
             if owns_client:
                 await client.aclose()

@@ -530,6 +530,23 @@ async def test_fetch_timeout_raises_channel_fetch_error(channel):
 
 
 @pytest.mark.asyncio
+async def test_fetch_generic_exception_raises_channel_fetch_error(channel):
+    """collect() has a generic except-Exception fallback (connection refused, DNS
+    failure, ...); fetch() must have the same, or those errors bypass
+    ChannelFetchError and the runner's retry/backoff contract entirely."""
+    http = AsyncMock()
+    http.request = AsyncMock(side_effect=OSError("connection refused"))
+    ctx = FetchContext(
+        config={"base_url": "https://api.example.com", "endpoint": "/data"},
+        params={},
+        http=http,
+    )
+
+    with pytest.raises(ChannelFetchError, match="connection refused"):
+        await channel.fetch(ctx)
+
+
+@pytest.mark.asyncio
 async def test_fetch_http_error_raises_channel_fetch_error(channel):
     import httpx
 
