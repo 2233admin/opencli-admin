@@ -362,7 +362,7 @@ export function buildTopologyGraph(input: TopologyInput, options: TopologyOption
         addEdge(nodeId('schedule', schedule.id), taskNode, 'triggers', healthFromTaskStatus(task.status))
       }
     } else {
-      addEdge(nodeId('source', task.source_id), taskNode, 'manual', healthFromTaskStatus(task.status))
+      addEdge(nodeId('source', task.source_id), taskNode, 'triggers', healthFromTaskStatus(task.status))
     }
   }
 
