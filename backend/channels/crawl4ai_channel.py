@@ -70,7 +70,12 @@ class Crawl4AIChannel(AbstractChannel):
 
         cookies: list[dict] = []
         if auth_config.get("type") == "cookie":
-            cookies = await self._resolve_cookies(url)
+            try:
+                cookies = await self._resolve_cookies(url)
+            except ChannelFetchError:
+                raise
+            except Exception as exc:
+                raise ChannelFetchError(f"crawl4ai: cookie resolution failed: {exc}") from exc
 
         try:
             from crawl4ai import AsyncWebCrawler, BrowserConfig, CacheMode, CrawlerRunConfig
@@ -88,7 +93,16 @@ class Crawl4AIChannel(AbstractChannel):
             }
             extraction_strategy = JsonCssExtractionStrategy(schema)
         else:
-            extraction_strategy = await self._build_llm_strategy(config)
+            # _build_llm_strategy hits the DB (provider lookup) and can raise
+            # unclassified errors that would otherwise escape collect()'s
+            # ChannelFetchError-only catch, bypassing the retry/error-taxonomy
+            # contract every other failure path here goes through.
+            try:
+                extraction_strategy = await self._build_llm_strategy(config)
+            except ChannelFetchError:
+                raise
+            except Exception as exc:
+                raise ChannelFetchError(f"crawl4ai: LLM strategy setup failed: {exc}") from exc
 
         browser_config = BrowserConfig(headless=True, enable_stealth=True, cookies=cookies or None)
         run_config = CrawlerRunConfig(
@@ -235,11 +249,16 @@ class Crawl4AIChannel(AbstractChannel):
             cookies = await self._resolve_cookies(url)
 
         try:
-            browser_config = BrowserConfig(headless=True, cookies=cookies or None)
+            # Same anti-detection setup as fetch() — a probe without it can
+            # false-fail against a source that's only reachable with stealth/magic.
+            browser_config = BrowserConfig(
+                headless=True, enable_stealth=True, cookies=cookies or None
+            )
             async with AsyncWebCrawler(config=browser_config) as crawler:
-                result = await crawler.arun(
-                    url=url, config=CrawlerRunConfig(cache_mode=CacheMode.BYPASS, page_timeout=5000)
+                probe_config = CrawlerRunConfig(
+                    cache_mode=CacheMode.BYPASS, magic=True, page_timeout=5000
                 )
+                result = await crawler.arun(url=url, config=probe_config)
             return bool(result.success)
         except Exception as exc:
             logger.warning("crawl4ai health_check: %s unreachable: %s", url, exc)

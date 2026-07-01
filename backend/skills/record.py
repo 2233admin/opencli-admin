@@ -93,11 +93,14 @@ CAPTURE_JS = r"""
   document.addEventListener('change', (e) => {
     const tag = ((e.target && e.target.tagName) || '').toLowerCase();
     const isSelect = tag === 'select';
+    const inputType = ((e.target && e.target.type) || '').toLowerCase();
+    const isSensitive = inputType === 'password';
     window.__record_event({
       verb: isSelect ? 'select' : 'type',
       name: nameOf(e.target),
       role: roleOf(e.target),
-      value: String((e.target && e.target.value) ?? ''),
+      value: isSensitive ? '' : String((e.target && e.target.value) ?? ''),
+      redacted: isSensitive,
     });
   }, true);
   document.addEventListener('submit', (e) => {
