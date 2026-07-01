@@ -100,6 +100,12 @@ async def run_channel(
             )
             result = await chan.fetch(ctx)
             items.extend(result.items)
+            # Last-page-wins on key collision — intentional, not an oversight.
+            # No current channel is both paginated and metadata-bearing (RSS
+            # isn't paginated; the default fetch() adapter is single-page by
+            # construction), so there's no real use case yet to derive a
+            # different merge policy (e.g. first-wins, or per-key append) from.
+            # Revisit when a real paginated channel needs one.
             metadata.update(result.metadata)
 
             # Persist the cursor after each page: a crash mid-pagination resumes
