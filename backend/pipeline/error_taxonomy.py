@@ -49,6 +49,22 @@ def is_retryable(error_type: str | None) -> bool:
     return False
 
 
+def effective_error_type(exc: BaseException) -> str:
+    """The exception type name that should drive retry classification.
+
+    ``ChannelFetchError`` is a generic wrapper (raised by the default fetch()
+    adapter and by channels' own request-handling helpers); its own class name
+    says nothing about whether the underlying fault was transient. Unwrap to
+    ``__cause__`` (set via ``raise ... from exc`` everywhere it's raised) when
+    present so a wrapped ``TimeoutException`` still classifies as retryable.
+    """
+    from backend.channels.base import ChannelFetchError
+
+    if isinstance(exc, ChannelFetchError) and exc.__cause__ is not None:
+        return type(exc.__cause__).__name__
+    return type(exc).__name__
+
+
 def is_retryable_http_status(status_code: int) -> bool:
     """429/5xx are handled by RateLimitedClient's own backoff before ever
     reaching the pipeline layer; if one leaks through anyway, treat it as

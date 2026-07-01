@@ -5,8 +5,10 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
+from backend.channels.base import ChannelFetchError
 from backend.models.source import DataSource
 from backend.pipeline import events
+from backend.pipeline.error_taxonomy import effective_error_type, is_retryable
 
 logger = logging.getLogger(__name__)
 
@@ -122,14 +124,22 @@ async def run_pipeline(
     try:
         channel_result = await collector.collect(source, params)
     except Exception as exc:
-        logger.exception("[task:%s] step1/collect exception | %s", task_id, exc)
+        error_type = effective_error_type(exc)
+        logger.exception(
+            "[task:%s] step1/collect exception | error_type=%s | %s", task_id, error_type, exc
+        )
         if run_id:
             await events.emit(
                 run_id, "collect",
                 f"采集失败: {exc}",
                 level="error",
-                detail={"error": str(exc), "error_type": type(exc).__name__},
+                detail={"error": str(exc), "error_type": error_type},
             )
+        if is_retryable(error_type):
+            # Let this propagate to the celery task boundary so its
+            # autoretry_for policy applies instead of burning a permanent
+            # failure on a transient fault.
+            raise
         return PipelineResult(success=False, source_id=source.id, error=str(exc))
 
     if not channel_result.success:
@@ -144,6 +154,8 @@ async def run_pipeline(
                 level="error",
                 detail={"error": channel_result.error, "error_type": channel_result.error_type},
             )
+        if is_retryable(channel_result.error_type):
+            raise ChannelFetchError(channel_result.error or "collect failed")
         return PipelineResult(success=False, source_id=source.id, error=channel_result.error)
 
     step1_elapsed = int((datetime.now(timezone.utc) - step1_start).total_seconds() * 1000)
@@ -179,17 +191,19 @@ async def run_pipeline(
     try:
         sink_result = await active_sink.write_batch(sink_ctx, channel_result.items)
     except Exception as exc:
+        error_type = effective_error_type(exc)
         logger.exception(
-            "[task:%s] step2-3/sink exception | error_type=%s | %s",
-            task_id, type(exc).__name__, exc,
+            "[task:%s] step2-3/sink exception | error_type=%s | %s", task_id, error_type, exc
         )
         if run_id:
             await events.emit(
                 run_id, "store",
                 f"持久化失败: {exc}",
                 level="error",
-                detail={"error": str(exc), "error_type": type(exc).__name__},
+                detail={"error": str(exc), "error_type": error_type},
             )
+        if is_retryable(error_type):
+            raise
         return PipelineResult(
             success=False,
             source_id=source.id,

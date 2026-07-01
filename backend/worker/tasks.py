@@ -20,7 +20,18 @@ def _run_async(coro: Any) -> Any:
         loop.close()
 
 
-@celery_app.task(bind=True, name="run_collection", max_retries=3, default_retry_delay=60)
+@celery_app.task(
+    bind=True,
+    name="run_collection",
+    max_retries=3,
+    default_retry_delay=60,
+    # run_pipeline() only re-raises exceptions its error taxonomy classified
+    # as retryable (backend.pipeline.error_taxonomy.is_retryable) — anything
+    # deterministic is already swallowed into a returned PipelineResult
+    # before it gets here. So catching broadly at this boundary is correct:
+    # the filtering already happened one layer down, not duplicated here.
+    autoretry_for=(Exception,),
+)
 def run_collection(self: Task, task_id: str, parameters: dict | None = None) -> dict:
     """Execute the full collection pipeline for a task."""
     from backend.pipeline.runner import run_collection_pipeline
