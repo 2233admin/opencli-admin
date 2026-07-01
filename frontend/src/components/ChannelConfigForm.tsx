@@ -258,7 +258,7 @@ function CredentialField({
       <input
         type="password"
         aria-label={`${label}（加密存储）`}
-        name={formFieldName(label, 'credential')}
+        name={`channel-config-credential-${keyName}`}
         className={`${input} flex-1`}
         value={value}
         onChange={(e) => setValue(e.target.value)}
