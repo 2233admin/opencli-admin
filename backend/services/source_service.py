@@ -1,10 +1,11 @@
 from typing import Optional
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.channels.registry import get_channel
 from backend.models.source import DataSource
+from backend.models.source_credential import SourceCredential
 from backend.schemas.source import DataSourceCreate, DataSourceUpdate
 
 
@@ -58,6 +59,13 @@ async def update_source(
 
 
 async def delete_source(session: AsyncSession, source: DataSource) -> None:
+    # source_credentials has no FK/cascade to data_sources (it's written by
+    # AuthManager, a separate session, so a DB-level FK would need cross-module
+    # coordination) — clean it up here instead, or the encrypted secrets for a
+    # deleted source live forever.
+    await session.execute(
+        delete(SourceCredential).where(SourceCredential.source_id == source.id)
+    )
     await session.delete(source)
     await session.flush()
 

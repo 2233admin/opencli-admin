@@ -158,6 +158,29 @@ async def test_store_credential_source_not_found(client):
 
 
 @pytest.mark.asyncio
+async def test_delete_source_cascades_credentials(client, db_engine, sample_source_data, monkeypatch):
+    """Deleting a source must not orphan its encrypted credentials — there's no
+    DB-level FK/cascade (AuthManager writes via a separate session), so
+    delete_source() cleans up source_credentials itself."""
+    from backend.auth.manager import AuthManager
+
+    monkeypatch.setenv(crypto.ENV_KEY, _KEY)
+    create_resp = await client.post("/api/v1/sources", json=sample_source_data)
+    source_id = create_resp.json()["data"]["id"]
+
+    with patch("backend.database.AsyncSessionLocal", _sessionmaker(db_engine)):
+        await client.post(
+            f"/api/v1/sources/{source_id}/credentials",
+            json={"key_name": "token", "secret": "s3cr3t"},
+        )
+
+        delete_resp = await client.delete(f"/api/v1/sources/{source_id}")
+        assert delete_resp.status_code == 200
+
+        assert await AuthManager().resolve(source_id) == {}
+
+
+@pytest.mark.asyncio
 async def test_delete_source_credential(client, db_engine, sample_source_data, monkeypatch):
     monkeypatch.setenv(crypto.ENV_KEY, _KEY)
     create_resp = await client.post("/api/v1/sources", json=sample_source_data)
