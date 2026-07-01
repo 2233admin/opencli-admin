@@ -21,4 +21,11 @@ celery_app.conf.update(
     task_acks_late=True,
     worker_prefetch_multiplier=1,
     result_expires=86400,  # 1 day
+    # redbeat entries live in redis and are read on every tick, so a schedule
+    # created/edited/deleted through the API (backend.worker.redbeat_sync)
+    # takes effect on the next tick — no beat process restart needed. The old
+    # static beat_schedule dict (worker/beat_schedule.py) required exactly
+    # that restart and, as it turned out, was never even wired in here.
+    beat_scheduler="redbeat.RedBeatScheduler",
+    redbeat_redis_url=settings.redis_url,
 )

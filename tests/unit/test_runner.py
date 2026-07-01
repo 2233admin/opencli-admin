@@ -449,3 +449,60 @@ async def test_run_pipeline_with_agent_id():
             result = await run_collection_pipeline("task-1", {})
 
     assert result["success"] is True
+
+
+# ── GOAL-4 PR-B: retryable run_pipeline failure records then re-propagates ──────
+
+@pytest.mark.asyncio
+async def test_run_pipeline_retryable_failure_marks_failed_then_reraises():
+    """When run_pipeline re-raises (error_taxonomy classified it retryable),
+    runner.py must still record the attempt as failed (task+run) before
+    letting the exception continue to celery's autoretry_for — otherwise the
+    UI shows a run stuck at "running" for the whole backoff window."""
+    task = _make_task()
+    source = _make_source()
+    run = _make_run()
+
+    def capture_add(obj):
+        obj.id = "run-1"
+
+    session1 = AsyncMock()
+    session1.get = AsyncMock(return_value=task)
+    session1.add = MagicMock(side_effect=capture_add)
+    session1.flush = AsyncMock()
+    session1.commit = AsyncMock()
+
+    session2 = AsyncMock()
+    session2.get = AsyncMock(return_value=source)
+    session2.expunge = MagicMock()
+    _p2_no_provider = MagicMock()
+    _p2_no_provider.scalars.return_value.first.return_value = None
+    session2.execute = AsyncMock(return_value=_p2_no_provider)
+
+    # Phase 3's error-bookkeeping session (new AsyncSessionLocal opened inside
+    # the except block, not the old Phase 4 finalize session — run_pipeline
+    # never returns here, so Phase 4 never runs).
+    session3 = AsyncMock()
+    session3.get = AsyncMock(side_effect=lambda model, id: task if id == "task-1" else run)
+    session3.commit = AsyncMock()
+
+    with patch(
+        "backend.pipeline.runner.AsyncSessionLocal",
+        side_effect=[
+            make_session_cm(session1),
+            make_session_cm(session2),
+            make_session_cm(session3),
+        ],
+    ):
+        with patch(
+            "backend.pipeline.runner.run_pipeline",
+            new_callable=AsyncMock,
+            side_effect=ConnectionError("upstream reset"),
+        ):
+            with pytest.raises(ConnectionError, match="upstream reset"):
+                await run_collection_pipeline("task-1", {})
+
+    assert task.status == "failed"
+    assert "upstream reset" in task.error_message
+    assert run.status == "failed"
+    assert "upstream reset" in run.error_message

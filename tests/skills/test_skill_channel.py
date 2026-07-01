@@ -412,6 +412,107 @@ async def test_collect_resolves_skill_from_db(spine_db, monkeypatch):
     assert "disabled" in (blocked.error or "")
 
 
+# ── last_failing_trace (2026-07-01 addendum): persisted only on a fail ─────────
+async def test_collect_persists_last_failing_trace_on_fail(spine_db, monkeypatch):
+    from backend.channels.skill_channel import SkillChannel
+    from backend.models.skill import Skill
+
+    async with spine_db() as session:
+        skill = Skill(
+            domain="demo", capability="flaky2", name="flaky2",
+            skill_md=SKILL_MD, elements=ELEMENTS, enabled=True,
+        )
+        session.add(skill)
+        await session.flush()
+        skill_id = skill.id
+        await session.commit()
+
+    fake_page = FakePage()
+    _patch_browser_and_model(
+        monkeypatch, fake_page, [("done", {"status": "failed", "note": "nope"})]
+    )
+    await SkillChannel().collect({"skill_id": skill_id}, {})
+
+    async with spine_db() as session:
+        row = await session.get(Skill, skill_id)
+        assert row.last_failing_trace is not None
+        assert row.last_failing_trace["schema"] == "journey_trace_v1"
+        assert row.last_failing_trace["outcome"]["status"] == "failed"
+
+
+async def test_collect_does_not_persist_trace_on_success(spine_db, monkeypatch):
+    from backend.channels.skill_channel import SkillChannel
+    from backend.models.skill import Skill
+
+    async with spine_db() as session:
+        skill = Skill(
+            domain="demo", capability="clean2", name="clean2",
+            skill_md=SKILL_MD, elements=ELEMENTS, enabled=True,
+        )
+        session.add(skill)
+        await session.flush()
+        skill_id = skill.id
+        await session.commit()
+
+    fake_page = FakePage()
+    _patch_browser_and_model(
+        monkeypatch, fake_page,
+        [("done", {"status": "success", "note": "list page shown"})],
+    )
+    await SkillChannel().collect({"skill_id": skill_id}, {})
+
+    async with spine_db() as session:
+        row = await session.get(Skill, skill_id)
+        assert row.last_failing_trace is None
+
+
+# ── v2 auto-trigger: 3 straight fails → correction_proposed, no dup on the 4th ──
+async def test_collect_proposes_correction_after_n_straight_fails(spine_db, monkeypatch):
+    """Wires backend.skills.correction.maybe_propose_correction into collect():
+    a persisted skill that fails 3 runs in a row gets one `correction_proposed`
+    evidence entry appended (never a 4th on a further fail — no duplicates)."""
+    from backend.channels.skill_channel import SkillChannel
+    from backend.models.skill import Skill
+
+    async with spine_db() as session:
+        skill = Skill(
+            domain="demo", capability="flaky", name="flaky skill",
+            skill_md=SKILL_MD, elements=ELEMENTS, enabled=True,
+        )
+        session.add(skill)
+        await session.flush()
+        skill_id = skill.id
+        await session.commit()
+
+    for i in range(3):
+        fake_page = FakePage()
+        _patch_browser_and_model(
+            monkeypatch, fake_page, [("done", {"status": "failed", "note": f"run {i}"})]
+        )
+        result = await SkillChannel().collect({"skill_id": skill_id}, {})
+        assert result.success is True  # channel-level success; outcome is in metadata
+
+    async with spine_db() as session:
+        row = await session.get(Skill, skill_id)
+        events = [e["event"] for e in row.evidence]
+        assert events.count("executed") == 3
+        assert events[-1] == "correction_proposed"
+        assert events.count("correction_proposed") == 1
+
+    # a 4th straight fail must NOT append a second proposal (already open).
+    fake_page = FakePage()
+    _patch_browser_and_model(
+        monkeypatch, fake_page, [("done", {"status": "failed", "note": "run 3"})]
+    )
+    await SkillChannel().collect({"skill_id": skill_id}, {})
+
+    async with spine_db() as session:
+        row = await session.get(Skill, skill_id)
+        events = [e["event"] for e in row.evidence]
+        assert events.count("correction_proposed") == 1
+        assert events.count("executed") == 4
+
+
 # ── SkillService leg: unresolvable skill → clean failure, not a crash ──────────
 async def test_collect_unknown_skill_fails_cleanly(spine_db, monkeypatch):
     """A skill_id / (domain, capability) with no matching row returns a failed

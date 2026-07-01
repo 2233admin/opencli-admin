@@ -84,7 +84,7 @@ async def test_run_channel_drives_rss_and_persists_cursor():
     http = _Http(_Resp(200, text=_RSS, headers={"ETag": 'W/"v2"'}))
     store = InMemoryCursorStore()
 
-    items = await run_channel(source, {}, cursor_store=store, channel=RSSChannel(), http=http)
+    items = (await run_channel(source, {}, cursor_store=store, channel=RSSChannel(), http=http)).items
 
     assert [i["id"] for i in items] == ["id-a", "id-b"]
     # Incremental channel: the runner persisted the advanced cursor.

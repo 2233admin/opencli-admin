@@ -76,6 +76,7 @@ import {
   ExternalLink,
   FileInput,
   Filter,
+  Ghost,
   Globe2,
   ListChecks,
   Pencil,
@@ -85,6 +86,7 @@ import {
   RotateCcw,
   Search,
   Settings2,
+  Sparkles,
   Trash2,
   Zap,
   type LucideIcon,
@@ -102,7 +104,7 @@ function chromeNovncPort(cdpUrl: string, basePort = 3010): number {
   }
 }
 
-const CHANNEL_TYPES: ChannelType[] = ['opencli', 'rss', 'api', 'web_scraper', 'cli']
+const CHANNEL_TYPES: ChannelType[] = ['opencli', 'rss', 'api', 'web_scraper', 'crawl4ai', 'cli', 'skill']
 type FilterType = 'all' | ChannelType
 
 type ActionState = 'loading' | 'ok' | 'err'
@@ -151,6 +153,20 @@ const CHANNEL_META: Record<ChannelType, {
     short: 'CMD',
     hint: '本地命令',
     icon: Cable,
+    tone: 'violet',
+  },
+  skill: {
+    label: 'Skill',
+    short: 'SK',
+    hint: '技能库执行 (record→distill→execute→correct)',
+    icon: Sparkles,
+    tone: 'gold',
+  },
+  crawl4ai: {
+    label: 'Crawl4AI',
+    short: 'C4AI',
+    hint: 'JS 渲染页面 + 反爬(独立管理浏览器)',
+    icon: Ghost,
     tone: 'violet',
   },
 }
@@ -307,6 +323,7 @@ function SourceModal({
                 channelType={channelType}
                 config={channelConfig}
                 onChange={handleConfigChange}
+                sourceId={initial?.id}
               />
             </div>
           </div>
@@ -648,6 +665,12 @@ function sourceTarget(source: DataSource) {
   }
   if (source.channel_type === 'web_scraper') {
     return String(config.url ?? config.start_url ?? config.startUrl ?? CHANNEL_META.web_scraper.hint)
+  }
+  if (source.channel_type === 'skill') {
+    if (config.domain || config.capability) {
+      return [config.domain, config.capability].filter(Boolean).join(' / ')
+    }
+    return config.skill_id ? `skill_id: ${String(config.skill_id).slice(0, 8)}` : CHANNEL_META.skill.hint
   }
   if (source.channel_type === 'cli') {
     return String(config.command ?? CHANNEL_META.cli.hint)

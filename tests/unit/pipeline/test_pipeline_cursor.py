@@ -37,7 +37,7 @@ async def test_cursor_committed_after_durable_write(db_session):
     source, task = await _seed(db_session)
     save_mock = AsyncMock()
     cr = ChannelResult.ok(
-        [{"title": "x"}], cursor_pending={"etag": "v2"}, cursor_source_id=source.id
+        [{"title": "x"}], __cursor_pending__={"etag": "v2"}, __cursor_source_id__=source.id
     )
 
     with (
@@ -82,7 +82,7 @@ async def test_cursor_not_committed_when_sink_fails(db_session):
     failing = MagicMock()
     failing.write_batch = AsyncMock(side_effect=RuntimeError("sink boom"))
     cr = ChannelResult.ok(
-        [{"title": "x"}], cursor_pending={"etag": "v2"}, cursor_source_id=source.id
+        [{"title": "x"}], __cursor_pending__={"etag": "v2"}, __cursor_source_id__=source.id
     )
 
     with (

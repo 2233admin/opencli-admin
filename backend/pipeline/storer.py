@@ -4,6 +4,7 @@ import logging
 import os
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.models.record import CollectedRecord
@@ -82,5 +83,39 @@ async def store_records(
         session.add(record)
         new_records.append(record)
 
-    await session.flush()
+    try:
+        await session.flush()
+    except IntegrityError:
+        # A concurrent writer (e.g. a celery retry racing the original attempt)
+        # inserted an overlapping content_hash between our existence check and
+        # this flush. Re-check against the DB and insert survivors one at a
+        # time so one collision doesn't lose the rest of an otherwise-new batch
+        # (retries becoming real in PR-B makes this reachable in practice, not
+        # just theoretical).
+        await session.rollback()
+        recheck = await session.execute(
+            select(CollectedRecord.content_hash).where(
+                CollectedRecord.source_id == source_id,
+                CollectedRecord.content_hash.in_([r.content_hash for r in new_records]),
+            )
+        )
+        already_there = {row[0] for row in recheck}
+        survivors: list[CollectedRecord] = []
+        for record in new_records:
+            if record.content_hash in already_there:
+                skipped += 1
+                continue
+            # Nested transaction (SAVEPOINT) per record: a plain session.rollback()
+            # here would undo every earlier survivor's flush too, since they all
+            # share this one session/transaction — begin_nested() scopes the
+            # rollback to just this record's failed insert.
+            try:
+                async with session.begin_nested():
+                    session.add(record)
+                    await session.flush()
+                survivors.append(record)
+            except IntegrityError:
+                skipped += 1
+        new_records = survivors
+
     return new_records, skipped

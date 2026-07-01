@@ -10,6 +10,10 @@ class ChannelResult:
     success: bool
     items: list[dict[str, Any]] = field(default_factory=list)
     error: str | None = None
+    #: The failing exception's class name (e.g. "TimeoutException"), when the
+    #: failure came from a caught exception — lets callers build a retryable-vs-
+    #: permanent taxonomy without re-parsing the free-text error message.
+    error_type: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
     @property
@@ -21,8 +25,8 @@ class ChannelResult:
         return cls(success=True, items=items, metadata=metadata)
 
     @classmethod
-    def fail(cls, error: str) -> "ChannelResult":
-        return cls(success=False, error=error)
+    def fail(cls, error: str, error_type: str | None = None) -> "ChannelResult":
+        return cls(success=False, error=error, error_type=error_type)
 
 
 # ── Thick channel contract (Phase 0) ─────────────────────────────────────────
@@ -66,6 +70,7 @@ class FetchContext:
     config: dict[str, Any]
     params: dict[str, Any]
     cursor: dict[str, Any] | None = None  # persisted "where we left off" (etag / since_id / page_token)
+    source_id: str | None = None          # the DataSource id, for channels that need their own credential lookup
     auth: AuthContext | None = None       # resolved credentials (Phase 2)
     http: Any = None                      # shared httpx.AsyncClient, rate-limit + retry built in (Phase 1)
     log: Any = None                       # logger injected by the runner
@@ -79,11 +84,25 @@ class FetchResult:
     items: list[dict[str, Any]] = field(default_factory=list)
     next_cursor: dict[str, Any] | None = None
     has_more: bool = False
+    #: Non-item result data (e.g. opencli's node_url/chrome_mode, skill's
+    #: awaiting_confirm) that must reach PipelineResult.metadata unchanged — the
+    #: default fetch() adapter forwards collect()'s ChannelResult.metadata here so
+    #: routing a channel through run_channel() never drops it.
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 class ChannelFetchError(Exception):
     """Raised by the default fetch() adapter when the wrapped collect() failed, so
-    the runner applies its retry/backoff policy instead of silently dropping."""
+    the runner applies its retry/backoff policy instead of silently dropping.
+
+    ``error_type`` carries an explicit retry-classification hint (see
+    ``error_taxonomy.effective_error_type``) for callers that already know the
+    fault category (e.g. an HTTP status code) but don't want to lose it behind
+    a generic wrapper exception."""
+
+    def __init__(self, message: str, error_type: str | None = None) -> None:
+        super().__init__(message)
+        self.error_type = error_type
 
 
 class AbstractChannel(ABC):
@@ -121,8 +140,11 @@ class AbstractChannel(ABC):
         runner calls fetch(), never collect()."""
         result = await self.collect(ctx.config, ctx.params)
         if not result.success:
-            raise ChannelFetchError(result.error or f"{self.channel_type} collect failed")
-        return FetchResult(items=result.items)
+            raise ChannelFetchError(
+                result.error or f"{self.channel_type} collect failed",
+                error_type=result.error_type,
+            )
+        return FetchResult(items=result.items, metadata=result.metadata)
 
     def identity(self, item: dict[str, Any]) -> str | None:
         """Stable source-native id for an item — the dedup key. Default None → the
@@ -131,6 +153,12 @@ class AbstractChannel(ABC):
         chars in the title = a new item'."""
         return None
 
-    async def health_check(self) -> bool:
-        """Optional health check. Override to implement channel-specific check."""
+    async def health_check(
+        self, config: dict[str, Any] | None = None, source_id: str | None = None
+    ) -> bool:
+        """Optional health check. Override to implement channel-specific check.
+        ``config`` (the source's channel_config) lets an override do a real
+        per-source probe instead of a generic liveness check; ``source_id``
+        lets it resolve real credentials from the encrypted store (see
+        ``ApiChannel._resolve_auth_headers``) for an authenticated probe."""
         return True

@@ -37,6 +37,12 @@ class Skill(TimestampMixin):
     source_trace: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     distill_model: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     evidence: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    # Full journey_trace_v1 of the most recent failing run (2026-07-01 addendum) —
+    # self_eval/evidence only ever stored a trace_id + outcome summary, so a human
+    # looking at a `correction_proposed` entry had no trace body to actually
+    # redistill from later. Overwritten on each fail (v1: most recent only, same
+    # "keep it simple" call as re_distill's single-trace redistillation).
+    last_failing_trace: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     # Lifecycle: draft -> active -> deprecated; version bumps on re-distill.
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="draft")

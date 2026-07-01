@@ -1,5 +1,5 @@
-import { useRef, useState, type KeyboardEvent } from 'react'
-import { Bot, Check, Loader2, RefreshCw, Send, Sparkles, User, X } from 'lucide-react'
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
+import { Ban, Bot, Check, Loader2, RefreshCw, Send, Sparkles, User, X } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { apiClient } from '../../api/client'
@@ -69,7 +69,27 @@ export function AgentDock({
   const [loading, setLoading] = useState(false)
   const [proposal, setProposal] = useState<Proposal | null>(null)
   const [redistill, setRedistill] = useState<RedistillTarget | null>(null)
+  const [hasOpenProposal, setHasOpenProposal] = useState(false)
+  const [dismissTarget, setDismissTarget] = useState<{ skillId: string; title: string } | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
+
+  /* Best-effort visibility flag for the 驳回纠错 button — refetched whenever
+   * the dock's context changes to a skill. Not a user-initiated action, so
+   * failures are swallowed rather than surfaced. */
+  useEffect(() => {
+    setHasOpenProposal(false)
+    if (!contextNode || contextNode.kind !== 'skill') return
+    let cancelled = false
+    apiClient
+      .get<ApiResponse<{ has_open_proposal: boolean }>>(`/skills/${contextNode.id}`)
+      .then((r) => {
+        if (!cancelled) setHasOpenProposal(r.data.data.has_open_proposal)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [contextNode?.id, contextNode?.kind])
 
   const scrollToBottom = () => {
     requestAnimationFrame(() => {
@@ -151,6 +171,7 @@ export function AgentDock({
       outcome: { status: 'failed', milestones_hit: [], terminal_check: false },
     }
     setProposal(null)
+    setDismissTarget(null)
     setRedistill({ skillId: contextNode.id, title: contextNode.title, trace })
   }
 
@@ -166,6 +187,7 @@ export function AgentDock({
       toast.success(`已重蒸技能「${redistill.title}」→ v${res.version}`)
       append({ role: 'assistant', content: `✅ 已重蒸技能「${redistill.title}」, 新版本 v${res.version}。` })
       setRedistill(null)
+      setHasOpenProposal(false)
       onApplied()
     } catch (err) {
       const detail = extractDetail(err)
@@ -179,6 +201,40 @@ export function AgentDock({
   const cancelRedistill = () => {
     setRedistill(null)
     append({ role: 'assistant', content: '已取消重蒸, 技能未改动。' })
+  }
+
+  /* 驳回纠错 — dismiss an open correction proposal (append correction_dismissed,
+   * resets the fail-streak boundary). Same proposal→confirm contract as
+   * redistill; POSTs to /skills/{id}/dismiss-correction on confirm. */
+  const proposeDismiss = () => {
+    if (!contextNode || contextNode.kind !== 'skill' || loading) return
+    setProposal(null)
+    setRedistill(null)
+    setDismissTarget({ skillId: contextNode.id, title: contextNode.title })
+  }
+
+  const confirmDismiss = async () => {
+    if (!dismissTarget || loading) return
+    setLoading(true)
+    try {
+      await apiClient.post(`/skills/${dismissTarget.skillId}/dismiss-correction`)
+      toast.success(`已驳回技能「${dismissTarget.title}」的纠错提案`)
+      append({ role: 'assistant', content: `✅ 已驳回「${dismissTarget.title}」的纠错提案, 计数重置。` })
+      setDismissTarget(null)
+      setHasOpenProposal(false)
+      onApplied()
+    } catch (err) {
+      const detail = extractDetail(err)
+      toast.error(`驳回失败: ${detail}`)
+      append({ role: 'assistant', content: `❌ 驳回失败: ${detail}` })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const cancelDismiss = () => {
+    setDismissTarget(null)
+    append({ role: 'assistant', content: '已取消, 纠错提案仍待处理。' })
   }
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -208,11 +264,22 @@ export function AgentDock({
           <button
             type="button"
             onClick={proposeRedistill}
-            disabled={loading || !!redistill}
+            disabled={loading || !!redistill || !!dismissTarget}
             title="用失败轨迹重新蒸馏这个技能 (version n+1)"
             className="inline-flex shrink-0 items-center gap-1 border border-amber-400/35 bg-amber-400/10 px-2 py-0.5 font-mono text-[10px] font-semibold text-amber-100 transition hover:bg-amber-400/20 disabled:opacity-40"
           >
             <RefreshCw size={11} /> 重蒸技能
+          </button>
+        )}
+        {contextNode?.kind === 'skill' && hasOpenProposal && (
+          <button
+            type="button"
+            onClick={proposeDismiss}
+            disabled={loading || !!redistill || !!dismissTarget}
+            title="驳回本次纠错提案, 判定失败连续计数不是真问题"
+            className="inline-flex shrink-0 items-center gap-1 border border-white/12 bg-white/[0.04] px-2 py-0.5 font-mono text-[10px] font-semibold text-zinc-300 transition hover:border-white/25 hover:bg-white/[0.08] disabled:opacity-40"
+          >
+            <Ban size={11} /> 驳回纠错
           </button>
         )}
       </div>
@@ -266,6 +333,33 @@ export function AgentDock({
             <button
               type="button"
               onClick={cancelRedistill}
+              disabled={loading}
+              className="inline-flex items-center gap-1 border border-white/12 px-2.5 py-1 text-[11px] text-zinc-300 transition hover:border-white/25 disabled:opacity-50"
+            >
+              <X size={12} /> 取消
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 驳回纠错 confirm card — same amber confirm contract as proposals */}
+      {dismissTarget && (
+        <div className="border-t border-amber-400/25 bg-amber-400/[0.06] px-3 py-2.5">
+          <p className="font-mono text-[9px] uppercase tracking-wider text-amber-200/70">待确认驳回</p>
+          <p className="mt-1 text-xs font-semibold text-amber-100">驳回技能「{dismissTarget.title}」的纠错提案</p>
+          <p className="mt-0.5 font-mono text-[11px] text-amber-200/80">判定这次连续失败不是真问题, 重置计数, 技能本身不改动。</p>
+          <div className="mt-2 flex gap-2">
+            <button
+              type="button"
+              onClick={confirmDismiss}
+              disabled={loading}
+              className="inline-flex items-center gap-1 border border-emerald-400/40 bg-emerald-400/15 px-2.5 py-1 text-[11px] font-semibold text-emerald-100 transition hover:bg-emerald-400/25 disabled:opacity-50"
+            >
+              <Check size={12} /> 确认驳回
+            </button>
+            <button
+              type="button"
+              onClick={cancelDismiss}
               disabled={loading}
               className="inline-flex items-center gap-1 border border-white/12 px-2.5 py-1 text-[11px] text-zinc-300 transition hover:border-white/25 disabled:opacity-50"
             >

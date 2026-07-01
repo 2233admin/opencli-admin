@@ -151,7 +151,8 @@ def self_eval(outcome: dict[str, Any], skill: Any) -> dict[str, Any]:
     Pure. Returns the evidence entry appended to ``skills.evidence``::
 
         {"event": "executed", "passed": bool, "milestones_hit": [...],
-         "terminal_met": bool, "outcome": "...", "trace_id": "...", "at": <iso>}
+         "terminal_met": bool, "outcome": "...", "loop_outcome": "...",
+         "trace_id": "...", "at": <iso>}
 
     ``passed`` is the conjunction of "the run terminated successfully" and "no
     declared terminal condition was violated". With no declared
@@ -159,6 +160,15 @@ def self_eval(outcome: dict[str, Any], skill: Any) -> dict[str, Any]:
     ``status == "success"`` (we can't contradict a clean ``done`` we have no
     rule to judge). ``milestones_hit`` echoes the outcome's reported hits,
     bounded to those the skill actually declares when it declares any.
+
+    ``outcome`` is the collapsed trace-status vocabulary (``success`` /
+    ``failed`` / ``paused``) — ``done_failed`` / ``capped`` / ``error`` all read
+    as ``"failed"`` there. ``loop_outcome`` carries the *un-collapsed* loop
+    vocabulary through instead (``outcome_from_loop``'s ``loop_outcome`` key),
+    so a consumer that needs to tell "the skill's logic is wrong" (``done_failed``
+    / ``capped``) apart from "the run environment glitched" (``error`` — a
+    dropped CDP connection, a network blip) still can without re-deriving it
+    from ``status`` (see :func:`backend.skills.correction.maybe_propose_correction`).
     """
     elements = _skill_elements(skill)
     declared_terminals = _as_list(elements.get("terminal_conditions"))
@@ -175,10 +185,20 @@ def self_eval(outcome: dict[str, Any], skill: Any) -> dict[str, Any]:
         milestones_hit = reported_hits
 
     if declared_terminals:
-        # The loop validates a claimed ``done`` against terminal/false-terminal
-        # conditions (see loop._check_done); a successful terminal status means
-        # that validation passed. A non-success status never meets terminals.
-        terminal_met = succeeded
+        # 2026-07-01 fix: this used to be `terminal_met = succeeded` in BOTH
+        # branches — declared_terminals was inspected but never actually used,
+        # so a declared terminal_conditions element was pure decoration; the
+        # loop's own _check_done only validates the *negative*
+        # false_terminal_states list, never this positive one. Ground it for
+        # real against the caller's terminal_conditions_hit signal (skill_
+        # channel._terminal_conditions_hit) when supplied; a `None` (caller
+        # didn't wire it) falls back to the old succeeded-only trust so this
+        # stays backward compatible for callers outside the skill channel.
+        reported_terminal_hits = outcome.get("terminal_conditions_hit")
+        if reported_terminal_hits is None:
+            terminal_met = succeeded
+        else:
+            terminal_met = succeeded and bool(_as_list(reported_terminal_hits))
     else:
         terminal_met = succeeded
 
@@ -188,6 +208,7 @@ def self_eval(outcome: dict[str, Any], skill: Any) -> dict[str, Any]:
         "milestones_hit": milestones_hit,
         "terminal_met": bool(terminal_met),
         "outcome": status or "unknown",
+        "loop_outcome": outcome.get("loop_outcome"),
         "trace_id": outcome.get("trace_id"),
         "at": _now_iso(),
     }

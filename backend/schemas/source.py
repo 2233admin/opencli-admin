@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 from backend.schemas.common import UTCModel
 
 
-ChannelType = Literal["opencli", "web_scraper", "api", "rss", "cli"]
+ChannelType = Literal["opencli", "web_scraper", "api", "rss", "cli", "skill", "crawl4ai"]
 
 
 class DataSourceCreate(BaseModel):

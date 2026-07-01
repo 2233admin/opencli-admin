@@ -1,6 +1,7 @@
 from backend.models.agent import AIAgent
 from backend.models.base import TimestampMixin
 from backend.models.browser import BrowserBinding, BrowserInstance
+from backend.models.cookie_jar import CookieJarEntry
 from backend.models.edge_node import EdgeNode, EdgeNodeEvent
 from backend.models.notification import NotificationLog, NotificationRule
 from backend.models.provider import ModelProvider
@@ -18,6 +19,7 @@ __all__ = [
     "AIAgent",
     "BrowserBinding",
     "BrowserInstance",
+    "CookieJarEntry",
     "EdgeNode",
     "EdgeNodeEvent",
     "ModelProvider",

@@ -52,7 +52,16 @@ dependencies = [
     # Browser automation (skill execute loop over CDP)
     "playwright>=1.40.0",
     "cryptography>=46.0.5",
+    "celery-redbeat>=2.3.3",
+    # CookieCloud sync client (auth_kind="cookie" — see backend/auth/cookiecloud_sync.py)
+    "PyCookieCloud>=0.4.0",
+    # JS-rendered page scraping + anti-detection (backend/channels/crawl4ai_channel.py)
+    "crawl4ai>=0.7.0",
 ]
+
+[project.scripts]
+opencli-skill = "backend.cli:main"
+opencli-mcp = "backend.mcp_server:main"
 
 [project.optional-dependencies]
 dev = [
@@ -65,6 +74,10 @@ dev = [
     "mypy>=1.13.0",
     "types-beautifulsoup4",
     "types-python-dateutil",
+]
+# MCP stdio server (backend/mcp_server.py) — separate process, not needed by the API itself
+mcp = [
+    "mcp>=1.2.0",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -95,6 +108,8 @@ omit = [
     "backend/pipeline/odp_client.py",
     # Agent server (complex WS/Chrome pool, integration tested)
     "backend/agent_server.py",
+    # MCP stdio server (thin HTTP wrapper, requires a running API instance)
+    "backend/mcp_server.py",
     # API routers (require full app context / DB)
     "backend/api/v1/browsers.py",
     "backend/api/v1/nodes.py",

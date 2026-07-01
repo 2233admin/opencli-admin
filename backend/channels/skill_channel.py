@@ -310,6 +310,18 @@ def _step_records(result: LoopResult) -> list[dict[str, Any]]:
     return [s.to_dict() for s in result.steps]
 
 
+def _step_haystack(result: LoopResult) -> str:
+    """Lowercased blob of the run's own step results/errors + final summary —
+    the NL-tolerant text both ``_milestones_hit`` and
+    ``_terminal_conditions_hit`` match declared phrases against."""
+    parts: list[str] = [str(result.summary)]
+    for step in result.steps:
+        parts.append(str(step.result))
+        if step.error:
+            parts.append(str(step.error))
+    return " ".join(parts).lower()
+
+
 def _milestones_hit(result: LoopResult, elements: dict | None) -> list[Any]:
     """Best-effort: which declared milestones the run plausibly reached.
 
@@ -321,13 +333,29 @@ def _milestones_hit(result: LoopResult, elements: dict | None) -> list[Any]:
     declared = (elements or {}).get("milestones") or []
     if not declared:
         return []
-    haystack_parts: list[str] = [str(result.summary)]
-    for step in result.steps:
-        haystack_parts.append(str(step.result))
-        if step.error:
-            haystack_parts.append(str(step.error))
-    haystack = " ".join(haystack_parts).lower()
+    haystack = _step_haystack(result)
     return [m for m in declared if str(m).strip() and str(m).strip().lower() in haystack]
+
+
+def _terminal_conditions_hit(result: LoopResult, elements: dict | None) -> list[Any]:
+    """Best-effort: which declared ``terminal_conditions`` the run's own step
+    text actually mentions (2026-07-01 addendum).
+
+    Closes a real gap: ``terminal_conditions`` is one of the 9 distilled
+    elements but nothing ever checked it against anything —
+    ``loop._check_done`` only validates the *negative* ``false_terminal_states``
+    trap list, never the positive terminal-condition text, so
+    :func:`backend.skills.trace.self_eval`'s ``terminal_met`` used to just alias
+    ``succeeded`` regardless of what ``terminal_conditions`` declared (dead
+    branch — see its 2026-07-01 fix). Same NL-tolerant heuristic as
+    ``_milestones_hit``; empty when none declared, in which case ``self_eval``
+    falls back to trusting ``succeeded`` alone (nothing to check against).
+    """
+    declared = (elements or {}).get("terminal_conditions") or []
+    if not declared:
+        return []
+    haystack = _step_haystack(result)
+    return [t for t in declared if str(t).strip() and str(t).strip().lower() in haystack]
 
 
 def _terminal_check(result: LoopResult) -> Any:
@@ -367,14 +395,19 @@ async def _append_self_eval(
         from backend.models.skill import Skill
 
         async with AsyncSessionLocal() as session:
+            # with_for_update: this is a read-append-commit on a JSON column —
+            # a plain read would race two concurrent runs of the same skill
+            # (2026-07-01: last commit silently wins, the other append is lost,
+            # not merged). Row lock serializes it (Postgres; no-op on sqlite,
+            # which has no concurrent writers to race in the first place).
             skill: Skill | None = None
             if skill_id:
-                skill = await session.get(Skill, skill_id)
+                skill = await session.get(Skill, skill_id, with_for_update=True)
             if skill is None and domain and capability:
                 res = await session.execute(
-                    select(Skill).where(
-                        Skill.domain == domain, Skill.capability == capability
-                    )
+                    select(Skill)
+                    .where(Skill.domain == domain, Skill.capability == capability)
+                    .with_for_update()
                 )
                 skill = res.scalars().first()
             if skill is None:
@@ -386,6 +419,101 @@ async def _append_self_eval(
             return True
     except Exception as exc:  # best-effort, like events.emit
         logger.warning("skill self-eval evidence write failed: %s", exc)
+        return False
+
+
+async def _persist_last_failing_trace(
+    config: dict[str, Any], trace: dict[str, Any]
+) -> bool:
+    """Best-effort: stash this run's full ``journey_trace_v1`` on
+    ``skill.last_failing_trace`` (2026-07-01 addendum).
+
+    ``self_eval``/``evidence`` only ever recorded a ``trace_id`` + outcome
+    summary — never the trace body — so a human looking at a
+    ``correction_proposed`` entry later (dock, days after the run) had no trace
+    to actually pass to ``/redistill``. This overwrites with the *most recent*
+    failing trace only (v1: same "keep it simple" call as
+    ``correction.re_distill`` distilling only the latest trace). Same short-
+    session + row-lock pattern as ``_append_self_eval``; never raises.
+    """
+    skill_id = config.get("skill_id")
+    domain = config.get("domain")
+    capability = config.get("capability")
+    if not skill_id and not (domain and capability):
+        return False
+    try:
+        from sqlalchemy import select
+
+        from backend.database import AsyncSessionLocal
+        from backend.models.skill import Skill
+
+        async with AsyncSessionLocal() as session:
+            skill: Skill | None = None
+            if skill_id:
+                skill = await session.get(Skill, skill_id, with_for_update=True)
+            if skill is None and domain and capability:
+                res = await session.execute(
+                    select(Skill)
+                    .where(Skill.domain == domain, Skill.capability == capability)
+                    .with_for_update()
+                )
+                skill = res.scalars().first()
+            if skill is None:
+                return False
+            skill.last_failing_trace = trace
+            await session.commit()
+            return True
+    except Exception as exc:  # best-effort, like events.emit
+        logger.warning("skill last_failing_trace write failed: %s", exc)
+        return False
+
+
+async def _maybe_propose_correction(config: dict[str, Any]) -> bool:
+    """Best-effort v2 auto-trigger: propose (never run) a re-distill after N
+    consecutive execution failures (ADR-0003 D7 v2 addendum, grilled 2026-07-01).
+
+    Opens its own short-lived ``AsyncSessionLocal()`` (same pattern as
+    ``_append_self_eval`` — ``collect()`` holds no injected session), (re)loads
+    the persisted :class:`~backend.models.skill.Skill` by ``skill_id`` or
+    ``(domain, capability)``, and delegates the decision + evidence mutation to
+    :func:`backend.skills.correction.maybe_propose_correction`. Commits only when
+    a proposal was actually appended. Inline-skill case (no persisted row, like
+    ``_append_self_eval``) is a no-op. Never raises.
+    """
+    skill_id = config.get("skill_id")
+    domain = config.get("domain")
+    capability = config.get("capability")
+    if not skill_id and not (domain and capability):
+        return False
+    try:
+        from sqlalchemy import select
+
+        from backend.database import AsyncSessionLocal
+        from backend.models.skill import Skill
+        from backend.skills.correction import maybe_propose_correction
+
+        async with AsyncSessionLocal() as session:
+            # Row lock — same concurrency reasoning as _append_self_eval above.
+            skill: Skill | None = None
+            if skill_id:
+                skill = await session.get(Skill, skill_id, with_for_update=True)
+            if skill is None and domain and capability:
+                res = await session.execute(
+                    select(Skill)
+                    .where(Skill.domain == domain, Skill.capability == capability)
+                    .with_for_update()
+                )
+                skill = res.scalars().first()
+            if skill is None:
+                return False
+            evidence = list(skill.evidence or [])
+            proposed = maybe_propose_correction(skill, evidence)
+            if proposed:
+                skill.evidence = evidence  # reassign → JSON change-tracking
+                await session.commit()
+            return proposed
+    except Exception as exc:  # best-effort, like events.emit
+        logger.warning("skill correction proposal check failed: %s", exc)
         return False
 
 
@@ -477,7 +605,13 @@ class SkillChannel(AbstractChannel):
                     result.outcome,
                     milestones_hit=_milestones_hit(result, elements),
                     terminal_check=_terminal_check(result),
-                    extra={"awaiting_confirm": bool(result.awaiting_confirm)},
+                    extra={
+                        "awaiting_confirm": bool(result.awaiting_confirm),
+                        # 2026-07-01: grounds self_eval's terminal_met against
+                        # the declared terminal_conditions text (was a no-op
+                        # before — see _terminal_conditions_hit's docstring).
+                        "terminal_conditions_hit": _terminal_conditions_hit(result, elements),
+                    },
                 )
                 outcome["trace_id"] = trace_id
                 trace = assemble_trace(
@@ -491,6 +625,16 @@ class SkillChannel(AbstractChannel):
                 # self_eval reads elements off a Skill row or a bare elements dict.
                 ev = self_eval(outcome, elements or config)
                 await _append_self_eval({**config, **identity}, ev)
+                if not ev["passed"]:
+                    # 2026-07-01 addendum: keep the full trace around so a human
+                    # reviewing a later correction_proposed has something to
+                    # actually redistill from (see _persist_last_failing_trace).
+                    await _persist_last_failing_trace({**config, **identity}, trace)
+                # v2 addendum (ADR-0003 D7): after logging the self-eval, check
+                # whether it just completed an N-in-a-row fail streak — if so,
+                # flag (never auto-run) a re-distill. See
+                # backend.skills.correction.maybe_propose_correction.
+                await _maybe_propose_correction({**config, **identity})
 
                 metadata: dict[str, Any] = {
                     "channel": "skill",
@@ -506,7 +650,9 @@ class SkillChannel(AbstractChannel):
                 return ChannelResult.ok(items, **metadata)
         except Exception as exc:
             logger.error("skill channel | browser acquire/exec failed: %s", exc)
-            return ChannelResult.fail(f"skill channel browser error: {exc}")
+            return ChannelResult.fail(
+                f"skill channel browser error: {exc}", error_type=type(exc).__name__
+            )
 
     async def validate_config(self, config: dict[str, Any]) -> list[str]:
         errors: list[str] = []

@@ -1,6 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useQuery } from '@tanstack/react-query'
 import { Plus, Trash2 } from 'lucide-react'
+import { toast } from 'sonner'
+import { deleteSourceCredential, listSkills, listSourceCredentials, storeSourceCredential } from '../api/endpoints'
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -189,6 +192,119 @@ function objToKv(obj: Record<string, unknown> | undefined): KVPair[] {
   return Object.entries(obj).map(([key, value]) => ({ key, value: String(value) }))
 }
 
+// Store/rotate one secret in the encrypted credential store (backend.auth.
+// AuthManager). Only usable once the source exists (sourceId set) — a
+// not-yet-created source has nothing to key the store by, so the caller falls
+// back to the plaintext env/inline fields until the first save.
+function CredentialField({
+  sourceId,
+  keyName,
+  label,
+}: {
+  sourceId: string
+  keyName: string
+  label: string
+}) {
+  const [stored, setStored] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(false)
+  const [value, setValue] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    setLoadError(false)
+    listSourceCredentials(sourceId)
+      .then((keys) => {
+        if (!cancelled) setStored(keys.some((k) => k.key_name === keyName))
+      })
+      .catch(() => {
+        // Status unknown, not confirmed-absent — don't let the UI claim
+        // "not configured" for a credential that might well already be
+        // stored (the fetch just failed), or a re-save could silently
+        // rotate/overwrite a working credential without the user realizing
+        // one existed.
+        if (!cancelled) setLoadError(true)
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [sourceId, keyName])
+
+  const save = async () => {
+    if (!value) return
+    setBusy(true)
+    try {
+      await storeSourceCredential(sourceId, { key_name: keyName, secret: value })
+      setStored(true)
+      setValue('')
+      toast.success(`${label} 已加密存储`)
+    } catch {
+      toast.error(`${label} 存储失败`)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const remove = async () => {
+    setBusy(true)
+    try {
+      await deleteSourceCredential(sourceId, keyName)
+      setStored(false)
+      toast.success(`${label} 已删除`)
+    } catch {
+      toast.error(`${label} 删除失败`)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="flex gap-2 items-center">
+      <input
+        type="password"
+        aria-label={`${label}（加密存储）`}
+        name={`channel-config-credential-${keyName}`}
+        className={`${input} flex-1`}
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        placeholder={
+          loading
+            ? '…'
+            : loadError
+              ? '⚠ 无法获取存储状态,请重试'
+              : stored
+                ? '● 已加密存储 — 输入新值以覆盖'
+                : label
+        }
+      />
+      <button
+        type="button"
+        disabled={busy || !value}
+        onClick={save}
+        className="px-3 py-2 text-xs rounded-lg bg-blue-600 text-white disabled:opacity-40 flex-shrink-0"
+      >
+        存储
+      </button>
+      {stored && (
+        <button
+          type="button"
+          aria-label={`删除已存储的${label}`}
+          disabled={busy}
+          onClick={remove}
+          className="p-1.5 text-red-400 hover:text-red-600 flex-shrink-0"
+        >
+          <Trash2 size={14} />
+        </button>
+      )}
+    </div>
+  )
+}
+
 // ── Per-channel config forms ──────────────────────────────────────────────────
 
 function RSSConfig({
@@ -234,9 +350,11 @@ function RSSConfig({
 function APIConfig({
   config,
   onChange,
+  sourceId,
 }: {
   config: Record<string, unknown>
   onChange: (c: Record<string, unknown>) => void
+  sourceId?: string
 }) {
   const { t } = useTranslation()
   const auth = (config.auth as Record<string, string>) ?? {}
@@ -303,54 +421,82 @@ function APIConfig({
             { value: 'bearer', label: t('channelConfig.authBearer') },
             { value: 'basic', label: t('channelConfig.authBasic') },
             { value: 'api_key', label: t('channelConfig.authApiKey') },
+            { value: 'cookie', label: t('channelConfig.authCookie') },
           ]}
         />
       </Field>
+      {authType === 'cookie' && <p className="text-xs text-gray-500 dark:text-gray-400">{t('channelConfig.authCookieHint')}</p>}
 
       {authType === 'bearer' && (
-        <Field label={t('channelConfig.tokenEnvVar')} hint={t('channelConfig.tokenEnvVarHint')}>
-          <TextInput
-            value={auth.token_env ?? ''}
-            onChange={(v) => updateAuth({ token_env: v })}
-            placeholder="GITHUB_TOKEN"
-          />
-        </Field>
+        <>
+          <Field label={t('channelConfig.tokenEnvVar')} hint={t('channelConfig.tokenEnvVarHint')}>
+            <TextInput
+              value={auth.token_env ?? ''}
+              onChange={(v) => updateAuth({ token_env: v })}
+              placeholder="GITHUB_TOKEN"
+            />
+          </Field>
+          {sourceId && (
+            <Field label="或：加密存储（推荐，优先于上面的 env 配置）">
+              <CredentialField sourceId={sourceId} keyName="token" label="Bearer Token" />
+            </Field>
+          )}
+        </>
       )}
       {authType === 'basic' && (
-        <div className="grid grid-cols-2 gap-3">
-          <Field label={t('channelConfig.username')} hint={t('channelConfig.usernameHint')}>
-            <TextInput
-              value={auth.username ?? ''}
-              onChange={(v) => updateAuth({ username: v })}
-              placeholder="{{secret:API_USER}}"
-            />
-          </Field>
-          <Field label={t('channelConfig.password')} hint={t('channelConfig.passwordHint')}>
-            <TextInput
-              value={auth.password ?? ''}
-              onChange={(v) => updateAuth({ password: v })}
-              placeholder="{{secret:API_PASS}}"
-            />
-          </Field>
-        </div>
+        <>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label={t('channelConfig.username')} hint={t('channelConfig.usernameHint')}>
+              <TextInput
+                value={auth.username ?? ''}
+                onChange={(v) => updateAuth({ username: v })}
+                placeholder="{{secret:API_USER}}"
+              />
+            </Field>
+            <Field label={t('channelConfig.password')} hint={t('channelConfig.passwordHint')}>
+              <TextInput
+                value={auth.password ?? ''}
+                onChange={(v) => updateAuth({ password: v })}
+                placeholder="{{secret:API_PASS}}"
+              />
+            </Field>
+          </div>
+          {sourceId && (
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="或：加密存储用户名">
+                <CredentialField sourceId={sourceId} keyName="username" label="用户名" />
+              </Field>
+              <Field label="或：加密存储密码（推荐）">
+                <CredentialField sourceId={sourceId} keyName="password" label="密码" />
+              </Field>
+            </div>
+          )}
+        </>
       )}
       {authType === 'api_key' && (
-        <div className="grid grid-cols-2 gap-3">
-          <Field label={t('channelConfig.headerName')}>
-            <TextInput
-              value={auth.header ?? 'X-API-Key'}
-              onChange={(v) => updateAuth({ header: v })}
-              placeholder="X-API-Key"
-            />
-          </Field>
-          <Field label={t('channelConfig.keyEnvVar')}>
-            <TextInput
-              value={auth.key_env ?? ''}
-              onChange={(v) => updateAuth({ key_env: v })}
-              placeholder="MY_API_KEY"
-            />
-          </Field>
-        </div>
+        <>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label={t('channelConfig.headerName')}>
+              <TextInput
+                value={auth.header ?? 'X-API-Key'}
+                onChange={(v) => updateAuth({ header: v })}
+                placeholder="X-API-Key"
+              />
+            </Field>
+            <Field label={t('channelConfig.keyEnvVar')}>
+              <TextInput
+                value={auth.key_env ?? ''}
+                onChange={(v) => updateAuth({ key_env: v })}
+                placeholder="MY_API_KEY"
+              />
+            </Field>
+          </div>
+          {sourceId && (
+            <Field label="或：加密存储（推荐，优先于上面的 env 配置）">
+              <CredentialField sourceId={sourceId} keyName="key" label="API Key" />
+            </Field>
+          )}
+        </>
       )}
 
       <Field label={t('channelConfig.queryParams')}>
@@ -382,6 +528,7 @@ function WebScraperConfig({
   const [selectors, setSelectors] = useState<KVPair[]>(
     objToKv(config.selectors as Record<string, unknown>),
   )
+  const auth = (config.auth as Record<string, string>) ?? {}
 
   const update = (patch: Partial<Record<string, unknown>>) => onChange({ ...config, ...patch })
 
@@ -426,6 +573,83 @@ function WebScraperConfig({
           min={1}
         />
       </Field>
+      <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+        <input
+          type="checkbox"
+          checked={auth.type === 'cookie'}
+          onChange={(e) => update({ auth: e.target.checked ? { type: 'cookie' } : {} })}
+        />
+        {t('channelConfig.authCookie')}
+      </label>
+      {auth.type === 'cookie' && <p className="text-xs text-gray-500 dark:text-gray-400">{t('channelConfig.authCookieHint')}</p>}
+    </div>
+  )
+}
+
+function Crawl4AIConfig({
+  config,
+  onChange,
+}: {
+  config: Record<string, unknown>
+  onChange: (c: Record<string, unknown>) => void
+}) {
+  const { t } = useTranslation()
+  const [selectors, setSelectors] = useState<KVPair[]>(
+    objToKv(config.selectors as Record<string, unknown>),
+  )
+  const auth = (config.auth as Record<string, string>) ?? {}
+
+  const update = (patch: Partial<Record<string, unknown>>) => onChange({ ...config, ...patch })
+
+  const updateSelectors = (pairs: KVPair[]) => {
+    setSelectors(pairs)
+    update({ selectors: kvToObj(pairs) })
+  }
+
+  return (
+    <div className="space-y-3">
+      <Field label={t('channelConfig.url')} required>
+        <TextInput
+          value={(config.url as string) ?? ''}
+          onChange={(v) => update({ url: v })}
+          placeholder="https://example.com/js-rendered-page"
+          required
+        />
+      </Field>
+      <Field
+        label={t('channelConfig.listSelector')}
+        hint={t('channelConfig.listSelectorHint')}
+      >
+        <TextInput
+          value={(config.list_selector as string) ?? ''}
+          onChange={(v) => update({ list_selector: v })}
+          placeholder=".item"
+        />
+      </Field>
+      <Field label={t('channelConfig.fieldSelectors')} hint={t('channelConfig.fieldSelectorsHint')} required>
+        <KVList
+          pairs={selectors}
+          onChange={updateSelectors}
+          keyPlaceholder="field name"
+          valuePlaceholder="CSS selector"
+        />
+      </Field>
+      <Field label={t('channelConfig.waitFor')} hint={t('channelConfig.waitForHint')}>
+        <TextInput
+          value={(config.wait_for as string) ?? ''}
+          onChange={(v) => update({ wait_for: v || undefined })}
+          placeholder="css:.item"
+        />
+      </Field>
+      <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+        <input
+          type="checkbox"
+          checked={auth.type === 'cookie'}
+          onChange={(e) => update({ auth: e.target.checked ? { type: 'cookie' } : {} })}
+        />
+        {t('channelConfig.authCookie')}
+      </label>
+      {auth.type === 'cookie' && <p className="text-xs text-gray-500 dark:text-gray-400">{t('channelConfig.authCookieHint')}</p>}
     </div>
   )
 }
@@ -988,26 +1212,107 @@ export { OPENCLI_PRESETS, PRESET_DEFAULT, SITE_LABELS, COMMANDS_BY_SITE }
 
 // ── Public component ──────────────────────────────────────────────────────────
 
-export type ChannelType = 'rss' | 'api' | 'web_scraper' | 'cli' | 'opencli'
+export type ChannelType = 'rss' | 'api' | 'web_scraper' | 'cli' | 'opencli' | 'skill' | 'crawl4ai'
 
 interface Props {
   channelType: ChannelType
   config: Record<string, unknown>
   onChange: (config: Record<string, unknown>) => void
+  /** The source's persisted id — undefined while creating a new (not-yet-saved)
+   * source. The encrypted credential store is keyed by source id, so it's only
+   * offered once the source exists; a new source keeps using env/inline auth
+   * until the first save, then can migrate to it on the edit form. */
+  sourceId?: string
 }
 
-export default function ChannelConfigForm({ channelType, config, onChange }: Props) {
+export default function ChannelConfigForm({ channelType, config, onChange, sourceId }: Props) {
 
   switch (channelType) {
     case 'rss':
       return <RSSConfig config={config} onChange={onChange} />
     case 'api':
-      return <APIConfig config={config} onChange={onChange} />
+      return <APIConfig config={config} onChange={onChange} sourceId={sourceId} />
     case 'web_scraper':
       return <WebScraperConfig config={config} onChange={onChange} />
     case 'cli':
       return <CLIConfig config={config} onChange={onChange} />
     case 'opencli':
       return <OpenCLIConfig config={config} onChange={onChange} />
+    case 'skill':
+      return <SkillSourceConfig config={config} onChange={onChange} />
+    case 'crawl4ai':
+      return <Crawl4AIConfig config={config} onChange={onChange} />
   }
+}
+
+// 让技能真正可排程 (Phase A, ADR-0003): 一个 channel_type="skill" 的 source
+// 引用一个已蒸馏的 Skill(按 skill_id，或 domain+capability 兜底),复用
+// backend.channels.skill_channel.SkillChannel 已经支持的两种解析路径。
+function SkillSourceConfig({
+  config,
+  onChange,
+}: {
+  config: Record<string, unknown>
+  onChange: (c: Record<string, unknown>) => void
+}) {
+  const { data: skillsResp } = useQuery({
+    queryKey: ['skills', 'for-source-config'],
+    queryFn: () => listSkills({ limit: 200 }),
+  })
+  const skills = skillsResp?.data ?? []
+  const update = (patch: Partial<Record<string, unknown>>) => onChange({ ...config, ...patch })
+
+  const skillId = (config.skill_id as string) ?? ''
+  const useManualDomain = !skillId
+
+  return (
+    <div className="space-y-3">
+      <Field label="选择技能" hint="从技能库里选一个已蒸馏的 skill；也可以手填 domain/capability（比如技能还没建好、先占位排程）">
+        <SelectInput
+          value={skillId}
+          onChange={(v) => update({ skill_id: v || undefined, domain: undefined, capability: undefined })}
+          ariaLabel="选择技能"
+          options={[
+            { value: '', label: '— 手填 domain / capability —' },
+            ...skills.map((s) => ({ value: s.id, label: `${s.name} (${s.domain}/${s.capability})` })),
+          ]}
+        />
+      </Field>
+      {useManualDomain && (
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="domain" required>
+            <TextInput
+              value={(config.domain as string) ?? ''}
+              onChange={(v) => update({ domain: v })}
+              placeholder="example.com"
+              required
+            />
+          </Field>
+          <Field label="capability" required>
+            <TextInput
+              value={(config.capability as string) ?? ''}
+              onChange={(v) => update({ capability: v })}
+              placeholder="open-list"
+              required
+            />
+          </Field>
+        </div>
+      )}
+      <Field label="task" hint="可选：给这次执行的一句自然语言任务说明">
+        <TextInput
+          value={(config.task as string) ?? ''}
+          onChange={(v) => update({ task: v || undefined })}
+          placeholder="打开列表页并读取所有行"
+        />
+      </Field>
+      <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+        <input
+          type="checkbox"
+          checked={Boolean(config.auto_confirm)}
+          onChange={(e) => update({ auto_confirm: e.target.checked || undefined })}
+        />
+        auto_confirm — 允许高危动作无人值守执行（红线永远不受此项影响）
+      </label>
+    </div>
+  )
 }

@@ -40,12 +40,18 @@ class RSSChannel(AbstractChannel):
                 )
                 response.raise_for_status()
                 content = response.text
-        except httpx.TimeoutException:
-            return ChannelResult.fail(f"RSS feed request timed out: {feed_url}")
+        except httpx.TimeoutException as exc:
+            return ChannelResult.fail(
+                f"RSS feed request timed out: {feed_url}", error_type=type(exc).__name__
+            )
         except httpx.HTTPStatusError as exc:
-            return ChannelResult.fail(f"HTTP {exc.response.status_code} fetching feed")
+            return ChannelResult.fail(
+                f"HTTP {exc.response.status_code} fetching feed", error_type=type(exc).__name__
+            )
         except Exception as exc:
-            return ChannelResult.fail(f"Failed to fetch RSS feed: {exc}")
+            return ChannelResult.fail(
+                f"Failed to fetch RSS feed: {exc}", error_type=type(exc).__name__
+            )
 
         parsed = feedparser.parse(content)
         if parsed.bozo and not parsed.entries:
@@ -95,7 +101,7 @@ class RSSChannel(AbstractChannel):
             headers["If-Modified-Since"] = cursor["last_modified"]
 
         if ctx.http is not None:
-            response = await ctx.http.get(feed_url, headers=headers)
+            response = await ctx.http.get(feed_url, headers=headers, timeout=timeout)
         else:
             async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
                 response = await client.get(feed_url, headers=headers)

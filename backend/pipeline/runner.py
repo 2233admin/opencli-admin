@@ -152,13 +152,34 @@ async def run_collection_pipeline(
     from backend.pipeline.domain_limiter import domain_slot
 
     async with domain_slot(source):
-        pipeline_result = await run_pipeline(
-            task_id=task_id,
-            source=source,
-            parameters=merged_params,
-            agent_config=agent_config,
-            run_id=run_id,
-        )
+        try:
+            pipeline_result = await run_pipeline(
+                task_id=task_id,
+                source=source,
+                parameters=merged_params,
+                agent_config=agent_config,
+                run_id=run_id,
+            )
+        except Exception as exc:
+            # run_pipeline only re-raises errors its taxonomy classified as
+            # retryable (backend.pipeline.error_taxonomy) — record this attempt
+            # as failed before letting it propagate to celery's autoretry_for,
+            # so the UI never shows a run stuck at "running" while celery backs
+            # off and retries. Each retry is a fresh run_collection_pipeline
+            # call, so it gets its own new TaskRun row (see TaskRun docstring:
+            # "a single execution attempt").
+            async with AsyncSessionLocal() as session:
+                err_task = await session.get(CollectionTask, task_id)
+                err_run = await session.get(TaskRun, run_id)
+                if err_task:
+                    err_task.status = "failed"
+                    err_task.error_message = str(exc)
+                if err_run:
+                    err_run.status = "failed"
+                    err_run.error_message = str(exc)
+                    err_run.finished_at = datetime.now(timezone.utc)
+                await session.commit()
+            raise
 
     # ── Phase 4: persist final status ────────────────────────────────────────
     async with AsyncSessionLocal() as session:

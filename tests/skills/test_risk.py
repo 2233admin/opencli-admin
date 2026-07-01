@@ -194,6 +194,18 @@ def test_should_run_confirm_action_blocked_without_auto_confirm():
     assert should_run(d, auto_confirm=True) is True     # bypassed
 
 
+def test_should_run_red_line_never_bypassed_by_auto_confirm():
+    """Fixed 2026-07-01: a matched red_line is the one confirm reason
+    ``auto_confirm`` can never blow through — it stays blocked even at
+    ``auto_confirm=True`` (only the generic high-risk/ambiguous tiers bypass)."""
+    action = {"verb": "click", "ref": "7"}
+    el = {"ref": "7", "role": "button", "name": "Pay now", "value": ""}
+    d = classify_action(action, el, {"red_lines": ["pay now"]})
+    assert d.matched_red_line == "pay now"
+    assert should_run(d, auto_confirm=False) is False
+    assert should_run(d, auto_confirm=True) is False  # still blocked
+
+
 # ── acceptance #6 (helper): awaiting_confirm metadata contract ─────────────────
 def test_awaiting_confirm_metadata_shape():
     action = {"verb": "click", "ref": "9"}
@@ -346,6 +358,25 @@ async def test_loop_no_high_risk_action_runs_fully_through():
     assert result.awaiting_confirm is False
     assert result.proposed_action is None
     assert ("type", "0", "hello", False) in page.ops
+
+
+async def test_loop_red_line_aborts_even_with_auto_confirm():
+    """Fixed 2026-07-01: auto_confirm=True must NOT let a red_line-matched click
+    through — only generic high-risk actions bypass with auto_confirm."""
+    page = FakePage()
+    model_call = _scripted_model([("click", {"ref": "9"})])
+    result = await run_skill_loop(
+        page=page,
+        model_call=model_call,
+        model="gpt-4o-mini",
+        elements={"procedure": ["search"], "red_lines": ["submit order"]},
+        skill={"procedure": ["search"], "red_lines": ["submit order"]},
+        auto_confirm=True,  # would bypass a generic high-risk confirm, NOT a red line
+        max_steps=5,
+    )
+    assert result.outcome == AWAITING_CONFIRM
+    assert result.awaiting_confirm is True
+    assert page.ops == []  # the click never reached the executor
 
 
 async def test_loop_red_line_aborts_even_for_extract():

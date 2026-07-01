@@ -217,13 +217,24 @@ def classify_action(
 def should_run(decision: RiskDecision, auto_confirm: bool) -> bool:
     """Gate decision: may this action run *now* without a human confirm?
 
-    ``True`` → run it (auto-run tier, or ``auto_confirm`` bypasses the confirm).
-    ``False`` → block: in headless v1 the loop aborts at :data:`AWAITING_CONFIRM`
-    (interactive synchronous resume is issues 05/06). Pure — no browser needed,
-    which is what makes acceptance criterion 5 testable in isolation.
+    ``True`` → run it (auto-run tier, or ``auto_confirm`` bypasses a *generic*
+    high-risk / ambiguous confirm). ``False`` → block: in headless v1 the loop
+    aborts at :data:`AWAITING_CONFIRM` (interactive synchronous resume is issues
+    05/06). Pure — no browser needed, which is what makes acceptance criterion 5
+    testable in isolation.
+
+    ``matched_red_line`` is the one thing ``auto_confirm`` can **never** bypass
+    (fixed 2026-07-01 — a plain ``auto_confirm=True`` used to blow through a red
+    line too, which contradicted "写前确认是硬底线": a source flipping the
+    unattended-run flag for convenience would silently let a declared
+    ``red_lines`` action — e.g. "never delete account" — execute unattended). A
+    red line means confirm, full stop; only the generic high-risk / ambiguous
+    tiers are bypassable.
     """
     if not decision.needs_confirm:
         return True
+    if decision.matched_red_line is not None:
+        return False
     return bool(auto_confirm)
 
 

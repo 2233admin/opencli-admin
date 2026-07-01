@@ -22,6 +22,7 @@ import {
   Settings,
   SlidersHorizontal,
   Blocks,
+  Sparkles,
 } from 'lucide-react'
 import { clsx } from 'clsx'
 import { getDashboardStats } from '../api/endpoints'
@@ -45,6 +46,7 @@ const ROUTE_LABEL_KEYS: Record<string, string> = {
   '/workers': 'nav.workers',
   '/providers': 'nav.providers',
   '/agents': 'nav.agents',
+  '/skills': 'nav.skills',
   '/settings': 'nav.settings',
 }
 
@@ -130,6 +132,7 @@ export default function Layout() {
       { to: '/schedules',     label: t('nav.schedules'),     icon: Clock,     stage: 'TR' },
       { to: '/tasks',         label: t('nav.tasks'),         icon: ListChecks, stage: 'EX' },
       { to: '/agents',        label: t('nav.agents'),        icon: Bot,       stage: 'PR' },
+      { to: '/skills',        label: t('nav.skills'),        icon: Sparkles,  stage: 'SK' },
       { to: '/records',       label: t('nav.records'),       icon: FileText,  stage: 'DB' },
       { to: '/notifications', label: t('nav.notifications'), icon: Bell,      stage: 'OUT' },
     ],

@@ -1,6 +1,18 @@
 """Integration tests for the /api/v1/sources endpoints."""
 
+from unittest.mock import AsyncMock, patch
+
 import pytest
+from cryptography.fernet import Fernet
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from backend.auth import crypto
+
+_KEY = Fernet.generate_key().decode()
+
+
+def _sessionmaker(db_engine):
+    return async_sessionmaker(db_engine, class_=AsyncSession, expire_on_commit=False)
 
 
 @pytest.mark.asyncio
@@ -91,3 +103,134 @@ async def test_test_source_connectivity(client, sample_source_data):
     assert response.status_code == 200
     data = response.json()
     assert "connected" in data["data"]
+
+
+# ── credentials: AuthManager reads/writes its own session (backend.database.
+# AsyncSessionLocal), separate from the client fixture's injected get_db — point
+# it at the same in-memory db_engine so a credential actually lands where the
+# source lookup (via get_db) can see it. ──────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_store_and_list_source_credential(client, db_engine, sample_source_data, monkeypatch):
+    monkeypatch.setenv(crypto.ENV_KEY, _KEY)
+    create_resp = await client.post("/api/v1/sources", json=sample_source_data)
+    source_id = create_resp.json()["data"]["id"]
+
+    with patch("backend.database.AsyncSessionLocal", _sessionmaker(db_engine)):
+        store_resp = await client.post(
+            f"/api/v1/sources/{source_id}/credentials",
+            json={"key_name": "token", "secret": "s3cr3t"},
+        )
+        assert store_resp.status_code == 201
+        assert store_resp.json()["success"] is True
+
+        list_resp = await client.get(f"/api/v1/sources/{source_id}/credentials")
+    assert list_resp.status_code == 200
+    keys = [k["key_name"] for k in list_resp.json()["data"]]
+    assert keys == ["token"]
+    # The secret itself never appears in a response body.
+    assert "s3cr3t" not in list_resp.text
+
+
+@pytest.mark.asyncio
+async def test_store_credential_key_name_too_long_rejected(client, sample_source_data):
+    """key_name must fit the DB column (String(64)) — a value that passes
+    Pydantic but doesn't fit the column would otherwise reach Postgres as an
+    unhandled DataError (SQLite doesn't enforce VARCHAR length, so this only
+    manifested in production before the max_length was aligned to 64)."""
+    create_resp = await client.post("/api/v1/sources", json=sample_source_data)
+    source_id = create_resp.json()["data"]["id"]
+
+    response = await client.post(
+        f"/api/v1/sources/{source_id}/credentials",
+        json={"key_name": "x" * 65, "secret": "s"},
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_store_credential_source_not_found(client):
+    response = await client.post(
+        "/api/v1/sources/nonexistent-id/credentials",
+        json={"key_name": "token", "secret": "x"},
+    )
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_delete_source_cascades_credentials(client, db_engine, sample_source_data, monkeypatch):
+    """Deleting a source must not orphan its encrypted credentials — there's no
+    DB-level FK/cascade (AuthManager writes via a separate session), so
+    delete_source() cleans up source_credentials itself."""
+    from backend.auth.manager import AuthManager
+
+    monkeypatch.setenv(crypto.ENV_KEY, _KEY)
+    create_resp = await client.post("/api/v1/sources", json=sample_source_data)
+    source_id = create_resp.json()["data"]["id"]
+
+    with patch("backend.database.AsyncSessionLocal", _sessionmaker(db_engine)):
+        await client.post(
+            f"/api/v1/sources/{source_id}/credentials",
+            json={"key_name": "token", "secret": "s3cr3t"},
+        )
+
+        delete_resp = await client.delete(f"/api/v1/sources/{source_id}")
+        assert delete_resp.status_code == 200
+
+        assert await AuthManager().resolve(source_id) == {}
+
+
+@pytest.mark.asyncio
+async def test_delete_source_credential(client, db_engine, sample_source_data, monkeypatch):
+    monkeypatch.setenv(crypto.ENV_KEY, _KEY)
+    create_resp = await client.post("/api/v1/sources", json=sample_source_data)
+    source_id = create_resp.json()["data"]["id"]
+
+    with patch("backend.database.AsyncSessionLocal", _sessionmaker(db_engine)):
+        await client.post(
+            f"/api/v1/sources/{source_id}/credentials",
+            json={"key_name": "token", "secret": "s3cr3t"},
+        )
+        delete_resp = await client.delete(f"/api/v1/sources/{source_id}/credentials/token")
+        assert delete_resp.status_code == 200
+
+        list_resp = await client.get(f"/api/v1/sources/{source_id}/credentials")
+    assert list_resp.json()["data"] == []
+
+
+# ── RSS onboarding: discover-feed + import-opml ─────────────────────────────────
+@pytest.mark.asyncio
+async def test_discover_feed_endpoint(client):
+    with patch(
+        "backend.api.v1.sources.source_service.discover_feeds",
+        AsyncMock(return_value=[{"url": "https://example.com/feed.xml", "title": "Feed"}]),
+    ):
+        response = await client.post("/api/v1/sources/discover-feed", json={"url": "https://example.com"})
+    assert response.status_code == 200
+    assert response.json()["data"] == [{"url": "https://example.com/feed.xml", "title": "Feed"}]
+
+
+@pytest.mark.asyncio
+async def test_import_opml_endpoint_creates_disabled_sources(client):
+    opml = b"""<?xml version="1.0"?><opml><body>
+    <outline title="Feed A" xmlUrl="https://a.example.com/rss" />
+    </body></opml>"""
+    response = await client.post(
+        "/api/v1/sources/import-opml",
+        files={"file": ("feeds.opml", opml, "text/x-opml")},
+    )
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert len(data["created"]) == 1
+    assert data["created"][0]["channel_type"] == "rss"
+    assert data["created"][0]["enabled"] is False
+    assert data["skipped_existing"] == []
+
+
+@pytest.mark.asyncio
+async def test_import_opml_endpoint_invalid_xml_returns_400(client):
+    response = await client.post(
+        "/api/v1/sources/import-opml",
+        files={"file": ("feeds.opml", b"<not-xml", "text/x-opml")},
+    )
+    assert response.status_code == 400

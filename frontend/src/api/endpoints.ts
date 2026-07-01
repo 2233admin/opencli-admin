@@ -16,6 +16,7 @@ import type {
   NodeStats,
   NotificationLog,
   NotificationRule,
+  Skill,
   SystemConfig,
   TaskRun,
   TaskRunEvent,
@@ -49,6 +50,17 @@ export const testSourceConnectivity = (id: string) =>
   apiClient
     .post<ApiResponse<{ connected: boolean; errors: string[] }>>(`/sources/${id}/test`)
     .then((r) => r.data.data)
+
+// Encrypted credential store (backend.auth.AuthManager) — key names only ever
+// come back; the secret is write-only once stored.
+export const listSourceCredentials = (id: string) =>
+  apiClient.get<ApiResponse<{ key_name: string }[]>>(`/sources/${id}/credentials`).then((r) => r.data.data)
+
+export const storeSourceCredential = (id: string, data: { key_name: string; secret: string }) =>
+  apiClient.post<ApiResponse<null>>(`/sources/${id}/credentials`, data).then((r) => r.data)
+
+export const deleteSourceCredential = (id: string, keyName: string) =>
+  apiClient.delete<ApiResponse<null>>(`/sources/${id}/credentials/${keyName}`).then((r) => r.data)
 
 // ── Tasks ──────────────────────────────────────────────────────────────────────
 export const listTasks = (params?: {
@@ -101,6 +113,51 @@ export const batchDeleteRecords = (ids: string[]) =>
 
 export const clearAllRecords = (source_id?: string) =>
   apiClient.delete<ApiResponse<{ deleted: number }>>('/records', { params: source_id ? { source_id } : {} }).then((r) => r.data)
+
+// ── Skills (record→distill→execute→correct loop, ADR-0003) ─────────────────────
+export const listSkills = (params?: { domain?: string; enabled?: boolean; page?: number; limit?: number }) =>
+  apiClient.get<ApiResponse<Skill[]>>('/skills', { params }).then((r) => r.data)
+
+export const getSkill = (id: string) =>
+  apiClient.get<ApiResponse<Skill>>(`/skills/${id}`).then((r) => r.data.data)
+
+// trace omitted → backend falls back to skill.last_failing_trace.
+export const redistillSkill = (id: string, trace?: Record<string, unknown>) =>
+  apiClient
+    .post<ApiResponse<{ skill_id: string; version: number; domain: string; capability: string }>>(
+      `/skills/${id}/redistill`,
+      trace ? { trace } : {},
+    )
+    .then((r) => r.data.data)
+
+export const dismissCorrection = (id: string) =>
+  apiClient.post<ApiResponse<Skill>>(`/skills/${id}/dismiss-correction`).then((r) => r.data.data)
+
+export const rollbackSkill = (id: string) =>
+  apiClient.post<ApiResponse<Skill>>(`/skills/${id}/rollback`).then((r) => r.data.data)
+
+// ── Record leg (2026-07-01 addendum): capture a demo → journey_trace_v1 ─────────
+export const recordStart = (data: { domain: string; capability: string; cdp_endpoint?: string }) =>
+  apiClient
+    .post<ApiResponse<{ session_id: string; cdp_endpoint: string }>>('/skills/record/start', data)
+    .then((r) => r.data.data)
+
+export const recordStop = (sessionId: string, data: { status: string; note?: string }) =>
+  apiClient
+    .post<ApiResponse<{ trace: Record<string, unknown> }>>(`/skills/record/${sessionId}/stop`, data)
+    .then((r) => r.data.data.trace)
+
+export const distillSkill = (data: {
+  trace: Record<string, unknown>
+  domain?: string
+  capability?: string
+}) =>
+  apiClient
+    .post<ApiResponse<{ id: string; domain: string; capability: string; name: string; version: number; status: string }>>(
+      '/skills/distill',
+      data,
+    )
+    .then((r) => r.data.data)
 
 // ── Schedules ──────────────────────────────────────────────────────────────────
 export const listSchedules = (params?: { source_id?: string; enabled?: boolean }) =>

@@ -109,6 +109,14 @@ async def re_distill(
         provider = await resolve_distill_provider(session)
 
     from_version = skill.version
+    # Stash v(n)'s body *before* overwriting it (2026-07-01 addendum) — the only
+    # place a prior version's actual content survives; without this, a bad
+    # re-distill was previously an irreversible, one-way mutation. See
+    # :func:`rollback_correction`.
+    prev_skill_md = skill.skill_md
+    prev_elements = dict(skill.elements or {})
+    prev_distill_model = skill.distill_model
+    prev_source_trace = skill.source_trace
 
     # Re-distill through the same kernel that produced version n (D7).
     spec = await distill_trace(trace, provider)
@@ -130,6 +138,12 @@ async def re_distill(
             "to_version": skill.version,
             "trace_id": trace.get("trace_id"),
             "at": _now_iso(),
+            # Rollback safety net (2026-07-01): v(n)'s actual body, not just its
+            # version number, so a worse v(n+1) can be undone.
+            "prev_skill_md": prev_skill_md,
+            "prev_elements": prev_elements,
+            "prev_distill_model": prev_distill_model,
+            "prev_source_trace": prev_source_trace,
         }
     )
     skill.evidence = evidence  # reassign so SQLAlchemy detects the JSON mutation
@@ -140,3 +154,153 @@ async def re_distill(
         skill.id, from_version, skill.version, skill.distill_model, trace.get("trace_id"),
     )
     return skill
+
+
+async def rollback_correction(session: AsyncSession, skill: Skill) -> Skill:
+    """Undo the most recent :func:`re_distill` — restore v(n)'s body (2026-07-01
+    addendum, D7). Reads the last ``corrected`` evidence entry's stashed
+    ``prev_skill_md`` / ``prev_elements`` / ``prev_distill_model`` /
+    ``prev_source_trace``, writes them back, decrements ``version`` by 1, and
+    appends one ``{"event": "rolled_back", ...}`` entry (never mutates or
+    removes the ``corrected`` entry it rolled back — evidence is append-only).
+
+    Raises ``ValueError`` if there is no ``corrected`` entry to roll back (never
+    re-distilled), or the last one has already been rolled back (no double
+    rollback / no rolling back past the version that was actually distilled).
+    """
+    evidence = list(skill.evidence or [])
+    last_corrected_idx = None
+    for i in range(len(evidence) - 1, -1, -1):
+        if evidence[i].get("event") == "corrected":
+            last_corrected_idx = i
+            break
+    if last_corrected_idx is None:
+        raise ValueError(f"skill {skill.id} has no 'corrected' evidence to roll back")
+    corrected = evidence[last_corrected_idx]
+
+    # Already rolled back? A 'rolled_back' entry referencing this same
+    # 'corrected' entry's to_version sitting after it means don't do it twice.
+    to_version = corrected.get("to_version")
+    for ev in evidence[last_corrected_idx + 1:]:
+        if ev.get("event") == "rolled_back" and ev.get("from_version") == to_version:
+            raise ValueError(
+                f"skill {skill.id} v{to_version} was already rolled back"
+            )
+
+    from_version = skill.version
+    skill.skill_md = corrected.get("prev_skill_md") or ""
+    skill.elements = dict(corrected.get("prev_elements") or {})
+    skill.distill_model = corrected.get("prev_distill_model")
+    skill.source_trace = corrected.get("prev_source_trace")
+    skill.version = corrected.get("from_version", from_version - 1)
+
+    evidence.append(
+        {
+            "event": "rolled_back",
+            "from_version": from_version,
+            "to_version": skill.version,
+            "at": _now_iso(),
+        }
+    )
+    skill.evidence = evidence
+
+    await session.commit()
+    logger.info(
+        "rollback_correction | skill=%s %s -> v%s",
+        skill.id, from_version, skill.version,
+    )
+    return skill
+
+
+# ── v2 auto-trigger: propose (never run) a re-distill (grilled 2026-07-01) ──────
+# The counterpart this module's own docstring flagged as "that is v2": self_eval
+# already logs `passed: false` into evidence, but nobody watched the log. This
+# closes that gap *without* touching the D8 human-trigger rule above — it only
+# ever appends a proposal marker; re_distill still only runs from the dock /
+# endpoint.
+
+# N consecutive `executed` + `passed: false` records since the last correction
+# boundary → propose. Tunable constant, not surfaced as per-skill config (v2
+# scope only handles the first failure streak; a v(n+1) that *still* fails
+# straight through means distill itself is stuck — that's v3, human-rewrite
+# territory, not another auto-proposal).
+DEFAULT_FAIL_STREAK = 3
+
+
+def _correction_boundary(evidence: list[dict[str, Any]]) -> int:
+    """Index just past the most recent ``corrected`` / ``correction_dismissed``.
+
+    Both a completed re-distill (new version gets its own fresh *n* chances) and
+    a human dismissal ("this failure doesn't count") reset the consecutive-fail
+    count. ``0`` when neither has ever fired — count from the start of history.
+    """
+    boundary = 0
+    for i, ev in enumerate(evidence):
+        if ev.get("event") in ("corrected", "correction_dismissed"):
+            boundary = i + 1
+    return boundary
+
+
+def maybe_propose_correction(
+    skill: Skill, evidence: list[dict[str, Any]], *, n: int = DEFAULT_FAIL_STREAK
+) -> bool:
+    """Flag — never run — a re-distill after *n* straight execution fails.
+
+    Scans ``evidence`` (``skill.evidence``, already including the just-appended
+    self-eval entry) for the most recent ``n`` ``event == "executed"`` records
+    since :func:`_correction_boundary`, skipping ``loop_outcome == "error"`` runs
+    (environment noise — a dropped CDP connection, a network blip; re-distilling
+    rewrites ``skill_md``, it can't fix that). If every one of those ``n`` is
+    ``passed: False``, appends one ``{"event": "correction_proposed",
+    "trace_ids": [...], "prior_redistill_count": int, "at": ...}`` entry to
+    ``evidence`` **in place** and returns ``True``. Per ADR-0003 D8 this never
+    calls :func:`re_distill` itself — it only marks "a human should look at
+    this"; the dock / ``/redistill`` endpoint remains the sole trigger. The
+    caller (a short-lived session, mirroring ``skill_channel._append_self_eval``)
+    owns ``skill.evidence = evidence`` + commit.
+
+    ``prior_redistill_count`` (2026-07-01 addendum) is the total count of past
+    ``corrected`` events across ``evidence`` (full history, not just since the
+    boundary) — a skill re-distilled 4 times already and *still* failing is a
+    signal the cheap distill model itself may be stuck, worth a human picking a
+    stronger ``provider`` override on the next ``/redistill`` call (the endpoint
+    already accepts one) rather than re-running the same model a 5th time.
+
+    Returns ``False`` (no mutation) when the streak isn't met yet, or a proposal
+    is already open past the boundary — no duplicate proposals, or a
+    perpetually-broken skill would get one appended per run forever.
+    """
+    boundary = _correction_boundary(evidence)
+    tail = evidence[boundary:]
+
+    if any(ev.get("event") == "correction_proposed" for ev in tail):
+        return False
+
+    executed = [
+        ev for ev in tail
+        if ev.get("event") == "executed" and ev.get("loop_outcome") != "error"
+    ]
+    if len(executed) < n:
+        return False
+
+    streak = executed[-n:]
+    if not all(ev.get("passed") is False for ev in streak):
+        return False
+
+    prior_redistill_count = sum(1 for ev in evidence if ev.get("event") == "corrected")
+    evidence.append(
+        {
+            "event": "correction_proposed",
+            "trace_ids": [ev.get("trace_id") for ev in streak],
+            "prior_redistill_count": prior_redistill_count,
+            "at": _now_iso(),
+        }
+    )
+    logger.info(
+        "maybe_propose_correction | skill=%s %s/%s proposed after %d consecutive fails",
+        getattr(skill, "id", None),
+        getattr(skill, "domain", None),
+        getattr(skill, "capability", None),
+        n,
+    )
+    return True

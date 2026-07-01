@@ -419,19 +419,25 @@ class OpenCLIChannel(AbstractChannel):
 
             try:
                 returncode, stdout_text, stderr_text = await _run_opencli(cmd, env)
-            except asyncio.TimeoutError:
+            except asyncio.TimeoutError as exc:
                 logger.error("opencli timeout | cmd=%s", " ".join(cmd))
                 if mode == "cdp":
                     await _cleanup_cdp_tabs(cdp_endpoint, pre_tab_ids)
-                return ChannelResult.fail("opencli command timed out after 120s")
-            except FileNotFoundError:
+                return ChannelResult.fail(
+                    "opencli command timed out after 120s", error_type=type(exc).__name__
+                )
+            except FileNotFoundError as exc:
                 logger.error("opencli binary not found: %s", opencli_bin)
-                return ChannelResult.fail(f"opencli binary not found: {opencli_bin}")
+                return ChannelResult.fail(
+                    f"opencli binary not found: {opencli_bin}", error_type=type(exc).__name__
+                )
             except Exception as exc:
                 logger.exception("opencli subprocess error | %s", exc)
                 if mode == "cdp":
                     await _cleanup_cdp_tabs(cdp_endpoint, pre_tab_ids)
-                return ChannelResult.fail(f"Failed to run opencli: {exc}")
+                return ChannelResult.fail(
+                    f"Failed to run opencli: {exc}", error_type=type(exc).__name__
+                )
 
             if mode == "cdp":
                 await _cleanup_cdp_tabs(cdp_endpoint, pre_tab_ids)
@@ -452,7 +458,10 @@ class OpenCLIChannel(AbstractChannel):
         except Exception as exc:
             logger.error("opencli parse error | format=%s error=%s output_preview=%s",
                          output_format, exc, raw[:300])
-            return ChannelResult.fail(f"Failed to parse opencli {output_format} output: {exc}")
+            return ChannelResult.fail(
+                f"Failed to parse opencli {output_format} output: {exc}",
+                error_type=type(exc).__name__,
+            )
 
         logger.info("opencli done | site=%s cmd=%s mode=%s items=%d", site, command, mode, len(items))
         return ChannelResult.ok(items, site=site, command=command, chrome_mode=mode)
@@ -465,8 +474,37 @@ class OpenCLIChannel(AbstractChannel):
             errors.append("'command' is required for opencli channel")
         return errors
 
-    async def health_check(self) -> bool:
+    async def health_check(
+        self, config: dict[str, Any] | None = None, source_id: str | None = None
+    ) -> bool:
+        """Two-tier: cheap liveness (binary on PATH) always runs first and
+        short-circuits on failure; deep readiness (a real browser reachable
+        via CDP) only runs in local cdp/bridge mode — agent mode dispatches
+        to a remote node with its own registration/health concern, and a
+        bridge-mode endpoint has no local /json/version to hit. Acquires a
+        pool slot only for the duration of the probe, not held afterward."""
         if not (shutil.which(_OPENCLI_BIN) or os.path.isfile(_OPENCLI_BIN)):
             return False
-        # Binary found; extension connectivity is mode-dependent, not a hard failure here
-        return True
+
+        from backend.config import get_settings
+        if get_settings().collection_mode == "agent":
+            return True
+
+        from backend.browser_pool import get_pool
+        try:
+            pool = get_pool()
+        except RuntimeError:
+            return True  # pool not initialized yet (e.g. tested standalone) — binary check stands
+
+        try:
+            async with pool.acquire() as cdp_endpoint:
+                if pool.get_mode(cdp_endpoint) != "cdp":
+                    return True  # bridge mode: reachability is the daemon's concern, not ours
+                import httpx
+                async with httpx.AsyncClient(timeout=5) as client:
+                    resp = await client.get(f"{cdp_endpoint}/json/version")
+                    resp.raise_for_status()
+            return True
+        except Exception as exc:
+            logger.warning("opencli health_check: CDP endpoint unreachable: %s", exc)
+            return False
