@@ -51,6 +51,36 @@ async def test_store_is_upsert_and_ciphertext_only(db_engine, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_store_recovers_from_concurrent_insert_race(db_engine, monkeypatch):
+    """Two concurrent store() calls for the same (source_id, key_name) can both
+    miss each other's row in the SELECT and both attempt an INSERT; the loser
+    must recover via UPDATE instead of surfacing an unhandled IntegrityError."""
+    monkeypatch.setenv(crypto.ENV_KEY, KEY)
+    sm = _sessionmaker(db_engine)
+    with patch("backend.database.AsyncSessionLocal", sm):
+        # A prior writer already landed a row for this key.
+        await AuthManager().store("src-race", "token", "first-writer-value")
+
+        # Simulate our own SELECT having run just before that commit: the
+        # first _find_row() call returns None even though the row now
+        # exists, forcing store() down the INSERT path, which must then hit
+        # the real unique constraint and recover.
+        real_find_row = AuthManager._find_row
+        calls = {"n": 0}
+
+        async def fake_find_row(session, source_id, key_name):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                return None
+            return await real_find_row(session, source_id, key_name)
+
+        with patch.object(AuthManager, "_find_row", staticmethod(fake_find_row)):
+            await AuthManager().store("src-race", "token", "second-writer-value")
+
+        assert await AuthManager().resolve("src-race") == {"token": "second-writer-value"}
+
+
+@pytest.mark.asyncio
 async def test_resolve_context_none_skips_db():
     # auth_kind="none" must short-circuit without any DB access.
     ctx = await AuthManager().resolve_context("src-x", "none")

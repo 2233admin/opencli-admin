@@ -15,31 +15,56 @@ from backend.channels.base import AuthContext
 
 class AuthManager:
     async def store(self, source_id: str, key_name: str, secret: str) -> None:
-        """Encrypt ``secret`` and upsert it under ``(source_id, key_name)``."""
-        from sqlalchemy import select
+        """Encrypt ``secret`` and upsert it under ``(source_id, key_name)``.
+
+        The select-then-insert isn't atomic, so two concurrent stores for the
+        same ``(source_id, key_name)`` (e.g. a double-click on the UI's save
+        button) can both miss each other's row and both attempt an INSERT; the
+        second hits ``uq_source_credentials_source_key`` and raises
+        IntegrityError. Recover by rolling back and updating the row the other
+        request just inserted, instead of surfacing an unhandled 500.
+        """
+        from sqlalchemy.exc import IntegrityError
 
         from backend.database import AsyncSessionLocal
         from backend.models.source_credential import SourceCredential
 
         ciphertext = crypto.encrypt(secret)
+
         async with AsyncSessionLocal() as session:
-            row = (
-                await session.execute(
-                    select(SourceCredential).where(
-                        SourceCredential.source_id == source_id,
-                        SourceCredential.key_name == key_name,
-                    )
-                )
-            ).scalar_one_or_none()
+            row = await self._find_row(session, source_id, key_name)
             if row is not None:
                 row.ciphertext = ciphertext
-            else:
-                session.add(
-                    SourceCredential(
-                        source_id=source_id, key_name=key_name, ciphertext=ciphertext
-                    )
+                await session.commit()
+                return
+
+            session.add(
+                SourceCredential(source_id=source_id, key_name=key_name, ciphertext=ciphertext)
+            )
+            try:
+                await session.commit()
+            except IntegrityError:
+                await session.rollback()
+                row = await self._find_row(session, source_id, key_name)
+                if row is None:
+                    raise
+                row.ciphertext = ciphertext
+                await session.commit()
+
+    @staticmethod
+    async def _find_row(session, source_id: str, key_name: str):
+        from sqlalchemy import select
+
+        from backend.models.source_credential import SourceCredential
+
+        return (
+            await session.execute(
+                select(SourceCredential).where(
+                    SourceCredential.source_id == source_id,
+                    SourceCredential.key_name == key_name,
                 )
-            await session.commit()
+            )
+        ).scalar_one_or_none()
 
     async def list_keys(self, source_id: str) -> list[str]:
         """Key names stored for a source, without decrypting values — safe for a
