@@ -10,6 +10,7 @@ const zh = {
     records: '采集记录',
     schedules: '定时计划',
     agents: '智能体',
+    skills: '技能',
     providers: '模型提供商',
   notifications: '通知',
   workers: '工作节点',

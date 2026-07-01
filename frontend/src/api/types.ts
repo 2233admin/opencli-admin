@@ -43,13 +43,41 @@ export interface DataSource {
   id: string
   name: string
   description?: string
-  channel_type: 'opencli' | 'web_scraper' | 'api' | 'rss' | 'cli'
+  channel_type: 'opencli' | 'web_scraper' | 'api' | 'rss' | 'cli' | 'skill'
   channel_config: Record<string, unknown>
   ai_config?: Record<string, unknown>
   enabled: boolean
   tags: string[]
   created_at: string
   updated_at: string
+}
+
+// A distilled browser skill (record→distill→execute→correct loop, ADR-0003).
+// `list` only ever returns the brief projection (no skill_md/elements/evidence
+// body); `detail` (GET /skills/{id}) returns every field.
+export interface SkillEvidenceEntry {
+  event: string
+  at?: string
+  [key: string]: unknown
+}
+
+export interface Skill {
+  id: string
+  domain: string
+  capability: string
+  name: string
+  version: number
+  status: string
+  enabled: boolean
+  evidence_count: number
+  has_open_proposal: boolean
+  scope?: string | null
+  skill_md?: string
+  elements?: Record<string, string[]>
+  source_trace?: string | null
+  distill_model?: string | null
+  evidence?: SkillEvidenceEntry[]
+  last_failing_trace?: Record<string, unknown> | null
 }
 
 export interface CollectionTask {

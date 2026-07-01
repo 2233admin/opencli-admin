@@ -15,6 +15,10 @@ const STATUS_STYLES: Record<string, string> = {
   raw:           'border-zinc-500/40 bg-zinc-500/10 text-zinc-300',
   normalized:    'border-zinc-200/50 bg-zinc-100/10 text-zinc-100',
   ai_processed:  'border-primary-500/50 bg-primary-500/10 text-primary-100',
+  // Skill.status (record→distill→execute→correct loop, ADR-0003)
+  draft:         'border-signal-amber/40 bg-signal-amber/10 text-amber-200',
+  active:        'border-signal-green/40 bg-signal-green/10 text-emerald-200',
+  deprecated:    'border-zinc-500/40 bg-zinc-500/10 text-zinc-300',
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -32,6 +36,9 @@ const STATUS_LABELS: Record<string, string> = {
   not_required:  '无需回执',
   online:        '在线',
   offline:       '离线',
+  draft:         '草稿',
+  active:        '生效',
+  deprecated:    '已弃用',
 }
 
 interface Props {

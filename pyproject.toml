@@ -55,6 +55,9 @@ dependencies = [
     "celery-redbeat>=2.3.3",
 ]
 
+[project.scripts]
+opencli-skill = "backend.cli:main"
+
 [project.optional-dependencies]
 dev = [
     "pytest>=8.3.0",

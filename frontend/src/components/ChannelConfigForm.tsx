@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useQuery } from '@tanstack/react-query'
 import { Plus, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
-import { deleteSourceCredential, listSourceCredentials, storeSourceCredential } from '../api/endpoints'
+import { deleteSourceCredential, listSkills, listSourceCredentials, storeSourceCredential } from '../api/endpoints'
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -1131,7 +1132,7 @@ export { OPENCLI_PRESETS, PRESET_DEFAULT, SITE_LABELS, COMMANDS_BY_SITE }
 
 // ── Public component ──────────────────────────────────────────────────────────
 
-export type ChannelType = 'rss' | 'api' | 'web_scraper' | 'cli' | 'opencli'
+export type ChannelType = 'rss' | 'api' | 'web_scraper' | 'cli' | 'opencli' | 'skill'
 
 interface Props {
   channelType: ChannelType
@@ -1157,5 +1158,79 @@ export default function ChannelConfigForm({ channelType, config, onChange, sourc
       return <CLIConfig config={config} onChange={onChange} />
     case 'opencli':
       return <OpenCLIConfig config={config} onChange={onChange} />
+    case 'skill':
+      return <SkillSourceConfig config={config} onChange={onChange} />
   }
+}
+
+// 让技能真正可排程 (Phase A, ADR-0003): 一个 channel_type="skill" 的 source
+// 引用一个已蒸馏的 Skill(按 skill_id，或 domain+capability 兜底),复用
+// backend.channels.skill_channel.SkillChannel 已经支持的两种解析路径。
+function SkillSourceConfig({
+  config,
+  onChange,
+}: {
+  config: Record<string, unknown>
+  onChange: (c: Record<string, unknown>) => void
+}) {
+  const { data: skillsResp } = useQuery({
+    queryKey: ['skills', 'for-source-config'],
+    queryFn: () => listSkills({ limit: 200 }),
+  })
+  const skills = skillsResp?.data ?? []
+  const update = (patch: Partial<Record<string, unknown>>) => onChange({ ...config, ...patch })
+
+  const skillId = (config.skill_id as string) ?? ''
+  const useManualDomain = !skillId
+
+  return (
+    <div className="space-y-3">
+      <Field label="选择技能" hint="从技能库里选一个已蒸馏的 skill；也可以手填 domain/capability（比如技能还没建好、先占位排程）">
+        <SelectInput
+          value={skillId}
+          onChange={(v) => update({ skill_id: v || undefined, domain: undefined, capability: undefined })}
+          ariaLabel="选择技能"
+          options={[
+            { value: '', label: '— 手填 domain / capability —' },
+            ...skills.map((s) => ({ value: s.id, label: `${s.name} (${s.domain}/${s.capability})` })),
+          ]}
+        />
+      </Field>
+      {useManualDomain && (
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="domain" required>
+            <TextInput
+              value={(config.domain as string) ?? ''}
+              onChange={(v) => update({ domain: v })}
+              placeholder="example.com"
+              required
+            />
+          </Field>
+          <Field label="capability" required>
+            <TextInput
+              value={(config.capability as string) ?? ''}
+              onChange={(v) => update({ capability: v })}
+              placeholder="open-list"
+              required
+            />
+          </Field>
+        </div>
+      )}
+      <Field label="task" hint="可选：给这次执行的一句自然语言任务说明">
+        <TextInput
+          value={(config.task as string) ?? ''}
+          onChange={(v) => update({ task: v || undefined })}
+          placeholder="打开列表页并读取所有行"
+        />
+      </Field>
+      <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+        <input
+          type="checkbox"
+          checked={Boolean(config.auto_confirm)}
+          onChange={(e) => update({ auto_confirm: e.target.checked || undefined })}
+        />
+        auto_confirm — 允许高危动作无人值守执行（红线永远不受此项影响）
+      </label>
+    </div>
+  )
 }

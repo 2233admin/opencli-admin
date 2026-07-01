@@ -12,6 +12,7 @@ const en: Translations = {
     records: 'Records',
     schedules: 'Schedules',
     agents: 'Agents',
+    skills: 'Skills',
     providers: 'Providers',
   notifications: 'Notifications',
   workers: 'Workers',
