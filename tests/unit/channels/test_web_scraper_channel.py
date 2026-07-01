@@ -361,3 +361,59 @@ async def test_collect_still_delegates_to_fetch_without_ctx_http(channel):
 
     spy.assert_called_once()
     assert result.success is True
+
+
+# ── health_check (GOAL-4 PR-E: real per-source probe) ───────────────────────────
+
+@pytest.mark.asyncio
+async def test_health_check_no_config_is_parser_liveness_only(channel):
+    assert await channel.health_check() is True
+
+
+@pytest.mark.asyncio
+async def test_health_check_missing_url_is_unhealthy(channel):
+    assert await channel.health_check({}) is False
+
+
+@pytest.mark.asyncio
+async def test_health_check_reachable_returns_true(channel):
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.raise_for_status = MagicMock()
+    mock_client = AsyncMock()
+    mock_client.head = AsyncMock(return_value=mock_response)
+    mock_client_ctx = AsyncMock()
+    mock_client_ctx.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client_ctx.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("httpx.AsyncClient", return_value=mock_client_ctx):
+        result = await channel.health_check({"url": "https://example.com"})
+
+    assert result is True
+
+
+@pytest.mark.asyncio
+async def test_health_check_unreachable_returns_false(channel):
+    mock_client = AsyncMock()
+    mock_client.head = AsyncMock(side_effect=OSError("connection refused"))
+    mock_client_ctx = AsyncMock()
+    mock_client_ctx.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client_ctx.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("httpx.AsyncClient", return_value=mock_client_ctx):
+        result = await channel.health_check({"url": "https://example.com"})
+
+    assert result is False
+
+
+@pytest.mark.asyncio
+async def test_health_check_lxml_unavailable_returns_false(channel):
+    """The "driver" (parser backend) tier — a broken lxml install must fail
+    the check before any network probe is even attempted."""
+    with patch(
+        "backend.channels.web_scraper_channel.BeautifulSoup",
+        side_effect=Exception("lxml not installed"),
+    ):
+        result = await channel.health_check({"url": "https://example.com"})
+
+    assert result is False

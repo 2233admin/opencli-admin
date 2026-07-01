@@ -141,6 +141,12 @@ class AbstractChannel(ABC):
         chars in the title = a new item'."""
         return None
 
-    async def health_check(self) -> bool:
-        """Optional health check. Override to implement channel-specific check."""
+    async def health_check(
+        self, config: dict[str, Any] | None = None, source_id: str | None = None
+    ) -> bool:
+        """Optional health check. Override to implement channel-specific check.
+        ``config`` (the source's channel_config) lets an override do a real
+        per-source probe instead of a generic liveness check; ``source_id``
+        lets it resolve real credentials from the encrypted store (see
+        ``ApiChannel._resolve_auth_headers``) for an authenticated probe."""
         return True

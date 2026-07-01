@@ -87,5 +87,7 @@ class CLIChannel(AbstractChannel):
             errors.append("'command' is required for cli channel")
         return errors
 
-    async def health_check(self) -> bool:
+    async def health_check(
+        self, config: dict[str, Any] | None = None, source_id: str | None = None
+    ) -> bool:
         return True  # Binary existence checked per-collect

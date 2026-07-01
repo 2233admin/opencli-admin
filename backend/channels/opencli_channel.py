@@ -474,8 +474,37 @@ class OpenCLIChannel(AbstractChannel):
             errors.append("'command' is required for opencli channel")
         return errors
 
-    async def health_check(self) -> bool:
+    async def health_check(
+        self, config: dict[str, Any] | None = None, source_id: str | None = None
+    ) -> bool:
+        """Two-tier: cheap liveness (binary on PATH) always runs first and
+        short-circuits on failure; deep readiness (a real browser reachable
+        via CDP) only runs in local cdp/bridge mode — agent mode dispatches
+        to a remote node with its own registration/health concern, and a
+        bridge-mode endpoint has no local /json/version to hit. Acquires a
+        pool slot only for the duration of the probe, not held afterward."""
         if not (shutil.which(_OPENCLI_BIN) or os.path.isfile(_OPENCLI_BIN)):
             return False
-        # Binary found; extension connectivity is mode-dependent, not a hard failure here
-        return True
+
+        from backend.config import get_settings
+        if get_settings().collection_mode == "agent":
+            return True
+
+        from backend.browser_pool import get_pool
+        try:
+            pool = get_pool()
+        except RuntimeError:
+            return True  # pool not initialized yet (e.g. tested standalone) — binary check stands
+
+        try:
+            async with pool.acquire() as cdp_endpoint:
+                if pool.get_mode(cdp_endpoint) != "cdp":
+                    return True  # bridge mode: reachability is the daemon's concern, not ours
+                import httpx
+                async with httpx.AsyncClient(timeout=5) as client:
+                    resp = await client.get(f"{cdp_endpoint}/json/version")
+                    resp.raise_for_status()
+            return True
+        except Exception as exc:
+            logger.warning("opencli health_check: CDP endpoint unreachable: %s", exc)
+            return False

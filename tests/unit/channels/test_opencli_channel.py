@@ -297,6 +297,76 @@ async def test_health_check_binary_missing(channel):
     assert result is False
 
 
+@pytest.mark.asyncio
+async def test_health_check_agent_mode_skips_pool_probe(channel):
+    """Agent mode has no local CDP endpoint — the binary check alone stands,
+    since a remote agent's health is a separate registration concern."""
+    with (
+        patch("os.path.isfile", return_value=True),
+        patch("backend.config.get_settings", return_value=_make_mock_settings(collection_mode="agent")),
+        patch("backend.browser_pool.get_pool") as mock_get_pool,
+    ):
+        result = await channel.health_check()
+    assert result is True
+    mock_get_pool.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_health_check_bridge_mode_skips_cdp_probe(channel):
+    """Bridge mode has no local /json/version to hit — reachability there is
+    the daemon's concern, not this probe's."""
+    mock_pool = _make_mock_pool(mode="bridge")
+    with (
+        patch("os.path.isfile", return_value=True),
+        patch("backend.config.get_settings", return_value=_make_mock_settings(collection_mode="local")),
+        patch("backend.browser_pool.get_pool", return_value=mock_pool),
+    ):
+        result = await channel.health_check()
+    assert result is True
+
+
+@pytest.mark.asyncio
+async def test_health_check_cdp_mode_reachable_returns_true(channel):
+    mock_pool = _make_mock_pool(mode="cdp")
+    mock_response = MagicMock()
+    mock_response.raise_for_status = MagicMock()
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(return_value=mock_response)
+    mock_client_ctx = AsyncMock()
+    mock_client_ctx.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client_ctx.__aexit__ = AsyncMock(return_value=False)
+
+    with (
+        patch("os.path.isfile", return_value=True),
+        patch("backend.config.get_settings", return_value=_make_mock_settings(collection_mode="local")),
+        patch("backend.browser_pool.get_pool", return_value=mock_pool),
+        patch("httpx.AsyncClient", return_value=mock_client_ctx),
+    ):
+        result = await channel.health_check()
+    assert result is True
+    mock_client.get.assert_called_once()
+    assert "/json/version" in mock_client.get.call_args.args[0]
+
+
+@pytest.mark.asyncio
+async def test_health_check_cdp_mode_unreachable_returns_false(channel):
+    mock_pool = _make_mock_pool(mode="cdp")
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(side_effect=OSError("connection refused"))
+    mock_client_ctx = AsyncMock()
+    mock_client_ctx.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client_ctx.__aexit__ = AsyncMock(return_value=False)
+
+    with (
+        patch("os.path.isfile", return_value=True),
+        patch("backend.config.get_settings", return_value=_make_mock_settings(collection_mode="local")),
+        patch("backend.browser_pool.get_pool", return_value=mock_pool),
+        patch("httpx.AsyncClient", return_value=mock_client_ctx),
+    ):
+        result = await channel.health_check()
+    assert result is False
+
+
 # ── collect: agent mode tests ──────────────────────────────────────────────────
 
 def _make_mock_pool(mode="cdp", agent_url="http://agent:8000", agent_protocol="http"):

@@ -84,7 +84,7 @@ async def test_source_connectivity(source: DataSource) -> tuple[bool, list[str]]
         return False, errors
     try:
         channel = get_channel(source.channel_type)
-        ok = await channel.health_check()
+        ok = await channel.health_check(source.channel_config, source.id)
         return ok, []
     except Exception as exc:
         return False, [str(exc)]

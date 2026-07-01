@@ -631,3 +631,94 @@ async def test_fetch_http_error_raises_channel_fetch_error(channel):
 
     with pytest.raises(ChannelFetchError, match="500"):
         await channel.fetch(ctx)
+
+
+# ── health_check (GOAL-4 PR-E: real per-source probe) ───────────────────────────
+
+@pytest.mark.asyncio
+async def test_health_check_no_config_is_liveness_only(channel):
+    """No config (called standalone) → can't probe anything, assume healthy."""
+    assert await channel.health_check() is True
+
+
+@pytest.mark.asyncio
+async def test_health_check_missing_base_url_is_unhealthy(channel):
+    assert await channel.health_check({}) is False
+
+
+@pytest.mark.asyncio
+async def test_health_check_reachable_returns_true(channel):
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.raise_for_status = MagicMock()
+
+    mock_client = AsyncMock()
+    mock_client.head = AsyncMock(return_value=mock_response)
+    mock_client_ctx = AsyncMock()
+    mock_client_ctx.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client_ctx.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("httpx.AsyncClient", return_value=mock_client_ctx):
+        result = await channel.health_check({"base_url": "https://api.example.com", "endpoint": "/ping"})
+
+    assert result is True
+    mock_client.head.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_health_check_falls_back_to_get_when_head_not_allowed(channel):
+    head_response = MagicMock()
+    head_response.status_code = 405
+    get_response = MagicMock()
+    get_response.status_code = 200
+    get_response.raise_for_status = MagicMock()
+
+    mock_client = AsyncMock()
+    mock_client.head = AsyncMock(return_value=head_response)
+    mock_client.get = AsyncMock(return_value=get_response)
+    mock_client_ctx = AsyncMock()
+    mock_client_ctx.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client_ctx.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("httpx.AsyncClient", return_value=mock_client_ctx):
+        result = await channel.health_check({"base_url": "https://api.example.com"})
+
+    assert result is True
+    mock_client.get.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_health_check_unreachable_returns_false(channel):
+    mock_client = AsyncMock()
+    mock_client.head = AsyncMock(side_effect=OSError("connection refused"))
+    mock_client_ctx = AsyncMock()
+    mock_client_ctx.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client_ctx.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("httpx.AsyncClient", return_value=mock_client_ctx):
+        result = await channel.health_check({"base_url": "https://api.example.com"})
+
+    assert result is False
+
+
+@pytest.mark.asyncio
+async def test_health_check_sends_real_auth_headers(channel):
+    """The probe carries real auth (not a bare unauthenticated ping) —
+    otherwise a 401-gated API always reports unhealthy even when it's fine."""
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.raise_for_status = MagicMock()
+
+    mock_client = AsyncMock()
+    mock_client.head = AsyncMock(return_value=mock_response)
+    mock_client_ctx = AsyncMock()
+    mock_client_ctx.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client_ctx.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("httpx.AsyncClient", return_value=mock_client_ctx):
+        await channel.health_check(
+            {"base_url": "https://api.example.com", "auth": {"type": "bearer", "token": "tok123"}}
+        )
+
+    sent_headers = mock_client.head.call_args.kwargs["headers"]
+    assert sent_headers["Authorization"] == "Bearer tok123"

@@ -1,5 +1,6 @@
 """Web scraper channel using httpx + BeautifulSoup."""
 
+import logging
 from typing import Any
 
 import httpx
@@ -13,6 +14,8 @@ from backend.channels.base import (
     FetchResult,
 )
 from backend.channels.registry import register_channel
+
+logger = logging.getLogger(__name__)
 
 
 @register_channel
@@ -110,3 +113,33 @@ class WebScraperChannel(AbstractChannel):
         if not config.get("selectors"):
             errors.append("'selectors' is required for web_scraper channel")
         return errors
+
+    async def health_check(
+        self, config: dict[str, Any] | None = None, source_id: str | None = None
+    ) -> bool:
+        """Two-tier: the parser backend (lxml — this channel's "driver") must
+        be usable at all, then, when a source's config is available, the
+        target URL must actually be reachable. Short timeout: liveness, not
+        a full scrape."""
+        try:
+            BeautifulSoup("<html></html>", "lxml")
+        except Exception as exc:
+            logger.warning("web_scraper health_check: lxml parser unavailable: %s", exc)
+            return False
+
+        if config is None:
+            return True  # no source context to probe (e.g. called standalone)
+        url: str = config.get("url", "")
+        if not url:
+            return False
+
+        try:
+            async with httpx.AsyncClient(follow_redirects=True, timeout=5) as client:
+                response = await client.head(url)
+                if response.status_code in (404, 405):
+                    response = await client.get(url)
+                response.raise_for_status()
+            return True
+        except Exception as exc:
+            logger.warning("web_scraper health_check: %s unreachable: %s", url, exc)
+            return False

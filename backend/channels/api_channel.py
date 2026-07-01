@@ -194,3 +194,31 @@ class ApiChannel(AbstractChannel):
         if not config.get("endpoint"):
             errors.append("'endpoint' is required for api channel")
         return errors
+
+    async def health_check(
+        self, config: dict[str, Any] | None = None, source_id: str | None = None
+    ) -> bool:
+        """Deep readiness: a real HEAD (falling back to GET when HEAD isn't
+        supported) against base_url+endpoint, with real auth headers — not
+        just "is the config well-formed" (that's validate_config's job).
+        Short timeout: this is a liveness probe, not a full request."""
+        if config is None:
+            return True  # no source context to probe (e.g. called standalone)
+        base_url: str = config.get("base_url", "")
+        if not base_url:
+            return False
+        endpoint: str = config.get("endpoint", "")
+        url = base_url.rstrip("/") + "/" + endpoint.lstrip("/") if endpoint else base_url
+
+        headers = await self._resolve_auth_headers(config.get("auth", {}), source_id)
+
+        try:
+            async with httpx.AsyncClient(timeout=5) as client:
+                response = await client.head(url, headers=headers)
+                if response.status_code in (404, 405):
+                    response = await client.get(url, headers=headers)
+                response.raise_for_status()
+            return True
+        except Exception as exc:
+            logger.warning("api channel health_check: %s unreachable: %s", url, exc)
+            return False
