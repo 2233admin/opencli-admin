@@ -133,6 +133,22 @@ async def test_store_and_list_source_credential(client, db_engine, sample_source
 
 
 @pytest.mark.asyncio
+async def test_store_credential_key_name_too_long_rejected(client, sample_source_data):
+    """key_name must fit the DB column (String(64)) — a value that passes
+    Pydantic but doesn't fit the column would otherwise reach Postgres as an
+    unhandled DataError (SQLite doesn't enforce VARCHAR length, so this only
+    manifested in production before the max_length was aligned to 64)."""
+    create_resp = await client.post("/api/v1/sources", json=sample_source_data)
+    source_id = create_resp.json()["data"]["id"]
+
+    response = await client.post(
+        f"/api/v1/sources/{source_id}/credentials",
+        json={"key_name": "x" * 65, "secret": "s"},
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_store_credential_source_not_found(client):
     response = await client.post(
         "/api/v1/sources/nonexistent-id/credentials",
