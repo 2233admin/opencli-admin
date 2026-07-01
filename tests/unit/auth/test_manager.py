@@ -77,3 +77,42 @@ async def test_resolve_context_api_key(db_engine, monkeypatch):
         await mgr.store("src-1", "key", "k-42")
         ctx = await mgr.resolve_context("src-1", "api_key")
     assert ctx.headers == {"X-API-Key": "k-42"}
+
+
+@pytest.mark.asyncio
+async def test_list_keys_returns_names_not_values(db_engine, monkeypatch):
+    monkeypatch.setenv(crypto.ENV_KEY, KEY)
+    with patch("backend.database.AsyncSessionLocal", _sessionmaker(db_engine)):
+        mgr = AuthManager()
+        await mgr.store("src-1", "token", "secret-value")
+        keys = await mgr.list_keys("src-1")
+    assert keys == ["token"]
+    assert "secret-value" not in keys
+
+
+@pytest.mark.asyncio
+async def test_list_keys_empty_for_unknown_source(db_engine, monkeypatch):
+    monkeypatch.setenv(crypto.ENV_KEY, KEY)
+    with patch("backend.database.AsyncSessionLocal", _sessionmaker(db_engine)):
+        assert await AuthManager().list_keys("no-such-source") == []
+
+
+@pytest.mark.asyncio
+async def test_delete_removes_credential(db_engine, monkeypatch):
+    monkeypatch.setenv(crypto.ENV_KEY, KEY)
+    with patch("backend.database.AsyncSessionLocal", _sessionmaker(db_engine)):
+        mgr = AuthManager()
+        await mgr.store("src-1", "token", "abc123")
+        await mgr.store("src-1", "key", "k-9")
+        await mgr.delete("src-1", "token")
+        assert await mgr.resolve("src-1") == {"key": "k-9"}
+
+
+@pytest.mark.asyncio
+async def test_delete_unknown_key_is_noop(db_engine, monkeypatch):
+    monkeypatch.setenv(crypto.ENV_KEY, KEY)
+    with patch("backend.database.AsyncSessionLocal", _sessionmaker(db_engine)):
+        mgr = AuthManager()
+        await mgr.store("src-1", "token", "abc123")
+        await mgr.delete("src-1", "does-not-exist")
+        assert await mgr.resolve("src-1") == {"token": "abc123"}

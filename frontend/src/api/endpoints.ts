@@ -50,6 +50,17 @@ export const testSourceConnectivity = (id: string) =>
     .post<ApiResponse<{ connected: boolean; errors: string[] }>>(`/sources/${id}/test`)
     .then((r) => r.data.data)
 
+// Encrypted credential store (backend.auth.AuthManager) — key names only ever
+// come back; the secret is write-only once stored.
+export const listSourceCredentials = (id: string) =>
+  apiClient.get<ApiResponse<{ key_name: string }[]>>(`/sources/${id}/credentials`).then((r) => r.data.data)
+
+export const storeSourceCredential = (id: string, data: { key_name: string; secret: string }) =>
+  apiClient.post<ApiResponse<null>>(`/sources/${id}/credentials`, data).then((r) => r.data)
+
+export const deleteSourceCredential = (id: string, keyName: string) =>
+  apiClient.delete<ApiResponse<null>>(`/sources/${id}/credentials/${keyName}`).then((r) => r.data)
+
 // ── Tasks ──────────────────────────────────────────────────────────────────────
 export const listTasks = (params?: {
   source_id?: string

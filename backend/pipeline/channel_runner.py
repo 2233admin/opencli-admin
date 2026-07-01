@@ -9,15 +9,15 @@ This is the mechanism behind the north star: adding a real source is ~100 lines 
 fetch + parse, because token refresh, rate limiting, retry/backoff, pagination,
 and cursor state all live here, written once, reused by every channel.
 
-Phase 1 status: additive and NOT yet wired into the collect stage of the live
-pipeline (``backend/pipeline/collector.py`` still calls ``channel.collect``). It
-runs against an in-memory cursor store and accepts an injected client/channel for
-tests. The DB-backed cursor store, the migration, the RSS etag override, and the
-switch of the collect stage from ``collect()`` to ``run_channel()`` are the next
-slice.
+Every collector.collect() call is now routed through here (not just incremental
+channels): a channel that hasn't migrated fetch() gets the default adapter that
+bridges to collect(), so it degrades to one page / no cursor / no rate limiting —
+identical to calling collect() directly. Channels migrate by overriding fetch()
+and reading ctx.cursor / ctx.http / ctx.auth / ctx.source_id.
 """
 
 import logging
+from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
@@ -33,6 +33,16 @@ log = logging.getLogger(__name__)
 MAX_PAGES = 50
 
 
+@dataclass
+class RunResult:
+    """Everything a run_channel() call produced: the items plus the last page's
+    non-item metadata (e.g. opencli's node_url, skill's awaiting_confirm) so
+    collector.collect() can forward it onto ChannelResult.metadata unchanged."""
+
+    items: list[dict[str, Any]] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
 async def run_channel(
     source: Any,
     params: dict[str, Any],
@@ -40,7 +50,7 @@ async def run_channel(
     cursor_store: CursorStore | None = None,
     channel: AbstractChannel | None = None,
     http: Any = None,
-) -> list[dict[str, Any]]:
+) -> RunResult:
     """Collect all items for ``source`` through its channel's ``fetch()``, applying
     the runner's cross-cutting concerns.
 
@@ -67,6 +77,7 @@ async def run_channel(
     )
 
     items: list[dict[str, Any]] = []
+    metadata: dict[str, Any] = {}
     pages = 0
     try:
         while True:
@@ -74,12 +85,14 @@ async def run_channel(
                 config=source.channel_config,
                 params=params,
                 cursor=cursor,
+                source_id=source.id,
                 auth=auth,
                 http=client,
                 log=log,
             )
             result = await chan.fetch(ctx)
             items.extend(result.items)
+            metadata.update(result.metadata)
 
             # Persist the cursor after each page: a crash mid-pagination resumes
             # from here instead of re-fetching everything.
@@ -97,4 +110,4 @@ async def run_channel(
         if owns_http and isinstance(client, RateLimitedClient):
             await client.aclose()
 
-    return items
+    return RunResult(items=items, metadata=metadata)

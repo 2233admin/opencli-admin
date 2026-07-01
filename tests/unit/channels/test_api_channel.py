@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from backend.channels.api_channel import ApiChannel, _resolve_dict_secrets, _resolve_secrets
+from backend.channels.base import ChannelFetchError, FetchContext
 
 
 # ── _resolve_secrets ───────────────────────────────────────────────────────────
@@ -361,3 +362,176 @@ async def test_collect_generic_exception_returns_fail(channel):
 
     assert result.success is False
     assert "failed" in result.error.lower()
+
+
+# ── fetch(): thick-contract path ─────────────────────────────────────────────
+
+class _FetchHttp:
+    """Minimal stand-in for the runner's rate-limited client (request())."""
+
+    def __init__(self, response):
+        self._response = response
+        self.calls = []
+
+    async def request(self, method, url, **kwargs):
+        self.calls.append((method, url, kwargs))
+        return self._response
+
+
+@pytest.mark.asyncio
+async def test_fetch_prefers_stored_credential_over_inline_config(channel, monkeypatch):
+    """A source migrated to the encrypted store resolves its bearer token from
+    AuthManager, ignoring the (now-stale) inline token_env in channel_config."""
+    monkeypatch.setenv("SHOULD_NOT_BE_USED", "inline-value")
+    response = _make_mock_response(json_data=[{"ok": True}])
+    http = _FetchHttp(response)
+    ctx = FetchContext(
+        config={
+            "base_url": "https://api.example.com",
+            "endpoint": "/secure",
+            "auth": {"type": "bearer", "token_env": "SHOULD_NOT_BE_USED"},
+        },
+        params={},
+        source_id="src-1",
+        http=http,
+    )
+
+    with patch(
+        "backend.auth.manager.AuthManager.resolve",
+        AsyncMock(return_value={"token": "stored-secret"}),
+    ):
+        result = await channel.fetch(ctx)
+
+    assert result.items == [{"ok": True}]
+    headers = http.calls[0][2]["headers"]
+    assert headers["Authorization"] == "Bearer stored-secret"
+
+
+@pytest.mark.asyncio
+async def test_fetch_falls_back_to_inline_config_when_no_stored_credential(channel, monkeypatch):
+    """A source that hasn't migrated to the encrypted store keeps working exactly
+    as before — env-indirected token, zero behaviour change."""
+    monkeypatch.setenv("MY_TOKEN", "env-secret")
+    response = _make_mock_response(json_data=[{"ok": True}])
+    http = _FetchHttp(response)
+    ctx = FetchContext(
+        config={
+            "base_url": "https://api.example.com",
+            "endpoint": "/secure",
+            "auth": {"type": "bearer", "token_env": "MY_TOKEN"},
+        },
+        params={},
+        source_id="src-2",
+        http=http,
+    )
+
+    with patch(
+        "backend.auth.manager.AuthManager.resolve",
+        AsyncMock(return_value={}),  # nothing stored for this source
+    ):
+        result = await channel.fetch(ctx)
+
+    assert result.items == [{"ok": True}]
+    assert http.calls[0][2]["headers"]["Authorization"] == "Bearer env-secret"
+
+
+@pytest.mark.asyncio
+async def test_fetch_no_source_id_skips_credential_store(channel, monkeypatch):
+    """fetch() called standalone (no source_id, e.g. a config test/preview) never
+    hits the DB — falls straight to the legacy inline/env resolution."""
+    monkeypatch.setenv("MY_TOKEN", "env-secret")
+    response = _make_mock_response(json_data=[{"ok": True}])
+    http = _FetchHttp(response)
+    ctx = FetchContext(
+        config={
+            "base_url": "https://api.example.com",
+            "endpoint": "/secure",
+            "auth": {"type": "bearer", "token_env": "MY_TOKEN"},
+        },
+        params={},
+        source_id=None,
+        http=http,
+    )
+
+    with patch("backend.auth.manager.AuthManager.resolve") as mock_resolve:
+        result = await channel.fetch(ctx)
+
+    mock_resolve.assert_not_called()
+    assert http.calls[0][2]["headers"]["Authorization"] == "Bearer env-secret"
+
+
+@pytest.mark.asyncio
+async def test_fetch_returns_url_and_status_code_metadata(channel):
+    response = _make_mock_response(json_data=[{"id": 1}])
+    http = _FetchHttp(response)
+    ctx = FetchContext(
+        config={"base_url": "https://api.example.com", "endpoint": "/items"},
+        params={},
+        http=http,
+    )
+
+    result = await channel.fetch(ctx)
+
+    assert result.metadata == {"url": "https://api.example.com/items", "status_code": 200}
+
+
+@pytest.mark.asyncio
+async def test_fetch_result_path_navigation(channel):
+    response = _make_mock_response(json_data={"data": {"items": [{"x": 1}, {"x": 2}]}})
+    http = _FetchHttp(response)
+    ctx = FetchContext(
+        config={
+            "base_url": "https://api.example.com",
+            "endpoint": "/data",
+            "result_path": "data.items",
+        },
+        params={},
+        http=http,
+    )
+
+    result = await channel.fetch(ctx)
+
+    assert len(result.items) == 2
+    assert result.items[0]["x"] == 1
+
+
+@pytest.mark.asyncio
+async def test_fetch_timeout_raises_channel_fetch_error(channel):
+    import httpx
+
+    http = AsyncMock()
+    http.request = AsyncMock(side_effect=httpx.TimeoutException("timed out"))
+    ctx = FetchContext(
+        config={"base_url": "https://api.example.com", "endpoint": "/slow"},
+        params={},
+        http=http,
+    )
+
+    with pytest.raises(ChannelFetchError, match="timed out"):
+        await channel.fetch(ctx)
+
+
+@pytest.mark.asyncio
+async def test_fetch_http_error_raises_channel_fetch_error(channel):
+    import httpx
+
+    mock_response = MagicMock()
+    mock_response.status_code = 500
+    mock_response.text = "Internal Server Error"
+    mock_response.raise_for_status = MagicMock(
+        side_effect=httpx.HTTPStatusError(
+            message="Server Error",
+            request=MagicMock(),
+            response=MagicMock(status_code=500, text="Internal Server Error"),
+        )
+    )
+    http = AsyncMock()
+    http.request = AsyncMock(return_value=mock_response)
+    ctx = FetchContext(
+        config={"base_url": "https://api.example.com", "endpoint": "/err"},
+        params={},
+        http=http,
+    )
+
+    with pytest.raises(ChannelFetchError, match="500"):
+        await channel.fetch(ctx)

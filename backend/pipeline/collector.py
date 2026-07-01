@@ -8,27 +8,31 @@ from backend.models.source import DataSource
 
 
 async def collect(source: DataSource, parameters: dict[str, Any]) -> ChannelResult:
-    """Dispatch collection to the registered channel for the given source.
+    """Dispatch collection to the registered channel's ``fetch()`` through the
+    thick runner (``run_channel``).
 
-    Incremental channels (``capabilities.incremental``) collect through the thick
-    runner so they resume from a persisted cursor; every other channel keeps the
-    one-shot ``collect()`` path, unchanged.
+    Every channel goes through the same path now, not just incremental ones: a
+    channel that hasn't migrated ``fetch()`` gets the default adapter that bridges
+    to ``collect()``, and ``run_channel`` degrades to a single non-paginated,
+    no-cursor call for it — identical to calling ``collect()`` directly, plus a
+    resolved ``AuthContext`` and a rate-limited client the channel may opt into.
     """
     channel = get_channel(source.channel_type)
-    if channel.capabilities.incremental:
-        return await _collect_incremental(source, parameters, channel)
-    return await channel.collect(source.channel_config, parameters)
+    return await _collect_via_runner(source, parameters, channel)
 
 
-async def _collect_incremental(
+async def _collect_via_runner(
     source: DataSource, parameters: dict[str, Any], channel: Any
 ) -> ChannelResult:
-    """Collect an incremental channel via ``run_channel``, staging the cursor.
+    """Collect via ``run_channel``, staging the cursor and forwarding metadata.
 
-    The persisted cursor seeds the conditional fetch, but the advanced value is
-    held in an in-memory staging store and returned in ``metadata['cursor_pending']``
-    — the pipeline commits it to the DB only after the write sink durably accepts
+    The persisted cursor (if any) seeds the fetch, but the advanced value is held
+    in an in-memory staging store and returned in ``metadata['cursor_pending']`` —
+    the pipeline commits it to the DB only after the write sink durably accepts
     the batch, so the cursor never advances past data that did not land.
+    Non-incremental channels never populate a cursor, so this staging is a no-op
+    for them; ``run_channel``'s own ``metadata`` (e.g. opencli's node_url, skill's
+    awaiting_confirm) is merged through unchanged either way.
     """
     from backend.pipeline.channel_runner import run_channel
     from backend.pipeline.cursor_store import DBCursorStore, InMemoryCursorStore
@@ -39,11 +43,12 @@ async def _collect_incremental(
     if start is not None:
         await staging.save(source.id, start)
 
-    items = await run_channel(source, parameters, cursor_store=staging, channel=channel)
+    run_result = await run_channel(source, parameters, cursor_store=staging, channel=channel)
     staged = await staging.load(source.id)
 
-    return ChannelResult.ok(
-        items,
-        cursor_pending=staged,
-        cursor_source_id=source.id,
-    )
+    metadata = {
+        **run_result.metadata,
+        "cursor_pending": staged,
+        "cursor_source_id": source.id,
+    }
+    return ChannelResult.ok(run_result.items, **metadata)

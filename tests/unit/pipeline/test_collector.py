@@ -1,46 +1,69 @@
 """Unit tests for pipeline collector."""
 
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from types import SimpleNamespace
+from unittest.mock import patch
 
-from backend.channels.base import Capabilities, ChannelResult
+import pytest
+
+from backend.channels.base import AbstractChannel, ChannelFetchError, ChannelResult
 from backend.pipeline.collector import collect
+
+
+class _FakeDBCursor:
+    """DBCursorStore stand-in: no source has a persisted cursor here."""
+
+    async def load(self, source_id):
+        return None
+
+    async def save(self, source_id, cursor):  # pragma: no cover - not exercised here
+        pass
+
+
+class _StubChannel(AbstractChannel):
+    """collect()-only channel: exercises the default fetch() adapter every
+    channel that hasn't migrated to a custom fetch() gets."""
+
+    channel_type = "stub"
+
+    def __init__(self, result):
+        self._result = result
+
+    async def collect(self, config, parameters):
+        return self._result
+
+    async def validate_config(self, config):
+        return []
 
 
 @pytest.mark.asyncio
 async def test_collect_dispatches_to_channel():
-    source = MagicMock()
-    source.channel_type = "rss"
-    source.channel_config = {"feed_url": "https://ex.com/feed"}
+    source = SimpleNamespace(
+        id="src-1", channel_type="rss", channel_config={"feed_url": "https://ex.com/feed"}
+    )
+    channel = _StubChannel(ChannelResult.ok([{"title": "Test"}]))
 
-    expected = ChannelResult.ok([{"title": "Test"}])
-    mock_channel = AsyncMock()
-    mock_channel.capabilities = Capabilities()  # non-incremental → legacy collect() path
-    mock_channel.collect = AsyncMock(return_value=expected)
-
-    with patch("backend.pipeline.collector.get_channel", return_value=mock_channel):
+    with (
+        patch("backend.pipeline.collector.get_channel", return_value=channel),
+        patch("backend.pipeline.cursor_store.DBCursorStore", _FakeDBCursor),
+    ):
         result = await collect(source, {"extra": "param"})
 
     assert result.success is True
     assert result.count == 1
-    mock_channel.collect.assert_awaited_once_with(
-        source.channel_config, {"extra": "param"}
-    )
+    assert result.items == [{"title": "Test"}]
 
 
 @pytest.mark.asyncio
 async def test_collect_propagates_failure():
-    source = MagicMock()
-    source.channel_type = "api"
-    source.channel_config = {}
+    """A failing collect() surfaces as ChannelFetchError (the default fetch()
+    adapter's contract, Phase 0) — pipeline.py's step1 catches this the same way
+    it already catches any other collect-stage exception."""
+    source = SimpleNamespace(id="src-2", channel_type="api", channel_config={})
+    channel = _StubChannel(ChannelResult.fail("timeout"))
 
-    error_result = ChannelResult.fail("timeout")
-    mock_channel = AsyncMock()
-    mock_channel.capabilities = Capabilities()  # non-incremental → legacy collect() path
-    mock_channel.collect = AsyncMock(return_value=error_result)
-
-    with patch("backend.pipeline.collector.get_channel", return_value=mock_channel):
-        result = await collect(source, {})
-
-    assert result.success is False
-    assert result.error == "timeout"
+    with (
+        patch("backend.pipeline.collector.get_channel", return_value=channel),
+        patch("backend.pipeline.cursor_store.DBCursorStore", _FakeDBCursor),
+    ):
+        with pytest.raises(ChannelFetchError, match="timeout"):
+            await collect(source, {})

@@ -66,6 +66,7 @@ class FetchContext:
     config: dict[str, Any]
     params: dict[str, Any]
     cursor: dict[str, Any] | None = None  # persisted "where we left off" (etag / since_id / page_token)
+    source_id: str | None = None          # the DataSource id, for channels that need their own credential lookup
     auth: AuthContext | None = None       # resolved credentials (Phase 2)
     http: Any = None                      # shared httpx.AsyncClient, rate-limit + retry built in (Phase 1)
     log: Any = None                       # logger injected by the runner
@@ -79,6 +80,11 @@ class FetchResult:
     items: list[dict[str, Any]] = field(default_factory=list)
     next_cursor: dict[str, Any] | None = None
     has_more: bool = False
+    #: Non-item result data (e.g. opencli's node_url/chrome_mode, skill's
+    #: awaiting_confirm) that must reach PipelineResult.metadata unchanged — the
+    #: default fetch() adapter forwards collect()'s ChannelResult.metadata here so
+    #: routing a channel through run_channel() never drops it.
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 class ChannelFetchError(Exception):
@@ -122,7 +128,7 @@ class AbstractChannel(ABC):
         result = await self.collect(ctx.config, ctx.params)
         if not result.success:
             raise ChannelFetchError(result.error or f"{self.channel_type} collect failed")
-        return FetchResult(items=result.items)
+        return FetchResult(items=result.items, metadata=result.metadata)
 
     def identity(self, item: dict[str, Any]) -> str | None:
         """Stable source-native id for an item — the dedup key. Default None → the

@@ -8,6 +8,7 @@ import pytest
 
 import backend.channels.rss_channel  # noqa: F401 — register the rss channel
 from backend.pipeline import collector
+from backend.pipeline.channel_runner import RunResult
 
 
 class _FakeDBCursor:
@@ -33,7 +34,7 @@ async def test_incremental_channel_routes_through_run_channel():
     async def fake_run_channel(src, params, *, cursor_store, channel, http=None):
         # The runner advances the staged cursor during fetch.
         await cursor_store.save(src.id, {"etag": "v2"})
-        return [{"id": "a"}, {"id": "b"}]
+        return RunResult(items=[{"id": "a"}, {"id": "b"}])
 
     with (
         patch("backend.pipeline.channel_runner.run_channel", new=fake_run_channel),
@@ -57,7 +58,7 @@ async def test_incremental_seeds_runner_with_persisted_cursor():
     async def fake_run_channel(src, params, *, cursor_store, channel, http=None):
         seen["start"] = await cursor_store.load(src.id)  # what the runner starts from
         await cursor_store.save(src.id, {"etag": "v2"})
-        return []
+        return RunResult(items=[])
 
     with (
         patch("backend.pipeline.channel_runner.run_channel", new=fake_run_channel),

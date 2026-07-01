@@ -7,7 +7,13 @@ from typing import Any
 
 import httpx
 
-from backend.channels.base import AbstractChannel, ChannelResult
+from backend.channels.base import (
+    AbstractChannel,
+    ChannelFetchError,
+    ChannelResult,
+    FetchContext,
+    FetchResult,
+)
 from backend.channels.registry import register_channel
 
 logger = logging.getLogger(__name__)
@@ -85,6 +91,91 @@ class ApiChannel(AbstractChannel):
 
         items = data if isinstance(data, list) else [data]
         return ChannelResult.ok(items, url=url, status_code=response.status_code)
+
+    async def fetch(self, ctx: FetchContext) -> FetchResult:
+        """Thick-contract fetch: same request logic as ``collect()``, but auth
+        prefers the encrypted credential store (``backend.auth.AuthManager``) over
+        plaintext ``channel_config.auth`` when a source has migrated, and requests
+        go through the runner's rate-limited/retrying client (``ctx.http``) when
+        present. Raises ``ChannelFetchError`` on failure so the runner's
+        retry/backoff policy applies instead of a swallowed ``ChannelResult.fail``.
+        """
+        config = ctx.config
+        base_url: str = config.get("base_url", "")
+        endpoint: str = config.get("endpoint", "")
+        method: str = config.get("method", "GET").upper()
+        auth_config: dict = config.get("auth", {})
+        query_params: dict = {**config.get("params", {}), **ctx.params}
+        request_body: dict = config.get("body", {})
+        extra_headers: dict = _resolve_dict_secrets(config.get("headers", {}))
+        timeout: int = config.get("timeout", 30)
+        result_path: str = config.get("result_path", "")
+
+        url = base_url.rstrip("/") + "/" + endpoint.lstrip("/")
+        headers = await self._resolve_auth_headers(auth_config, ctx.source_id)
+        headers.update(extra_headers)
+
+        client = ctx.http
+        owns_client = client is None
+        if owns_client:
+            client = httpx.AsyncClient(timeout=timeout)
+        try:
+            try:
+                response = await client.request(
+                    method,
+                    url,
+                    params=query_params if method == "GET" else None,
+                    json=request_body if method != "GET" else None,
+                    headers=headers,
+                )
+                response.raise_for_status()
+            except httpx.TimeoutException as exc:
+                raise ChannelFetchError(f"API request to {url} timed out") from exc
+            except httpx.HTTPStatusError as exc:
+                raise ChannelFetchError(
+                    f"HTTP {exc.response.status_code}: {exc.response.text[:200]}"
+                ) from exc
+        finally:
+            if owns_client:
+                await client.aclose()
+
+        try:
+            data = response.json()
+        except Exception as exc:
+            raise ChannelFetchError("Failed to parse API response as JSON") from exc
+
+        if result_path:
+            for key in result_path.split("."):
+                if isinstance(data, dict):
+                    data = data.get(key, [])
+                else:
+                    break
+
+        items = data if isinstance(data, list) else [data]
+        return FetchResult(items=items, metadata={"url": url, "status_code": response.status_code})
+
+    async def _resolve_auth_headers(self, auth: dict, source_id: str | None) -> dict[str, str]:
+        """Prefer decrypted creds from AuthManager's encrypted store when the
+        source has migrated; fall back to the legacy inline/env config unchanged
+        (``_build_auth_headers``) so unmigrated sources keep working as-is."""
+        auth_type = auth.get("type", "")
+        if source_id and auth_type in ("bearer", "api_key", "basic"):
+            from backend.auth.manager import AuthManager
+
+            creds = await AuthManager().resolve(source_id)
+            if auth_type == "bearer" and creds.get("token"):
+                return {"Authorization": f"Bearer {creds['token']}"}
+            if auth_type == "api_key" and creds.get("key"):
+                header_name = auth.get("header", "X-API-Key")
+                return {header_name: creds["key"]}
+            if auth_type == "basic" and (creds.get("username") or creds.get("password")):
+                import base64
+
+                user = creds.get("username", "")
+                pw = creds.get("password", "")
+                encoded = base64.b64encode(f"{user}:{pw}".encode()).decode()
+                return {"Authorization": f"Basic {encoded}"}
+        return self._build_auth_headers(auth)
 
     def _build_auth_headers(self, auth: dict) -> dict[str, str]:
         auth_type = auth.get("type", "")

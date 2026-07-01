@@ -307,6 +307,7 @@ function SourceModal({
                 channelType={channelType}
                 config={channelConfig}
                 onChange={handleConfigChange}
+                sourceId={initial?.id}
               />
             </div>
           </div>

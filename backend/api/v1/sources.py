@@ -3,8 +3,10 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.auth.manager import AuthManager
 from backend.database import get_db
 from backend.schemas.common import ApiResponse, PaginationMeta
+from backend.schemas.credential import CredentialCreate, CredentialKeyRead
 from backend.schemas.source import DataSourceCreate, DataSourceDetail, DataSourceRead, DataSourceUpdate
 from backend.services import source_service
 
@@ -79,3 +81,43 @@ async def test_source(
         raise HTTPException(status_code=404, detail="Source not found")
     ok, errors = await source_service.test_source_connectivity(source)
     return ApiResponse.ok({"connected": ok, "errors": errors})
+
+
+@router.get("/{source_id}/credentials", response_model=ApiResponse[list[CredentialKeyRead]])
+async def list_source_credentials(
+    source_id: str, db: AsyncSession = Depends(get_db)
+) -> ApiResponse:
+    """Which credential keys are stored for this source — never the values."""
+    source = await source_service.get_source(db, source_id)
+    if not source:
+        raise HTTPException(status_code=404, detail="Source not found")
+    keys = await AuthManager().list_keys(source_id)
+    return ApiResponse.ok([CredentialKeyRead(key_name=k) for k in keys])
+
+
+@router.post(
+    "/{source_id}/credentials", response_model=ApiResponse[None], status_code=201
+)
+async def store_source_credential(
+    source_id: str, body: CredentialCreate, db: AsyncSession = Depends(get_db)
+) -> ApiResponse:
+    """Encrypt and store a secret for this source (``AuthManager``-backed).
+    Migrates a source off plaintext ``channel_config.auth`` / env indirection —
+    channels that read via ``AuthManager`` (e.g. ``api``) prefer this over the
+    legacy inline config once a matching key is stored."""
+    source = await source_service.get_source(db, source_id)
+    if not source:
+        raise HTTPException(status_code=404, detail="Source not found")
+    await AuthManager().store(source_id, body.key_name, body.secret)
+    return ApiResponse.ok(None)
+
+
+@router.delete("/{source_id}/credentials/{key_name}", response_model=ApiResponse[None])
+async def delete_source_credential(
+    source_id: str, key_name: str, db: AsyncSession = Depends(get_db)
+) -> ApiResponse:
+    source = await source_service.get_source(db, source_id)
+    if not source:
+        raise HTTPException(status_code=404, detail="Source not found")
+    await AuthManager().delete(source_id, key_name)
+    return ApiResponse.ok(None)

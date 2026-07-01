@@ -1,6 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Plus, Trash2 } from 'lucide-react'
+import { toast } from 'sonner'
+import { deleteSourceCredential, listSourceCredentials, storeSourceCredential } from '../api/endpoints'
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -189,6 +191,102 @@ function objToKv(obj: Record<string, unknown> | undefined): KVPair[] {
   return Object.entries(obj).map(([key, value]) => ({ key, value: String(value) }))
 }
 
+// Store/rotate one secret in the encrypted credential store (backend.auth.
+// AuthManager). Only usable once the source exists (sourceId set) — a
+// not-yet-created source has nothing to key the store by, so the caller falls
+// back to the plaintext env/inline fields until the first save.
+function CredentialField({
+  sourceId,
+  keyName,
+  label,
+}: {
+  sourceId: string
+  keyName: string
+  label: string
+}) {
+  const [stored, setStored] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [value, setValue] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    listSourceCredentials(sourceId)
+      .then((keys) => {
+        if (!cancelled) setStored(keys.some((k) => k.key_name === keyName))
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [sourceId, keyName])
+
+  const save = async () => {
+    if (!value) return
+    setBusy(true)
+    try {
+      await storeSourceCredential(sourceId, { key_name: keyName, secret: value })
+      setStored(true)
+      setValue('')
+      toast.success(`${label} 已加密存储`)
+    } catch {
+      toast.error(`${label} 存储失败`)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const remove = async () => {
+    setBusy(true)
+    try {
+      await deleteSourceCredential(sourceId, keyName)
+      setStored(false)
+      toast.success(`${label} 已删除`)
+    } catch {
+      toast.error(`${label} 删除失败`)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="flex gap-2 items-center">
+      <input
+        type="password"
+        aria-label={`${label}（加密存储）`}
+        name={formFieldName(label, 'credential')}
+        className={`${input} flex-1`}
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        placeholder={loading ? '…' : stored ? '● 已加密存储 — 输入新值以覆盖' : label}
+      />
+      <button
+        type="button"
+        disabled={busy || !value}
+        onClick={save}
+        className="px-3 py-2 text-xs rounded-lg bg-blue-600 text-white disabled:opacity-40 flex-shrink-0"
+      >
+        存储
+      </button>
+      {stored && (
+        <button
+          type="button"
+          aria-label={`删除已存储的${label}`}
+          disabled={busy}
+          onClick={remove}
+          className="p-1.5 text-red-400 hover:text-red-600 flex-shrink-0"
+        >
+          <Trash2 size={14} />
+        </button>
+      )}
+    </div>
+  )
+}
+
 // ── Per-channel config forms ──────────────────────────────────────────────────
 
 function RSSConfig({
@@ -234,9 +332,11 @@ function RSSConfig({
 function APIConfig({
   config,
   onChange,
+  sourceId,
 }: {
   config: Record<string, unknown>
   onChange: (c: Record<string, unknown>) => void
+  sourceId?: string
 }) {
   const { t } = useTranslation()
   const auth = (config.auth as Record<string, string>) ?? {}
@@ -308,49 +408,75 @@ function APIConfig({
       </Field>
 
       {authType === 'bearer' && (
-        <Field label={t('channelConfig.tokenEnvVar')} hint={t('channelConfig.tokenEnvVarHint')}>
-          <TextInput
-            value={auth.token_env ?? ''}
-            onChange={(v) => updateAuth({ token_env: v })}
-            placeholder="GITHUB_TOKEN"
-          />
-        </Field>
+        <>
+          <Field label={t('channelConfig.tokenEnvVar')} hint={t('channelConfig.tokenEnvVarHint')}>
+            <TextInput
+              value={auth.token_env ?? ''}
+              onChange={(v) => updateAuth({ token_env: v })}
+              placeholder="GITHUB_TOKEN"
+            />
+          </Field>
+          {sourceId && (
+            <Field label="或：加密存储（推荐，优先于上面的 env 配置）">
+              <CredentialField sourceId={sourceId} keyName="token" label="Bearer Token" />
+            </Field>
+          )}
+        </>
       )}
       {authType === 'basic' && (
-        <div className="grid grid-cols-2 gap-3">
-          <Field label={t('channelConfig.username')} hint={t('channelConfig.usernameHint')}>
-            <TextInput
-              value={auth.username ?? ''}
-              onChange={(v) => updateAuth({ username: v })}
-              placeholder="{{secret:API_USER}}"
-            />
-          </Field>
-          <Field label={t('channelConfig.password')} hint={t('channelConfig.passwordHint')}>
-            <TextInput
-              value={auth.password ?? ''}
-              onChange={(v) => updateAuth({ password: v })}
-              placeholder="{{secret:API_PASS}}"
-            />
-          </Field>
-        </div>
+        <>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label={t('channelConfig.username')} hint={t('channelConfig.usernameHint')}>
+              <TextInput
+                value={auth.username ?? ''}
+                onChange={(v) => updateAuth({ username: v })}
+                placeholder="{{secret:API_USER}}"
+              />
+            </Field>
+            <Field label={t('channelConfig.password')} hint={t('channelConfig.passwordHint')}>
+              <TextInput
+                value={auth.password ?? ''}
+                onChange={(v) => updateAuth({ password: v })}
+                placeholder="{{secret:API_PASS}}"
+              />
+            </Field>
+          </div>
+          {sourceId && (
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="或：加密存储用户名">
+                <CredentialField sourceId={sourceId} keyName="username" label="用户名" />
+              </Field>
+              <Field label="或：加密存储密码（推荐）">
+                <CredentialField sourceId={sourceId} keyName="password" label="密码" />
+              </Field>
+            </div>
+          )}
+        </>
       )}
       {authType === 'api_key' && (
-        <div className="grid grid-cols-2 gap-3">
-          <Field label={t('channelConfig.headerName')}>
-            <TextInput
-              value={auth.header ?? 'X-API-Key'}
-              onChange={(v) => updateAuth({ header: v })}
-              placeholder="X-API-Key"
-            />
-          </Field>
-          <Field label={t('channelConfig.keyEnvVar')}>
-            <TextInput
-              value={auth.key_env ?? ''}
-              onChange={(v) => updateAuth({ key_env: v })}
-              placeholder="MY_API_KEY"
-            />
-          </Field>
-        </div>
+        <>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label={t('channelConfig.headerName')}>
+              <TextInput
+                value={auth.header ?? 'X-API-Key'}
+                onChange={(v) => updateAuth({ header: v })}
+                placeholder="X-API-Key"
+              />
+            </Field>
+            <Field label={t('channelConfig.keyEnvVar')}>
+              <TextInput
+                value={auth.key_env ?? ''}
+                onChange={(v) => updateAuth({ key_env: v })}
+                placeholder="MY_API_KEY"
+              />
+            </Field>
+          </div>
+          {sourceId && (
+            <Field label="或：加密存储（推荐，优先于上面的 env 配置）">
+              <CredentialField sourceId={sourceId} keyName="key" label="API Key" />
+            </Field>
+          )}
+        </>
       )}
 
       <Field label={t('channelConfig.queryParams')}>
@@ -994,15 +1120,20 @@ interface Props {
   channelType: ChannelType
   config: Record<string, unknown>
   onChange: (config: Record<string, unknown>) => void
+  /** The source's persisted id — undefined while creating a new (not-yet-saved)
+   * source. The encrypted credential store is keyed by source id, so it's only
+   * offered once the source exists; a new source keeps using env/inline auth
+   * until the first save, then can migrate to it on the edit form. */
+  sourceId?: string
 }
 
-export default function ChannelConfigForm({ channelType, config, onChange }: Props) {
+export default function ChannelConfigForm({ channelType, config, onChange, sourceId }: Props) {
 
   switch (channelType) {
     case 'rss':
       return <RSSConfig config={config} onChange={onChange} />
     case 'api':
-      return <APIConfig config={config} onChange={onChange} />
+      return <APIConfig config={config} onChange={onChange} sourceId={sourceId} />
     case 'web_scraper':
       return <WebScraperConfig config={config} onChange={onChange} />
     case 'cli':

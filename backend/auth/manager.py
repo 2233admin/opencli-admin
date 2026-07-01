@@ -41,6 +41,40 @@ class AuthManager:
                 )
             await session.commit()
 
+    async def list_keys(self, source_id: str) -> list[str]:
+        """Key names stored for a source, without decrypting values — safe for a
+        UI 'credential configured' listing that must never surface secrets."""
+        from sqlalchemy import select
+
+        from backend.database import AsyncSessionLocal
+        from backend.models.source_credential import SourceCredential
+
+        async with AsyncSessionLocal() as session:
+            rows = (
+                await session.execute(
+                    select(SourceCredential.key_name).where(
+                        SourceCredential.source_id == source_id
+                    )
+                )
+            ).scalars().all()
+        return list(rows)
+
+    async def delete(self, source_id: str, key_name: str) -> None:
+        """Remove one stored credential. No-op if it doesn't exist."""
+        from sqlalchemy import delete as sa_delete
+
+        from backend.database import AsyncSessionLocal
+        from backend.models.source_credential import SourceCredential
+
+        async with AsyncSessionLocal() as session:
+            await session.execute(
+                sa_delete(SourceCredential).where(
+                    SourceCredential.source_id == source_id,
+                    SourceCredential.key_name == key_name,
+                )
+            )
+            await session.commit()
+
     async def resolve(self, source_id: str) -> dict[str, str]:
         """Decrypt all stored secrets for a source into ``{key_name: value}``."""
         from sqlalchemy import select
