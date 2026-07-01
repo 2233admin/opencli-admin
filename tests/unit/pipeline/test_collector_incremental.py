@@ -44,8 +44,8 @@ async def test_incremental_channel_routes_through_run_channel():
 
     assert [i["id"] for i in result.items] == ["a", "b"]
     # Staged for the pipeline to commit AFTER the write — not yet persisted.
-    assert result.metadata["cursor_pending"] == {"etag": "v2"}
-    assert result.metadata["cursor_source_id"] == "src-1"
+    assert result.metadata["__cursor_pending__"] == {"etag": "v2"}
+    assert result.metadata["__cursor_source_id__"] == "src-1"
 
 
 @pytest.mark.asyncio

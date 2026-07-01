@@ -27,7 +27,8 @@ async def _collect_via_runner(
     """Collect via ``run_channel``, staging the cursor and forwarding metadata.
 
     The persisted cursor (if any) seeds the fetch, but the advanced value is held
-    in an in-memory staging store and returned in ``metadata['cursor_pending']`` —
+    in an in-memory staging store and returned in ``metadata['__cursor_pending__']``
+    (a reserved-prefix key, so a channel's own metadata can never collide with it) —
     the pipeline commits it to the DB only after the write sink durably accepts
     the batch, so the cursor never advances past data that did not land.
     Non-incremental channels never populate a cursor, so this staging is a no-op
@@ -51,7 +52,7 @@ async def _collect_via_runner(
 
     metadata = {
         **run_result.metadata,
-        "cursor_pending": staged,
-        "cursor_source_id": source.id,
+        "__cursor_pending__": staged,
+        "__cursor_source_id__": source.id,
     }
     return ChannelResult.ok(run_result.items, **metadata)

@@ -204,8 +204,8 @@ async def run_pipeline(
     # means the data landed; committing during fetch would skip items that never got
     # written. (Deeper ODP durability — a queued 202 that never persists — is an
     # ODP-side guarantee, tracked separately.)
-    pending_cursor = channel_result.metadata.pop("cursor_pending", None)
-    cursor_source_id = channel_result.metadata.pop("cursor_source_id", None)
+    pending_cursor = channel_result.metadata.pop("__cursor_pending__", None)
+    cursor_source_id = channel_result.metadata.pop("__cursor_source_id__", None)
     if pending_cursor is not None and cursor_source_id is not None:
         from backend.pipeline.cursor_store import DBCursorStore
 

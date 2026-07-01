@@ -85,3 +85,19 @@ async def test_collect_non_incremental_channel_skips_cursor_db_load():
 
     assert result.success is True
     mock_db_cursor.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_collect_channel_metadata_named_cursor_pending_survives():
+    """The runner's own cursor-bookkeeping keys are reserved-prefixed
+    (__cursor_pending__/__cursor_source_id__) precisely so a channel that
+    emits a plain 'cursor_pending' key for its own purposes isn't silently
+    clobbered by dict-spread collision."""
+    source = SimpleNamespace(id="src-4", channel_type="stub", channel_config={})
+    channel = _StubChannel(ChannelResult.ok([{"id": 1}], cursor_pending="not-the-runners"))
+
+    with patch("backend.pipeline.collector.get_channel", return_value=channel):
+        result = await collect(source, {})
+
+    assert result.metadata["cursor_pending"] == "not-the-runners"
+    assert result.metadata["__cursor_pending__"] is None
