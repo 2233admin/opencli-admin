@@ -461,6 +461,24 @@ async def test_fetch_no_source_id_skips_credential_store(channel, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_fetch_forwards_configured_timeout_to_shared_client(channel):
+    """ctx.http is the runner's shared client (fixed client-level timeout) — the
+    per-source configured timeout must still be applied per-request, or a slow
+    API silently gets the runner's default instead of what the user configured."""
+    response = _make_mock_response(json_data=[{"ok": True}])
+    http = _FetchHttp(response)
+    ctx = FetchContext(
+        config={"base_url": "https://api.example.com", "endpoint": "/slow", "timeout": 120},
+        params={},
+        http=http,
+    )
+
+    await channel.fetch(ctx)
+
+    assert http.calls[0][2]["timeout"] == 120
+
+
+@pytest.mark.asyncio
 async def test_fetch_returns_url_and_status_code_metadata(channel):
     response = _make_mock_response(json_data=[{"id": 1}])
     http = _FetchHttp(response)

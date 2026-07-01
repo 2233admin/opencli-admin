@@ -127,6 +127,7 @@ class ApiChannel(AbstractChannel):
                     params=query_params if method == "GET" else None,
                     json=request_body if method != "GET" else None,
                     headers=headers,
+                    timeout=timeout,
                 )
                 response.raise_for_status()
             except httpx.TimeoutException as exc:
