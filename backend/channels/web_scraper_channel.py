@@ -114,7 +114,13 @@ class WebScraperChannel(AbstractChannel):
         except httpx.TimeoutException as exc:
             raise ChannelFetchError(f"Request to {url} timed out after {timeout}s") from exc
         except httpx.HTTPStatusError as exc:
-            raise ChannelFetchError(f"HTTP {exc.response.status_code} from {url}") from exc
+            from backend.pipeline.error_taxonomy import is_retryable_http_status
+
+            status = exc.response.status_code
+            error_type = (
+                "RetryableHTTPStatus" if is_retryable_http_status(status) else "PermanentHTTPStatus"
+            )
+            raise ChannelFetchError(f"HTTP {status} from {url}", error_type=error_type) from exc
         except Exception as exc:
             raise ChannelFetchError(f"Request failed: {exc}") from exc
 

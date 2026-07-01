@@ -223,7 +223,14 @@ async def start_recording(cdp_endpoint: str, *, domain: str, capability: str) ->
     session = RecordSession(
         session_id=uuid.uuid4().hex, domain=domain, capability=capability, page=page,
     )
-    await session.start()
+    try:
+        await session.start()
+    except Exception:
+        # Never leak the already-opened page/CDP connection if wiring the
+        # capture listener fails — same "never leak a held Chrome on
+        # failure" rule the API layer's own record_start applies.
+        await page.aclose()
+        raise
     logger.info(
         "record session started | id=%s domain=%s capability=%s",
         session.session_id, domain, capability,

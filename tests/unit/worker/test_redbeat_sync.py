@@ -68,7 +68,12 @@ def test_remove_entry_missing_is_not_an_error():
 
 
 @pytest.mark.asyncio
-async def test_populate_all_syncs_every_enabled_schedule(db_session):
+async def test_populate_all_syncs_enabled_and_removes_the_rest(db_session):
+    """Covers all 3 reconciliation cases in one pass: enabled schedule on an
+    enabled source (synced), schedule disabled directly in the DB (removed —
+    populate_all must still see it to clean up a stale redbeat entry, not
+    just skip it), and an enabled schedule whose source got disabled
+    (removed too, even though the schedule row itself is still enabled)."""
     from backend.models.schedule import CronSchedule
     from backend.models.source import DataSource
 
@@ -76,28 +81,35 @@ async def test_populate_all_syncs_every_enabled_schedule(db_session):
         name="Populate Source", channel_type="rss",
         channel_config={"feed_url": "https://ex.com/feed.xml"},
     )
-    db_session.add(source)
+    disabled_source = DataSource(
+        name="Disabled Source", channel_type="rss",
+        channel_config={"feed_url": "https://ex.com/feed2.xml"}, enabled=False,
+    )
+    db_session.add_all([source, disabled_source])
     await db_session.flush()
 
     s1 = CronSchedule(source_id=source.id, name="A", cron_expression="0 * * * *", enabled=True)
-    s2 = CronSchedule(source_id=source.id, name="B", cron_expression="*/5 * * * *", enabled=True)
-    s3 = CronSchedule(source_id=source.id, name="C-disabled", cron_expression="0 0 * * *", enabled=False)
+    s2 = CronSchedule(
+        source_id=source.id, name="B-disabled", cron_expression="0 0 * * *", enabled=False
+    )
+    s3 = CronSchedule(
+        source_id=disabled_source.id, name="C-source-disabled",
+        cron_expression="*/5 * * * *", enabled=True,
+    )
     db_session.add_all([s1, s2, s3])
     await db_session.commit()
 
-    synced_ids = []
-
-    def fake_sync_entry(schedule):
-        synced_ids.append(schedule.id)
+    synced_ids, removed_ids = [], []
 
     with (
         patch("backend.database.AsyncSessionLocal", return_value=_session_cm(db_session)),
-        patch.object(redbeat_sync, "sync_entry", side_effect=fake_sync_entry),
+        patch.object(redbeat_sync, "sync_entry", side_effect=lambda s: synced_ids.append(s.id)),
+        patch.object(redbeat_sync, "remove_entry", side_effect=lambda sid: removed_ids.append(sid)),
     ):
         await redbeat_sync.populate_all()
 
-    # Only the two enabled schedules are loaded (query filters enabled==True).
-    assert set(synced_ids) == {s1.id, s2.id}
+    assert synced_ids == [s1.id]
+    assert set(removed_ids) == {s2.id, s3.id}
 
 
 def _session_cm(session):

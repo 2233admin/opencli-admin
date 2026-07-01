@@ -20,6 +20,10 @@ _RETRYABLE = frozenset({
     "RemoteProtocolError",
     "NetworkError",
     "OSError",
+    # Explicit HTTP-status-derived classification (see is_retryable_http_status) —
+    # set on ChannelFetchError.error_type by channels that already know the
+    # status code, so it isn't lost behind the wrapper exception's own class name.
+    "RetryableHTTPStatus",
 })
 
 # Deterministic faults: retrying with the same input reproduces the same
@@ -31,6 +35,7 @@ _PERMANENT = frozenset({
     "FileNotFoundError",
     "JSONDecodeError",
     "ValidationError",
+    "PermanentHTTPStatus",
 })
 
 
@@ -54,14 +59,19 @@ def effective_error_type(exc: BaseException) -> str:
 
     ``ChannelFetchError`` is a generic wrapper (raised by the default fetch()
     adapter and by channels' own request-handling helpers); its own class name
-    says nothing about whether the underlying fault was transient. Unwrap to
-    ``__cause__`` (set via ``raise ... from exc`` everywhere it's raised) when
-    present so a wrapped ``TimeoutException`` still classifies as retryable.
+    says nothing about whether the underlying fault was transient. Prefer its
+    explicit ``error_type`` (set by a caller that already knows the fault
+    category, e.g. an HTTP status) when present; otherwise unwrap to
+    ``__cause__`` (set via ``raise ... from exc`` everywhere it's raised) so a
+    wrapped ``TimeoutException`` still classifies as retryable.
     """
     from backend.channels.base import ChannelFetchError
 
-    if isinstance(exc, ChannelFetchError) and exc.__cause__ is not None:
-        return type(exc.__cause__).__name__
+    if isinstance(exc, ChannelFetchError):
+        if exc.error_type is not None:
+            return exc.error_type
+        if exc.__cause__ is not None:
+            return type(exc.__cause__).__name__
     return type(exc).__name__
 
 

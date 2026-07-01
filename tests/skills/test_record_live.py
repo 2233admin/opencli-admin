@@ -114,8 +114,10 @@ async def test_live_capture_records_navigate_type_select_click(cdp_endpoint, loc
 
         trace = await session.stop(status="success", note="filled the form")
     finally:
-        if not session.stopped:
-            await session.page.aclose()
+        # session.stopped is already True by the time stop() returns, so the
+        # old `if not session.stopped` guard here skipped cleanup on exactly
+        # the success path -- always close, same as the API's record_stop.
+        await session.page.aclose()
 
     assert trace["schema"] == "journey_trace_v1"
     assert trace["outcome"]["status"] == "success"

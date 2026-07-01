@@ -16,6 +16,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from backend.database import AsyncSessionLocal
 from backend.models.skill import Skill
@@ -189,7 +190,21 @@ async def distill_skill(body: DistillBody) -> ApiResponse:
             status="draft",
         )
         session.add(skill)
-        await session.commit()
+        try:
+            await session.commit()
+        except IntegrityError as exc:
+            # The select-then-insert above races a concurrent /distill for the
+            # same (domain, capability) — uq_skill_domain_capability catches
+            # what the pre-check missed. Same 409 the pre-check already gives,
+            # not an unhandled 500.
+            await session.rollback()
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"技能 {fields['domain']}/{fields['capability']} 已存在"
+                    "(并发创建冲突)——用 /redistill 重蒸,不是新建"
+                ),
+            ) from exc
         await session.refresh(skill)
 
     return ApiResponse.ok(

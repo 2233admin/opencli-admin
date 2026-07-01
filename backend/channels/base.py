@@ -93,7 +93,16 @@ class FetchResult:
 
 class ChannelFetchError(Exception):
     """Raised by the default fetch() adapter when the wrapped collect() failed, so
-    the runner applies its retry/backoff policy instead of silently dropping."""
+    the runner applies its retry/backoff policy instead of silently dropping.
+
+    ``error_type`` carries an explicit retry-classification hint (see
+    ``error_taxonomy.effective_error_type``) for callers that already know the
+    fault category (e.g. an HTTP status code) but don't want to lose it behind
+    a generic wrapper exception."""
+
+    def __init__(self, message: str, error_type: str | None = None) -> None:
+        super().__init__(message)
+        self.error_type = error_type
 
 
 class AbstractChannel(ABC):
@@ -131,7 +140,10 @@ class AbstractChannel(ABC):
         runner calls fetch(), never collect()."""
         result = await self.collect(ctx.config, ctx.params)
         if not result.success:
-            raise ChannelFetchError(result.error or f"{self.channel_type} collect failed")
+            raise ChannelFetchError(
+                result.error or f"{self.channel_type} collect failed",
+                error_type=result.error_type,
+            )
         return FetchResult(items=result.items, metadata=result.metadata)
 
     def identity(self, item: dict[str, Any]) -> str | None:

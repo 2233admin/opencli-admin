@@ -59,10 +59,18 @@ def remove_entry(schedule_id: str) -> None:
 
 
 async def populate_all() -> None:
-    """One-time bulk sync: write a redbeat entry for every currently-enabled
-    schedule. Call once at process startup (task_executor == "celery" only)
-    so redis reflects the DB's current state before the first tick, instead
-    of waiting for each schedule's next individual create/update.
+    """One-time bulk reconcile: write/remove a redbeat entry for every schedule
+    so redis matches the DB's current state before the first tick, instead of
+    waiting for each schedule's next individual create/update. Call once at
+    process startup (task_executor == "celery" only).
+
+    Loads ALL schedules (not just enabled ones) and lets sync_entry()/
+    remove_entry() decide per-row — a schedule disabled by a direct DB edit
+    (bypassing the normal CRUD path that would have called remove_entry()
+    itself) would otherwise keep firing forever, since a startup pass that
+    only looked at enabled rows would never even see it. A schedule whose
+    *source* is disabled is treated the same way (removed), even though the
+    schedule row itself is still enabled=True.
 
     Async because its only caller (main.py's lifespan) is already inside a
     running event loop — wrapping in asyncio.new_event_loop().run_until_complete()
@@ -77,17 +85,19 @@ async def populate_all() -> None:
     try:
         async with AsyncSessionLocal() as session:
             result = await session.execute(
-                select(CronSchedule)
+                select(CronSchedule, DataSource.enabled)
                 .join(DataSource, CronSchedule.source_id == DataSource.id)
-                .where(CronSchedule.enabled.is_(True), DataSource.enabled.is_(True))
             )
-            schedules = list(result.scalars().all())
+            rows = result.all()
     except Exception as exc:
         logger.warning("redbeat populate_all: could not load DB schedules: %s", exc)
         return
 
-    for schedule in schedules:
+    for schedule, source_enabled in rows:
         try:
-            sync_entry(schedule)
+            if schedule.enabled and source_enabled:
+                sync_entry(schedule)
+            else:
+                remove_entry(schedule.id)
         except Exception as exc:
             logger.warning("redbeat populate_all: failed for schedule %s: %s", schedule.id, exc)
