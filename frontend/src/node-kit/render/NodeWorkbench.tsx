@@ -33,7 +33,7 @@ import {
   type Node,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { Boxes, Loader2, Network, Play, Sparkles, Square, Trash2 } from 'lucide-react'
+import { Boxes, FlaskConical, Loader2, Network, Play, Sparkles, Square, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import {
@@ -346,9 +346,9 @@ function WorkbenchInner({ seed }: { seed?: WorkbenchSeed }) {
         },
       })
       const errCount = Object.keys(res.errors).length
-      if (signal.aborted) toast.message('运行已停止')
-      else if (errCount) toast.error(`运行完成 · ${errCount} 个节点出错`)
-      else toast.success(`运行完成 · ${res.order.length} 节点 · artifact ${Object.keys(res.artifact).length} 项`)
+      if (signal.aborted) toast.message('预演已停止 · fixture 数据，非真实采集')
+      else if (errCount) toast.error(`预演完成 · ${errCount} 个节点出错 · fixture 数据，非真实采集`)
+      else toast.success(`预演完成 · ${res.order.length} 节点 · artifact ${Object.keys(res.artifact).length} 项 · fixture 数据，非真实采集`)
     } finally {
       setRunning(false)
       abortRef.current = null
@@ -502,6 +502,12 @@ function WorkbenchInner({ seed }: { seed?: WorkbenchSeed }) {
           )}
 
           <div className="absolute right-3 top-3 z-10 flex items-center gap-2">
+            <span
+              title="运行按钮跑的是浏览器内 fixture 数据预演，从不调用真实采集 API，也不落库 — 与生产采集完全隔离"
+              className="inline-flex items-center gap-1 rounded-md border border-amber-400/40 bg-amber-400/10 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-amber-200"
+            >
+              <FlaskConical size={12} /> 预演 · fixture 数据，非真实采集
+            </span>
             <button
               type="button"
               onClick={groupIntoMacro}
@@ -532,9 +538,10 @@ function WorkbenchInner({ seed }: { seed?: WorkbenchSeed }) {
               type="button"
               onClick={runNow}
               disabled={running}
+              title="预演：仅在浏览器内跑 fixture 数据，不调用采集 API，不写记录"
               className="inline-flex items-center gap-1 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-100 transition hover:bg-emerald-500/20 disabled:opacity-50"
             >
-              {running ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />} {running ? '运行中…' : '运行'}
+              {running ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />} {running ? '预演中…' : '预演运行'}
             </button>
             {running && (
               <button

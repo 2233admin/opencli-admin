@@ -21,7 +21,7 @@ import {
   Home,
   Settings,
   SlidersHorizontal,
-  Blocks,
+  Workflow,
   Sparkles,
   History,
 } from 'lucide-react'
@@ -38,6 +38,7 @@ import { isTopologyLabEnabled } from '../labs/topology/flags'
 const ROUTE_LABEL_KEYS: Record<string, string> = {
   '/dashboard': 'nav.dashboard',
   '/labs/topology': 'nav.topology',
+  '/plans/new': 'nav.planCanvas',
   '/sources': 'nav.sources',
   '/tasks': 'nav.tasks',
   '/records': 'nav.records',
@@ -146,15 +147,20 @@ export default function Layout() {
       { to: '/workers',         label: t('nav.workers'),       icon: Server },
       { to: '/providers',       label: t('nav.providers'),     icon: KeyRound },
       { to: '/control/actions', label: t('nav.actionHistory'), icon: History },
-      { to: '/labs/node-kit',   label: '节点工作台',            icon: Blocks },
     ],
   }
 
   // Folded IA (new design philosophy): the canvas + agent dock are HOME; the
   // 11 CRUD admin pages are demoted into a collapsible "advanced / raw data"
   // drawer. Day-to-day = look at the graph, talk to the agent. Routes kept.
+  // Plan Canvas (Collection Canvas, issues 07/08) is the primary authoring
+  // surface per ADR-0008 — it sits alongside the topology workspace, not
+  // buried in the advanced drawer. The retired node-kit workbench
+  // (/labs/node-kit) is intentionally absent here — component-library demo
+  // only, reachable by URL, not product nav (Plan IR issue 09).
   const PRIMARY_ITEMS: NavItem[] = [
     { to: '/labs/topology', label: t('nav.workspace'), icon: Network },
+    { to: '/plans/new',     label: t('nav.planCanvas'), icon: Workflow },
     { to: '/dashboard',     label: t('nav.dashboard'), icon: LayoutDashboard },
   ]
   const ADVANCED_GROUPS: NavGroup[] = [PIPELINE_GROUP, INFRA_GROUP]
@@ -163,7 +169,10 @@ export default function Layout() {
   const NAV_GROUPS: NavGroup[] = [
     {
       label: null,
-      items: [{ to: '/dashboard', label: t('nav.dashboard'), icon: LayoutDashboard }],
+      items: [
+        { to: '/dashboard', label: t('nav.dashboard'), icon: LayoutDashboard },
+        { to: '/plans/new', label: t('nav.planCanvas'), icon: Workflow },
+      ],
     },
     PIPELINE_GROUP,
     INFRA_GROUP,

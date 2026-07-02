@@ -9,10 +9,6 @@ function getPackageName(id: string) {
   return match?.[1] ?? 'misc'
 }
 
-function getPackageChunkName(packageName: string) {
-  return packageName.replace('@', '').replace('/', '-').replace(/[^a-zA-Z0-9_-]/g, '-')
-}
-
 export default defineConfig({
   plugins: [react()],
   resolve: {
@@ -28,7 +24,6 @@ export default defineConfig({
 
           const packageName = getPackageName(id)
 
-          if (packageName.startsWith('@flowgram.ai/')) return `topology-${getPackageChunkName(packageName)}`
           if (packageName.startsWith('@xyflow/')) return 'topology-xyflow'
           if (['elkjs', 'react-grid-layout', 'react-resizable'].includes(packageName)) {
             return 'topology-layout'

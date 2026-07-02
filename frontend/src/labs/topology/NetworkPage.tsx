@@ -2,7 +2,8 @@ import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { Edge, Node } from '@xyflow/react'
 import { MarkerType } from '@xyflow/react'
-import { ChevronRight, RefreshCw, Sparkles, SlidersHorizontal, X } from 'lucide-react'
+import { ChevronRight, RefreshCw, Sparkles, SlidersHorizontal, Workflow, X } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 
 import {
@@ -36,31 +37,6 @@ import { AgentDock, type DockContextNode } from './AgentDock'
 import { ODP_NODE_ID, odpSystemGraphNode } from './odpNode'
 import { ReactFlowTopologyCanvas } from './ReactFlowTopologyCanvas'
 import { TopologyCanvasDropZone, TopologyPalette } from './TopologyPalette'
-import { ALL_NODES, NodeWorkbench, hasNode, registerNodes, registerSavedMacros, type WorkbenchSeed } from '../../node-kit'
-
-// L3 atomic layer lives below 采集网络's L2 stages — register the atom library
-// here too so diving into a project can render its atomic node graph. Saved
-// macros register right after so they are in the registry before NodeWorkbench
-// (atomMode branch) mounts and snapshots its nodeTypes/palette.
-registerNodes(ALL_NODES)
-registerSavedMacros()
-
-// Map a project (source) to its underlying atomic node graph: trigger → source.<channel> → store.
-function sourceToAtomGraph(source: DataSource): WorkbenchSeed {
-  const srcType = `source.${source.channel_type}`
-  const cfg = (source as { config?: Record<string, unknown> }).config ?? {}
-  return {
-    nodes: [
-      { id: 'trigger', type: 'trigger.schedule', position: { x: 40, y: 140 }, data: { config: { cron: '0 */5 * * * *', enabled: source.enabled } } },
-      { id: 'src', type: hasNode(srcType) ? srcType : 'source.api', position: { x: 320, y: 120 }, data: { config: cfg } },
-      { id: 'store', type: 'sink.record', position: { x: 620, y: 140 }, data: { config: {} } },
-    ],
-    edges: [
-      { id: 'e1', source: 'trigger', target: 'src', animated: true },
-      { id: 'e2', source: 'src', target: 'store' },
-    ],
-  }
-}
 import { StageOperationPanel, type StageDataBundle } from './nodes/StageOperations'
 import {
   buildTopologyGraph,
@@ -94,8 +70,6 @@ export default function NetworkPage() {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
   // Right-edge pull-out drawer: 'node' = operate selected node, 'agent' = chat dock, null = collapsed.
   const [rightPanel, setRightPanel] = useState<'node' | 'agent' | null>(null)
-  // L3: dive below an L2 project into its atomic node-kit graph.
-  const [atomMode, setAtomMode] = useState(false)
   // Delete-key on a source/project node asks first — deleting a DB entity is
   // never silent (issue: editor basics). sourceId + name for the confirm copy.
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null)
@@ -198,7 +172,6 @@ export default function NetworkPage() {
       setDivePath([id])
       setSelectedNodeId(null)
       setRightPanel(null)
-      setAtomMode(false)
     } else {
       handleSelect(id)
     }
@@ -208,7 +181,6 @@ export default function NetworkPage() {
     setDivePath((path) => path.slice(0, depth))
     setSelectedNodeId(null)
     setRightPanel(null)
-    setAtomMode(false)
   }
 
   const dockContext: DockContextNode | null = selectedNode
@@ -224,18 +196,22 @@ export default function NetworkPage() {
         <Breadcrumb divedSourceName={divedSource?.name ?? null} onRoot={() => popTo(0)} count={nodes.length} />
         <div className="flex items-center gap-2">
           {divedSource && (
-            <button
-              type="button"
-              onClick={() => setAtomMode((m) => !m)}
-              className={cn(
-                'inline-flex h-8 items-center gap-2 rounded-md border px-3 text-xs font-semibold transition',
-                atomMode
-                  ? 'border-sky-500/50 bg-sky-500/10 text-sky-100'
-                  : 'border-white/12 bg-white/4 text-zinc-200 hover:border-white/24 hover:bg-white/8',
-              )}
-            >
-              {atomMode ? '← 退出原子编排' : '↧ 原子编排（L3）'}
-            </button>
+            <>
+              <Link
+                to={`/sources/${divedSource.id}/control-room`}
+                className="inline-flex h-8 items-center gap-2 rounded-md border border-white/12 bg-white/4 px-3 text-xs font-semibold text-zinc-200 transition hover:border-white/24 hover:bg-white/8"
+              >
+                <SlidersHorizontal className="h-3.5 w-3.5" />
+                控制室
+              </Link>
+              <Link
+                to="/plans/new"
+                className="inline-flex h-8 items-center gap-2 rounded-md border border-white/12 bg-white/4 px-3 text-xs font-semibold text-zinc-200 transition hover:border-white/24 hover:bg-white/8"
+              >
+                <Workflow className="h-3.5 w-3.5" />
+                采集画布
+              </Link>
+            </>
           )}
           <button
             type="button"
@@ -252,12 +228,6 @@ export default function NetworkPage() {
         <ErrorAlert error={queryError instanceof Error ? queryError : '采集网络数据同步失败。'} onRetry={refetchAll} />
       )}
 
-      {/* L3 atomic node-kit graph for the dived project, else the topology canvas */}
-      {atomMode && divedSource ? (
-        <div className="h-[74vh] min-h-[560px]">
-          <NodeWorkbench key={divedSource.id} seed={sourceToAtomGraph(divedSource)} />
-        </div>
-      ) : (
       <div className="relative flex h-[74vh] min-h-[560px] overflow-hidden rounded-md border border-white/10 bg-black">
         {/* palette only makes sense at L0 root — a project's subnet (L1) is
          * derived read-only from that one source's real schedules/tasks/etc,
@@ -325,7 +295,6 @@ export default function NetworkPage() {
           />
         </div>
       </div>
-      )}
 
       <ConfirmDialog
         open={Boolean(deleteTarget)}

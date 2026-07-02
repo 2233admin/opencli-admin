@@ -4,7 +4,7 @@
 // font-code text-[11px], zinc tiers for neutral/dim text. Purely a projection
 // of runState (owned by NodeWorkbench) through the framework-free
 // runtime/runLog.ts helpers — no local state here.
-import { AlertCircle, CheckCircle2, CircleDashed, Loader2, MinusCircle } from 'lucide-react'
+import { AlertCircle, CheckCircle2, CircleDashed, FlaskConical, Loader2, MinusCircle } from 'lucide-react'
 
 import { summarizeRun, toRunLogRows, type RunLogRowView, type RunNodeState, type RunStateMap } from '../runtime/runLog'
 
@@ -59,9 +59,11 @@ export function RunLogPanel({
   const summary = summarizeRun(runState)
 
   return (
-    <div className="absolute inset-x-3 bottom-3 z-10 max-h-40 overflow-hidden rounded-md border border-white/8 bg-black/20 backdrop-blur-sm">
-      <div className="flex items-center justify-between border-b border-white/8 px-3 py-1.5">
-        <span className="font-telemetry text-[9px] font-semibold uppercase tracking-[0.14em] text-zinc-600">运行日志</span>
+    <div className="absolute inset-x-3 bottom-3 z-10 max-h-40 overflow-hidden rounded-md border border-amber-400/25 bg-black/20 backdrop-blur-sm">
+      <div className="flex items-center justify-between gap-2 border-b border-amber-400/20 bg-amber-400/5 px-3 py-1.5">
+        <span className="inline-flex items-center gap-1 font-telemetry text-[9px] font-semibold uppercase tracking-[0.14em] text-amber-300">
+          <FlaskConical size={11} /> 预演日志 · fixture 数据，非真实采集
+        </span>
         <span className="font-code text-[11px] text-zinc-400">{summary.label}</span>
       </div>
       <div className="max-h-32 overflow-auto font-code text-[11px]">
