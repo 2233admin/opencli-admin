@@ -9,8 +9,18 @@ import {
 } from 'lucide-react'
 import * as Icons from 'lucide-react'
 
+import { useState } from 'react'
+
 import type { FieldDef, PortDef } from '../spec'
-import type { SensorConfidence, SensorCoverage, SourceControlStateValue } from '../../api/types'
+import type {
+  SensorConfidence,
+  SensorCoverage,
+  SourceControlStateValue,
+  SourceControlTrend,
+  SourceSystemContext,
+  SuggestedControlAction,
+  ControlMode,
+} from '../../api/types'
 
 /** Resolve a lucide icon by name ('database' -> Database). Falls back to Box. */
 export function iconByName(name?: string): LucideIcon {
@@ -176,6 +186,13 @@ export function NodeBadge({ children, tone = 'neutral' }: { children: ReactNode;
 // "先让系统诚实" — these two atoms are the one place a node renders its control
 // state + sensor honesty, so every node type (source or otherwise) that wires
 // up control-state facts gets the same "never a fake healthy" visual for free.
+//
+// PR-Control-3 vocabulary: each control_state gets its OWN color, not just a
+// 3-way neutral/accent/danger bucket — DEGRADED (amber) reads differently from
+// AUTH_FAILED (red) even though both are "not healthy", and BLOCKED_BY_ODP
+// (purple) must read as "system-wide, not this source's fault" at a glance.
+// HARD RULE carried over from C0: UNKNOWN / low-confidence must never look
+// like a confident healthy — see the `effective` override in ControlBadge.
 
 const CONTROL_STATE_LABEL: Record<SourceControlStateValue, string> = {
   healthy: 'HEALTHY',
@@ -184,21 +201,27 @@ const CONTROL_STATE_LABEL: Record<SourceControlStateValue, string> = {
   rate_limited: 'RATE LIMITED',
   auth_failed: 'AUTH FAILED',
   schema_drift: 'SCHEMA DRIFT',
+  blocked_by_odp: 'BLOCKED BY ODP',
   paused: 'PAUSED',
   dead: 'DEAD',
   unknown: 'UNKNOWN',
 }
 
-const CONTROL_STATE_TONE: Record<SourceControlStateValue, 'neutral' | 'accent' | 'danger'> = {
-  healthy: 'accent',
-  degraded: 'danger',
-  backpressured: 'danger',
-  rate_limited: 'danger',
-  auth_failed: 'danger',
-  schema_drift: 'danger',
-  paused: 'neutral',
-  dead: 'danger',
-  unknown: 'neutral',
+// One visual identity per state: dot color + chip border/bg/text. Kept local
+// to ControlBadge (not routed through NodeBadge's 3-tone system) because the
+// whole point of PR-Control-3's vocabulary is that these must NOT collapse
+// into a handful of shared buckets.
+const CONTROL_STATE_STYLE: Record<SourceControlStateValue, { dot: string; chip: string }> = {
+  healthy: { dot: 'bg-emerald-400', chip: 'border-emerald-400/35 bg-emerald-400/10 text-emerald-100' },
+  degraded: { dot: 'bg-amber-400', chip: 'border-amber-400/35 bg-amber-400/10 text-amber-100' },
+  backpressured: { dot: 'bg-blue-400', chip: 'border-blue-400/35 bg-blue-400/10 text-blue-100' },
+  rate_limited: { dot: 'bg-orange-400', chip: 'border-orange-400/35 bg-orange-400/10 text-orange-100' },
+  auth_failed: { dot: 'bg-red-400', chip: 'border-red-400/35 bg-red-400/10 text-red-100' },
+  schema_drift: { dot: 'bg-red-400', chip: 'border-red-400/35 bg-red-400/10 text-red-100' },
+  blocked_by_odp: { dot: 'bg-purple-400', chip: 'border-purple-400/35 bg-purple-400/10 text-purple-100' },
+  paused: { dot: 'bg-slate-400', chip: 'border-slate-400/30 bg-slate-400/10 text-slate-200' },
+  dead: { dot: 'bg-zinc-600', chip: 'border-zinc-600/50 bg-zinc-700/20 text-zinc-400' },
+  unknown: { dot: 'bg-zinc-500', chip: 'border-zinc-500/30 bg-zinc-500/10 text-zinc-300' },
 }
 
 /** control_state + confidence, in one glance. HARD RULE: `healthy` only ever
@@ -223,23 +246,17 @@ export function ControlBadge({
   const effective: SourceControlStateValue =
     controlState === 'healthy' && confidence === 'low' ? 'unknown' : controlState
   const label = CONTROL_STATE_LABEL[effective]
-  const tone = CONTROL_STATE_TONE[effective]
-  const dotClass =
-    effective === 'healthy'
-      ? 'bg-emerald-400'
-      : effective === 'unknown' || effective === 'paused'
-        ? 'bg-zinc-500'
-        : 'bg-red-400'
+  const { dot, chip } = CONTROL_STATE_STYLE[effective]
   return (
-    <NodeBadge tone={tone}>
+    <span className={`rounded-sm border px-1.5 py-0.5 text-[10px] ${chip}`}>
       <span className="inline-flex items-center gap-1">
-        <span className={`h-1.5 w-1.5 rounded-full ${dotClass}`} />
+        <span className={`h-1.5 w-1.5 rounded-full ${dot}`} />
         {label}
         {confidence && confidence !== 'high' && (
           <span className="text-[9px] opacity-70">· {confidence}</span>
         )}
       </span>
-    </NodeBadge>
+    </span>
   )
 }
 
@@ -264,6 +281,108 @@ export function SensorCoverageBadge({
     <NodeBadge tone="danger">
       partial sensors · missing {missing.join(', ')}
     </NodeBadge>
+  )
+}
+
+// ── PR-Control-3 (docs/CONTROL_THEORY_ARCHITECTURE.md §4) ───────────────────
+// Trend summary, ODP system-context, and ADVISORY suggested actions. This
+// phase (CONTROL_MODE=advisory) only ever SUGGESTS — there is deliberately no
+// execute/apply button anywhere below. If that ever changes, it's a different
+// PR (PR-Control-4, actuators + CONTROL_MODE=automatic), not a prop on these.
+
+/** Compact rolling-window summary — "0-accepted x3", "avg err 12%", etc. Only
+ *  renders the facts that are actually interesting (non-zero streak / error
+ *  rate / rate-limited count); renders nothing when trend is null (no window
+ *  to summarize yet) rather than an empty chip. */
+export function TrendSummary({ trend }: { trend: SourceControlTrend | null | undefined }) {
+  if (!trend) return null
+  const parts: string[] = []
+  if (trend.zero_accepted_streak > 0) parts.push(`0-accepted ×${trend.zero_accepted_streak}`)
+  if (trend.avg_error_rate > 0) parts.push(`avg err ${(trend.avg_error_rate * 100).toFixed(0)}%`)
+  if (trend.rate_limited_runs > 0) parts.push(`rate-limited ×${trend.rate_limited_runs}`)
+  if (parts.length === 0) return null
+  return (
+    <NodeBadge>
+      trend({trend.window}): {parts.join(' · ')}
+    </NodeBadge>
+  )
+}
+
+/** Compact ODP system-context indicator — only shows up when there's actually
+ *  something to say: backpressured, or the collector itself is unavailable
+ *  (degrade honestly rather than silently omitting the fact we can't see it).
+ *  A calm system_context (available, not backpressured) renders nothing, same
+ *  "silence is a deliberate state" rule as SensorCoverageBadge. */
+export function SystemContextBadge({ systemContext }: { systemContext: SourceSystemContext | null | undefined }) {
+  if (!systemContext) return null
+  if (!systemContext.available) {
+    return <NodeBadge tone="neutral">ODP: unavailable</NodeBadge>
+  }
+  if (!systemContext.odp_backpressured) return null
+  const bits: string[] = []
+  if (systemContext.stream_lag != null) bits.push(`lag ${systemContext.stream_lag}`)
+  if (systemContext.pending != null) bits.push(`pending ${systemContext.pending}`)
+  return (
+    <span className="rounded-sm border border-purple-400/35 bg-purple-400/10 px-1.5 py-0.5 text-[10px] text-purple-100">
+      ODP backpressured{bits.length > 0 ? ` · ${bits.join(', ')}` : ''}
+    </span>
+  )
+}
+
+/** One suggested action, ADVISORY ONLY: shows action_type as the label and
+ *  the evaluator's reason on hover (title) or expand-on-click — NEVER a button
+ *  that executes anything. There is no onClick-that-mutates anywhere in this
+ *  component; clicking only toggles local expand/collapse of the reason text. */
+function SuggestedActionChip({ action }: { action: SuggestedControlAction }) {
+  const [expanded, setExpanded] = useState(false)
+  return (
+    <button
+      type="button"
+      title={action.reason}
+      onClick={(e) => {
+        e.stopPropagation()
+        setExpanded((v) => !v)
+      }}
+      className="nodrag nopan flex max-w-full flex-col items-start gap-0.5 rounded-sm border border-dashed border-sky-400/30 bg-sky-400/[0.06] px-1.5 py-0.5 text-left text-[10px] text-sky-100 transition hover:border-sky-400/50"
+    >
+      <span className="inline-flex items-center gap-1">
+        <span className="rounded-[2px] bg-sky-400/20 px-1 text-[8px] font-semibold uppercase tracking-wide text-sky-200">
+          suggested (advisory)
+        </span>
+        <span className="font-medium">{action.action_type}</span>
+      </span>
+      {expanded && <span className="whitespace-normal text-[9px] text-sky-200/80">{action.reason}</span>}
+    </button>
+  )
+}
+
+/** The advisory suggested-actions row for a node. Renders nothing when there
+ *  are no suggestions. When `controlMode` is 'advisory' (the only mode this
+ *  phase supports), an explicit "not being applied" note is shown so nobody
+ *  mistakes a suggestion list for an action log — display only, no execute
+ *  path exists anywhere in node-kit. */
+export function SuggestedActionsRow({
+  actions,
+  controlMode,
+}: {
+  actions: SuggestedControlAction[] | null | undefined
+  controlMode?: ControlMode | null
+}) {
+  const list = actions ?? []
+  if (list.length === 0) return null
+  return (
+    <div className="mt-1 grid gap-1">
+      {controlMode !== 'automatic' && (
+        <div className="text-[9px] italic text-zinc-600">
+          advisory only — suggestions are not being applied
+        </div>
+      )}
+      <div className="flex flex-wrap gap-1.5">
+        {list.map((action, i) => (
+          <SuggestedActionChip key={`${action.action_type}-${i}`} action={action} />
+        ))}
+      </div>
+    </div>
   )
 }
 

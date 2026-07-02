@@ -57,6 +57,10 @@ export {
   // C0 Control Room v0 — sensor-honesty atoms (docs/CONTROL_THEORY_ARCHITECTURE.md §0)
   ControlBadge,
   SensorCoverageBadge,
+  // PR-Control-3 — trend/system-context/ADVISORY suggested-actions atoms (docs/CONTROL_THEORY_ARCHITECTURE.md §4)
+  TrendSummary,
+  SystemContextBadge,
+  SuggestedActionsRow,
 } from './render/atoms'
 
 // atomic node library (real system functionality, nodified)

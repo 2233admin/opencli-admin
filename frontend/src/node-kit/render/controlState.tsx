@@ -6,7 +6,7 @@
 import { useQuery } from '@tanstack/react-query'
 
 import { getSourceControlState } from '../../api/endpoints'
-import { ControlBadge, SensorCoverageBadge } from './atoms'
+import { ControlBadge, SensorCoverageBadge, SuggestedActionsRow, SystemContextBadge, TrendSummary } from './atoms'
 
 export const CONTROL_STATE_POLL_MS = 15_000
 
@@ -39,9 +39,16 @@ export function SourceControlStrip({ sourceId }: { sourceId: string }) {
 
   const state = query.data
   return (
-    <div className="mt-1 flex flex-wrap items-center gap-1.5">
-      <ControlBadge controlState={state?.control_state ?? null} confidence={state?.confidence ?? null} />
-      <SensorCoverageBadge coverage={state?.sensor_coverage ?? null} missingSignals={state?.missing_signals ?? []} />
+    <div className="mt-1 grid gap-1">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <ControlBadge controlState={state?.control_state ?? null} confidence={state?.confidence ?? null} />
+        <SensorCoverageBadge coverage={state?.sensor_coverage ?? null} missingSignals={state?.missing_signals ?? []} />
+        <TrendSummary trend={state?.trend} />
+        <SystemContextBadge systemContext={state?.system_context} />
+      </div>
+      {/* PR-Control-3: ADVISORY suggested actions only — display only, never
+          an execute button. See atoms.SuggestedActionsRow. */}
+      <SuggestedActionsRow actions={state?.suggested_actions} controlMode={state?.control_mode} />
     </div>
   )
 }

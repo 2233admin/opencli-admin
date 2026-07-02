@@ -303,6 +303,10 @@ export type SourceControlStateValue =
   | 'rate_limited'
   | 'auth_failed'
   | 'schema_drift'
+  // PR-Control-3: the source itself may be fine, but the shared ODP data plane
+  // is backpressured beyond objective — bottleneck is system-wide, not this
+  // source. Distinct from 'backpressured' (legacy, per-measurement signal).
+  | 'blocked_by_odp'
   | 'paused'
   | 'dead'
   | 'unknown'
@@ -329,6 +333,44 @@ export interface SourceObjective {
   min_accepted_per_run?: number | null
 }
 
+// PR-Control-3 (docs/CONTROL_THEORY_ARCHITECTURE.md §4): the advisory decision
+// engine's inputs/outputs, layered on top of C0/C1/C2's sensor facts. All
+// fields are optional/nullable-tolerant because the backend evaluator may land
+// slightly after this UI change (pinned contract, not yet shipped when this
+// was written) — an unknown/missing field must never crash the render, only
+// degrade to "nothing to show" (same C0 rule: silence, not a fake positive).
+
+// Rolling-window summary from backend.control.aggregation.build_trend.
+export interface SourceControlTrend {
+  window: number
+  zero_accepted_streak: number
+  avg_error_rate: number
+  rate_limited_runs: number
+}
+
+// Shared-infrastructure (ODP) context the evaluator folds in alongside the
+// source's own measurement — see SourceControlStateValue.blocked_by_odp.
+// `available: false` means the ODP collector itself couldn't be read (degrade
+// honestly, never fabricate `odp_backpressured`).
+export interface SourceSystemContext {
+  odp_backpressured: boolean
+  stream_lag: number | null
+  pending: number | null
+  available: boolean
+}
+
+// A candidate control action the evaluator would take — ADVISORY ONLY.
+// control_mode 'advisory' means nothing here is ever executed automatically;
+// there is intentionally no id/status/apply-endpoint on this shape because the
+// UI must never offer to execute one (see ControlBadge/atoms — display only).
+export interface SuggestedControlAction {
+  action_type: string
+  reason: string
+  payload: Record<string, unknown>
+}
+
+export type ControlMode = 'advisory' | 'automatic'
+
 export interface SourceControlState {
   source_id: string
   measurement: SourceMeasurement | null
@@ -337,4 +379,10 @@ export interface SourceControlState {
   confidence: SensorConfidence | null
   sensor_coverage: SensorCoverage | null
   missing_signals: string[]
+  // PR-Control-3 additions — optional so this type stays valid against both
+  // the pre-Control-3 API response and the enriched one.
+  trend?: SourceControlTrend | null
+  system_context?: SourceSystemContext | null
+  suggested_actions?: SuggestedControlAction[]
+  control_mode?: ControlMode | null
 }
