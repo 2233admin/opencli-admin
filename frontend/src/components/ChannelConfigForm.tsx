@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
 import { Plus, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
-import { deleteSourceCredential, listSkills, listSourceCredentials, storeSourceCredential } from '../api/endpoints'
+import { deleteSourceCredential, listProviders, listSkills, listSourceCredentials, storeSourceCredential } from '../api/endpoints'
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -597,13 +597,40 @@ function Crawl4AIConfig({
   const [selectors, setSelectors] = useState<KVPair[]>(
     objToKv(config.selectors as Record<string, unknown>),
   )
+  const [mode, setMode] = useState<'css' | 'llm'>(config.instruction ? 'llm' : 'css')
   const auth = (config.auth as Record<string, string>) ?? {}
+
+  const { data: providersResp } = useQuery({
+    queryKey: ['providers', 'for-crawl4ai-config'],
+    queryFn: listProviders,
+  })
+  const providers = (providersResp?.data ?? []).filter((p) => p.enabled)
 
   const update = (patch: Partial<Record<string, unknown>>) => onChange({ ...config, ...patch })
 
   const updateSelectors = (pairs: KVPair[]) => {
     setSelectors(pairs)
     update({ selectors: kvToObj(pairs) })
+  }
+
+  const extractionSchemaText =
+    config.extraction_schema != null ? JSON.stringify(config.extraction_schema, null, 2) : ''
+  const [schemaText, setSchemaText] = useState(extractionSchemaText)
+  const [schemaError, setSchemaError] = useState<string | null>(null)
+
+  const updateSchemaText = (v: string) => {
+    setSchemaText(v)
+    if (!v.trim()) {
+      setSchemaError(null)
+      update({ extraction_schema: undefined })
+      return
+    }
+    try {
+      update({ extraction_schema: JSON.parse(v) })
+      setSchemaError(null)
+    } catch {
+      setSchemaError('不是合法 JSON — 抽取时会当成 block 模式(自由格式)处理，不传 schema')
+    }
   }
 
   return (
@@ -626,14 +653,74 @@ function Crawl4AIConfig({
           placeholder=".item"
         />
       </Field>
-      <Field label={t('channelConfig.fieldSelectors')} hint={t('channelConfig.fieldSelectorsHint')} required>
-        <KVList
-          pairs={selectors}
-          onChange={updateSelectors}
-          keyPlaceholder="field name"
-          valuePlaceholder="CSS selector"
-        />
-      </Field>
+
+      <div>
+        <label className={label}>抽取方式</label>
+        <div className="flex gap-4 text-sm text-gray-700 dark:text-gray-300">
+          <label className="flex items-center gap-1.5">
+            <input type="radio" checked={mode === 'css'} onChange={() => setMode('css')} />
+            CSS 选择器(零 AI 成本)
+          </label>
+          <label className="flex items-center gap-1.5">
+            <input type="radio" checked={mode === 'llm'} onChange={() => setMode('llm')} />
+            LLM 抽取(没法写选择器时兜底)
+          </label>
+        </div>
+      </div>
+
+      {mode === 'css' && (
+        <Field label={t('channelConfig.fieldSelectors')} hint={t('channelConfig.fieldSelectorsHint')} required>
+          <KVList
+            pairs={selectors}
+            onChange={updateSelectors}
+            keyPlaceholder="field name"
+            valuePlaceholder="CSS selector"
+          />
+        </Field>
+      )}
+
+      {mode === 'llm' && (
+        <>
+          <Field
+            label="抽取指令(instruction)"
+            hint="用自然语言描述要从页面里抽取什么，比如「抽取每条商品的标题、价格、链接」"
+            required
+          >
+            <textarea
+              className={input}
+              rows={3}
+              value={(config.instruction as string) ?? ''}
+              onChange={(e) => update({ instruction: e.target.value || undefined })}
+              placeholder="抽取每条商品的标题、价格、链接"
+            />
+          </Field>
+          <Field
+            label="抽取 Schema(可选)"
+            hint="JSON schema — 给了就走 schema 模式(结构化输出)，不给走 block 模式(自由格式文本块)"
+          >
+            <textarea
+              className={input}
+              rows={4}
+              value={schemaText}
+              onChange={(e) => updateSchemaText(e.target.value)}
+              placeholder={'{\n  "title": "string",\n  "price": "string"\n}'}
+            />
+            {schemaError && <p className="mt-1 text-xs text-amber-500">{schemaError}</p>}
+          </Field>
+          <Field label="模型 Provider(可选)" hint="不选就用第一个已启用的 provider，跟 AI 富化步骤共用同一份配置">
+            <SelectInput
+              value={(config.provider_id as string) ?? ''}
+              onChange={(v) => update({ provider_id: v || undefined })}
+              ariaLabel="模型 Provider"
+              options={[
+                { value: '', label: '— 自动(第一个已启用的) —' },
+                ...providers.map((p) => ({ value: p.id, label: `${p.name} (${p.provider_type})` })),
+              ]}
+            />
+          </Field>
+        </>
+      )}
+
       <Field label={t('channelConfig.waitFor')} hint={t('channelConfig.waitForHint')}>
         <TextInput
           value={(config.wait_for as string) ?? ''}

@@ -119,11 +119,20 @@ def cmd_record(args: argparse.Namespace) -> None:
         session_id = session["session_id"]
         print(f"recording started (session={session_id}, chrome={session['cdp_endpoint']})")
         print("go demo the task in that Chrome window now.")
-        input("press Enter here when done recording... ")
 
-        status = "success"
-        if input("mark as success? [Y/n] ").strip().lower() == "n":
+        # /start holds the pool's per-endpoint mutex for the session's lifetime,
+        # released only by /stop. Ctrl+C (or EOF) on either prompt below must
+        # still reach /stop, or that Chrome endpoint stays locked until the
+        # backend process restarts.
+        try:
+            input("press Enter here when done recording... ")
+            status = "success"
+            if input("mark as success? [Y/n] ").strip().lower() == "n":
+                status = "failed"
+        except (KeyboardInterrupt, EOFError):
+            print()
             status = "failed"
+
         stop_result = _unwrap(
             c.post(f"/skills/record/{session_id}/stop", json={"status": status}, timeout=30.0)
         )

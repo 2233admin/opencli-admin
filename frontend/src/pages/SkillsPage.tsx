@@ -74,6 +74,16 @@ function RecordWizard({ onClose, onDistilled }: { onClose: () => void; onDistill
 
   const steps = (trace?.steps as RecordStep[] | undefined) ?? []
 
+  // Recording holds the pool's per-endpoint mutex for the session's lifetime,
+  // released only by /stop — closing mid-recording without calling it leaks
+  // that Chrome endpoint until the backend restarts.
+  const handleClose = () => {
+    if (step === 'recording' && sessionId) {
+      recordStop(sessionId, { status: 'failed' }).catch(() => {})
+    }
+    onClose()
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
       <div className="flex max-h-[90vh] w-full max-w-2xl flex-col border border-white/10 bg-zinc-950 shadow-2xl">
@@ -166,7 +176,7 @@ function RecordWizard({ onClose, onDistilled }: { onClose: () => void; onDistill
         </div>
 
         <div className="flex justify-end gap-3 border-t border-white/10 p-5">
-          <Button type="button" variant="outline" onClick={onClose}>取消</Button>
+          <Button type="button" variant="outline" onClick={handleClose}>取消</Button>
           {step === 'form' && (
             <Button
               type="button"

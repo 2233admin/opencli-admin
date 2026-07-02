@@ -99,7 +99,12 @@ export default function SkillDetailPage() {
   if (isLoading) return <PageLoader />
   if (error || !skill) return <ErrorAlert error={(error as Error) ?? new Error('技能不存在')} onRetry={refetch} />
 
-  const canRollback = (skill.evidence ?? []).some((ev) => ev.event === 'corrected')
+  const rollbackRelevant = (skill.evidence ?? []).filter(
+    (ev) => ev.event === 'corrected' || ev.event === 'rolled_back',
+  )
+  const canRollback =
+    rollbackRelevant.length > 0 &&
+    rollbackRelevant[rollbackRelevant.length - 1].event === 'corrected'
   const anyMutating = redistillMut.isPending || dismissMut.isPending || rollbackMut.isPending
 
   return (

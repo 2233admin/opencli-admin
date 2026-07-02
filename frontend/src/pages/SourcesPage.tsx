@@ -666,6 +666,9 @@ function sourceTarget(source: DataSource) {
   if (source.channel_type === 'web_scraper') {
     return String(config.url ?? config.start_url ?? config.startUrl ?? CHANNEL_META.web_scraper.hint)
   }
+  if (source.channel_type === 'crawl4ai') {
+    return String(config.url ?? CHANNEL_META.crawl4ai.hint)
+  }
   if (source.channel_type === 'skill') {
     if (config.domain || config.capability) {
       return [config.domain, config.capability].filter(Boolean).join(' / ')
@@ -1072,6 +1075,7 @@ function LegacySourcesPage() {
   const toggleMut = useMutation({
     mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) => updateSource(id, { enabled }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['sources'] }),
+    onError: (err) => toast.error(err instanceof Error ? err.message : '更新失败'),
   })
 
   const deleteMut = useMutation({
