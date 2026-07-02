@@ -35,8 +35,16 @@ class Settings(BaseSettings):
     celery_result_backend: str = "redis://localhost:6379/1"
 
     # API Security
+    # (api_key_enabled/api_key predate fleet auth and were never enforced by
+    # any dependency — kept only so existing .env files don't break parsing.
+    # api_auth_token below is the one that counts.)
     api_key_enabled: bool = False
     api_key: str = ""
+    # Fleet auth (ADR-0005, closeout issue 04): single static bearer token
+    # required on every /api route once set (backend/security/fleet_auth.py).
+    # Empty (default) = auth disabled — dev posture, which the startup bind
+    # guard only allows on a localhost bind. Env: API_AUTH_TOKEN.
+    api_auth_token: str = ""
 
     # CLI channel binary allowlist (ADR-0005, audit P0-4). The cli channel is
     # an arbitrary-binary-execution surface, so it only runs binaries the

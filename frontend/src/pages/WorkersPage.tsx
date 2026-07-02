@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { listWorkers, getCeleryStats, getHealth } from '../api/endpoints'
+import { listWorkers, getCeleryStats, getSystemConfig } from '../api/endpoints'
 import { PageLoader } from '../components/LoadingSpinner'
 import ErrorAlert from '../components/ErrorAlert'
 import Card from '../components/Card'
@@ -18,9 +18,12 @@ function getStatsError(stats?: Record<string, unknown>) {
 export default function WorkersPage() {
   const { t } = useTranslation()
 
+  // task_executor moved off the public /health liveness probe (issue 04:
+  // /health is auth-exempt so it must leak nothing) to the authenticated
+  // system config endpoint. Same queryKey as NodesPage's system-config cache.
   const healthQ = useQuery({
-    queryKey: ['health'],
-    queryFn: getHealth,
+    queryKey: ['system-config'],
+    queryFn: getSystemConfig,
     staleTime: 60_000,
   })
 

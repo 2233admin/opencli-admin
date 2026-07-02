@@ -276,7 +276,7 @@ export function FlowGramTopologyCanvas({
       initialData={initialData}
       nodeRegistries={nodeRegistries}
       materials={materials}
-      playground={{ autoResize: true, autoFit: true }}
+      playground={{ autoResize: true }}
     >
       <div className="h-full w-full [&_.gedit-playground]:bg-black">
         <EditorRenderer className="h-full w-full" />

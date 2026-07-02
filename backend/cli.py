@@ -36,7 +36,14 @@ DEFAULT_BASE_URL = os.environ.get("OPENCLI_ADMIN_URL", "http://localhost:8031")
 
 
 def _client(base_url: str) -> httpx.Client:
-    return httpx.Client(base_url=f"{base_url.rstrip('/')}/api/v1", timeout=30.0)
+    # Fleet auth (ADR-0005): attach the static bearer token when the target
+    # instance requires one. Same env var name the server reads; empty = dev
+    # posture (tokenless localhost instance) — no header attached.
+    token = os.environ.get("API_AUTH_TOKEN", "")
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    return httpx.Client(
+        base_url=f"{base_url.rstrip('/')}/api/v1", timeout=30.0, headers=headers
+    )
 
 
 def _die(msg: str) -> None:

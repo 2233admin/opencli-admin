@@ -257,8 +257,10 @@ export const restartApi = () =>
   apiClient.post<ApiResponse<{ restarting: boolean }>>('/browsers/restart-api').then((r) => r.data)
 
 // ── System ─────────────────────────────────────────────────────────────────────
+// Liveness only — /health is auth-exempt and deliberately leaks nothing
+// (issue 04). For deployment detail (task_executor, ...) use getSystemConfig.
 export const getHealth = () =>
-  rootClient.get<{ status: string; version: string; task_executor: string }>('/health').then((r) => r.data)
+  rootClient.get<{ status: string }>('/health').then((r) => r.data)
 
 export const getSystemConfig = () =>
   apiClient.get<ApiResponse<SystemConfig>>('/system/config').then((r) => r.data.data)

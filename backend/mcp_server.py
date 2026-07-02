@@ -11,10 +11,13 @@ needs to drive collection (list/create/test sources, discover feeds, trigger
 a run, check its status, query records) — not a 1:1 mirror of all ~56 REST
 endpoints. Schedules/skills/cookies management stay UI/CLI-only for now.
 
-No auth: the REST API itself has none today (`api_key_enabled`/`api_key` in
-backend/config.py are read but never enforced by any dependency). This server
-inherits that trust boundary — only point OPENCLI_ADMIN_API_URL at a
-localhost/LAN instance you trust, never at a publicly reachable one.
+Auth: the REST API requires `Authorization: Bearer <API_AUTH_TOKEN>` on every
+/api route once the server has API_AUTH_TOKEN configured (ADR-0005, fleet-LAN
+deployment). Set the same API_AUTH_TOKEN in *this* process's environment and
+it is attached to every call. Leave it unset when pointing at a dev instance
+(localhost bind, no token) — the API is open in that posture. This process
+stays outside the middleware itself: it is a stdio-transport HTTP *client*,
+deliberately decoupled from the FastAPI/uvicorn lifecycle.
 """
 
 from __future__ import annotations
@@ -26,6 +29,13 @@ import httpx
 from mcp.server.fastmcp import FastMCP
 
 API_BASE_URL = os.environ.get("OPENCLI_ADMIN_API_URL", "http://localhost:8031").rstrip("/")
+# Same env var name the server itself reads (backend/config.py api_auth_token).
+# Empty = dev posture (tokenless localhost instance): no header attached.
+API_AUTH_TOKEN = os.environ.get("API_AUTH_TOKEN", "")
+
+
+def _auth_headers() -> dict[str, str]:
+    return {"Authorization": f"Bearer {API_AUTH_TOKEN}"} if API_AUTH_TOKEN else {}
 
 mcp = FastMCP("opencli-admin")
 
@@ -41,7 +51,9 @@ async def _request(method: str, path: str, **kwargs: Any) -> dict:
     the agent, not crash the MCP process.
     """
     try:
-        async with httpx.AsyncClient(base_url=API_BASE_URL, timeout=30.0) as client:
+        async with httpx.AsyncClient(
+            base_url=API_BASE_URL, timeout=30.0, headers=_auth_headers()
+        ) as client:
             resp = await client.request(method, path, **kwargs)
             try:
                 body = resp.json()

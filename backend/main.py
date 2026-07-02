@@ -10,6 +10,11 @@ from fastapi.responses import JSONResponse
 from backend.api.v1 import v1_router
 from backend.config import get_settings
 from backend.database import run_migrations
+from backend.security.fleet_auth import (
+    FleetAuthMiddleware,
+    enforce_bind_guard,
+    resolve_uvicorn_host,
+)
 
 def _configure_logging() -> None:
     """Restore backend.* logging after uvicorn's dictConfig disables pre-existing loggers.
@@ -62,6 +67,12 @@ def _read_chrome_endpoints() -> list[str]:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # ADR-0005 bind guard: refuse to serve a non-localhost bind without an
+    # API auth token. Raising here aborts uvicorn startup before a single
+    # request is served. get_settings() is read fresh (not the module-level
+    # snapshot) so env changes between import and startup are honored.
+    enforce_bind_guard(resolve_uvicorn_host(), get_settings().api_auth_token)
+
     await run_migrations()
     # Re-apply logging config: alembic resets root logger level to WARNING during migrations
     # and uvicorn's dictConfig disables pre-existing loggers
@@ -171,6 +182,14 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
+    # Fleet auth (ADR-0005): static bearer token on every /api route.
+    # Registered BEFORE CORSMiddleware on purpose — Starlette treats the
+    # last-added middleware as outermost, so CORS ends up wrapping auth:
+    # 401 responses still carry CORS headers and preflight OPTIONS requests
+    # (which browsers send without an Authorization header) are answered by
+    # CORSMiddleware before ever reaching the token check.
+    app.add_middleware(FleetAuthMiddleware)
+
     # CORS
     app.add_middleware(
         CORSMiddleware,
@@ -194,12 +213,13 @@ def create_app() -> FastAPI:
 
     @app.get("/health")
     async def health() -> dict:
-        return {
-            "status": "ok",
-            "version": "0.1.0",
-            "task_executor": settings.task_executor,
-            "collection_orchestrator": settings.collection_orchestrator,
-        }
+        # Liveness only. This endpoint is exempt from FleetAuthMiddleware
+        # (it sits outside the /api prefix; docker-compose's healthcheck
+        # curls it with no credentials), so per closeout issue 04 it must
+        # leak nothing: no version, no config flags. The deployment detail
+        # (task_executor, collection_mode, ...) lives at the authenticated
+        # GET /api/v1/system/config instead.
+        return {"status": "ok"}
 
     return app
 
