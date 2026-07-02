@@ -1,13 +1,19 @@
 //! ODP store writer — consume `odp.ingest.raw`, batch insert Postgres, publish `odp.record.committed`.
 
+mod reap;
 mod writer;
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::Context;
 use odp_bus::redis_streams::BusConfig;
 use odp_bus::RedisBus;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+
+/// How often the reap sweep (stale-consumer recovery + DLQ) runs. It's a
+/// cheap XPENDING call when there's nothing stale, so this can be frequent
+/// without meaningfully loading Redis.
+const REAP_INTERVAL: Duration = Duration::from_secs(15);
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -35,7 +41,16 @@ async fn main() -> anyhow::Result<()> {
 
     tracing::info!(batch_size, "odp-store started");
 
+    let mut last_reap = Instant::now();
+
     loop {
+        if last_reap.elapsed() >= REAP_INTERVAL {
+            if let Err(e) = reap::reap_stale(&bus, &pool).await {
+                tracing::error!(error = %e, "reap sweep failed — will retry next interval");
+            }
+            last_reap = Instant::now();
+        }
+
         let messages = bus.read_ingest_batch(batch_size, 2000).await?;
         if messages.is_empty() {
             continue;

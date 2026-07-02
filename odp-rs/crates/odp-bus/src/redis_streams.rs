@@ -147,6 +147,118 @@ impl RedisBus {
             .await?;
         Ok(())
     }
+
+    /// Pending entries idle at least `min_idle_ms`, with their delivery counts.
+    /// A crashed/restarted consumer leaves its deliveries stuck here forever
+    /// unless something reclaims them — this is that "something"'s data source.
+    pub async fn pending_summary(&self, min_idle_ms: u64, count: usize) -> Result<Vec<PendingSummary>> {
+        let mut conn = self.conn.clone();
+        let stream = &self.config.streams.ingest_raw;
+        let group = &self.config.consumer_group;
+
+        let reply: RedisResult<Value> = redis::cmd("XPENDING")
+            .arg(stream)
+            .arg(group)
+            .arg("IDLE")
+            .arg(min_idle_ms)
+            .arg("-")
+            .arg("+")
+            .arg(count)
+            .query_async(&mut conn)
+            .await;
+
+        parse_xpending(reply)
+    }
+
+    /// Reassign `ids` to this consumer (resetting their idle timer and
+    /// bumping delivery count) and return their current field data.
+    pub async fn claim(&self, min_idle_ms: u64, ids: &[String]) -> Result<Vec<StreamMessage>> {
+        if ids.is_empty() {
+            return Ok(vec![]);
+        }
+        let mut conn = self.conn.clone();
+        let stream = &self.config.streams.ingest_raw;
+        let group = &self.config.consumer_group;
+        let consumer = &self.config.consumer_name;
+
+        let reply: RedisResult<Value> = redis::cmd("XCLAIM")
+            .arg(stream)
+            .arg(group)
+            .arg(consumer)
+            .arg(min_idle_ms)
+            .arg(ids)
+            .query_async(&mut conn)
+            .await;
+
+        parse_entry_array(reply)
+    }
+
+    /// Read entries by id straight off the stream — does not touch the PEL,
+    /// consumer ownership, or delivery count. Used to pull the payload of
+    /// entries that are past the DLQ threshold and must not be claimed again.
+    pub async fn read_entries_by_id(&self, ids: &[String]) -> Result<Vec<StreamMessage>> {
+        let stream = &self.config.streams.ingest_raw;
+        let mut out = Vec::with_capacity(ids.len());
+        for id in ids {
+            let mut conn = self.conn.clone();
+            let reply: RedisResult<Value> = redis::cmd("XRANGE")
+                .arg(stream)
+                .arg(id)
+                .arg(id)
+                .query_async(&mut conn)
+                .await;
+            out.extend(parse_entry_array(reply)?);
+        }
+        Ok(out)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct PendingSummary {
+    pub id: String,
+    pub delivery_count: i64,
+}
+
+fn parse_xpending(reply: RedisResult<Value>) -> Result<Vec<PendingSummary>> {
+    let value = match reply {
+        Ok(v) => v,
+        Err(e) if e.kind() == redis::ErrorKind::TypeError => return Ok(vec![]),
+        Err(e) => return Err(e.into()),
+    };
+    let entries = match value {
+        Value::Nil => return Ok(vec![]),
+        Value::Array(entries) => entries,
+        other => anyhow::bail!("unexpected XPENDING reply: {other:?}"),
+    };
+
+    let mut out = Vec::with_capacity(entries.len());
+    for entry in entries {
+        let parts = match entry {
+            Value::Array(p) if p.len() == 4 => p,
+            _ => continue,
+        };
+        let Some(id) = value_as_string(&parts[0]) else { continue };
+        let delivery_count = match &parts[3] {
+            Value::Int(n) => *n,
+            other => value_as_string(other).and_then(|s| s.parse().ok()).unwrap_or(0),
+        };
+        out.push(PendingSummary { id, delivery_count });
+    }
+    Ok(out)
+}
+
+fn parse_entry_array(reply: RedisResult<Value>) -> Result<Vec<StreamMessage>> {
+    let value = match reply {
+        Ok(v) => v,
+        Err(e) if e.kind() == redis::ErrorKind::TypeError => return Ok(vec![]),
+        Err(e) => return Err(e.into()),
+    };
+    let entries = match value {
+        Value::Nil => return Ok(vec![]),
+        Value::Array(entries) => entries,
+        other => anyhow::bail!("unexpected reply: {other:?}"),
+    };
+    Ok(entries.into_iter().filter_map(|e| parse_stream_entry(&e)).collect())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -231,5 +343,93 @@ fn value_as_string(value: &Value) -> Option<String> {
         Value::Okay => Some("OK".into()),
         Value::Int(i) => Some(i.to_string()),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn bulk(s: &str) -> Value {
+        Value::BulkString(s.as_bytes().to_vec())
+    }
+
+    fn sample_event_json() -> String {
+        r#"{"schema_version":1,"provider":"rss/feed","source_id":"550e8400-e29b-41d4-a716-446655440000","event_id":"e1","ingest_mode":"stream","source_ts":"2026-06-18T12:00:00Z","payload":{"title":"t"}}"#.to_string()
+    }
+
+    #[test]
+    fn parse_xpending_extracts_id_and_delivery_count() {
+        // XPENDING ... IDLE ... reply shape: [[id, consumer, idle_ms, delivery_count], ...]
+        let reply: RedisResult<Value> = Ok(Value::Array(vec![
+            Value::Array(vec![
+                bulk("1700000000000-0"),
+                bulk("consumer-a"),
+                Value::Int(45_000),
+                Value::Int(2),
+            ]),
+            Value::Array(vec![
+                bulk("1700000000001-0"),
+                bulk("consumer-b"),
+                Value::Int(60_000),
+                Value::Int(7),
+            ]),
+        ]));
+
+        let out = parse_xpending(reply).unwrap();
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].id, "1700000000000-0");
+        assert_eq!(out[0].delivery_count, 2);
+        assert_eq!(out[1].id, "1700000000001-0");
+        assert_eq!(out[1].delivery_count, 7);
+    }
+
+    #[test]
+    fn parse_xpending_empty_reply_is_empty_vec() {
+        let reply: RedisResult<Value> = Ok(Value::Nil);
+        assert!(parse_xpending(reply).unwrap().is_empty());
+
+        let reply: RedisResult<Value> = Ok(Value::Array(vec![]));
+        assert!(parse_xpending(reply).unwrap().is_empty());
+    }
+
+    #[test]
+    fn parse_xpending_skips_malformed_entries_without_failing() {
+        let reply: RedisResult<Value> = Ok(Value::Array(vec![
+            Value::Array(vec![bulk("bad-shape")]), // wrong arity, must be skipped not error
+            Value::Array(vec![
+                bulk("1700000000002-0"),
+                bulk("consumer-a"),
+                Value::Int(30_000),
+                Value::Int(1),
+            ]),
+        ]));
+        let out = parse_xpending(reply).unwrap();
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].id, "1700000000002-0");
+    }
+
+    #[test]
+    fn parse_entry_array_decodes_xclaim_and_xrange_shaped_replies() {
+        // XCLAIM/XRANGE reply shape: [[id, [field, value, ...]], ...] — same
+        // wire shape XREADGROUP uses per-stream, minus the outer stream-name
+        // wrapper, so this reuses parse_stream_entry.
+        let json = sample_event_json();
+        let reply: RedisResult<Value> = Ok(Value::Array(vec![Value::Array(vec![
+            bulk("1700000000000-0"),
+            Value::Array(vec![bulk("event"), bulk(&json)]),
+        ])]));
+
+        let out = parse_entry_array(reply).unwrap();
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].id, "1700000000000-0");
+        assert_eq!(out[0].event.event_id, "e1");
+        assert_eq!(out[0].event.provider, "rss/feed");
+    }
+
+    #[test]
+    fn parse_entry_array_empty_reply_is_empty_vec() {
+        let reply: RedisResult<Value> = Ok(Value::Nil);
+        assert!(parse_entry_array(reply).unwrap().is_empty());
     }
 }
