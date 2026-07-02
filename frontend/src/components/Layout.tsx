@@ -12,7 +12,7 @@ import {
   Bell,
   Server,
   Bot,
-  Chrome,
+  Monitor,
   Network,
   KeyRound,
   ChevronLeft,
@@ -142,7 +142,7 @@ export default function Layout() {
   const INFRA_GROUP: NavGroup = {
     label: '基础设施',
     items: [
-      { to: '/nodes',           label: t('nav.browsers'),      icon: Chrome },
+      { to: '/nodes',           label: t('nav.browsers'),      icon: Monitor },
       { to: '/workers',         label: t('nav.workers'),       icon: Server },
       { to: '/providers',       label: t('nav.providers'),     icon: KeyRound },
       { to: '/control/actions', label: t('nav.actionHistory'), icon: History },
@@ -180,7 +180,7 @@ export default function Layout() {
             'group flex items-center gap-3 border border-transparent px-3 py-2 text-sm transition-colors',
             isActive
               ? 'border-primary-500/45 bg-primary-500/10 text-white'
-              : 'text-zinc-500 hover:border-white/10 hover:bg-white/[0.04] hover:text-zinc-100'
+              : 'text-zinc-500 hover:border-white/10 hover:bg-white/4 hover:text-zinc-100'
           )
         }
         title={sidebarCollapsed ? label : undefined}
@@ -212,7 +212,7 @@ export default function Layout() {
         </p>
       )}
       {group.label && sidebarCollapsed && (
-        <div className="mx-3 my-2 border-t border-white/[0.06]" />
+        <div className="mx-3 my-2 border-t border-white/6" />
       )}
       {group.items.map(renderNavItem)}
     </div>
@@ -253,14 +253,14 @@ export default function Layout() {
 
               {/* Advanced drawer: the 11 CRUD admin pages, collapsed by default */}
               <div className="space-y-1">
-                {!sidebarCollapsed && <div className="mx-3 my-2 border-t border-white/[0.06]" />}
+                {!sidebarCollapsed && <div className="mx-3 my-2 border-t border-white/6" />}
                 <button
                   onClick={() => setAdvancedOpen((o) => !o)}
                   className={clsx(
                     'group flex w-full items-center gap-3 border border-transparent px-3 py-2 text-sm transition-colors',
                     advancedOpen
                       ? 'text-zinc-300'
-                      : 'text-zinc-500 hover:border-white/10 hover:bg-white/[0.04] hover:text-zinc-100'
+                      : 'text-zinc-500 hover:border-white/10 hover:bg-white/4 hover:text-zinc-100'
                   )}
                   title={sidebarCollapsed ? t('nav.advanced') : undefined}
                 >
@@ -290,7 +290,7 @@ export default function Layout() {
         <div className="flex flex-col gap-2 border-t border-white/10 px-2 py-3">
           <button
             onClick={() => navigate('/settings')}
-            className="flex items-center gap-3 border border-transparent px-3 py-2 text-sm text-zinc-500 transition-colors hover:border-white/10 hover:bg-white/[0.04] hover:text-zinc-100"
+            className="flex items-center gap-3 border border-transparent px-3 py-2 text-sm text-zinc-500 transition-colors hover:border-white/10 hover:bg-white/4 hover:text-zinc-100"
           >
             <Settings size={18} />
             {!sidebarCollapsed && <span className="font-medium uppercase tracking-[0.08em]">{t('nav.settings')}</span>}
@@ -299,7 +299,7 @@ export default function Layout() {
           {/* Collapse toggle */}
           <button
             onClick={() => setCollapsed((c) => !c)}
-            className="flex items-center gap-3 border border-transparent px-3 py-2 text-sm text-zinc-500 transition-colors hover:border-white/10 hover:bg-white/[0.04] hover:text-zinc-100"
+            className="flex items-center gap-3 border border-transparent px-3 py-2 text-sm text-zinc-500 transition-colors hover:border-white/10 hover:bg-white/4 hover:text-zinc-100"
           >
             {sidebarCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
             {!sidebarCollapsed && <span>{t('nav.collapse')}</span>}

@@ -20,16 +20,16 @@ const PROCESSOR_COLORS: Record<string, string> = {
 }
 
 function ProcessorBadge({ type, processorType }: { type: string; processorType?: string }) {
-  const cls = PROCESSOR_COLORS[processorType ?? type] ?? 'border border-white/[0.08] text-zinc-300'
+  const cls = PROCESSOR_COLORS[processorType ?? type] ?? 'border border-white/8 text-zinc-300'
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${cls}`}>
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium ${cls}`}>
       {type}
     </span>
   )
 }
 
 const inputCls =
-  'w-full border border-white/[0.08] rounded-lg px-3 py-2 text-sm bg-black/20 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-primary-500'
+  'w-full border border-white/8 rounded-lg px-3 py-2 text-sm bg-black/20 text-zinc-100 focus:outline-hidden focus:ring-2 focus:ring-primary-500'
 const labelCls = 'block text-sm font-medium text-zinc-300 mb-1'
 
 // Provider definitions: maps to processor_type + pre-filled config
@@ -284,8 +284,8 @@ function AgentModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="border border-white/[0.08] bg-black/20 shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
-        <div className="p-6 border-b border-white/[0.06]">
+      <div className="border border-white/8 bg-black/20 shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+        <div className="p-6 border-b border-white/6">
           <h2 className="text-lg font-semibold text-zinc-100">
             {isEdit ? t('agents.editTitle') : t('agents.addTitle')}
           </h2>
@@ -317,7 +317,7 @@ function AgentModal({
           </div>
 
           {/* Provider + model + credentials */}
-          <div className="rounded-lg border border-white/[0.08] p-4 space-y-3">
+          <div className="rounded-lg border border-white/8 p-4 space-y-3">
             <div className="flex items-center justify-between">
               <p className="text-xs font-medium text-zinc-400 uppercase tracking-wide">模型配置</p>
               {savedProviders.length > 0 && (
@@ -489,11 +489,11 @@ function AgentModal({
             />
 
             {/* Placeholder reference panel */}
-            <div className="rounded-lg border border-white/[0.08] bg-black/25 p-3 space-y-2.5">
+            <div className="rounded-lg border border-white/8 bg-black/25 p-3 space-y-2.5">
               {/* Site picker */}
               <div className="flex gap-2">
                 <select
-                  className="flex-1 border border-white/[0.08] rounded px-2 py-1 text-xs bg-black/20 text-zinc-100"
+                  className="flex-1 border border-white/8 rounded-sm px-2 py-1 text-xs bg-black/20 text-zinc-100"
                   value={selectedSite}
                   onChange={(e) => handleSiteChange(e.target.value)}
                 >
@@ -510,7 +510,7 @@ function AgentModal({
                 </select>
                 {siteCommands.length > 0 && (
                   <select
-                    className="flex-1 border border-white/[0.08] rounded px-2 py-1 text-xs bg-black/20 text-zinc-100"
+                    className="flex-1 border border-white/8 rounded-sm px-2 py-1 text-xs bg-black/20 text-zinc-100"
                     value={selectedCommand}
                     onChange={(e) => setSelectedCommand(e.target.value)}
                   >
@@ -543,8 +543,8 @@ function AgentModal({
                         title={available ? `插入 {{${f}}}` : '该站点无此字段'}
                         className={`px-2 py-1 text-xs rounded border transition-colors text-left ${
                           available
-                            ? 'bg-black/20 border-white/[0.08] text-zinc-300 hover:border-primary-400 hover:text-primary-300 cursor-pointer'
-                            : 'bg-black/10 border-white/[0.06] text-zinc-600 cursor-not-allowed'
+                            ? 'bg-black/20 border-white/8 text-zinc-300 hover:border-primary-400 hover:text-primary-300 cursor-pointer'
+                            : 'bg-black/10 border-white/6 text-zinc-600 cursor-not-allowed'
                         }`}
                       >
                         <span className={`block font-mono leading-tight ${!available ? 'line-through' : ''}`}>{`{{${f}}}`}</span>
@@ -566,7 +566,7 @@ function AgentModal({
                           key={f}
                           type="button"
                           onClick={() => insertPlaceholder(`{{extra_${f}}}`)}
-                          className="px-2 py-1 text-xs rounded bg-black/20 border border-amber-500/40 text-amber-300 hover:border-amber-400 hover:text-amber-200 transition-colors text-left"
+                          className="px-2 py-1 text-xs rounded-sm bg-black/20 border border-amber-500/40 text-amber-300 hover:border-amber-400 hover:text-amber-200 transition-colors text-left"
                         >
                           <span className="block font-mono leading-tight">{`{{extra_${f}}}`}</span>
                           <span className="block text-[10px] leading-tight mt-0.5 font-sans opacity-70">{FIELD_LABELS[f] ?? ''}</span>
@@ -582,7 +582,7 @@ function AgentModal({
           </div>
         </div>
 
-        <div className="p-6 border-t border-white/[0.06] flex justify-end gap-3">
+        <div className="p-6 border-t border-white/6 flex justify-end gap-3">
           <Button variant="outline" onClick={onClose}>
             {t('common.cancel')}
           </Button>
@@ -713,14 +713,14 @@ export default function AgentsPage() {
                 <div className="flex items-center gap-1">
                   <button
                     onClick={() => toggleMut.mutate({ id: a.id, enabled: !a.enabled })}
-                    className="flex items-center gap-1 px-2 py-1 rounded text-xs hover:bg-white/[0.04] text-zinc-500"
+                    className="flex items-center gap-1 px-2 py-1 rounded-sm text-xs hover:bg-white/4 text-zinc-500"
                   >
                     {a.enabled ? <ToggleRight size={12} /> : <ToggleLeft size={12} />}
                     {a.enabled ? t('common.disable') : t('common.enable')}
                   </button>
                   <button
                     onClick={() => setEditAgent(a)}
-                    className="flex items-center gap-1 px-2 py-1 rounded text-xs hover:bg-primary-500/10 text-primary-300"
+                    className="flex items-center gap-1 px-2 py-1 rounded-sm text-xs hover:bg-primary-500/10 text-primary-300"
                   >
                     <Pencil size={12} /> 编辑
                   </button>
@@ -728,7 +728,7 @@ export default function AgentsPage() {
                     onClick={() => {
                       if (confirm(t('agents.confirmDelete', { name: a.name }))) deleteMut.mutate(a.id)
                     }}
-                    className="flex items-center gap-1 px-2 py-1 rounded text-xs hover:bg-red-500/10 text-red-400"
+                    className="flex items-center gap-1 px-2 py-1 rounded-sm text-xs hover:bg-red-500/10 text-red-400"
                   >
                     <Trash2 size={12} />
                   </button>

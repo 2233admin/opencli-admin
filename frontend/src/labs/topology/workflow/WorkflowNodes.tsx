@@ -86,7 +86,7 @@ function CardNode({ data, selected }: NodeProps<Node<WfEventData>>) {
       <Handle id="out" type="source" position={Position.Right} style={pole(WF.blue)} />
       <Handle id="limit" type="source" position={Position.Bottom} style={pole(WF.cyan)} />
 
-      <div className="flex items-center gap-2 border-b border-white/10 bg-white/[0.04] px-3" style={{ height: 32 }}>
+      <div className="flex items-center gap-2 border-b border-white/10 bg-white/4 px-3" style={{ height: 32 }}>
         <span className="grid h-5 w-5 shrink-0 place-items-center" style={{ color: STATE_COLOR[state] }}>
           <Icon size={15} />
         </span>
@@ -232,7 +232,7 @@ function NoteNode({ data, selected }: NodeProps<Node<{ text: string }>>) {
   return (
     <div
       style={{ width: 244, borderRadius: 16, borderColor: selected ? 'rgba(255,255,255,0.45)' : 'rgba(255,255,255,0.12)' }}
-      className="border-2 border-dashed bg-amber-300/[0.06] px-4 py-3 text-[13px] leading-relaxed text-amber-100/80"
+      className="border-2 border-dashed bg-amber-300/6 px-4 py-3 text-[13px] leading-relaxed text-amber-100/80"
     >
       <span className="mb-1 flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-wider text-amber-200/50">
         <StickyNote size={11} /> note

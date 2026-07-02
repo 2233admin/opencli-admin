@@ -238,11 +238,11 @@ export default function SettingsPage() {
                 className={`flex items-center gap-3 rounded border px-3 py-2.5 text-left transition ${
                   skin === item.value
                     ? 'border-primary-400/80 bg-primary-500/15'
-                    : 'border-white/10 hover:border-white/25 hover:bg-white/[0.03]'
+                    : 'border-white/10 hover:border-white/25 hover:bg-white/3'
                 }`}
               >
                 <span
-                  className="grid h-9 w-9 shrink-0 place-items-center rounded border border-white/15"
+                  className="grid h-9 w-9 shrink-0 place-items-center rounded-sm border border-white/15"
                   style={{ background: item.bg }}
                 >
                   <span className="h-4 w-4 rounded-full" style={{ background: item.accent }} />
@@ -265,7 +265,7 @@ export default function SettingsPage() {
             {isTopologyLabEnabled && (
               <Link
                 to="/labs/topology"
-                className="inline-flex items-center gap-2 rounded border border-cyan-300/40 bg-cyan-300/10 px-3 py-2 text-sm font-medium text-cyan-200 hover:bg-cyan-300/20"
+                className="inline-flex items-center gap-2 rounded-sm border border-cyan-300/40 bg-cyan-300/10 px-3 py-2 text-sm font-medium text-cyan-200 hover:bg-cyan-300/20"
               >
                 <RefreshCw size={16} />
                 {t('settings.experimental.openTopology')}
@@ -273,7 +273,7 @@ export default function SettingsPage() {
             )}
             <Link
               to="/sources"
-              className="inline-flex items-center gap-2 rounded border border-white/10 px-3 py-2 text-sm font-medium text-zinc-200 hover:border-white/20 hover:bg-white/[0.03]"
+              className="inline-flex items-center gap-2 rounded-sm border border-white/10 px-3 py-2 text-sm font-medium text-zinc-200 hover:border-white/20 hover:bg-white/3"
             >
               <CircleX size={16} />
               {t('settings.experimental.openSources')}
@@ -286,7 +286,7 @@ export default function SettingsPage() {
           <p className="text-sm text-amber-200/85">{t('settings.reset.description')}</p>
           <button
             onClick={onResetPreferences}
-            className="inline-flex items-center gap-2 rounded border border-amber-300/45 px-3 py-2 text-sm font-medium text-amber-100 hover:border-amber-200 hover:bg-amber-300/15"
+            className="inline-flex items-center gap-2 rounded-sm border border-amber-300/45 px-3 py-2 text-sm font-medium text-amber-100 hover:border-amber-200 hover:bg-amber-300/15"
           >
             <CircleHelp size={16} />
             {t('settings.reset.label')}
@@ -309,7 +309,7 @@ export default function SettingsPage() {
               type="button"
               onClick={() => conversationMutation.mutate(conversationInput.trim())}
               disabled={conversationStatus === 'loading' || !conversationInput.trim()}
-              className="inline-flex items-center gap-2 rounded border border-blue-300/40 bg-blue-300/15 px-3 py-2 text-sm font-medium text-blue-100 hover:bg-blue-300/20 disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex items-center gap-2 rounded-sm border border-blue-300/40 bg-blue-300/15 px-3 py-2 text-sm font-medium text-blue-100 hover:bg-blue-300/20 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {conversationStatus === 'loading' ? t('settings.conversation.running') : t('settings.conversation.run')}
             </button>

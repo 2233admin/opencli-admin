@@ -23,7 +23,7 @@ function SourceBody(ctx: NodeRenderContext) {
   return (
     <div className="grid gap-1.5">
       {fields.map((f) => (
-        <div key={f.key} className="flex items-center justify-between gap-2 border border-white/[0.06] bg-white/[0.025] px-2 py-1 text-[11px]">
+        <div key={f.key} className="flex items-center justify-between gap-2 border border-white/6 bg-white/2.5 px-2 py-1 text-[11px]">
           <span className="shrink-0 text-zinc-600">{f.label ?? f.key}</span>
           <span className="truncate font-medium text-zinc-300">
             {formatConfigValue(ctx.config[f.key])}

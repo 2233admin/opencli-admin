@@ -5,7 +5,7 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@/lib/utils"
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[2px] border font-telemetry text-[11px] font-semibold uppercase tracking-[0.12em] ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/70 focus-visible:ring-offset-0 disabled:pointer-events-none disabled:opacity-45 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[2px] border font-telemetry text-[11px] font-semibold uppercase tracking-[0.12em] ring-offset-background transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-primary-500/70 focus-visible:ring-offset-0 disabled:pointer-events-none disabled:opacity-45 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
   {
     variants: {
       variant: {
@@ -13,10 +13,10 @@ const buttonVariants = cva(
         destructive:
           "border-signal-red/80 bg-signal-red/22 text-red-50 hover:border-signal-red hover:bg-signal-red/30",
         outline:
-          "border-white/14 bg-black/25 text-zinc-200 hover:border-white/28 hover:bg-white/[0.075] hover:text-white",
+          "border-white/14 bg-black/25 text-zinc-200 hover:border-white/28 hover:bg-white/7.5 hover:text-white",
         secondary:
-          "border-white/10 bg-white/[0.045] text-zinc-200 hover:border-white/22 hover:bg-white/[0.08] hover:text-white",
-        ghost: "border-transparent bg-transparent text-zinc-400 hover:border-white/12 hover:bg-white/[0.055] hover:text-white",
+          "border-white/10 bg-white/4.5 text-zinc-200 hover:border-white/22 hover:bg-white/8 hover:text-white",
+        ghost: "border-transparent bg-transparent text-zinc-400 hover:border-white/12 hover:bg-white/5.5 hover:text-white",
         link: "border-transparent bg-transparent px-0 text-primary-300 underline-offset-4 hover:text-primary-100 hover:underline",
       },
       size: {

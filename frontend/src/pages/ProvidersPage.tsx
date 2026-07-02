@@ -13,7 +13,7 @@ import { Button } from '../components/ui/button'
 import { Plus, Pencil, Trash2, ToggleLeft, ToggleRight, Eye, EyeOff } from 'lucide-react'
 
 const inputCls =
-  'w-full border border-white/[0.08] rounded-lg px-3 py-2 text-sm bg-black/20 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-primary-500'
+  'w-full border border-white/8 rounded-lg px-3 py-2 text-sm bg-black/20 text-zinc-100 focus:outline-hidden focus:ring-2 focus:ring-primary-500'
 const labelCls = 'block text-sm font-medium text-zinc-300 mb-1'
 
 const PROVIDER_TYPE_OPTIONS = [
@@ -81,7 +81,7 @@ function ProviderModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="telemetry-panel w-full max-w-lg">
-        <div className="p-6 border-b border-white/[0.06]">
+        <div className="p-6 border-b border-white/6">
           <h2 className="text-lg font-semibold text-zinc-100">
             {isEdit ? t('providers.editTitle') : t('providers.addTitle')}
           </h2>
@@ -192,7 +192,7 @@ function ProviderModal({
           </div>
         </div>
 
-        <div className="p-6 border-t border-white/[0.06] flex justify-end gap-3">
+        <div className="p-6 border-t border-white/6 flex justify-end gap-3">
           <Button variant="outline" onClick={onClose}>
             {t('common.cancel')}
           </Button>
@@ -278,7 +278,7 @@ export default function ProvidersPage() {
               header: t('providers.providerType'),
               width: '130px',
               render: (p) => (
-                <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${PROCESSOR_COLORS[p.provider_type] ?? 'border border-white/[0.08] bg-black/20 text-zinc-300'}`}>
+                <span className={`inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium ${PROCESSOR_COLORS[p.provider_type] ?? 'border border-white/8 bg-black/20 text-zinc-300'}`}>
                   {p.provider_type}
                 </span>
               ),
@@ -330,14 +330,14 @@ export default function ProvidersPage() {
                 <div className="flex items-center gap-1">
                   <button
                     onClick={() => toggleMut.mutate({ id: p.id, enabled: !p.enabled })}
-                    className="flex items-center gap-1 px-2 py-1 rounded text-xs hover:bg-white/[0.04] text-zinc-500"
+                    className="flex items-center gap-1 px-2 py-1 rounded-sm text-xs hover:bg-white/4 text-zinc-500"
                   >
                     {p.enabled ? <ToggleRight size={12} /> : <ToggleLeft size={12} />}
                     {p.enabled ? t('common.disable') : t('common.enable')}
                   </button>
                   <button
                     onClick={() => setEditProvider(p)}
-                    className="flex items-center gap-1 px-2 py-1 rounded text-xs hover:bg-primary-500/10 text-primary-300"
+                    className="flex items-center gap-1 px-2 py-1 rounded-sm text-xs hover:bg-primary-500/10 text-primary-300"
                   >
                     <Pencil size={12} />
                   </button>
@@ -345,7 +345,7 @@ export default function ProvidersPage() {
                     onClick={() => {
                       if (confirm(t('providers.confirmDelete', { name: p.name }))) deleteMut.mutate(p.id)
                     }}
-                    className="flex items-center gap-1 px-2 py-1 rounded text-xs hover:bg-red-500/10 text-red-400"
+                    className="flex items-center gap-1 px-2 py-1 rounded-sm text-xs hover:bg-red-500/10 text-red-400"
                   >
                     <Trash2 size={12} />
                   </button>

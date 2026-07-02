@@ -8,7 +8,7 @@ import { deleteSourceCredential, listProviders, listSkills, listSourceCredential
 // ── helpers ──────────────────────────────────────────────────────────────────
 
 const input =
-  'w-full border border-white/[0.12] bg-black/40 rounded-lg px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:ring-2 focus:ring-primary-500/30 focus:border-primary-500/60'
+  'w-full border border-white/12 bg-black/40 rounded-lg px-3 py-2 text-sm text-zinc-200 focus:outline-hidden focus:ring-2 focus:ring-primary-500/30 focus:border-primary-500/60'
 const label = 'block text-sm font-medium text-zinc-300 mb-1'
 const hint = 'mt-1 text-xs text-zinc-500'
 
@@ -166,7 +166,7 @@ function KVList({
             type="button"
             aria-label="删除参数行"
             onClick={() => remove(i)}
-            className="p-1.5 text-red-400 hover:text-red-600 flex-shrink-0"
+            className="p-1.5 text-red-400 hover:text-red-600 shrink-0"
           >
             <Trash2 size={14} />
           </button>
@@ -286,7 +286,7 @@ function CredentialField({
         type="button"
         disabled={busy || !value}
         onClick={save}
-        className="px-3 py-2 text-xs border border-primary-500/70 bg-primary-500/20 text-primary-200 hover:bg-primary-500/30 disabled:opacity-40 flex-shrink-0"
+        className="px-3 py-2 text-xs border border-primary-500/70 bg-primary-500/20 text-primary-200 hover:bg-primary-500/30 disabled:opacity-40 shrink-0"
       >
         存储
       </button>
@@ -296,7 +296,7 @@ function CredentialField({
           aria-label={`删除已存储的${label}`}
           disabled={busy}
           onClick={remove}
-          className="p-1.5 text-red-400 hover:text-red-600 flex-shrink-0"
+          className="p-1.5 text-red-400 hover:text-red-600 shrink-0"
         >
           <Trash2 size={14} />
         </button>
@@ -1063,7 +1063,7 @@ function ArgsKVList({
                 type="button"
                 aria-label="删除参数"
                 onClick={() => remove(i)}
-                className="p-1.5 text-red-400 hover:text-red-600 flex-shrink-0"
+                className="p-1.5 text-red-400 hover:text-red-600 shrink-0"
               >
                 <Trash2 size={14} />
               </button>
@@ -1078,7 +1078,7 @@ function ArgsKVList({
         <select
           aria-label="添加参数"
           name="opencli-add-param"
-          className="text-xs text-primary-400 bg-transparent border-none cursor-pointer hover:text-primary-300 mt-1 outline-none"
+          className="text-xs text-primary-400 bg-transparent border-none cursor-pointer hover:text-primary-300 mt-1 outline-hidden"
           value=""
           onChange={(e) => { if (e.target.value) addParam(e.target.value) }}
         >

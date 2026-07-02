@@ -137,7 +137,7 @@ function TrendBadge({
 
   if (diff > 0) {
     return (
-      <span className="inline-flex items-center gap-1 font-telemetry text-[11px] font-semibold uppercase tracking-[0.1em] text-emerald-300">
+      <span className="inline-flex items-center gap-1 font-telemetry text-[11px] font-semibold uppercase tracking-widest text-emerald-300">
         <TrendingUp size={12} />
         {pct !== null ? `+${pct}%` : `+${diff}`}
       </span>
@@ -145,14 +145,14 @@ function TrendBadge({
   }
   if (diff < 0) {
     return (
-      <span className="inline-flex items-center gap-1 font-telemetry text-[11px] font-semibold uppercase tracking-[0.1em] text-primary-300">
+      <span className="inline-flex items-center gap-1 font-telemetry text-[11px] font-semibold uppercase tracking-widest text-primary-300">
         <TrendingDown size={12} />
         {pct !== null ? `${pct}%` : `${diff}`}
       </span>
     )
   }
   return (
-    <span className="inline-flex items-center gap-1 font-telemetry text-[11px] font-semibold uppercase tracking-[0.1em] text-zinc-500">
+    <span className="inline-flex items-center gap-1 font-telemetry text-[11px] font-semibold uppercase tracking-widest text-zinc-500">
       <Minus size={12} />
       {noTrendLabel}
     </span>
@@ -413,14 +413,14 @@ export default function DashboardPage() {
             <p className="telemetry-label">EVENT LOG</p>
             <h2 className="mt-1 font-semibold text-zinc-100">{t('dashboard.recentRuns')}</h2>
           </div>
-          <span className="border border-white/10 bg-white/[0.03] px-2 py-1 font-telemetry text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+          <span className="border border-white/10 bg-white/3 px-2 py-1 font-telemetry text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
             POLL 15S
           </span>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[820px] text-sm" style={{ tableLayout: 'fixed' }}>
             <thead>
-              <tr className="border-b border-white/10 bg-white/[0.025]">
+              <tr className="border-b border-white/10 bg-white/2.5">
                 <th className="px-5 py-2.5 text-left font-telemetry text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-500" style={{ width: '100px' }}>{t('common.status')}</th>
                 <th className="px-5 py-2.5 text-left font-telemetry text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-500" style={{ width: '220px' }}>{t('sources.title')}</th>
                 <th className="px-5 py-2.5 text-left font-telemetry text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-500" style={{ width: '90px' }}>{t('tasks.trigger')}</th>

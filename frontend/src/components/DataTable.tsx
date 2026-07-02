@@ -18,7 +18,7 @@ export default function DataTable<T>({ columns, data, keyFn, emptyMessage = 'No 
     <div className="overflow-x-auto">
       <table className="w-full text-sm" style={{ tableLayout: 'fixed' }}>
         <thead>
-          <tr className="border-b border-white/[0.08]">
+          <tr className="border-b border-white/8">
             {columns.map((col) => (
               <th
                 key={col.key}
@@ -30,7 +30,7 @@ export default function DataTable<T>({ columns, data, keyFn, emptyMessage = 'No 
             ))}
           </tr>
         </thead>
-        <tbody className="divide-y divide-white/[0.06]">
+        <tbody className="divide-y divide-white/6">
           {data.length === 0 ? (
             <tr>
               <td colSpan={columns.length}>
@@ -43,7 +43,7 @@ export default function DataTable<T>({ columns, data, keyFn, emptyMessage = 'No 
             data.map((row) => (
               <tr
                 key={keyFn(row)}
-                className="hover:bg-white/[0.03] transition-colors"
+                className="hover:bg-white/3 transition-colors"
               >
                 {columns.map((col) => (
                   <td key={col.key} className="px-4 py-3 text-zinc-300 overflow-hidden">

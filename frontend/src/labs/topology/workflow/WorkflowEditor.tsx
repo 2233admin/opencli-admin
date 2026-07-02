@@ -156,7 +156,7 @@ function EditorInner() {
   const onConnect = useCallback(
     (params: Connection) => {
       const sourceType = nodes.find((n) => n.id === params.source)?.type
-      setEdges((eds) => addEdge(styledEdge(params, sourceType), eds))
+      setEdges((eds: Edge[]) => addEdge(styledEdge(params, sourceType), eds))
     },
     [nodes, setEdges],
   )
@@ -173,7 +173,7 @@ function EditorInner() {
       if (!type || !(type in workflowNodeTypes)) return
       const position = screenToFlowPosition({ x: event.clientX, y: event.clientY })
       const id = `${type}-${idRef.current++}`
-      setNodes((nds) => [...nds, { id, type, position, data: defaultData(type) }])
+      setNodes((nds: Node[]) => [...nds, { id, type, position, data: defaultData(type) }])
     },
     [screenToFlowPosition, setNodes],
   )
@@ -214,7 +214,7 @@ function EditorInner() {
 
       {/* node palette — drag chips onto canvas */}
       <Panel position="top-left">
-        <div className="border border-white/12 bg-black/85 p-2 backdrop-blur">
+        <div className="border border-white/12 bg-black/85 p-2 backdrop-blur-sm">
           <p className="mb-2 px-1 font-mono text-[9px] uppercase tracking-wider text-zinc-500">拖拽添加节点</p>
           <div className="grid gap-1.5">
             {PALETTE.map((item) => (
@@ -225,7 +225,7 @@ function EditorInner() {
                   event.dataTransfer.setData(DND_MIME, item.type)
                   event.dataTransfer.effectAllowed = 'move'
                 }}
-                className="flex cursor-grab items-center gap-2 border border-white/10 bg-white/[0.03] px-2 py-1.5 text-[11px] text-zinc-300 transition hover:border-white/25 hover:bg-white/[0.07] active:cursor-grabbing"
+                className="flex cursor-grab items-center gap-2 border border-white/10 bg-white/3 px-2 py-1.5 text-[11px] text-zinc-300 transition hover:border-white/25 hover:bg-white/[0.07] active:cursor-grabbing"
               >
                 <item.icon size={13} style={{ color: item.color }} />
                 <span>{item.label}</span>
@@ -237,7 +237,7 @@ function EditorInner() {
 
       {/* toolbar — selection + clear */}
       <Panel position="top-right">
-        <div className="flex items-center gap-2 border border-white/12 bg-black/85 px-2.5 py-1.5 font-mono text-[10px] text-zinc-400 backdrop-blur">
+        <div className="flex items-center gap-2 border border-white/12 bg-black/85 px-2.5 py-1.5 font-mono text-[10px] text-zinc-400 backdrop-blur-sm">
           <span>{nodes.length} 节点 · {edges.length} 连线</span>
           {(selected.nodes > 0 || selected.edges > 0) && (
             <span className="text-zinc-200">选中 {selected.nodes}N/{selected.edges}E · Del 删除</span>

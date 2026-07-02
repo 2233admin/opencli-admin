@@ -153,7 +153,7 @@ export default function SourceControlRoomPage() {
       />
 
       {source && (
-        <Card className="border-white/[0.08] bg-black/20">
+        <Card className="border-white/8 bg-black/20">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
@@ -183,8 +183,8 @@ export default function SourceControlRoomPage() {
         <>
           {/* Metric cards row — latest measurement, honestly em-dashed when the
               source has never run (measurement === null). */}
-          <Card padding={false} className="border-white/[0.08] bg-black/20">
-            <div className="border-b border-white/[0.08] px-4 py-3">
+          <Card padding={false} className="border-white/8 bg-black/20">
+            <div className="border-b border-white/8 px-4 py-3">
               <h3 className="text-sm font-semibold text-zinc-100">最新测量</h3>
               {!measurement && (
                 <p className="mt-1 text-xs text-zinc-500">该数据源尚未产生任何测量 — pre-measurement。</p>
@@ -210,7 +210,7 @@ export default function SourceControlRoomPage() {
           </Card>
 
           {/* Trend chart — raw measurement history from the new endpoint. */}
-          <Card className="border-white/[0.08] bg-black/20">
+          <Card className="border-white/8 bg-black/20">
             <h3 className="text-sm font-semibold text-zinc-100">趋势（accepted / error rate）</h3>
             {measurementsQuery.isLoading ? (
               <PageLoader />
@@ -256,7 +256,7 @@ export default function SourceControlRoomPage() {
 
           {/* Trend summary + suggested actions — display-only, same semantics
               as SourceControlStrip (no execute buttons). */}
-          <Card className="border-white/[0.08] bg-black/20">
+          <Card className="border-white/8 bg-black/20">
             <h3 className="text-sm font-semibold text-zinc-100">趋势摘要 &amp; 建议动作</h3>
             {trendView ? (
               <div className="mt-3 space-y-2">
@@ -284,7 +284,7 @@ export default function SourceControlRoomPage() {
           </Card>
 
           {/* Objective panel — resolved values + override editor. */}
-          <Card className="border-white/[0.08] bg-black/20">
+          <Card className="border-white/8 bg-black/20">
             <div className="flex items-center justify-between gap-3">
               <h3 className="text-sm font-semibold text-zinc-100">Objective</h3>
               {source?.objective_override && (

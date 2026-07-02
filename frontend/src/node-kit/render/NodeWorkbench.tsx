@@ -110,7 +110,7 @@ function PaletteChip({ spec, color, onClick }: { spec: NodeSpec; color: string; 
       onClick={onClick}
       {...listeners}
       {...attributes}
-      className={`flex w-full cursor-grab items-center gap-2 px-3 py-1.5 text-left text-[12px] text-zinc-300 transition hover:bg-white/[0.05] hover:text-white active:cursor-grabbing ${isDragging ? 'opacity-40' : ''}`}
+      className={`flex w-full cursor-grab items-center gap-2 px-3 py-1.5 text-left text-[12px] text-zinc-300 transition hover:bg-white/5 hover:text-white active:cursor-grabbing ${isDragging ? 'opacity-40' : ''}`}
     >
       <Icon className="h-3.5 w-3.5 shrink-0" style={{ color }} />
       <span className="truncate">{spec.title}</span>
@@ -167,14 +167,14 @@ function WorkbenchInner({ seed }: { seed?: WorkbenchSeed }) {
   const add = useCallback(
     (type: string, position: { x: number; y: number }) => {
       const n = makeNode(type, position, seq.current++)
-      if (n) setNodes((nds) => [...nds, n])
+      if (n) setNodes((nds: Node[]) => [...nds, n])
     },
     [setNodes],
   )
 
   const onConnect = useCallback(
     (params: Connection) =>
-      setEdges((eds) => addEdge({ ...params, type: 'default', animated: true, markerEnd: { type: MarkerType.ArrowClosed } }, eds)),
+      setEdges((eds: Edge[]) => addEdge({ ...params, type: 'default', animated: true, markerEnd: { type: MarkerType.ArrowClosed } }, eds)),
     [setEdges],
   )
 
@@ -220,12 +220,12 @@ function WorkbenchInner({ seed }: { seed?: WorkbenchSeed }) {
   const onNodeDrag = useCallback(
     (_: unknown, node: Node) => {
       const hits = new Set(getIntersectingNodes(node).map((n) => n.id))
-      setNodes((nds) => nds.map((n) => ({ ...n, className: hits.has(n.id) ? 'kit-collide' : '' })))
+      setNodes((nds: Node[]) => nds.map((n) => ({ ...n, className: hits.has(n.id) ? 'kit-collide' : '' })))
     },
     [getIntersectingNodes, setNodes],
   )
   const onNodeDragStop = useCallback(() => {
-    setNodes((nds) => nds.map((n) => (n.className ? { ...n, className: '' } : n)))
+    setNodes((nds: Node[]) => nds.map((n) => (n.className ? { ...n, className: '' } : n)))
   }, [setNodes])
 
   // ── Macro: collapse a multi-node selection into one reusable node ───────────
@@ -273,7 +273,7 @@ function WorkbenchInner({ seed }: { seed?: WorkbenchSeed }) {
         sourceHandle: `${e.source}:${e.sourceHandle ?? 'out'}`,
       })),
     ]
-    setNodes((nds) => [...nds.filter((n) => !ids.has(n.id)), macroNode])
+    setNodes((nds: Node[]) => [...nds.filter((n) => !ids.has(n.id)), macroNode])
     setEdges(rewired)
     toast.success(`已组成宏「${name}」· ${subNodes.length} 节点（双击展开）`)
   }, [selected, edges, setNodes, setEdges])
@@ -428,9 +428,9 @@ function WorkbenchInner({ seed }: { seed?: WorkbenchSeed }) {
 
   return (
     <DndContext sensors={sensors} onDragStart={(e: DragStartEvent) => setDragType((e.active.data.current?.type as string) ?? null)} onDragEnd={onDragEnd}>
-      <div className="flex h-full overflow-hidden rounded-md border border-white/[0.1] bg-black">
+      <div className="flex h-full overflow-hidden rounded-md border border-white/10 bg-black">
         {/* LEFT palette — ComfyUI-style, dnd-kit draggable */}
-        <div className="w-44 shrink-0 overflow-auto border-r border-white/[0.1] bg-[#0b0c0e] py-2">
+        <div className="w-44 shrink-0 overflow-auto border-r border-white/10 bg-[#0b0c0e] py-2">
           <p className="px-3 pb-1 font-telemetry text-[9px] font-semibold uppercase tracking-[0.14em] text-zinc-600">
             节点 · 拖入或点按
           </p>

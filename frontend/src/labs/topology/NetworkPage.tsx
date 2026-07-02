@@ -231,7 +231,7 @@ export default function NetworkPage() {
                 'inline-flex h-8 items-center gap-2 rounded-md border px-3 text-xs font-semibold transition',
                 atomMode
                   ? 'border-sky-500/50 bg-sky-500/10 text-sky-100'
-                  : 'border-white/[0.12] bg-white/[0.04] text-zinc-200 hover:border-white/[0.24] hover:bg-white/[0.08]',
+                  : 'border-white/12 bg-white/4 text-zinc-200 hover:border-white/24 hover:bg-white/8',
               )}
             >
               {atomMode ? '← 退出原子编排' : '↧ 原子编排（L3）'}
@@ -240,7 +240,7 @@ export default function NetworkPage() {
           <button
             type="button"
             onClick={refetchAll}
-            className="inline-flex h-8 items-center gap-2 rounded-md border border-white/[0.12] bg-white/[0.04] px-3 text-xs font-semibold text-zinc-200 hover:border-white/[0.24] hover:bg-white/[0.08]"
+            className="inline-flex h-8 items-center gap-2 rounded-md border border-white/12 bg-white/4 px-3 text-xs font-semibold text-zinc-200 hover:border-white/24 hover:bg-white/8"
           >
             <RefreshCw className={cn('h-3.5 w-3.5', isFetching && 'animate-spin')} />
             同步
@@ -258,7 +258,7 @@ export default function NetworkPage() {
           <NodeWorkbench key={divedSource.id} seed={sourceToAtomGraph(divedSource)} />
         </div>
       ) : (
-      <div className="relative flex h-[74vh] min-h-[560px] overflow-hidden rounded-md border border-white/[0.1] bg-black">
+      <div className="relative flex h-[74vh] min-h-[560px] overflow-hidden rounded-md border border-white/10 bg-black">
         {/* palette only makes sense at L0 root — a project's subnet (L1) is
          * derived read-only from that one source's real schedules/tasks/etc,
          * there is nothing new to "create" by dropping a channel type there. */}
@@ -286,7 +286,7 @@ export default function NetworkPage() {
         {rightPanel && (
           <div
             key={rightPanel}
-            className="m3-sheet-in absolute right-10 top-0 bottom-0 z-20 w-[380px] max-w-[calc(100%-2.5rem)] border-l border-white/[0.1] bg-[#0a0a0a] shadow-[0_0_40px_rgba(0,0,0,0.5)]"
+            className="m3-sheet-in absolute right-10 top-0 bottom-0 z-20 w-[380px] max-w-[calc(100%-2.5rem)] border-l border-white/10 bg-[#0a0a0a] shadow-[0_0_40px_rgba(0,0,0,0.5)]"
           >
             {rightPanel === 'node' && selectedNode ? (
               <NodeInspector
@@ -308,7 +308,7 @@ export default function NetworkPage() {
         )}
 
         {/* always-on vertical tab rail (pull-out handles) */}
-        <div className="absolute right-0 top-0 bottom-0 z-30 flex w-10 flex-col items-center gap-1 border-l border-white/[0.1] bg-[#0b0c0e] py-3">
+        <div className="absolute right-0 top-0 bottom-0 z-30 flex w-10 flex-col items-center gap-1 border-l border-white/10 bg-[#0b0c0e] py-3">
           <RailTab
             active={rightPanel === 'node'}
             disabled={!selectedNode}
@@ -316,7 +316,7 @@ export default function NetworkPage() {
             label="节点操作"
             onClick={() => setRightPanel((p) => (p === 'node' ? null : 'node'))}
           />
-          <div className="my-1 h-px w-5 bg-white/[0.08]" />
+          <div className="my-1 h-px w-5 bg-white/8" />
           <RailTab
             active={rightPanel === 'agent'}
             icon={Sparkles}
@@ -365,7 +365,7 @@ function RailTab({
           ? 'cursor-not-allowed text-zinc-700'
           : active
             ? 'bg-sky-500/10 text-sky-200'
-            : 'text-zinc-500 hover:bg-white/[0.04] hover:text-zinc-200',
+            : 'text-zinc-500 hover:bg-white/4 hover:text-zinc-200',
       )}
     >
       <Icon className="h-[18px] w-[18px] shrink-0" />
@@ -384,21 +384,21 @@ function Breadcrumb({
   count: number
 }) {
   return (
-    <div className="flex items-center gap-1.5 border border-white/[0.08] bg-black/30 px-3 py-2 font-code text-[11px] text-zinc-400">
+    <div className="flex items-center gap-1.5 border border-white/8 bg-black/30 px-3 py-2 font-code text-[11px] text-zinc-400">
       <button
         type="button"
         onClick={onRoot}
-        className={cn('rounded px-1.5 py-0.5 transition hover:bg-white/[0.06]', divedSourceName ? 'text-zinc-300 hover:text-white' : 'text-zinc-100')}
+        className={cn('rounded-sm px-1.5 py-0.5 transition hover:bg-white/6', divedSourceName ? 'text-zinc-300 hover:text-white' : 'text-zinc-100')}
       >
         采集网络
       </button>
       {divedSourceName && (
         <>
           <ChevronRight className="h-3 w-3 text-zinc-700" />
-          <span className="rounded px-1.5 py-0.5 text-zinc-100">{divedSourceName}</span>
+          <span className="rounded-sm px-1.5 py-0.5 text-zinc-100">{divedSourceName}</span>
         </>
       )}
-      <span className="ml-1 rounded-full border border-white/[0.1] px-2 py-0.5 text-[10px] text-zinc-500">
+      <span className="ml-1 rounded-full border border-white/10 px-2 py-0.5 text-[10px] text-zinc-500">
         {divedSourceName ? `${count} 节点` : `项目 · ${count}`}
       </span>
     </div>
@@ -430,8 +430,8 @@ function NodeInspector({
   const stageCode = readDetailString(node.data.detail, 'stage_code', node.data.kind.slice(0, 2).toUpperCase())
   return (
     <Card padding={false} className="flex h-full flex-col overflow-hidden border-0 bg-[#0a0a0a]">
-      <div className="flex items-start gap-3 border-b border-white/[0.08] px-4 py-4 pr-12">
-        <div className="grid h-10 w-10 shrink-0 place-items-center border border-white/15 bg-white/[0.04]">
+      <div className="flex items-start gap-3 border-b border-white/8 px-4 py-4 pr-12">
+        <div className="grid h-10 w-10 shrink-0 place-items-center border border-white/15 bg-white/4">
           <span className="font-code text-xs font-semibold text-zinc-200">{stageCode}</span>
         </div>
         <div className="min-w-0 flex-1">
@@ -445,7 +445,7 @@ function NodeInspector({
           type="button"
           aria-label="收起面板"
           onClick={onClose}
-          className="absolute right-3 top-3 inline-flex h-7 w-7 items-center justify-center rounded-md border border-white/[0.12] bg-black/60 text-zinc-400 hover:border-white/[0.28] hover:text-white"
+          className="absolute right-3 top-3 inline-flex h-7 w-7 items-center justify-center rounded-md border border-white/12 bg-black/60 text-zinc-400 hover:border-white/[0.28] hover:text-white"
         >
           <X className="h-4 w-4" />
         </button>

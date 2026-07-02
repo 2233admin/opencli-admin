@@ -161,7 +161,7 @@ function RecordFocusPanel({
           value={note}
           onChange={(e) => onNoteChange(e.target.value)}
           placeholder="下一步、判断、要回看的问题..."
-          className="min-h-[140px] w-full resize-y border border-white/10 bg-black/30 px-3 py-2 text-sm text-zinc-100 outline-none transition-colors placeholder:text-zinc-600 focus:border-primary-500/70 focus:ring-2 focus:ring-primary-500/20"
+          className="min-h-[140px] w-full resize-y border border-white/10 bg-black/30 px-3 py-2 text-sm text-zinc-100 outline-hidden transition-colors placeholder:text-zinc-600 focus:border-primary-500/70 focus:ring-2 focus:ring-primary-500/20"
         />
       </div>
 
@@ -354,7 +354,7 @@ export default function RecordsPage() {
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); toggleExpand(r.id); setFocusedId(r.id) }}
-              className="grid h-6 w-6 place-items-center border border-transparent text-zinc-500 transition-colors hover:border-white/10 hover:bg-white/[0.055] hover:text-zinc-100"
+              className="grid h-6 w-6 place-items-center border border-transparent text-zinc-500 transition-colors hover:border-white/10 hover:bg-white/5.5 hover:text-zinc-100"
               title={expandedId === r.id ? t('common.collapse') : t('common.expand')}
             >
               {expandedId === r.id
@@ -579,7 +579,7 @@ export default function RecordsPage() {
                 </tr>
               ))}
             </thead>
-            <tbody className="divide-y divide-white/[0.06]">
+            <tbody className="divide-y divide-white/6">
               {records.length === 0 ? (
                 <tr>
                   <td colSpan={7}>
@@ -598,9 +598,9 @@ export default function RecordsPage() {
                     onClick={() => setFocusedId(r.id)}
                     onDoubleClick={() => toggleExpand(r.id)}
                     aria-selected={focusedId === r.id}
-                    className={`cursor-pointer transition-colors hover:bg-white/[0.045] ${
-                      focusedId === r.id ? 'bg-primary-500/[0.09] shadow-[inset_2px_0_0_rgba(255,59,48,0.88)]' : ''
-                    } ${selected.has(r.id) ? 'bg-white/[0.06]' : ''}`}
+                    className={`cursor-pointer transition-colors hover:bg-white/4.5 ${
+                      focusedId === r.id ? 'bg-primary-500/9 shadow-[inset_2px_0_0_rgba(255,59,48,0.88)]' : ''
+                    } ${selected.has(r.id) ? 'bg-white/6' : ''}`}
                   >
                     {row.getVisibleCells().map((cell) => (
                       <td key={cell.id} className={tableCellClass(cell.column.id)}>

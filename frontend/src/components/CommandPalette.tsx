@@ -163,7 +163,7 @@ export default function CommandPalette() {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/75 px-4 pt-[12vh] backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-start justify-center bg-black/75 px-4 pt-[12vh] backdrop-blur-xs"
       onMouseDown={() => setOpen(false)}
     >
       <Command
@@ -177,12 +177,12 @@ export default function CommandPalette() {
           <Command.Input
             autoFocus
             placeholder={t('command.placeholder')}
-            className="h-12 min-w-0 flex-1 bg-transparent text-sm text-zinc-100 outline-none placeholder:text-zinc-600"
+            className="h-12 min-w-0 flex-1 bg-transparent text-sm text-zinc-100 outline-hidden placeholder:text-zinc-600"
           />
           <button
             type="button"
             onClick={() => setOpen(false)}
-            className="grid h-8 w-8 place-items-center border border-transparent text-zinc-500 hover:border-white/10 hover:bg-white/[0.05] hover:text-zinc-100"
+            className="grid h-8 w-8 place-items-center border border-transparent text-zinc-500 hover:border-white/10 hover:bg-white/5 hover:text-zinc-100"
             title={t('common.cancel')}
           >
             <X className="h-4 w-4" />

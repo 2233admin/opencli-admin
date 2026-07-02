@@ -117,8 +117,8 @@ export default function ActionHistoryPage() {
         />
       </div>
 
-      <Card padding={false} className="border-white/[0.1] bg-black/20">
-        <div className="flex flex-wrap items-center gap-2 border-b border-white/[0.08] px-4 py-3">
+      <Card padding={false} className="border-white/10 bg-black/20">
+        <div className="flex flex-wrap items-center gap-2 border-b border-white/8 px-4 py-3">
           <Input
             type="text"
             placeholder="source_id"
@@ -277,8 +277,8 @@ interface AdvisoryReportSectionProps {
 
 function AdvisoryReportSection({ totals, modeBreakdown, buckets, isLoading, error, onRetry }: AdvisoryReportSectionProps) {
   return (
-    <Card padding={false} className="border-white/[0.1] bg-black/20">
-      <div className="border-b border-white/[0.08] px-4 py-3">
+    <Card padding={false} className="border-white/10 bg-black/20">
+      <div className="border-b border-white/8 px-4 py-3">
         <h2 className="text-sm font-semibold text-zinc-100">Advisory Gate Report</h2>
         <p className="mt-1 text-xs leading-5 text-zinc-500">
           This is the gate data for ever flipping CONTROL_MODE to "automatic" — recovery_rate must be read per (state,
@@ -363,7 +363,7 @@ interface KillSwitchPanelProps {
 
 function KillSwitchPanel({ state, isLoading, error, onRetry, onRequestToggle, pending }: KillSwitchPanelProps) {
   return (
-    <Card className="h-fit border-white/[0.1] bg-black/20">
+    <Card className="h-fit border-white/10 bg-black/20">
       <h2 className="text-sm font-semibold text-zinc-100">Kill Switch</h2>
       <p className="mt-1 text-xs leading-5 text-zinc-500">
         Global actuator halt. When engaged, the Control Cycle never executes anything regardless of CONTROL_MODE.
@@ -383,7 +383,7 @@ function KillSwitchPanel({ state, isLoading, error, onRetry, onRequestToggle, pe
             className={
               killSwitchTone(state.engaged) === 'danger'
                 ? 'border border-red-400/35 bg-red-400/10 px-3 py-2 text-red-100'
-                : 'border border-white/[0.08] bg-black/25 px-3 py-2 text-zinc-300'
+                : 'border border-white/8 bg-black/25 px-3 py-2 text-zinc-300'
             }
           >
             <p className="font-code text-[10px] uppercase tracking-wide opacity-70">Effective state</p>

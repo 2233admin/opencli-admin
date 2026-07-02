@@ -36,7 +36,7 @@ export function NodeHeader({ icon, title, subtitle }: { icon?: string; title: st
   const Icon = iconByName(icon)
   return (
     <div className="flex items-start gap-2.5">
-      <div className="grid h-8 w-8 shrink-0 place-items-center rounded-md border border-white/10 bg-white/[0.04] text-zinc-300">
+      <div className="grid h-8 w-8 shrink-0 place-items-center rounded-md border border-white/10 bg-white/4 text-zinc-300">
         <Icon className="h-4 w-4" />
       </div>
       <div className="min-w-0 flex-1">
@@ -56,14 +56,14 @@ export function NodePort({ port, side }: { port: PortDef; side: 'input' | 'outpu
       id={port.id}
       type={side === 'input' ? 'target' : 'source'}
       position={side === 'input' ? Position.Left : Position.Right}
-      className="!h-2.5 !w-2.5 !border-2 !border-[#0a0a0c] !bg-sky-400"
+      className="h-2.5! w-2.5! border-2! border-[#0a0a0c]! bg-sky-400!"
     />
   )
 }
 
 export function NodeField({ label, value }: { label: string; value: ReactNode }) {
   return (
-    <div className="flex items-center justify-between gap-2 border border-white/[0.06] bg-white/[0.025] px-2 py-1 text-[11px]">
+    <div className="flex items-center justify-between gap-2 border border-white/6 bg-white/2.5 px-2 py-1 text-[11px]">
       <span className="shrink-0 text-zinc-600">{label}</span>
       <span className="truncate font-medium text-zinc-300">{value}</span>
     </div>
@@ -85,7 +85,7 @@ export function NodeFieldEdit({
   const label = field.label ?? field.key
   const stop = (e: ReactPointerEvent) => e.stopPropagation()
   const base =
-    'nodrag nopan w-full rounded-sm border border-white/10 bg-black/50 px-1.5 py-1 text-[11px] text-zinc-100 outline-none transition focus:border-sky-500/60'
+    'nodrag nopan w-full rounded-xs border border-white/10 bg-black/50 px-1.5 py-1 text-[11px] text-zinc-100 outline-hidden transition focus:border-sky-500/60'
 
   if (field.type === 'boolean') {
     return (
@@ -165,7 +165,7 @@ function tryParseJson(s: string): unknown {
 
 export function NodeStat({ label, value }: { label: string; value: ReactNode }) {
   return (
-    <div className="rounded-md bg-white/[0.03] px-2 py-1.5">
+    <div className="rounded-md bg-white/3 px-2 py-1.5">
       <div className="text-[10px] uppercase tracking-wide text-zinc-600">{label}</div>
       <div className="text-base font-semibold text-zinc-100">{value}</div>
     </div>
@@ -175,11 +175,11 @@ export function NodeStat({ label, value }: { label: string; value: ReactNode }) 
 export function NodeBadge({ children, tone = 'neutral' }: { children: ReactNode; tone?: 'neutral' | 'accent' | 'danger' }) {
   const cls =
     tone === 'accent'
-      ? 'border-sky-500/40 bg-sky-500/[0.12] text-sky-100'
+      ? 'border-sky-500/40 bg-sky-500/12 text-sky-100'
       : tone === 'danger'
         ? 'border-red-400/35 bg-red-400/10 text-red-100'
-        : 'border-white/10 bg-white/[0.04] text-zinc-300'
-  return <span className={`rounded-sm border px-1.5 py-0.5 text-[10px] ${cls}`}>{children}</span>
+        : 'border-white/10 bg-white/4 text-zinc-300'
+  return <span className={`rounded-xs border px-1.5 py-0.5 text-[10px] ${cls}`}>{children}</span>
 }
 
 // ── C0 Control Room v0 (docs/CONTROL_THEORY_ARCHITECTURE.md §0) ─────────────
@@ -248,7 +248,7 @@ export function ControlBadge({
   const label = CONTROL_STATE_LABEL[effective]
   const { dot, chip } = CONTROL_STATE_STYLE[effective]
   return (
-    <span className={`rounded-sm border px-1.5 py-0.5 text-[10px] ${chip}`}>
+    <span className={`rounded-xs border px-1.5 py-0.5 text-[10px] ${chip}`}>
       <span className="inline-flex items-center gap-1">
         <span className={`h-1.5 w-1.5 rounded-full ${dot}`} />
         {label}
@@ -323,7 +323,7 @@ export function SystemContextBadge({ systemContext }: { systemContext: SourceSys
   if (systemContext.stream_lag != null) bits.push(`lag ${systemContext.stream_lag}`)
   if (systemContext.pending != null) bits.push(`pending ${systemContext.pending}`)
   return (
-    <span className="rounded-sm border border-purple-400/35 bg-purple-400/10 px-1.5 py-0.5 text-[10px] text-purple-100">
+    <span className="rounded-xs border border-purple-400/35 bg-purple-400/10 px-1.5 py-0.5 text-[10px] text-purple-100">
       ODP backpressured{bits.length > 0 ? ` · ${bits.join(', ')}` : ''}
     </span>
   )
@@ -343,7 +343,7 @@ function SuggestedActionChip({ action }: { action: SuggestedControlAction }) {
         e.stopPropagation()
         setExpanded((v) => !v)
       }}
-      className="nodrag nopan flex max-w-full flex-col items-start gap-0.5 rounded-sm border border-dashed border-sky-400/30 bg-sky-400/[0.06] px-1.5 py-0.5 text-left text-[10px] text-sky-100 transition hover:border-sky-400/50"
+      className="nodrag nopan flex max-w-full flex-col items-start gap-0.5 rounded-xs border border-dashed border-sky-400/30 bg-sky-400/6 px-1.5 py-0.5 text-left text-[10px] text-sky-100 transition hover:border-sky-400/50"
     >
       <span className="inline-flex items-center gap-1">
         <span className="rounded-[2px] bg-sky-400/20 px-1 text-[8px] font-semibold uppercase tracking-wide text-sky-200">
@@ -408,7 +408,7 @@ export function NodeOpButton({
       className={`nodrag nopan flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] font-medium transition active:scale-[0.98] ${
         danger
           ? 'border-red-400/35 bg-red-400/10 text-red-100 hover:bg-red-400/20'
-          : 'border-white/[0.12] bg-white/[0.04] text-zinc-200 hover:border-white/25 hover:bg-white/[0.08]'
+          : 'border-white/12 bg-white/4 text-zinc-200 hover:border-white/25 hover:bg-white/8'
       }`}
     >
       {icon && <Icon className="h-3.5 w-3.5" />}

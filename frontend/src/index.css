@@ -1,70 +1,350 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import 'tailwindcss';
 
-@font-face {
-  font-family: 'Source Han Sans Local';
-  src:
-    local('Geist'),
-    local('Geist Sans'),
-    local('Source Han Sans CN'),
-    local('Source Han Sans SC'),
-    local('Source Han Sans'),
-    local('Noto Sans SC'),
-    local('Noto Sans CJK SC');
-  font-display: swap;
-}
+@custom-variant dark (&:is(.dark *));
 
-@font-face {
-  font-family: 'ToaHI Local';
-  src:
-    local('Geist Mono'),
-    local('ToaHI-Rg'),
-    local('ToaHI Rg'),
-    local('Toa HI Rg'),
-    local('ToaHI-Regular'),
-    local('ToaHI');
-  font-display: swap;
-}
+@theme {
+  --font-sans: var(--font-ui);
+  --font-mono: var(--font-code);
+  --font-telemetry: var(--font-telemetry);
 
-@keyframes fadeSlideIn {
-  from { opacity: 0; transform: translateY(8px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-.page-enter {
-  animation: fadeSlideIn 0.2s ease-out;
+  --color-primary-50: #eef6ff;
+  --color-primary-100: #d9ecff;
+  --color-primary-300: #7db7ff;
+  --color-primary-400: #4f9bff;
+  --color-primary-500: #2f7df6;
+  --color-primary-600: #1f63d6;
+  --color-primary-700: #194da8;
+
+  --color-signal-gold: #d6a84f;
+  --color-signal-cyan: #4fb7d6;
+  --color-signal-green: #35b779;
+  --color-signal-amber: #d99a3d;
+  --color-signal-red: #e15b64;
+  --color-signal-violet: #9b7bf3;
+
+  --color-ops-black: #050708;
+  --color-ops-panel: #0a0d10;
+  --color-ops-raised: #101418;
+  --color-ops-line: #252b31;
+  --color-ops-text: #f5f7fa;
+  --color-ops-muted: #9aa4af;
+  --color-ops-accent: #2f7df6;
 }
 
-/* ── M3 motion: emphasized easing + standard durations ──────────────── */
-:root {
-  --m3-ease-emphasized: cubic-bezier(0.2, 0, 0, 1);
-  --m3-ease-decel: cubic-bezier(0.05, 0.7, 0.1, 1);   /* enter */
-  --m3-ease-accel: cubic-bezier(0.3, 0, 0.8, 0.15);   /* exit */
-  --m3-dur-short: 200ms;
-  --m3-dur-medium: 300ms;
-  --m3-dur-long: 450ms;
-}
-@keyframes m3SheetIn {
-  from { opacity: 0; transform: translateX(28px); }
-  to   { opacity: 1; transform: translateX(0); }
-}
-@keyframes m3LevelIn {
-  from { opacity: 0; transform: scale(0.985); }
-  to   { opacity: 1; transform: scale(1); }
-}
-.m3-sheet-in { animation: m3SheetIn var(--m3-dur-medium) var(--m3-ease-decel) both; }
-.m3-level-in { animation: m3LevelIn var(--m3-dur-long) var(--m3-ease-decel) both; }
+/*
+  The default border color has changed to `currentcolor` in Tailwind CSS v4,
+  so we've added these compatibility styles to make sure everything still
+  looks the same as it did with Tailwind CSS v3.
 
-/* node-kit: collision feedback (xyflow getIntersectingNodes) */
-@keyframes kitCollide {
-  0%, 100% { transform: translateX(0); }
-  25% { transform: translateX(-2px); }
-  75% { transform: translateX(2px); }
+  If we ever want to remove these styles, we need to add an explicit border
+  color utility to any element that depends on these defaults.
+*/
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentcolor);
+  }
 }
-.react-flow__node.kit-collide { animation: kitCollide 0.16s ease-in-out infinite; }
-.react-flow__node.kit-collide > div {
-  box-shadow: 0 0 0 2px rgba(244, 63, 94, 0.85), 0 0 18px rgba(244, 63, 94, 0.35);
-  border-radius: 10px;
+
+@utility mission-canvas {
+  background: linear-gradient(180deg, #050505 0%, #080808 42%, #000 100%);
+}
+
+@utility telemetry-panel {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0)),
+    rgba(10, 10, 10, 0.92);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+      linear-gradient(90deg, rgba(255, 255, 255, 0.045) 1px, transparent 1px),
+      linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+    background-size: 32px 32px;
+    opacity: 0;
+  }
+
+  & > * {
+    position: relative;
+  }
+}
+
+@utility telemetry-label {
+  color: rgb(161 161 170);
+  font-family: var(--font-telemetry);
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+@utility telemetry-value {
+  color: rgb(250 250 250);
+  font-family: var(--font-telemetry);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+}
+
+@utility telemetry-button {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.035);
+  color: rgb(212 212 216);
+  font-family: var(--font-telemetry);
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
+
+  &:hover {
+    border-color: rgba(255, 255, 255, 0.22);
+    background: rgba(255, 255, 255, 0.075);
+    color: #fff;
+  }
+
+  &[data-active='true'] {
+    border-color: rgba(0, 110, 254, 0.75);
+    background: rgba(0, 110, 254, 0.16);
+    color: #fff;
+  }
+}
+
+@utility telemetry-input {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.35);
+  color: #fff;
+  font-family: var(--font-code);
+  font-size: 0.75rem;
+}
+
+@utility operator-surface {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0)),
+    rgba(10, 10, 10, 0.92);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+@utility operator-card {
+  position: relative;
+  min-height: 7rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0)),
+    rgba(0, 0, 0, 0.2);
+  padding: 0.75rem;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    box-shadow 120ms ease;
+
+  &:hover {
+    border-color: rgba(255, 255, 255, 0.22);
+    background-color: rgba(255, 255, 255, 0.04);
+  }
+
+  &[data-active='true'] {
+    border-color: rgba(0, 110, 254, 0.65);
+    background-color: rgba(0, 110, 254, 0.075);
+    box-shadow: inset 0 0 0 1px rgba(0, 110, 254, 0.08);
+  }
+}
+
+@utility operator-card__glyph {
+  display: grid;
+  height: 2.25rem;
+  width: 2.25rem;
+  flex-shrink: 0;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.035);
+  color: rgb(212 212 216);
+}
+
+@utility live-run-surface-grid {
+  min-height: 680px;
+
+  & .react-grid-item {
+    transition:
+      border-color 160ms cubic-bezier(0.2, 0.8, 0.2, 1),
+      box-shadow 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  & .react-grid-item.react-draggable-dragging {
+    z-index: 30;
+    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.38);
+  }
+
+  & .react-grid-item.resizing {
+    z-index: 30;
+    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.38);
+  }
+
+  & .react-grid-placeholder {
+    border: 1px solid rgba(0, 110, 254, 0.55);
+    border-radius: 6px;
+    background: rgba(0, 110, 254, 0.12);
+    opacity: 1;
+  }
+
+  & .react-resizable-handle::after {
+    border-color: rgba(161, 161, 170, 0.72);
+  }
+}
+
+@utility react-grid-item {
+  .live-run-surface-grid & {
+    transition:
+      border-color 160ms cubic-bezier(0.2, 0.8, 0.2, 1),
+      box-shadow 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  .live-run-surface-grid &.react-draggable-dragging {
+    z-index: 30;
+    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.38);
+  }
+
+  .live-run-surface-grid &.resizing {
+    z-index: 30;
+    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.38);
+  }
+}
+
+@utility react-draggable-dragging {
+  .live-run-surface-grid &.react-grid-item {
+    z-index: 30;
+    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.38);
+  }
+}
+
+@utility resizing {
+  .live-run-surface-grid &.react-grid-item {
+    z-index: 30;
+    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.38);
+  }
+}
+
+@utility react-grid-placeholder {
+  .live-run-surface-grid & {
+    border: 1px solid rgba(0, 110, 254, 0.55);
+    border-radius: 6px;
+    background: rgba(0, 110, 254, 0.12);
+    opacity: 1;
+  }
+}
+
+@utility react-resizable-handle {
+  .live-run-surface-grid &::after {
+    border-color: rgba(161, 161, 170, 0.72);
+  }
+}
+
+@layer utilities {
+  @font-face {
+    font-family: 'Source Han Sans Local';
+    src:
+      local('Geist'), local('Geist Sans'), local('Source Han Sans CN'),
+      local('Source Han Sans SC'), local('Source Han Sans'),
+      local('Noto Sans SC'), local('Noto Sans CJK SC');
+    font-display: swap;
+  }
+
+  @font-face {
+    font-family: 'ToaHI Local';
+    src:
+      local('Geist Mono'), local('ToaHI-Rg'), local('ToaHI Rg'),
+      local('Toa HI Rg'), local('ToaHI-Regular'), local('ToaHI');
+    font-display: swap;
+  }
+
+  @keyframes fadeSlideIn {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  .page-enter {
+    animation: fadeSlideIn 0.2s ease-out;
+  }
+
+  /* ── M3 motion: emphasized easing + standard durations ──────────────── */
+  :root {
+    --m3-ease-emphasized: cubic-bezier(0.2, 0, 0, 1);
+    --m3-ease-decel: cubic-bezier(0.05, 0.7, 0.1, 1); /* enter */
+    --m3-ease-accel: cubic-bezier(0.3, 0, 0.8, 0.15); /* exit */
+    --m3-dur-short: 200ms;
+    --m3-dur-medium: 300ms;
+    --m3-dur-long: 450ms;
+  }
+  @keyframes m3SheetIn {
+    from {
+      opacity: 0;
+      transform: translateX(28px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+  @keyframes m3LevelIn {
+    from {
+      opacity: 0;
+      transform: scale(0.985);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+  .m3-sheet-in {
+    animation: m3SheetIn var(--m3-dur-medium) var(--m3-ease-decel) both;
+  }
+  .m3-level-in {
+    animation: m3LevelIn var(--m3-dur-long) var(--m3-ease-decel) both;
+  }
+
+  /* node-kit: collision feedback (xyflow getIntersectingNodes) */
+  @keyframes kitCollide {
+    0%,
+    100% {
+      transform: translateX(0);
+    }
+    25% {
+      transform: translateX(-2px);
+    }
+    75% {
+      transform: translateX(2px);
+    }
+  }
+  .react-flow__node.kit-collide {
+    animation: kitCollide 0.16s ease-in-out infinite;
+  }
+  .react-flow__node.kit-collide > div {
+    box-shadow:
+      0 0 0 2px rgba(244, 63, 94, 0.85),
+      0 0 18px rgba(244, 63, 94, 0.35);
+    border-radius: 10px;
+  }
 }
 
 @layer base {
@@ -225,157 +505,6 @@
     outline: none;
     box-shadow: 0 0 0 2px #000, 0 0 0 4px #47a8ff;
   }
-}
-
-@layer components {
-  .mission-canvas {
-    background:
-      linear-gradient(180deg, #050505 0%, #080808 42%, #000 100%);
-  }
-
-  .telemetry-panel {
-    position: relative;
-    overflow: hidden;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 6px;
-    background:
-      linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0)),
-      rgba(10, 10, 10, 0.92);
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.05);
-  }
-
-  .telemetry-panel::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    background:
-      linear-gradient(90deg, rgba(255, 255, 255, 0.045) 1px, transparent 1px),
-      linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px);
-    background-size: 32px 32px;
-    opacity: 0;
-  }
-
-  .telemetry-panel > * {
-    position: relative;
-  }
-
-  .telemetry-label {
-    color: rgb(161 161 170);
-    font-family: var(--font-telemetry);
-    font-size: 0.625rem;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-  }
-
-  .telemetry-value {
-    color: rgb(250 250 250);
-    font-family: var(--font-telemetry);
-    font-variant-numeric: tabular-nums;
-    letter-spacing: 0;
-  }
-
-  .telemetry-button {
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 6px;
-    background: rgba(255, 255, 255, 0.035);
-    color: rgb(212 212 216);
-    font-family: var(--font-telemetry);
-    transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
-  }
-
-  .telemetry-button:hover {
-    border-color: rgba(255, 255, 255, 0.22);
-    background: rgba(255, 255, 255, 0.075);
-    color: #fff;
-  }
-
-  .telemetry-button[data-active='true'] {
-    border-color: rgba(0, 110, 254, 0.75);
-    background: rgba(0, 110, 254, 0.16);
-    color: #fff;
-  }
-
-  .telemetry-input {
-    border: 1px solid rgba(255, 255, 255, 0.14);
-    border-radius: 6px;
-    background: rgba(0, 0, 0, 0.35);
-    color: #fff;
-    font-family: var(--font-code);
-    font-size: 0.75rem;
-  }
-
-  .operator-surface {
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 6px;
-    background:
-      linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0)),
-      rgba(10, 10, 10, 0.92);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
-  }
-
-  .operator-card {
-    position: relative;
-    min-height: 7rem;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 6px;
-    background:
-      linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0)),
-      rgba(0, 0, 0, 0.2);
-    padding: 0.75rem;
-    transition:
-      background-color 120ms ease,
-      border-color 120ms ease,
-      box-shadow 120ms ease;
-  }
-
-  .operator-card:hover {
-    border-color: rgba(255, 255, 255, 0.22);
-    background-color: rgba(255, 255, 255, 0.04);
-  }
-
-  .operator-card[data-active='true'] {
-    border-color: rgba(0, 110, 254, 0.65);
-    background-color: rgba(0, 110, 254, 0.075);
-    box-shadow: inset 0 0 0 1px rgba(0, 110, 254, 0.08);
-  }
-
-  .operator-card__glyph {
-    display: grid;
-    height: 2.25rem;
-    width: 2.25rem;
-    flex-shrink: 0;
-    place-items: center;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    background: rgba(255, 255, 255, 0.035);
-    color: rgb(212 212 216);
-  }
-
-.live-run-surface-grid {
-min-height: 680px;
-}
-
-.live-run-surface-grid .react-grid-item {
-transition: border-color 160ms cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-
-.live-run-surface-grid .react-grid-item.react-draggable-dragging,
-.live-run-surface-grid .react-grid-item.resizing {
-z-index: 30;
-box-shadow: 0 18px 48px rgba(0, 0, 0, 0.38);
-}
-
-.live-run-surface-grid .react-grid-placeholder {
-border: 1px solid rgba(0, 110, 254, 0.55);
-border-radius: 6px;
-background: rgba(0, 110, 254, 0.12);
-opacity: 1;
-}
-
-.live-run-surface-grid .react-resizable-handle::after {
-border-color: rgba(161, 161, 170, 0.72);
-}
 }
 
 /* React Flow dark theme — UNLAYERED + specificity to beat react-flow's own style.css */

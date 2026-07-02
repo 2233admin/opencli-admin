@@ -168,7 +168,7 @@ function AddInstanceModal({ currentCount, onConfirm, onClose, isPending }: AddIn
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
       <div
-        className="border border-white/[0.08] bg-black/20 shadow-xl w-full max-w-md p-5"
+        className="border border-white/8 bg-black/20 shadow-xl w-full max-w-md p-5"
         onClick={(e) => e.stopPropagation()}
       >
         <h3 className="text-sm font-semibold text-zinc-100 mb-4">{t('browsers.addInstanceTitle')}</h3>
@@ -180,7 +180,7 @@ function AddInstanceModal({ currentCount, onConfirm, onClose, isPending }: AddIn
             <button
               onClick={() => setCount((c) => Math.max(1, c - 1))}
               disabled={count <= 1}
-              className="w-7 h-7 flex items-center justify-center rounded-full border border-white/[0.08] disabled:opacity-40 hover:border-primary-500/50"
+              className="w-7 h-7 flex items-center justify-center rounded-full border border-white/8 disabled:opacity-40 hover:border-primary-500/50"
             >
               <Minus size={12} />
             </button>
@@ -188,7 +188,7 @@ function AddInstanceModal({ currentCount, onConfirm, onClose, isPending }: AddIn
             <button
               onClick={() => setCount((c) => Math.min(10, c + 1))}
               disabled={count >= 10}
-              className="w-7 h-7 flex items-center justify-center rounded-full border border-white/[0.08] disabled:opacity-40 hover:border-primary-500/50"
+              className="w-7 h-7 flex items-center justify-center rounded-full border border-white/8 disabled:opacity-40 hover:border-primary-500/50"
             >
               <Plus size={12} />
             </button>
@@ -204,8 +204,8 @@ function AddInstanceModal({ currentCount, onConfirm, onClose, isPending }: AddIn
                 key={opt.value}
                 className={`flex gap-3 cursor-pointer rounded-lg border px-3 py-3 transition-colors ${
                   mode === opt.value
-                    ? 'border-primary-500/65 bg-primary-500/[0.075]'
-                    : 'border-white/[0.08] hover:border-white/[0.16]'
+                    ? 'border-primary-500/65 bg-primary-500/7.5'
+                    : 'border-white/8 hover:border-white/16'
                 }`}
               >
                 <input
@@ -219,7 +219,7 @@ function AddInstanceModal({ currentCount, onConfirm, onClose, isPending }: AddIn
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
                     <span className="text-sm font-medium text-zinc-100">{opt.label}</span>
-                    <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${opt.badgeCls}`}>{opt.badge}</span>
+                    <span className={`px-1.5 py-0.5 rounded-sm text-xs font-medium ${opt.badgeCls}`}>{opt.badge}</span>
                   </div>
                   <p className="text-xs font-code text-zinc-500 mb-1">{opt.tech}</p>
                   <p className="text-xs text-zinc-400 mb-1.5">{opt.desc}</p>
@@ -247,7 +247,7 @@ function AddInstanceModal({ currentCount, onConfirm, onClose, isPending }: AddIn
             value={agentUrl}
             onChange={(e) => setAgentUrl(e.target.value)}
             placeholder="http://192.168.1.100:19823"
-            className="w-full px-3 py-2 text-sm rounded-lg border border-white/[0.08] bg-black/40 text-zinc-100 focus:outline-none focus:ring-1 focus:ring-primary-500 font-code"
+            className="w-full px-3 py-2 text-sm rounded-lg border border-white/8 bg-black/40 text-zinc-100 focus:outline-hidden focus:ring-1 focus:ring-primary-500 font-code"
           />
           <p className="mt-1 text-xs text-zinc-400">填写后须选择连接协议（需配合 COLLECTION_MODE=agent）</p>
         </div>
@@ -265,8 +265,8 @@ function AddInstanceModal({ currentCount, onConfirm, onClose, isPending }: AddIn
                   key={opt.value}
                   className={`flex-1 flex gap-2 cursor-pointer rounded-lg border px-3 py-2.5 transition-colors ${
                     agentProtocol === opt.value
-                      ? 'border-primary-500/65 bg-primary-500/[0.075]'
-                      : 'border-white/[0.08] hover:border-white/[0.16]'
+                      ? 'border-primary-500/65 bg-primary-500/7.5'
+                      : 'border-white/8 hover:border-white/16'
                   }`}
                 >
                   <input
@@ -288,7 +288,7 @@ function AddInstanceModal({ currentCount, onConfirm, onClose, isPending }: AddIn
         )}
 
         {/* Preview */}
-        <div className="bg-white/[0.04] rounded-lg px-3 py-2 mb-5">
+        <div className="bg-white/4 rounded-lg px-3 py-2 mb-5">
           <p className="text-xs text-zinc-400 mb-1.5">{t('browsers.instancePreview')}</p>
           <div className="flex flex-wrap gap-1.5">
             {preview.map((name) => (
@@ -311,7 +311,7 @@ function AddInstanceModal({ currentCount, onConfirm, onClose, isPending }: AddIn
           <button
             onClick={() => onConfirm(count, false, mode, agentUrl, agentProtocol)}
             disabled={isPending || (!!agentUrl && !agentProtocol)}
-            className="w-full px-3 py-2 text-sm rounded-lg border border-white/[0.08] text-zinc-300 hover:bg-white/[0.04] disabled:opacity-50"
+            className="w-full px-3 py-2 text-sm rounded-lg border border-white/8 text-zinc-300 hover:bg-white/4 disabled:opacity-50"
           >
             {t('browsers.createLaterRestart')}
           </button>
@@ -342,7 +342,7 @@ function RemoveInstanceModal({ name, onConfirm, onClose, isPending }: RemoveInst
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
       <div
-        className="border border-white/[0.08] bg-black/20 shadow-xl w-80 p-5"
+        className="border border-white/8 bg-black/20 shadow-xl w-80 p-5"
         onClick={(e) => e.stopPropagation()}
       >
         <h3 className="text-sm font-semibold text-zinc-100 mb-2">{t('browsers.removeInstance')}</h3>
@@ -360,7 +360,7 @@ function RemoveInstanceModal({ name, onConfirm, onClose, isPending }: RemoveInst
           <button
             onClick={() => onConfirm(false)}
             disabled={isPending}
-            className="w-full px-3 py-2 text-sm rounded-lg border border-white/[0.08] text-zinc-300 hover:bg-white/[0.04] disabled:opacity-50"
+            className="w-full px-3 py-2 text-sm rounded-lg border border-white/8 text-zinc-300 hover:bg-white/4 disabled:opacity-50"
           >
             {t('browsers.removeLaterRestart')}
           </button>
@@ -414,18 +414,18 @@ function SiteDropdown({ boundSites, onSelect, isPending }: SiteDropdownProps) {
       <button
         onClick={() => setOpen((o) => !o)}
         disabled={isPending}
-        className="flex items-center gap-1 px-2 py-1 rounded-full text-xs border border-dashed border-white/[0.08] text-zinc-400 hover:border-primary-500/50 hover:text-primary-400 transition-colors disabled:opacity-50"
+        className="flex items-center gap-1 px-2 py-1 rounded-full text-xs border border-dashed border-white/8 text-zinc-400 hover:border-primary-500/50 hover:text-primary-400 transition-colors disabled:opacity-50"
       >
         <Plus size={11} />
         {t('browsers.addSite')}
       </button>
 
       {open && (
-        <div className="absolute left-0 top-full mt-1 z-50 border border-white/[0.08] bg-black/20 rounded-lg shadow-lg w-48 overflow-hidden">
-          <div className="p-2 border-b border-white/[0.06]">
+        <div className="absolute left-0 top-full mt-1 z-50 border border-white/8 bg-black/20 rounded-lg shadow-lg w-48 overflow-hidden">
+          <div className="p-2 border-b border-white/6">
             <input
               autoFocus
-              className="w-full px-2 py-1 text-xs rounded border border-white/[0.08] bg-transparent text-zinc-100 focus:outline-none focus:ring-1 focus:ring-primary-500"
+              className="w-full px-2 py-1 text-xs rounded-sm border border-white/8 bg-transparent text-zinc-100 focus:outline-hidden focus:ring-1 focus:ring-primary-500"
               placeholder={t('browsers.searchSite')}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
@@ -438,7 +438,7 @@ function SiteDropdown({ boundSites, onSelect, isPending }: SiteDropdownProps) {
               <li key={key}>
                 <button
                   onClick={() => { onSelect(key); setOpen(false); setQuery('') }}
-                  className="w-full text-left px-3 py-2 text-xs hover:bg-white/[0.04] flex items-center justify-between"
+                  className="w-full text-left px-3 py-2 text-xs hover:bg-white/4 flex items-center justify-between"
                 >
                   <span className="font-medium text-zinc-100">{label}</span>
                   <span className="text-zinc-400 font-code">{key}</span>
@@ -470,7 +470,7 @@ function ModeToggle({ endpoint, onSuccess, isDockerEndpoint }: { endpoint: Chrom
 
   return (
     <div className="flex flex-col items-end gap-1">
-      <div className="flex rounded-md overflow-hidden border border-white/[0.08] text-xs font-medium">
+      <div className="flex rounded-md overflow-hidden border border-white/8 text-xs font-medium">
         {(['bridge', 'cdp']).map((m) => (
           <button
             key={m}
@@ -483,7 +483,7 @@ function ModeToggle({ endpoint, onSuccess, isDockerEndpoint }: { endpoint: Chrom
                 ? m === 'bridge'
                   ? 'bg-primary-500/80 text-white'
                   : 'bg-amber-500/80 text-white'
-                : 'bg-black/20 text-zinc-400 hover:bg-white/[0.04]',
+                : 'bg-black/20 text-zinc-400 hover:bg-white/4',
             ].join(' ')}
           >
             {t(`workers.mode${m.charAt(0).toUpperCase() + m.slice(1)}`)}
@@ -539,7 +539,7 @@ function InstanceCard({
 
   return (
     <Card>
-      <div className="flex items-center gap-2 mb-3 pb-3 border-b border-white/[0.06]">
+      <div className="flex items-center gap-2 mb-3 pb-3 border-b border-white/6">
         {isDockerEndpoint
           ? <StatusBadge containerStatus={containerStatus} available={available} isStarting={isStarting} />
           : <span className={`inline-flex items-center gap-1 text-xs ${available ? 'text-green-500' : 'text-zinc-400'}`}>
@@ -566,18 +566,18 @@ function InstanceCard({
         )}
         <div className="ml-auto flex items-center gap-2">
           {endpoint.agent_protocol === 'ws' && (wsConnected ? (
-            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium border border-emerald-500/40 bg-emerald-500/10 text-emerald-300">
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm text-xs font-medium border border-emerald-500/40 bg-emerald-500/10 text-emerald-300">
               <Wifi size={10} />
               {t('browsers.statusWsConnected')}
             </span>
           ) : (
-            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium bg-white/[0.06] text-zinc-400">
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm text-xs font-medium bg-white/6 text-zinc-400">
               <WifiOff size={10} />
               {t('browsers.statusWsOffline')}
             </span>
           ))}
           {!!endpoint.agent_url && endpoint.agent_protocol === 'http' && (
-            <span className="px-1.5 py-0.5 rounded text-xs font-medium border border-violet-500/40 bg-violet-500/10 text-violet-300">
+            <span className="px-1.5 py-0.5 rounded-sm text-xs font-medium border border-violet-500/40 bg-violet-500/10 text-violet-300">
               HTTP Agent
             </span>
           )}
@@ -596,7 +596,7 @@ function InstanceCard({
       </div>
 
       {/* Agent URL row */}
-      <div className="mb-3 pb-3 border-b border-white/[0.06]">
+      <div className="mb-3 pb-3 border-b border-white/6">
         {editingAgentUrl ? (
           <div className="space-y-2">
             <div className="flex gap-2 items-center">
@@ -606,7 +606,7 @@ function InstanceCard({
                 value={agentUrlDraft}
                 onChange={(e) => setAgentUrlDraft(e.target.value)}
                 placeholder="http://192.168.1.100:19823"
-                className="flex-1 px-2 py-1 text-xs rounded border border-white/[0.08] bg-black/40 text-zinc-100 focus:outline-none focus:ring-1 focus:ring-primary-500 font-code"
+                className="flex-1 px-2 py-1 text-xs rounded-sm border border-white/8 bg-black/40 text-zinc-100 focus:outline-hidden focus:ring-1 focus:ring-primary-500 font-code"
               />
             </div>
             {agentUrlDraft && (
@@ -615,7 +615,7 @@ function InstanceCard({
                   <label key={p} className={`flex items-center gap-1.5 px-2 py-1 rounded border cursor-pointer text-xs transition-colors ${
                     agentProtocolDraft === p
                       ? 'border-primary-500/50 bg-primary-500/10 text-primary-300'
-                      : 'border-white/[0.08] text-zinc-400 hover:border-white/[0.14]'
+                      : 'border-white/8 text-zinc-400 hover:border-white/[0.14]'
                   }`}>
                     <input type="radio" name={`protocol-${url}`} value={p} checked={agentProtocolDraft === p}
                       onChange={() => setAgentProtocolDraft(p)}
@@ -629,13 +629,13 @@ function InstanceCard({
               <button
                 onClick={() => saveAgentUrlMutation.mutate({ agent_url: agentUrlDraft, agent_protocol: agentProtocolDraft })}
                 disabled={saveAgentUrlMutation.isPending}
-                className="px-2 py-1 text-xs rounded bg-primary-500/80 text-white hover:bg-primary-500 disabled:opacity-50"
+                className="px-2 py-1 text-xs rounded-sm bg-primary-500/80 text-white hover:bg-primary-500 disabled:opacity-50"
               >
                 保存
               </button>
               <button
                 onClick={() => { setEditingAgentUrl(false); setAgentUrlDraft(endpoint.agent_url ?? ''); setAgentProtocolDraft(endpoint.agent_protocol === 'ws' ? 'ws' : 'http') }}
-                className="px-2 py-1 text-xs rounded border border-white/[0.08] text-zinc-400 hover:bg-white/[0.04]"
+                className="px-2 py-1 text-xs rounded-sm border border-white/8 text-zinc-400 hover:bg-white/4"
               >
                 取消
               </button>
@@ -653,7 +653,7 @@ function InstanceCard({
                 <span className="font-code text-primary-400 group-hover:underline truncate max-w-[160px]">
                   {endpoint.agent_url}
                 </span>
-                <span className="px-1 py-0.5 rounded text-xs border border-white/[0.1] bg-black/40 font-code text-zinc-400">
+                <span className="px-1 py-0.5 rounded-sm text-xs border border-white/10 bg-black/40 font-code text-zinc-400">
                   {endpoint.agent_protocol ?? 'http'}
                 </span>
               </>
@@ -664,7 +664,7 @@ function InstanceCard({
         )}
       </div>
 
-      <div className="flex flex-wrap gap-2 min-h-[2rem]">
+      <div className="flex flex-wrap gap-2 min-h-8">
         {bindings.map((b) => (
           <span
             key={b.id}
@@ -821,9 +821,9 @@ export default function BrowsersPage() {
       <div className="flex items-center gap-3 mb-5 flex-wrap">
         {/* Collection mode toggle */}
         {sysConfig && (
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-white/[0.08] bg-black/20">
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-white/8 bg-black/20">
             <span className="text-xs text-zinc-400 shrink-0">{t('browsers.collectionMode')}:</span>
-            <div className="flex rounded-md overflow-hidden border border-white/[0.08] text-xs font-medium">
+            <div className="flex rounded-md overflow-hidden border border-white/8 text-xs font-medium">
               {(['local', 'agent'] as const).map((mode) => (
                 <button
                   key={mode}
@@ -835,7 +835,7 @@ export default function BrowsersPage() {
                       ? mode === 'local'
                         ? 'bg-primary-500/80 text-white'
                         : 'bg-violet-600 text-white'
-                      : 'bg-black/20 text-zinc-400 hover:bg-white/[0.04]',
+                      : 'bg-black/20 text-zinc-400 hover:bg-white/4',
                   ].join(' ')}
                 >
                   {mode === 'local' ? t('browsers.modeLocal') : t('browsers.modeAgent')}
@@ -856,7 +856,7 @@ export default function BrowsersPage() {
         <button
           onClick={() => restartMutation.mutate()}
           disabled={restartMutation.isPending || !!restartMsg}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border border-white/[0.08] text-zinc-300 hover:bg-white/[0.04] disabled:opacity-50"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border border-white/8 text-zinc-300 hover:bg-white/4 disabled:opacity-50"
         >
           <RefreshCw size={15} className={restartMsg ? 'animate-spin' : ''} />
           {restartMsg ?? t('browsers.restartApi')}
@@ -944,7 +944,7 @@ export default function BrowsersPage() {
           <Card>
             <div className="flex flex-wrap gap-2">
               {orphaned.map((b) => (
-                <span key={b.id} className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs bg-white/[0.06] text-zinc-400 border border-white/[0.08]">
+                <span key={b.id} className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs bg-white/6 text-zinc-400 border border-white/8">
                   {SITE_LABELS[b.site] ?? b.site}
                   <span className="font-code text-zinc-400">→ {instanceLabel(b.browser_endpoint)}</span>
                   <button onClick={() => deleteMutation.mutate(b.id)} className="hover:text-red-400 ml-0.5">

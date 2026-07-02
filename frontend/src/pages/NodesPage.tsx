@@ -69,7 +69,7 @@ function chromeNovncPort(cdpUrl: string, basePort = 3010): number {
 }
 
 const inputCls =
-  'w-full border border-white/[0.08] rounded-lg px-3 py-2 text-sm bg-black/40 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-primary-500'
+  'w-full border border-white/8 rounded-lg px-3 py-2 text-sm bg-black/40 text-zinc-100 focus:outline-hidden focus:ring-2 focus:ring-primary-500'
 
 // ── Install Wizard Modal ──────────────────────────────────────────────────────
 
@@ -145,19 +145,19 @@ function InstallWizardModal({ onClose, agentImageTag }: { onClose: () => void; a
       'px-3 py-1.5 rounded-md text-xs font-medium transition-colors',
       active
         ? 'bg-primary-500/80 text-white'
-        : 'bg-white/[0.06] text-zinc-400 hover:bg-white/[0.1]',
+        : 'bg-white/6 text-zinc-400 hover:bg-white/10',
     ].join(' ')
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
       <div
-        className="border border-white/[0.08] bg-black/20 shadow-xl w-full max-w-xl"
+        className="border border-white/8 bg-black/20 shadow-xl w-full max-w-xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="p-5 border-b border-white/[0.06]">
+        <div className="p-5 border-b border-white/6">
           <h2 className="text-base font-semibold text-zinc-100">新增节点</h2>
         </div>
-        <div className="flex border-b border-white/[0.06]">
+        <div className="flex border-b border-white/6">
           <button className={tabCls(method === 'docker')} onClick={() => { setMethod('docker'); reset() }}>
             Docker 直接运行
           </button>
@@ -213,20 +213,20 @@ function InstallWizardModal({ onClose, agentImageTag }: { onClose: () => void; a
             )}
           </div>
           <div className="relative">
-            <pre className="border border-white/[0.1] bg-black/40 text-zinc-100 rounded-lg px-4 py-3 text-xs font-code overflow-x-auto whitespace-pre">{cmd}</pre>
+            <pre className="border border-white/10 bg-black/40 text-zinc-100 rounded-lg px-4 py-3 text-xs font-code overflow-x-auto whitespace-pre">{cmd}</pre>
             <button
               onClick={handleCopy}
-              className="absolute top-2 right-2 flex items-center gap-1 px-2 py-1 rounded text-xs bg-white/[0.08] hover:bg-white/[0.14] text-zinc-300 transition-colors"
+              className="absolute top-2 right-2 flex items-center gap-1 px-2 py-1 rounded-sm text-xs bg-white/8 hover:bg-white/[0.14] text-zinc-300 transition-colors"
             >
               {copied ? <Check size={12} /> : <Copy size={12} />}
               {copied ? '已复制' : '复制'}
             </button>
           </div>
         </div>
-        <div className="p-5 border-t border-white/[0.06] flex justify-end">
+        <div className="p-5 border-t border-white/6 flex justify-end">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-sm rounded-lg border border-white/[0.08] hover:bg-white/[0.04] text-zinc-300"
+            className="px-4 py-2 text-sm rounded-lg border border-white/8 hover:bg-white/4 text-zinc-300"
           >
             关闭
           </button>
@@ -299,10 +299,10 @@ function NodeStatsPanel({ nodeId }: { nodeId: string }) {
             key={r}
             onClick={() => setRange(r)}
             className={[
-              'px-2 py-0.5 rounded text-xs font-medium transition-colors',
+              'px-2 py-0.5 rounded-sm text-xs font-medium transition-colors',
               range === r
                 ? 'bg-primary-500/80 text-white'
-                : 'bg-white/[0.06] text-zinc-400 hover:bg-white/[0.1]',
+                : 'bg-white/6 text-zinc-400 hover:bg-white/10',
             ].join(' ')}
           >
             {STAT_RANGE_LABELS[r]}
@@ -319,7 +319,7 @@ function NodeStatsPanel({ nodeId }: { nodeId: string }) {
             { label: '失败', value: data.failed, cls: 'text-red-400' },
             { label: '成功率', value: `${data.success_rate}%`, cls: 'text-primary-400' },
           ].map(({ label, value, cls }) => (
-            <div key={label} className="bg-white/[0.04] rounded-lg p-2 text-center">
+            <div key={label} className="bg-white/4 rounded-lg p-2 text-center">
               <p className="text-xs text-zinc-400 mb-0.5">{label}</p>
               <p className={`text-sm font-semibold ${cls ?? 'text-zinc-100'}`}>{value}</p>
             </div>
@@ -349,7 +349,7 @@ function NodeCard({ node, wsConnectedSet, onDelete, isDeletePending }: NodeCardP
   const isOnline = node.status === 'online' || (isWs && wsConnectedSet.has(node.url))
 
   return (
-    <div className="border border-white/[0.08] bg-black/20 p-4">
+    <div className="border border-white/8 bg-black/20 p-4">
       <div className="flex items-start gap-3">
         <span
           className={`mt-1 w-2.5 h-2.5 rounded-full shrink-0 ${isOnline ? 'bg-green-500' : 'bg-zinc-500'}`}
@@ -364,7 +364,7 @@ function NodeCard({ node, wsConnectedSet, onDelete, isDeletePending }: NodeCardP
               <span className="text-xs text-zinc-400">({node.label})</span>
             )}
             <span className={[
-              'px-1.5 py-0.5 rounded text-xs font-medium',
+              'px-1.5 py-0.5 rounded-sm text-xs font-medium',
               isWs
                 ? 'border border-violet-500/40 bg-violet-500/10 text-violet-300'
                 : 'border border-primary-500/40 bg-primary-500/10 text-primary-300',
@@ -374,14 +374,14 @@ function NodeCard({ node, wsConnectedSet, onDelete, isDeletePending }: NodeCardP
           </div>
           <div className="flex items-center gap-2 mt-1 flex-wrap">
             <span className={[
-              'px-1.5 py-0.5 rounded text-xs font-medium',
+              'px-1.5 py-0.5 rounded-sm text-xs font-medium',
               node.node_type === 'shell'
-                ? 'border border-white/[0.1] bg-white/[0.06] text-zinc-300'
+                ? 'border border-white/10 bg-white/6 text-zinc-300'
                 : 'border border-primary-500/40 bg-primary-500/10 text-primary-300',
             ].join(' ')}>
               {node.node_type === 'shell' ? 'Shell' : 'Docker'}
             </span>
-            <span className="px-1.5 py-0.5 rounded text-xs font-medium border border-amber-500/40 bg-amber-500/10 text-amber-300">
+            <span className="px-1.5 py-0.5 rounded-sm text-xs font-medium border border-amber-500/40 bg-amber-500/10 text-amber-300">
               {node.mode}
             </span>
             {node.ip && <span className="text-xs text-zinc-400 font-code">{node.ip}</span>}
@@ -399,10 +399,10 @@ function NodeCard({ node, wsConnectedSet, onDelete, isDeletePending }: NodeCardP
           <button
             onClick={() => setPanel((v) => (v === 'stats' ? 'none' : 'stats'))}
             className={[
-              'flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors',
+              'flex items-center gap-1 px-2 py-1 rounded-sm text-xs transition-colors',
               panel === 'stats'
                 ? 'bg-primary-500/15 text-primary-400'
-                : 'text-zinc-400 hover:bg-white/[0.04]',
+                : 'text-zinc-400 hover:bg-white/4',
             ].join(' ')}
           >
             {panel === 'stats' ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
@@ -411,10 +411,10 @@ function NodeCard({ node, wsConnectedSet, onDelete, isDeletePending }: NodeCardP
           <button
             onClick={() => setPanel((v) => (v === 'history' ? 'none' : 'history'))}
             className={[
-              'flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors',
+              'flex items-center gap-1 px-2 py-1 rounded-sm text-xs transition-colors',
               panel === 'history'
                 ? 'bg-primary-500/15 text-primary-400'
-                : 'text-zinc-400 hover:bg-white/[0.04]',
+                : 'text-zinc-400 hover:bg-white/4',
             ].join(' ')}
           >
             {panel === 'history' ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
@@ -423,7 +423,7 @@ function NodeCard({ node, wsConnectedSet, onDelete, isDeletePending }: NodeCardP
           <button
             onClick={onDelete}
             disabled={isDeletePending}
-            className="flex items-center gap-1 px-2 py-1 rounded text-xs text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-50"
+            className="flex items-center gap-1 px-2 py-1 rounded-sm text-xs text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-50"
           >
             <Trash2 size={13} />
           </button>
@@ -470,17 +470,17 @@ function SiteDropdown({ boundSites, onSelect, isPending }: SiteDropdownProps) {
       <button
         onClick={() => setOpen((o) => !o)}
         disabled={isPending}
-        className="flex items-center gap-1 px-2 py-1 rounded-full text-xs border border-dashed border-white/[0.08] text-zinc-400 hover:border-primary-500/50 hover:text-primary-400 transition-colors disabled:opacity-50"
+        className="flex items-center gap-1 px-2 py-1 rounded-full text-xs border border-dashed border-white/8 text-zinc-400 hover:border-primary-500/50 hover:text-primary-400 transition-colors disabled:opacity-50"
       >
         <Plus size={11} />
         {t('browsers.addSite')}
       </button>
       {open && (
-        <div className="absolute left-0 top-full mt-1 z-50 border border-white/[0.08] bg-black/20 rounded-lg shadow-lg w-48 overflow-hidden">
-          <div className="p-2 border-b border-white/[0.06]">
+        <div className="absolute left-0 top-full mt-1 z-50 border border-white/8 bg-black/20 rounded-lg shadow-lg w-48 overflow-hidden">
+          <div className="p-2 border-b border-white/6">
             <input
               autoFocus
-              className="w-full px-2 py-1 text-xs rounded border border-white/[0.08] bg-transparent text-zinc-100 focus:outline-none focus:ring-1 focus:ring-primary-500"
+              className="w-full px-2 py-1 text-xs rounded-sm border border-white/8 bg-transparent text-zinc-100 focus:outline-hidden focus:ring-1 focus:ring-primary-500"
               placeholder={t('browsers.searchSite')}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
@@ -493,7 +493,7 @@ function SiteDropdown({ boundSites, onSelect, isPending }: SiteDropdownProps) {
               <li key={key}>
                 <button
                   onClick={() => { onSelect(key); setOpen(false); setQuery('') }}
-                  className="w-full text-left px-3 py-2 text-xs hover:bg-white/[0.04] flex items-center justify-between"
+                  className="w-full text-left px-3 py-2 text-xs hover:bg-white/4 flex items-center justify-between"
                 >
                   <span className="font-medium text-zinc-100">{label}</span>
                   <span className="text-zinc-400 font-code">{key}</span>
@@ -576,7 +576,7 @@ function ModeToggle({ endpoint, onSuccess, isDockerEndpoint }: {
 
   return (
     <div className="flex flex-col items-end gap-1">
-      <div className="flex rounded-md overflow-hidden border border-white/[0.08] text-xs font-medium">
+      <div className="flex rounded-md overflow-hidden border border-white/8 text-xs font-medium">
         {(['bridge', 'cdp'] as const).map((m) => (
           <button
             key={m}
@@ -587,7 +587,7 @@ function ModeToggle({ endpoint, onSuccess, isDockerEndpoint }: {
               'px-2.5 py-1 transition-colors',
               mode === m
                 ? m === 'bridge' ? 'bg-primary-500/80 text-white' : 'bg-amber-500/80 text-white'
-                : 'bg-black/20 text-zinc-400 hover:bg-white/[0.04]',
+                : 'bg-black/20 text-zinc-400 hover:bg-white/4',
             ].join(' ')}
           >
             {t(`workers.mode${m.charAt(0).toUpperCase() + m.slice(1)}`)}
@@ -646,7 +646,7 @@ function InstanceCard({
 
   return (
     <Card>
-      <div className="flex items-center gap-2 mb-3 pb-3 border-b border-white/[0.06]">
+      <div className="flex items-center gap-2 mb-3 pb-3 border-b border-white/6">
         {isDockerEndpoint
           ? <StatusBadge containerStatus={containerStatus} available={available} isStarting={isStarting} />
           : <span className={`inline-flex items-center gap-1 text-xs ${available ? 'text-green-500' : 'text-zinc-400'}`}>
@@ -671,16 +671,16 @@ function InstanceCard({
         )}
         <div className="ml-auto flex items-center gap-2">
           {endpoint.agent_protocol === 'ws' && (wsConnected ? (
-            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium border border-emerald-500/40 bg-emerald-500/10 text-emerald-300">
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm text-xs font-medium border border-emerald-500/40 bg-emerald-500/10 text-emerald-300">
               <Wifi size={10} />{t('browsers.statusWsConnected')}
             </span>
           ) : (
-            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium bg-white/[0.06] text-zinc-400">
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm text-xs font-medium bg-white/6 text-zinc-400">
               <WifiOff size={10} />{t('browsers.statusWsOffline')}
             </span>
           ))}
           {!!endpoint.agent_url && endpoint.agent_protocol === 'http' && (
-            <span className="px-1.5 py-0.5 rounded text-xs font-medium border border-violet-500/40 bg-violet-500/10 text-violet-300">
+            <span className="px-1.5 py-0.5 rounded-sm text-xs font-medium border border-violet-500/40 bg-violet-500/10 text-violet-300">
               HTTP Agent
             </span>
           )}
@@ -698,7 +698,7 @@ function InstanceCard({
       </div>
 
       {/* Agent URL row */}
-      <div className="mb-3 pb-3 border-b border-white/[0.06]">
+      <div className="mb-3 pb-3 border-b border-white/6">
         {editingAgentUrl ? (
           <div className="space-y-2">
             <input
@@ -707,7 +707,7 @@ function InstanceCard({
               value={agentUrlDraft}
               onChange={(e) => setAgentUrlDraft(e.target.value)}
               placeholder="http://192.168.1.100:19823"
-              className="w-full px-2 py-1 text-xs rounded border border-white/[0.08] bg-black/40 text-zinc-100 focus:outline-none focus:ring-1 focus:ring-primary-500 font-code"
+              className="w-full px-2 py-1 text-xs rounded-sm border border-white/8 bg-black/40 text-zinc-100 focus:outline-hidden focus:ring-1 focus:ring-primary-500 font-code"
             />
             {agentUrlDraft && (
               <div className="flex gap-2">
@@ -715,7 +715,7 @@ function InstanceCard({
                   <label key={p} className={`flex items-center gap-1.5 px-2 py-1 rounded border cursor-pointer text-xs transition-colors ${
                     agentProtocolDraft === p
                       ? 'border-primary-500/50 bg-primary-500/10 text-primary-300'
-                      : 'border-white/[0.08] text-zinc-400 hover:border-white/[0.14]'
+                      : 'border-white/8 text-zinc-400 hover:border-white/[0.14]'
                   }`}>
                     <input type="radio" name={`protocol-${url}`} value={p} checked={agentProtocolDraft === p}
                       onChange={() => setAgentProtocolDraft(p)} className="accent-primary-500" />
@@ -728,11 +728,11 @@ function InstanceCard({
               <button
                 onClick={() => saveAgentUrlMutation.mutate({ agent_url: agentUrlDraft, agent_protocol: agentProtocolDraft })}
                 disabled={saveAgentUrlMutation.isPending}
-                className="px-2 py-1 text-xs rounded bg-primary-500/80 text-white hover:bg-primary-500 disabled:opacity-50"
+                className="px-2 py-1 text-xs rounded-sm bg-primary-500/80 text-white hover:bg-primary-500 disabled:opacity-50"
               >保存</button>
               <button
                 onClick={() => { setEditingAgentUrl(false); setAgentUrlDraft(endpoint.agent_url ?? ''); setAgentProtocolDraft(endpoint.agent_protocol === 'ws' ? 'ws' : 'http') }}
-                className="px-2 py-1 text-xs rounded border border-white/[0.08] text-zinc-400 hover:bg-white/[0.04]"
+                className="px-2 py-1 text-xs rounded-sm border border-white/8 text-zinc-400 hover:bg-white/4"
               >取消</button>
             </div>
           </div>
@@ -745,7 +745,7 @@ function InstanceCard({
             {endpoint.agent_url ? (
               <>
                 <span className="font-code text-primary-400 group-hover:underline truncate max-w-[160px]">{endpoint.agent_url}</span>
-                <span className="px-1 py-0.5 rounded text-xs border border-white/[0.1] bg-black/40 font-code text-zinc-400">{endpoint.agent_protocol ?? 'http'}</span>
+                <span className="px-1 py-0.5 rounded-sm text-xs border border-white/10 bg-black/40 font-code text-zinc-400">{endpoint.agent_protocol ?? 'http'}</span>
               </>
             ) : (
               <span className="text-zinc-400 italic group-hover:text-primary-400">未配置 — 点击设置</span>
@@ -754,7 +754,7 @@ function InstanceCard({
         )}
       </div>
 
-      <div className="flex flex-wrap gap-2 min-h-[2rem]">
+      <div className="flex flex-wrap gap-2 min-h-8">
         {bindings.map((b) => (
           <span
             key={b.id}
@@ -798,7 +798,7 @@ function SwitchModeModal({ target, onConfirm, onClose, isPending }: {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div className="border border-white/[0.08] bg-black/20 shadow-xl w-full max-w-sm p-5" onClick={(e) => e.stopPropagation()}>
+      <div className="border border-white/8 bg-black/20 shadow-xl w-full max-w-sm p-5" onClick={(e) => e.stopPropagation()}>
         <h3 className="text-sm font-semibold text-zinc-100 mb-2">{info.title}</h3>
         <p className="text-sm text-zinc-400 mb-3">{info.desc}</p>
         <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/40 rounded-lg px-3 py-2.5 mb-5">
@@ -816,7 +816,7 @@ function SwitchModeModal({ target, onConfirm, onClose, isPending }: {
           <button
             onClick={onClose}
             disabled={isPending}
-            className="flex-1 px-3 py-2 text-sm rounded-lg border border-white/[0.08] text-zinc-300 hover:bg-white/[0.04] disabled:opacity-50"
+            className="flex-1 px-3 py-2 text-sm rounded-lg border border-white/8 text-zinc-300 hover:bg-white/4 disabled:opacity-50"
           >
             取消
           </button>
@@ -924,7 +924,7 @@ export default function NodesPage() {
       {/* ── 采集模式 ── */}
       {sysConfig && (
         <div className="mb-6 telemetry-panel overflow-hidden">
-          <div className="px-4 py-3 border-b border-white/[0.06] flex items-center justify-between">
+          <div className="px-4 py-3 border-b border-white/6 flex items-center justify-between">
             <div>
               <span className="text-sm font-semibold text-zinc-100">{t('browsers.collectionMode')}</span>
               <span className="ml-2 text-xs text-zinc-400">切换后立即生效，影响所有任务的采集路由</span>
@@ -932,7 +932,7 @@ export default function NodesPage() {
             <button
               onClick={() => restartMut.mutate()}
               disabled={restartMut.isPending || !!restartMsg}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-white/[0.08] text-zinc-300 hover:bg-white/[0.04] disabled:opacity-50"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-white/8 text-zinc-300 hover:bg-white/4 disabled:opacity-50"
             >
               <RefreshCw size={13} className={restartMsg ? 'animate-spin' : ''} />
               {restartMsg ?? t('browsers.restartApi')}
@@ -944,14 +944,14 @@ export default function NodesPage() {
                 value: 'local' as const,
                 label: '本地模式',
                 desc: '中心直连本地 Chrome（shell 部署），不经过 Agent。适合单机开发或简单采集场景。',
-                activeCls: 'border-primary-500/65 bg-primary-500/[0.075]',
+                activeCls: 'border-primary-500/65 bg-primary-500/7.5',
                 dotCls: 'bg-primary-500',
               },
               {
                 value: 'agent' as const,
                 label: 'Agent 模式',
                 desc: '通过 Agent 节点采集，支持本地 Docker 容器或远端多机分布式部署。',
-                activeCls: 'border-violet-500/65 bg-violet-500/[0.075]',
+                activeCls: 'border-violet-500/65 bg-violet-500/7.5',
                 dotCls: 'bg-violet-500',
               },
             ] as const).map(({ value, label, desc, activeCls, dotCls }) => {
@@ -963,7 +963,7 @@ export default function NodesPage() {
                   onClick={() => !isActive && setPendingMode(value)}
                   className={[
                     'flex items-start gap-3 text-left rounded-lg border-2 px-4 py-3 transition-colors',
-                    isActive ? activeCls : 'border-white/[0.08] hover:border-white/[0.16]',
+                    isActive ? activeCls : 'border-white/8 hover:border-white/16',
                   ].join(' ')}
                 >
                   <span className={`mt-1 w-3 h-3 rounded-full shrink-0 border-2 ${isActive ? `${dotCls} border-transparent` : 'border-white/[0.14]'}`} />
@@ -982,7 +982,7 @@ export default function NodesPage() {
       {collectionMode === 'local' && (
         <div>
           {localEndpoints.length === 0 ? (
-            <div className="text-center py-12 border border-dashed border-white/[0.08]">
+            <div className="text-center py-12 border border-dashed border-white/8">
               <p className="text-sm text-zinc-400">未检测到本地浏览器端点</p>
               <p className="text-xs text-zinc-400 mt-1">请确保 Chrome 以调试模式启动（Bridge 或 CDP）</p>
             </div>
@@ -1025,7 +1025,7 @@ export default function NodesPage() {
             </button>
           </div>
           {nodes.length === 0 ? (
-            <div className="text-center py-12 border border-dashed border-white/[0.08]">
+            <div className="text-center py-12 border border-dashed border-white/8">
               <p className="text-sm text-zinc-400">{t('browsers.noNodes')}</p>
               <p className="text-xs text-zinc-400 mt-1">{t('browsers.noNodesHint')}</p>
               <button

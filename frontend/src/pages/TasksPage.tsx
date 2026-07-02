@@ -430,7 +430,7 @@ function SurfacePanel({
 }) {
   return (
     <section className="flex h-full min-h-0 flex-col overflow-hidden border border-white/10 bg-black/20">
-      <header className="run-surface-handle flex cursor-move items-center justify-between gap-3 border-b border-white/10 bg-white/[0.025] px-3 py-2">
+      <header className="run-surface-handle flex cursor-move items-center justify-between gap-3 border-b border-white/10 bg-white/2.5 px-3 py-2">
         <div className="flex min-w-0 items-center gap-2">
           <span className="grid h-7 w-7 shrink-0 place-items-center border border-white/10 bg-black/25 text-zinc-400">
             <Icon size={14} />
@@ -696,7 +696,7 @@ function LiveCollectionView({
               </DialogDescription>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="outline" className={connectionState === 'live' ? 'border-sky-400/40 bg-sky-400/10 text-sky-100' : 'border-white/14 bg-white/[0.04] text-zinc-300'}>
+              <Badge variant="outline" className={connectionState === 'live' ? 'border-sky-400/40 bg-sky-400/10 text-sky-100' : 'border-white/14 bg-white/4 text-zinc-300'}>
                 {connectionState === 'live' ? 'SSE LIVE' : connectionState.toUpperCase()}
               </Badge>
               {selectedRun && <StatusBadge status={selectedRun.status} />}
@@ -873,7 +873,7 @@ export default function TasksPage() {
         </Card>
         <Card className="p-4">
           <div className="flex items-center gap-3">
-            <span className="grid h-9 w-9 place-items-center border border-white/10 bg-white/[0.04] text-zinc-300">
+            <span className="grid h-9 w-9 place-items-center border border-white/10 bg-white/4 text-zinc-300">
               <CheckCircle2 size={17} />
             </span>
             <div>
@@ -900,7 +900,7 @@ export default function TasksPage() {
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
                 placeholder="搜索数据源、任务 ID、错误"
-                className="h-9 w-full border border-white/10 bg-black/30 pl-9 pr-3 text-sm text-zinc-100 outline-none transition-colors placeholder:text-zinc-600 focus:border-primary-500/60"
+                className="h-9 w-full border border-white/10 bg-black/30 pl-9 pr-3 text-sm text-zinc-100 outline-hidden transition-colors placeholder:text-zinc-600 focus:border-primary-500/60"
               />
             </label>
           </div>

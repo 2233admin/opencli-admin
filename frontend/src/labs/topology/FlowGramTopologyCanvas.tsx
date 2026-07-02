@@ -77,8 +77,8 @@ function FlowGramTopologyNode({
         onClick={() => onSelectNode(nodeId)}
         onDoubleClick={() => onNodeDoubleClick?.(nodeId)}
         className={[
-          'block min-h-[190px] w-[272px] rounded-md border bg-[#0a0a0a] px-3 py-3 text-left shadow-[0_1px_2px_rgba(0,0,0,0.16)] transition duration-200 ease-[var(--m3-ease-emphasized)] hover:border-white/[0.22] active:scale-[0.99]',
-          selected ? 'border-blue-500 ring-2 ring-blue-500/[0.25]' : 'border-white/[0.12]',
+          'block min-h-[190px] w-[272px] rounded-md border bg-[#0a0a0a] px-3 py-3 text-left shadow-[0_1px_2px_rgba(0,0,0,0.16)] transition duration-200 ease-(--m3-ease-emphasized) hover:border-white/22 active:scale-[0.99]',
+          selected ? 'border-blue-500 ring-2 ring-blue-500/25' : 'border-white/12',
         ].join(' ')}
       >
         <div className="flex items-start gap-3">
@@ -112,7 +112,7 @@ function FlowGramTopologyNode({
                 e.stopPropagation()
                 onNodeDoubleClick?.(nodeId)
               }}
-              className="flex items-center justify-between gap-2 border border-sky-500/40 bg-sky-500/[0.12] px-2 py-1 font-medium text-sky-100 transition hover:bg-sky-500/20"
+              className="flex items-center justify-between gap-2 border border-sky-500/40 bg-sky-500/12 px-2 py-1 font-medium text-sky-100 transition hover:bg-sky-500/20"
             >
               <span>进入子网</span>
               <span aria-hidden className="text-sky-300">›</span>
@@ -126,14 +126,14 @@ function FlowGramTopologyNode({
           {topology.badges.slice(0, 2).map((badge) => (
             <span
               key={badge}
-              className="max-w-[116px] truncate rounded-sm border border-white/10 bg-white/[0.04] px-1.5 py-0.5 text-[10px] text-zinc-300"
+              className="max-w-[116px] truncate rounded-xs border border-white/10 bg-white/4 px-1.5 py-0.5 text-[10px] text-zinc-300"
               title={badge}
             >
               {badge}
             </span>
           ))}
           {missingCount > 0 && (
-            <span className="rounded-sm border border-red-400/35 bg-red-400/10 px-1.5 py-0.5 text-[10px] font-semibold text-red-100">
+            <span className="rounded-xs border border-red-400/35 bg-red-400/10 px-1.5 py-0.5 text-[10px] font-semibold text-red-100">
               {missingCount} gaps
             </span>
           )}
@@ -155,7 +155,7 @@ function NodeFact({
   const valueClass =
     tone === 'warning' ? 'text-amber-100' : tone === 'action' ? 'text-sky-100' : 'text-zinc-300'
   return (
-    <div className="flex min-w-0 items-center justify-between gap-2 border border-white/[0.06] bg-white/[0.025] px-2 py-1">
+    <div className="flex min-w-0 items-center justify-between gap-2 border border-white/6 bg-white/2.5 px-2 py-1">
       <span className="shrink-0 text-zinc-600">{label}</span>
       <span className={`truncate font-medium ${valueClass}`} title={value}>
         {value}

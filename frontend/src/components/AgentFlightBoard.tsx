@@ -89,9 +89,9 @@ const KIND_META: Record<FlightKind, {
 }
 
 const STATUS_RING: Record<FlightStatus, string> = {
-  done: 'border-white/14 bg-white/[0.045]',
-  running: 'border-zinc-100/45 bg-zinc-100/[0.075]',
-  failed: 'border-signal-red/60 bg-signal-red/[0.12]',
+  done: 'border-white/14 bg-white/4.5',
+  running: 'border-zinc-100/45 bg-zinc-100/7.5',
+  failed: 'border-signal-red/60 bg-signal-red/12',
   queued: 'border-white/10 bg-black/20 opacity-60',
 }
 
@@ -305,9 +305,9 @@ function FlightNode({
       onClick={onSelect}
       data-active={active}
       data-flight-step={step.id}
-      className={`group relative flex min-h-[154px] w-[216px] shrink-0 flex-col border p-3 text-left transition-colors ${STATUS_RING[step.status]} data-[active=true]:border-primary-500/70 data-[active=true]:bg-primary-500/[0.08]`}
+      className={`group relative flex min-h-[154px] w-[216px] shrink-0 flex-col border p-3 text-left transition-colors ${STATUS_RING[step.status]} data-[active=true]:border-primary-500/70 data-[active=true]:bg-primary-500/8`}
     >
-      <div className={`absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r ${meta.rail}`} />
+      <div className={`absolute inset-x-0 top-0 h-[2px] bg-linear-to-r ${meta.rail}`} />
       <div className="flex items-start gap-2">
         <span className={`grid h-8 w-8 shrink-0 place-items-center border ${meta.chip}`}>
           <Icon size={15} />

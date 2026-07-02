@@ -62,7 +62,7 @@ describe('formatErrorRate', () => {
     assert.equal(formatErrorRate(null), '—')
   })
 
-  it('renders a rounded percentage', () => {
+  it('renders a rounded-sm percentage', () => {
     assert.equal(formatErrorRate(0.125), '13%')
     assert.equal(formatErrorRate(0), '0%')
     assert.equal(formatErrorRate(1), '100%')

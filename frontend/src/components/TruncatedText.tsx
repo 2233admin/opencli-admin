@@ -9,7 +9,7 @@ interface Props {
 
 export default function TruncatedText({ text, lines = 2, className = '' }: Props) {
   const [rect, setRect] = useState<DOMRect | null>(null)
-  const hideTimer = useRef<ReturnType<typeof setTimeout>>()
+  const hideTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   const open = (e: React.MouseEvent<HTMLDivElement>) => {
     clearTimeout(hideTimer.current)
@@ -57,7 +57,7 @@ export default function TruncatedText({ text, lines = 2, className = '' }: Props
         createPortal(
           <div
             style={popoverStyle()}
-            className="bg-black/90 border border-white/[0.08] text-zinc-100 text-xs p-3 rounded-lg shadow-2xl select-text whitespace-pre-wrap break-all max-h-48 overflow-y-auto"
+            className="bg-black/90 border border-white/8 text-zinc-100 text-xs p-3 rounded-lg shadow-2xl select-text whitespace-pre-wrap break-all max-h-48 overflow-y-auto"
             onMouseEnter={keepOpen}
             onMouseLeave={close}
           >

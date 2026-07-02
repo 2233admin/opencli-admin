@@ -1,6 +1,6 @@
 // Run log strip — sequential per-node execution transcript for a runGraph()
 // call, rendered bottom-of-canvas. Control-room visual canon (see
-// src/pages/ActionHistoryPage.tsx): border-white/[0.08] bg-black/20,
+// src/pages/ActionHistoryPage.tsx): border-white/8 bg-black/20,
 // font-code text-[11px], zinc tiers for neutral/dim text. Purely a projection
 // of runState (owned by NodeWorkbench) through the framework-free
 // runtime/runLog.ts helpers — no local state here.
@@ -27,7 +27,7 @@ const STATE_COLOR: Record<RunNodeState, string> = {
 function RunLogRow({ row }: { row: RunLogRowView }) {
   const Icon = STATE_ICON[row.state]
   return (
-    <div className="flex items-center gap-2 border-b border-white/[0.05] px-3 py-1 last:border-b-0">
+    <div className="flex items-center gap-2 border-b border-white/5 px-3 py-1 last:border-b-0">
       <Icon size={11} className={`shrink-0 ${STATE_COLOR[row.state]} ${row.state === 'running' ? 'animate-spin' : ''}`} />
       <span className="w-24 shrink-0 truncate text-zinc-300" title={row.title}>
         {row.title}
@@ -59,8 +59,8 @@ export function RunLogPanel({
   const summary = summarizeRun(runState)
 
   return (
-    <div className="absolute inset-x-3 bottom-3 z-10 max-h-40 overflow-hidden rounded-md border border-white/[0.08] bg-black/20 backdrop-blur">
-      <div className="flex items-center justify-between border-b border-white/[0.08] px-3 py-1.5">
+    <div className="absolute inset-x-3 bottom-3 z-10 max-h-40 overflow-hidden rounded-md border border-white/8 bg-black/20 backdrop-blur-sm">
+      <div className="flex items-center justify-between border-b border-white/8 px-3 py-1.5">
         <span className="font-telemetry text-[9px] font-semibold uppercase tracking-[0.14em] text-zinc-600">运行日志</span>
         <span className="font-code text-[11px] text-zinc-400">{summary.label}</span>
       </div>

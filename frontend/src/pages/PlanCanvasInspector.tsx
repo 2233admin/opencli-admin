@@ -89,8 +89,8 @@ export function PlanCanvasInspector({
   const isKnownChannel = KNOWN_CHANNEL_TYPES.includes(channelType as ChannelType)
 
   return (
-    <Card padding={false} className="flex h-full w-[380px] shrink-0 flex-col overflow-hidden border-0 border-l border-white/[0.1] bg-[#0a0a0a]">
-      <div className="flex items-start justify-between gap-2 border-b border-white/[0.08] px-4 py-3">
+    <Card padding={false} className="flex h-full w-[380px] shrink-0 flex-col overflow-hidden border-0 border-l border-white/10 bg-[#0a0a0a]">
+      <div className="flex items-start justify-between gap-2 border-b border-white/8 px-4 py-3">
         <div className="min-w-0">
           <p className="telemetry-label">{t('planCanvas.inspectorTitle')}</p>
           <h2 className="mt-0.5 truncate text-sm font-semibold text-white">{node.label || node.id}</h2>
@@ -100,14 +100,14 @@ export function PlanCanvasInspector({
           type="button"
           aria-label={t('common.cancel')}
           onClick={onClose}
-          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-white/[0.12] bg-black/60 text-zinc-400 hover:border-white/[0.28] hover:text-white"
+          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-white/12 bg-black/60 text-zinc-400 hover:border-white/[0.28] hover:text-white"
         >
           <X className="h-4 w-4" />
         </button>
       </div>
 
       {errors.length > 0 && (
-        <div className="grid gap-1 border-b border-red-500/20 bg-red-500/[0.06] px-4 py-2.5">
+        <div className="grid gap-1 border-b border-red-500/20 bg-red-500/6 px-4 py-2.5">
           {errors.map((message, i) => (
             <NodeBadge key={i} tone="danger">
               {message}
@@ -132,7 +132,7 @@ export function PlanCanvasInspector({
               </label>
               <input
                 id="plan-canvas-source-name"
-                className="w-full rounded-lg border border-white/[0.12] bg-black/40 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-primary-500/60 focus:ring-2 focus:ring-primary-500/30"
+                className="w-full rounded-lg border border-white/12 bg-black/40 px-3 py-2 text-sm text-zinc-200 outline-hidden focus:border-primary-500/60 focus:ring-2 focus:ring-primary-500/30"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
               />
@@ -144,7 +144,7 @@ export function PlanCanvasInspector({
               </label>
               <select
                 id="plan-canvas-channel-type"
-                className="w-full rounded-lg border border-white/[0.12] bg-black/40 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-primary-500/60 focus:ring-2 focus:ring-primary-500/30"
+                className="w-full rounded-lg border border-white/12 bg-black/40 px-3 py-2 text-sm text-zinc-200 outline-hidden focus:border-primary-500/60 focus:ring-2 focus:ring-primary-500/30"
                 value={channelType}
                 onChange={(e) => onParamsChange({ ...node.params, channel_type: e.target.value })}
               >
@@ -216,11 +216,11 @@ export function PlanCanvasInspector({
         )}
       </div>
 
-      <div className="border-t border-white/[0.08] p-3">
+      <div className="border-t border-white/8 p-3">
         <button
           type="button"
           onClick={onDetach}
-          className="inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-md border border-white/[0.12] bg-white/[0.02] text-[11px] font-semibold text-zinc-300 hover:border-red-400/40 hover:text-red-200"
+          className="inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-md border border-white/12 bg-white/2 text-[11px] font-semibold text-zinc-300 hover:border-red-400/40 hover:text-red-200"
         >
           {t('planCanvas.detachNode')}
         </button>

@@ -42,7 +42,7 @@ export function NodeSearchMenu({
             else if (e.key === 'Enter' && filtered[0]) onPick(filtered[0].type)
           }}
           placeholder="搜索节点…"
-          className="w-full border-b border-white/10 bg-transparent px-3 py-2 text-sm text-zinc-100 outline-none placeholder:text-zinc-600"
+          className="w-full border-b border-white/10 bg-transparent px-3 py-2 text-sm text-zinc-100 outline-hidden placeholder:text-zinc-600"
         />
         <div className="max-h-64 overflow-auto py-1">
           {filtered.length === 0 && <div className="px-3 py-2 text-xs text-zinc-600">无匹配节点</div>}

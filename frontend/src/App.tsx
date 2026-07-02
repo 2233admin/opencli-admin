@@ -31,7 +31,7 @@ function LazyRoute({ children }: { children: ReactNode }) {
 
 export default function App() {
   return (
-    <BrowserRouter future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
+    <BrowserRouter>
       <Routes>
         <Route path="/" element={<Layout />}>
           <Route index element={<Navigate to={isTopologyLabEnabled ? '/labs/topology' : '/dashboard'} replace />} />

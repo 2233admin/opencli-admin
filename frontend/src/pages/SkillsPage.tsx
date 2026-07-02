@@ -85,7 +85,7 @@ function RecordWizard({ onClose, onDistilled }: { onClose: () => void; onDistill
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-xs">
       <div className="flex max-h-[90vh] w-full max-w-2xl flex-col border border-white/10 bg-zinc-950 shadow-2xl">
         <div className="border-b border-white/10 p-5">
           <p className="telemetry-label">
@@ -107,7 +107,7 @@ function RecordWizard({ onClose, onDistilled }: { onClose: () => void; onDistill
                   <label className="telemetry-label mb-1 block" htmlFor="record-domain">domain</label>
                   <input
                     id="record-domain"
-                    className="w-full border border-white/10 bg-black/30 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-primary-500/70"
+                    className="w-full border border-white/10 bg-black/30 px-3 py-2 text-sm text-zinc-100 outline-hidden focus:border-primary-500/70"
                     value={domain}
                     onChange={(e) => setDomain(e.target.value)}
                     placeholder="example.com"
@@ -117,7 +117,7 @@ function RecordWizard({ onClose, onDistilled }: { onClose: () => void; onDistill
                   <label className="telemetry-label mb-1 block" htmlFor="record-capability">capability</label>
                   <input
                     id="record-capability"
-                    className="w-full border border-white/10 bg-black/30 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-primary-500/70"
+                    className="w-full border border-white/10 bg-black/30 px-3 py-2 text-sm text-zinc-100 outline-hidden focus:border-primary-500/70"
                     value={capability}
                     onChange={(e) => setCapability(e.target.value)}
                     placeholder="open-list"
@@ -128,7 +128,7 @@ function RecordWizard({ onClose, onDistilled }: { onClose: () => void; onDistill
                 <label className="telemetry-label mb-1 block" htmlFor="record-endpoint">Chrome 端点</label>
                 <select
                   id="record-endpoint"
-                  className="w-full border border-white/10 bg-black/30 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-primary-500/70"
+                  className="w-full border border-white/10 bg-black/30 px-3 py-2 text-sm text-zinc-100 outline-hidden focus:border-primary-500/70"
                   value={cdpEndpoint}
                   onChange={(e) => setCdpEndpoint(e.target.value)}
                 >
@@ -247,7 +247,7 @@ export default function SkillsPage() {
       />
 
       {openProposalCount > 0 && (
-        <div className="flex items-center gap-3 border border-amber-400/25 bg-amber-400/[0.06] px-4 py-3">
+        <div className="flex items-center gap-3 border border-amber-400/25 bg-amber-400/6 px-4 py-3">
           <AlertTriangle size={16} className="shrink-0 text-amber-300" />
           <p className="text-sm text-amber-100">
             {openProposalCount} 个技能有待处理的纠错提案 — 点进详情页重蒸或驳回。

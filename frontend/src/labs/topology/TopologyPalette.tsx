@@ -30,7 +30,7 @@ export function TopologyPalette({ onCreated }: TopologyPaletteProps) {
 
   return (
     <>
-      <div className="flex w-40 shrink-0 flex-col overflow-auto border-r border-white/[0.08] bg-black/20 py-2">
+      <div className="flex w-40 shrink-0 flex-col overflow-auto border-r border-white/8 bg-black/20 py-2">
         <p className="px-3 pb-1 font-code text-[9px] font-semibold uppercase tracking-[0.14em] text-zinc-600">
           新建采集源 · 拖入或点按
         </p>
@@ -65,8 +65,8 @@ function PaletteEntry({ item, onClick }: { item: PaletteSourceItem; onClick: () 
       onClick={onClick}
       title={item.hint}
       className={cn(
-        'mx-2 mb-1 flex flex-col items-start gap-0.5 rounded-md border border-white/[0.08] bg-white/[0.03] px-2.5 py-2 text-left transition',
-        'hover:border-white/[0.2] hover:bg-white/[0.06] active:scale-[0.98]',
+        'mx-2 mb-1 flex flex-col items-start gap-0.5 rounded-md border border-white/8 bg-white/3 px-2.5 py-2 text-left transition',
+        'hover:border-white/20 hover:bg-white/6 active:scale-[0.98]',
         'cursor-grab active:cursor-grabbing',
       )}
     >
@@ -111,7 +111,7 @@ export function TopologyCanvasDropZone({
     >
       {children}
       {dragOver && (
-        <div className="pointer-events-none absolute inset-0 z-10 rounded-md border-2 border-dashed border-sky-400/60 bg-sky-400/[0.04]" />
+        <div className="pointer-events-none absolute inset-0 z-10 rounded-md border-2 border-dashed border-sky-400/60 bg-sky-400/4" />
       )}
       {draftType && (
         <CreateSourceModal
@@ -163,9 +163,9 @@ function CreateSourceModal({
   const label = TOPOLOGY_PALETTE_SOURCES.find((i) => i.type === initialType)?.label ?? initialType
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
-      <div className="flex max-h-[90vh] w-full max-w-2xl flex-col border border-white/[0.08] bg-zinc-950 shadow-2xl">
-        <div className="border-b border-white/[0.08] p-5">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-xs">
+      <div className="flex max-h-[90vh] w-full max-w-2xl flex-col border border-white/8 bg-zinc-950 shadow-2xl">
+        <div className="border-b border-white/8 p-5">
           <p className="font-code text-[10px] uppercase tracking-[0.14em] text-zinc-600">NEW NODE</p>
           <h2 className="mt-1 text-lg font-semibold text-zinc-50">新建 {label} 采集节点</h2>
           <p className="mt-1 text-xs text-zinc-500">从采集网络画布拖入创建 — 真实数据源，不是画布上的临时图形。</p>
@@ -173,30 +173,30 @@ function CreateSourceModal({
 
         <div className="flex-1 space-y-4 overflow-y-auto p-5">
           <div>
-            <label htmlFor="topology-palette-name" className="mb-1 block font-code text-[10px] uppercase tracking-[0.1em] text-zinc-500">
+            <label htmlFor="topology-palette-name" className="mb-1 block font-code text-[10px] uppercase tracking-widest text-zinc-500">
               名称
             </label>
             <input
               id="topology-palette-name"
-              className="w-full border border-white/10 bg-black/30 px-3 py-2 text-sm text-zinc-100 outline-none transition-colors placeholder:text-zinc-600 focus:border-primary-500/70 focus:ring-2 focus:ring-primary-500/20"
+              className="w-full border border-white/10 bg-black/30 px-3 py-2 text-sm text-zinc-100 outline-hidden transition-colors placeholder:text-zinc-600 focus:border-primary-500/70 focus:ring-2 focus:ring-primary-500/20"
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="my-source"
             />
           </div>
           <div>
-            <p className="mb-1 block font-code text-[10px] uppercase tracking-[0.1em] text-zinc-500">配置</p>
+            <p className="mb-1 block font-code text-[10px] uppercase tracking-widest text-zinc-500">配置</p>
             <div className="border border-white/10 bg-black/25 p-4">
               <ChannelConfigForm channelType={initialType} config={config} onChange={setConfig} />
             </div>
           </div>
         </div>
 
-        <div className="flex justify-end gap-3 border-t border-white/[0.08] p-5">
+        <div className="flex justify-end gap-3 border-t border-white/8 p-5">
           <button
             type="button"
             onClick={onClose}
-            className="inline-flex h-9 items-center rounded-md border border-white/[0.12] bg-white/[0.04] px-4 text-xs font-semibold text-zinc-200 hover:border-white/[0.24] hover:bg-white/[0.08]"
+            className="inline-flex h-9 items-center rounded-md border border-white/12 bg-white/4 px-4 text-xs font-semibold text-zinc-200 hover:border-white/24 hover:bg-white/8"
           >
             取消
           </button>

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
+import { useEffect, useMemo, useRef, useState, useCallback, type MouseEvent as ReactMouseEvent } from 'react'
 import {
   Background,
   BackgroundVariant,
@@ -105,7 +105,7 @@ function ReactFlowTopologyCanvasInner({
   // Sync props → controlled state WITHOUT remounting. Preserve any user-dragged
   // position by id so the periodic refetches don't snap nodes back to layout.
   useEffect(() => {
-    setRfNodes((prev) => {
+    setRfNodes((prev: TopologyFlowNode[]) => {
       const posById = new Map(prev.map((n) => [n.id, n.position]))
       return nodes.map((node) => {
         const isProject = readDetailString(node.data.detail, 'kind', '') === 'project'
@@ -204,8 +204,8 @@ function ReactFlowTopologyCanvasInner({
       onEdgesChange={onEdgesChange}
       onNodesDelete={handleNodesDelete}
       nodeTypes={nodeTypes}
-      onNodeClick={(_, node) => onSelectNode(node.id)}
-      onNodeDoubleClick={onNodeDoubleClick ? (_, node) => onNodeDoubleClick(node.id) : undefined}
+      onNodeClick={(_: ReactMouseEvent, node: TopologyFlowNode) => onSelectNode(node.id)}
+      onNodeDoubleClick={onNodeDoubleClick ? (_: ReactMouseEvent, node: TopologyFlowNode) => onNodeDoubleClick(node.id) : undefined}
       fitView
       fitViewOptions={{ padding: 0.16, maxZoom: 1 }}
       minZoom={0.3}

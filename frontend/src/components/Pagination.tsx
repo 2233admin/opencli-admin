@@ -41,7 +41,7 @@ export default function Pagination({ page, pages, total, onChange }: PaginationP
   const pageNumbers = buildPageNumbers(page, pages)
 
   return (
-    <div className="flex items-center justify-between px-5 py-3 border-t border-white/[0.06] text-sm">
+    <div className="flex items-center justify-between px-5 py-3 border-t border-white/6 text-sm">
       <span className="text-zinc-400">共 {total} 条</span>
 
       <div className="flex items-center gap-1">
@@ -49,7 +49,7 @@ export default function Pagination({ page, pages, total, onChange }: PaginationP
         <button
           disabled={page <= 1}
           onClick={() => onChange(page - 1)}
-          className="px-2 py-1 rounded border border-white/[0.08] text-zinc-400 hover:bg-white/[0.04] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          className="px-2 py-1 rounded-sm border border-white/8 text-zinc-400 hover:bg-white/4 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           aria-label="上一页"
         >
           &lt;
@@ -68,7 +68,7 @@ export default function Pagination({ page, pages, total, onChange }: PaginationP
               className={`min-w-[32px] px-2 py-1 rounded border transition-colors ${
                 p === page
                   ? 'bg-primary-500/20 border-primary-500/50 text-primary-300'
-                  : 'border-white/[0.08] text-zinc-400 hover:bg-white/[0.04]'
+                  : 'border-white/8 text-zinc-400 hover:bg-white/4'
               }`}
             >
               {p}
@@ -80,7 +80,7 @@ export default function Pagination({ page, pages, total, onChange }: PaginationP
         <button
           disabled={page >= pages}
           onClick={() => onChange(page + 1)}
-          className="px-2 py-1 rounded border border-white/[0.08] text-zinc-400 hover:bg-white/[0.04] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          className="px-2 py-1 rounded-sm border border-white/8 text-zinc-400 hover:bg-white/4 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           aria-label="下一页"
         >
           &gt;

@@ -118,7 +118,7 @@ describe('formatRecoveryRate', () => {
     assert.equal(formatRecoveryRate(null), '—')
   })
 
-  it('renders a rounded percentage when a rate exists', () => {
+  it('renders a rounded-sm percentage when a rate exists', () => {
     assert.equal(formatRecoveryRate(0.5), '50%')
     assert.equal(formatRecoveryRate(1), '100%')
     assert.equal(formatRecoveryRate(0), '0%')

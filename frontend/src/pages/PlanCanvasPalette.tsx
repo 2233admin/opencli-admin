@@ -89,18 +89,18 @@ export function PlanCanvasPalette({ onPick }: PlanCanvasPaletteProps) {
   const channelTypes = Object.keys(filteredByChannel).sort()
 
   return (
-    <div className="flex w-56 shrink-0 flex-col overflow-hidden border-r border-white/[0.08] bg-black/20">
+    <div className="flex w-56 shrink-0 flex-col overflow-hidden border-r border-white/8 bg-black/20">
       <p className="px-3 pb-1 pt-2 font-code text-[9px] font-semibold uppercase tracking-[0.14em] text-zinc-600">
         {t('planCanvas.paletteTitle')}
       </p>
       <Command shouldFilter={false} className="flex min-h-0 flex-1 flex-col bg-transparent text-zinc-100">
-        <div className="flex items-center gap-1.5 border-b border-white/[0.08] px-2.5 py-1.5">
+        <div className="flex items-center gap-1.5 border-b border-white/8 px-2.5 py-1.5">
           <Search className="h-3.5 w-3.5 shrink-0 text-zinc-600" />
           <Command.Input
             value={query}
             onValueChange={setQuery}
             placeholder={t('planCanvas.paletteSearchPlaceholder')}
-            className="h-6 min-w-0 flex-1 bg-transparent text-[12px] text-zinc-100 outline-none placeholder:text-zinc-600"
+            className="h-6 min-w-0 flex-1 bg-transparent text-[12px] text-zinc-100 outline-hidden placeholder:text-zinc-600"
           />
         </div>
         <Command.List className="flex-1 overflow-y-auto py-1">

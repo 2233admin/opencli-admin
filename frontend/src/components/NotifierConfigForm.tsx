@@ -5,7 +5,7 @@ import { Trash2, Plus } from 'lucide-react'
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 const input =
-  'w-full border border-white/[0.12] bg-black/40 rounded-lg px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:ring-2 focus:ring-primary-500/30 focus:border-primary-500/60'
+  'w-full border border-white/12 bg-black/40 rounded-lg px-3 py-2 text-sm text-zinc-200 focus:outline-hidden focus:ring-2 focus:ring-primary-500/30 focus:border-primary-500/60'
 const labelCls = 'block text-sm font-medium text-zinc-300 mb-1'
 const hintCls = 'mt-1 text-xs text-zinc-500'
 
@@ -112,7 +112,7 @@ function KVList({
           <button
             type="button"
             onClick={() => remove(i)}
-            className="p-1.5 text-red-400 hover:text-red-600 flex-shrink-0"
+            className="p-1.5 text-red-400 hover:text-red-600 shrink-0"
           >
             <Trash2 size={14} />
           </button>

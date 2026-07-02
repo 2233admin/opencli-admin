@@ -54,7 +54,7 @@ export default function WorkersPage() {
         <PageHeader title={t('workers.title')} description={t('workers.description')} />
         <Card>
           <div className="flex flex-col items-center py-10 text-center gap-4">
-            <div className="p-4 bg-white/[0.06] rounded-full">
+            <div className="p-4 bg-white/6 rounded-full">
               <Server size={32} className="text-zinc-500" />
             </div>
             <div>
@@ -62,9 +62,9 @@ export default function WorkersPage() {
               <p className="mt-1 text-sm text-zinc-400 max-w-sm">
                 {t('workers.localModeDescription')}{' '}
                 {t('workers.localModeHint')}{' '}
-                <code className="border border-white/[0.1] bg-black/40 font-code px-1 py-0.5 rounded text-xs">TASK_EXECUTOR</code>{' '}
+                <code className="border border-white/10 bg-black/40 font-code px-1 py-0.5 rounded-sm text-xs">TASK_EXECUTOR</code>{' '}
                 {t('workers.localModeSetTo')}{' '}
-                <code className="border border-white/[0.1] bg-black/40 font-code px-1 py-0.5 rounded text-xs">celery</code>
+                <code className="border border-white/10 bg-black/40 font-code px-1 py-0.5 rounded-sm text-xs">celery</code>
                 {t('workers.localModeSuffix')}
               </p>
             </div>
@@ -89,14 +89,14 @@ export default function WorkersPage() {
               <div className="min-w-0">
                 <p className="text-sm font-medium text-amber-100">{t('workers.statsUnavailableTitle')}</p>
                 <p className="mt-1 text-sm text-amber-100/75">{t('workers.statsUnavailableDetail')}</p>
-                <code className="mt-3 block break-words rounded bg-black/20 px-3 py-2 text-xs text-amber-50/80">
+                <code className="mt-3 block wrap-break-word rounded-sm bg-black/20 px-3 py-2 text-xs text-amber-50/80">
                   {statsError}
                 </code>
               </div>
             </div>
           </div>
         ) : statsQ.data ? (
-          <pre className="text-xs border border-white/[0.08] bg-black/40 font-code p-3 rounded-lg overflow-auto max-h-48">
+          <pre className="text-xs border border-white/8 bg-black/40 font-code p-3 rounded-lg overflow-auto max-h-48">
             {JSON.stringify(statsQ.data, null, 2)}
           </pre>
         ) : (

@@ -43,7 +43,7 @@ const ACK_TONE_RING: Record<AckStatusTone, string> = {
   success: 'ring-1 ring-emerald-500/40',
   warning: 'ring-1 ring-amber-500/40',
   danger: 'ring-1 ring-red-500/40',
-  muted: 'ring-1 ring-white/[0.1]',
+  muted: 'ring-1 ring-white/10',
 }
 
 function formatTime(value?: string) {
@@ -58,7 +58,7 @@ function AddRuleModal({ onClose, onSave }: { onClose: () => void; onSave: (d: Pa
   const [notifierType, setNotifierType] = useState<NotifierType>('webhook')
   const [notifierConfig, setNotifierConfig] = useState<Record<string, unknown>>(DEFAULT_CONFIGS.webhook)
 
-  const inputCls = 'w-full border border-white/[0.1] bg-black/40 px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-primary-500/70'
+  const inputCls = 'w-full border border-white/10 bg-black/40 px-3 py-2 text-sm text-zinc-100 focus:outline-hidden focus:ring-2 focus:ring-primary-500/70'
   const labelCls = 'block text-sm font-medium text-zinc-300 mb-1'
 
   const handleTypeChange = (type: NotifierType) => {
@@ -93,7 +93,7 @@ function AddRuleModal({ onClose, onSave }: { onClose: () => void; onSave: (d: Pa
             </select>
           </div>
 
-          <div className="border-t border-white/[0.08] pt-4">
+          <div className="border-t border-white/8 pt-4">
             <p className="text-xs text-zinc-400 mb-3 uppercase tracking-wide font-medium">
               {t('notifications.notifierConfig')}
             </p>
@@ -159,7 +159,7 @@ export default function NotificationsPage() {
         {(['rules', 'logs'] as const).map((tabKey) => (
           <button key={tabKey} onClick={() => setTab(tabKey)}
             className={`px-4 py-2 text-sm font-medium transition-colors ${
-              tab === tabKey ? 'bg-primary-500/16 border border-primary-500/70 text-white' : 'bg-black/20 border border-white/[0.08] text-zinc-300 hover:bg-white/[0.04]'
+              tab === tabKey ? 'bg-primary-500/16 border border-primary-500/70 text-white' : 'bg-black/20 border border-white/8 text-zinc-300 hover:bg-white/4'
             }`}>
             {tabKey === 'rules' ? t('notifications.tabRules') : t('notifications.tabLogs')}
           </button>
@@ -195,7 +195,7 @@ export default function NotificationsPage() {
                 key: 'actions', header: t('common.actions'), width: '70px',
                 render: (r) => (
                   <button onClick={() => { if (confirm(t('notifications.confirmDelete', { name: r.name }))) deleteMut.mutate(r.id) }}
-                    className="p-1.5 rounded hover:bg-red-100 text-red-500">
+                    className="p-1.5 rounded-sm hover:bg-red-100 text-red-500">
                     <Trash2 size={14} />
                   </button>
                 ),

@@ -68,8 +68,8 @@ export function KitNode<C extends ConfigValues = ConfigValues>({
       style={{ width: 248 }}
       title={runState?.state === 'error' ? runState.detail.errorMessage : undefined}
       className={[
-        'relative rounded-lg border bg-[#0a0a0c]/95 px-3 py-3 text-left shadow-xl backdrop-blur transition-colors',
-        runBorder ?? (selected ? 'border-sky-500 ring-2 ring-sky-500/30' : 'border-white/[0.12] hover:border-white/30'),
+        'relative rounded-lg border bg-[#0a0a0c]/95 px-3 py-3 text-left shadow-xl backdrop-blur-sm transition-colors',
+        runBorder ?? (selected ? 'border-sky-500 ring-2 ring-sky-500/30' : 'border-white/12 hover:border-white/30'),
         runBorder && selected ? 'ring-2 ring-sky-500/30' : '',
       ].join(' ')}
     >
@@ -83,12 +83,12 @@ export function KitNode<C extends ConfigValues = ConfigValues>({
       <div className="flex items-start justify-between gap-1.5">
         <NodeHeader icon={spec.icon} title={spec.title} subtitle={spec.subtitle} />
         {runState?.state === 'success' && runState.detail.durationMs != null && (
-          <span className="shrink-0 rounded-sm border border-emerald-500/35 bg-emerald-500/10 px-1 py-0.5 font-code text-[9px] text-emerald-200">
+          <span className="shrink-0 rounded-xs border border-emerald-500/35 bg-emerald-500/10 px-1 py-0.5 font-code text-[9px] text-emerald-200">
             {runState.detail.durationMs}ms
           </span>
         )}
         {runState?.state === 'error' && (
-          <span className="shrink-0 rounded-sm border border-red-500/35 bg-red-500/10 px-1 py-0.5 font-code text-[9px] text-red-200">
+          <span className="shrink-0 rounded-xs border border-red-500/35 bg-red-500/10 px-1 py-0.5 font-code text-[9px] text-red-200">
             ERR
           </span>
         )}

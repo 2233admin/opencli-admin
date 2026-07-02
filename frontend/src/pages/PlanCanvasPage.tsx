@@ -421,25 +421,25 @@ function PlanCanvasInner() {
               value={planName}
               onChange={(e) => setPlanName(e.target.value)}
               placeholder={t('planCanvas.namePlaceholder')}
-              className="h-8 w-52 rounded-md border border-white/[0.12] bg-black/40 px-2.5 text-xs text-zinc-200 outline-none focus:border-primary-500/60"
+              className="h-8 w-52 rounded-md border border-white/12 bg-black/40 px-2.5 text-xs text-zinc-200 outline-hidden focus:border-primary-500/60"
             />
             {planDraftFlag && (
-              <span className="rounded-sm border border-amber-400/35 bg-amber-400/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-200">
+              <span className="rounded-xs border border-amber-400/35 bg-amber-400/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-200">
                 {t('planCanvas.draftBadge')}
               </span>
             )}
             {planRunnableFlag && (
-              <span className="rounded-sm border border-emerald-400/35 bg-emerald-400/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-200">
+              <span className="rounded-xs border border-emerald-400/35 bg-emerald-400/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-200">
                 {t('planCanvas.runnableBadge')}
               </span>
             )}
 
-            <div className="flex items-center rounded-md border border-white/[0.12] bg-black/40 p-0.5 text-xs">
+            <div className="flex items-center rounded-md border border-white/12 bg-black/40 p-0.5 text-xs">
               <button
                 type="button"
                 onClick={() => setLens('edit')}
                 aria-pressed={lens === 'edit'}
-                className={`inline-flex h-7 items-center gap-1.5 rounded-sm px-2.5 font-semibold transition ${
+                className={`inline-flex h-7 items-center gap-1.5 rounded-xs px-2.5 font-semibold transition ${
                   lens === 'edit' ? 'bg-sky-500/20 text-sky-100' : 'text-zinc-400 hover:text-zinc-200'
                 }`}
               >
@@ -450,7 +450,7 @@ function PlanCanvasInner() {
                 type="button"
                 onClick={() => setLens(toggleLens('edit'))}
                 aria-pressed={lens === 'observe'}
-                className={`inline-flex h-7 items-center gap-1.5 rounded-sm px-2.5 font-semibold transition ${
+                className={`inline-flex h-7 items-center gap-1.5 rounded-xs px-2.5 font-semibold transition ${
                   lens === 'observe' ? 'bg-sky-500/20 text-sky-100' : 'text-zinc-400 hover:text-zinc-200'
                 }`}
               >
@@ -492,12 +492,12 @@ function PlanCanvasInner() {
       />
 
       {isObserve && !runGate.canRun && !isNew && (
-        <div className="rounded-md border border-amber-400/25 bg-amber-400/[0.06] px-3 py-2 text-[11px] text-amber-200">
+        <div className="rounded-md border border-amber-400/25 bg-amber-400/6 px-3 py-2 text-[11px] text-amber-200">
           {t(`planCanvas.run.blocked.${runGate.reason}`)}
         </div>
       )}
 
-      <div className="relative flex h-[74vh] min-h-[560px] overflow-hidden rounded-md border border-white/[0.1] bg-black">
+      <div className="relative flex h-[74vh] min-h-[560px] overflow-hidden rounded-md border border-white/10 bg-black">
         <PlanCanvasPalette onPick={onPaletteClickPick} />
 
         <div

@@ -197,7 +197,7 @@ export default function SkillDetailPage() {
         </div>
 
         {confirming === 'redistill' && (
-          <div className="mt-3 border border-amber-400/25 bg-amber-400/[0.06] px-3 py-2.5">
+          <div className="mt-3 border border-amber-400/25 bg-amber-400/6 px-3 py-2.5">
             <p className="font-mono text-[9px] uppercase tracking-wider text-amber-200/70">待确认重蒸</p>
             <p className="mt-1 text-xs font-semibold text-amber-100">
               用最近一次失败轨迹重新蒸馏「{skill.name}」→ v{skill.version + 1}
@@ -213,7 +213,7 @@ export default function SkillDetailPage() {
         )}
 
         {confirming === 'dismiss' && (
-          <div className="mt-3 border border-amber-400/25 bg-amber-400/[0.06] px-3 py-2.5">
+          <div className="mt-3 border border-amber-400/25 bg-amber-400/6 px-3 py-2.5">
             <p className="font-mono text-[9px] uppercase tracking-wider text-amber-200/70">待确认驳回</p>
             <p className="mt-1 text-xs font-semibold text-amber-100">驳回「{skill.name}」的纠错提案</p>
             <p className="mt-0.5 font-mono text-[11px] text-amber-200/80">
@@ -229,7 +229,7 @@ export default function SkillDetailPage() {
         )}
 
         {confirming === 'rollback' && (
-          <div className="mt-3 border border-amber-400/25 bg-amber-400/[0.06] px-3 py-2.5">
+          <div className="mt-3 border border-amber-400/25 bg-amber-400/6 px-3 py-2.5">
             <p className="font-mono text-[9px] uppercase tracking-wider text-amber-200/70">待确认回滚</p>
             <p className="mt-1 text-xs font-semibold text-amber-100">回滚「{skill.name}」到上一版</p>
             <p className="mt-0.5 font-mono text-[11px] text-amber-200/80">

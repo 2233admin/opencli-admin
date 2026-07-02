@@ -39,7 +39,7 @@ export function PlaybackControls({
       <Button variant="outline" size="xs" onClick={onNext} disabled={disabled} title="Next step">
         <SkipForward size={13} />
       </Button>
-      <span className="ml-1 border border-white/10 bg-white/[0.03] px-2 py-1 font-telemetry text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+      <span className="ml-1 border border-white/10 bg-white/3 px-2 py-1 font-telemetry text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
         {progressLabel}
       </span>
     </div>
