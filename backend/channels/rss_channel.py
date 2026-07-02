@@ -14,7 +14,11 @@ from backend.channels.base import (
     FetchResult,
 )
 from backend.channels.registry import register_channel
-from backend.security.url_guard import SSRFValidationError, avalidate_public_url
+from backend.security.url_guard import (
+    SSRFValidationError,
+    avalidate_public_url,
+    guarded_async_client,
+)
 
 
 @register_channel
@@ -34,7 +38,13 @@ class RSSChannel(AbstractChannel):
         timeout: int = config.get("timeout", 30)
 
         try:
-            feed_url = await avalidate_public_url(feed_url)
+            # guarded_async_client validates feed_url AND pins the connection
+            # to the IP(s) that validation resolved (DNS-rebinding TOCTOU
+            # closure — AUDIT B3 follow-up; see backend.security.url_guard's
+            # module docstring). TLS/SNI/cert verification are unaffected.
+            client, feed_url = await guarded_async_client(
+                feed_url, timeout=timeout, follow_redirects=False
+            )
         except SSRFValidationError as exc:
             return ChannelResult.fail(
                 f"RSS feed URL rejected: {exc}", error_type="SSRFValidationError"
@@ -45,8 +55,8 @@ class RSSChannel(AbstractChannel):
             # 30x-redirect to a private/loopback/fleet address, bypassing the
             # check above (SSRF via redirect). RSS feeds don't legitimately
             # need cross-host redirect chains for this use case.
-            async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
-                response = await client.get(
+            async with client as opened_client:
+                response = await opened_client.get(
                     feed_url,
                     headers={"User-Agent": "opencli-admin/1.0 (+https://github.com)"},
                 )
@@ -106,13 +116,6 @@ class RSSChannel(AbstractChannel):
         timeout: int = config.get("timeout", 30)
         cursor = ctx.cursor or {}
 
-        try:
-            feed_url = await avalidate_public_url(feed_url)
-        except SSRFValidationError as exc:
-            raise ChannelFetchError(
-                f"RSS feed URL rejected: {exc}", error_type="SSRFValidationError"
-            ) from exc
-
         headers = {"User-Agent": "opencli-admin/1.0 (+https://github.com)"}
         if cursor.get("etag"):
             headers["If-None-Match"] = cursor["etag"]
@@ -120,13 +123,30 @@ class RSSChannel(AbstractChannel):
             headers["If-Modified-Since"] = cursor["last_modified"]
 
         # follow_redirects=False on the one-shot path — see collect()'s comment;
-        # ctx.http is the runner-shared client (its redirect policy is the
-        # runner's concern, out of this file's boundary).
+        # ctx.http is the runner-shared client (its redirect policy/connection
+        # pinning is the runner's concern, out of this file's boundary — it
+        # only gets the plain call-time validate_public_url here).
         if ctx.http is not None:
+            try:
+                feed_url = await avalidate_public_url(feed_url)
+            except SSRFValidationError as exc:
+                raise ChannelFetchError(
+                    f"RSS feed URL rejected: {exc}", error_type="SSRFValidationError"
+                ) from exc
             response = await ctx.http.get(feed_url, headers=headers, timeout=timeout)
         else:
-            async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
-                response = await client.get(feed_url, headers=headers)
+            try:
+                # guarded_async_client pins the connection to the validated
+                # IP(s) — DNS-rebinding TOCTOU closure (AUDIT B3 follow-up).
+                client, feed_url = await guarded_async_client(
+                    feed_url, timeout=timeout, follow_redirects=False
+                )
+            except SSRFValidationError as exc:
+                raise ChannelFetchError(
+                    f"RSS feed URL rejected: {exc}", error_type="SSRFValidationError"
+                ) from exc
+            async with client as opened_client:
+                response = await opened_client.get(feed_url, headers=headers)
 
         if response.status_code == 304:
             # Not Modified — no new entries; preserve the cursor as-is.

@@ -27,21 +27,53 @@ user/DB-supplied URL. It:
 Callers that also need the resolved IP (to pin a redirect-safe connection,
 see the DNS-rebinding note below) can use :func:`validate_public_url_and_ip`.
 
-DNS-rebinding limitation
-------------------------
-This module resolves and validates the hostname *once*, at call time. It does
-not — and, with plain ``httpx`` used positionally in this codebase, currently
-cannot cheaply — pin the TCP connection to the exact IP that was validated.
-A sufficiently motivated attacker who controls DNS for the target hostname
-could rebind the name to a private IP *between* our check and the actual
-connect() a moment later (TOCTOU). Fully closing this requires either (a) an
-``httpx.AsyncHTTPTransport`` with a custom ``resolver``/socket-level factory
-that connects to the pinned IP while still sending the original ``Host``
-header (SNI-safe for TLS), or (b) routing every fetch through a forward proxy
-that itself enforces the allowlist. Neither is wired up in this pass — call
-sites should treat this as "blocks the common case (config-time private URLs,
-naive SSRF payloads, redirects to obviously-private hosts)" rather than a
-fully rebind-proof sandbox. Flagged as a follow-up.
+DNS-rebinding closure — ``guarded_async_client`` / ``PinnedAsyncHTTPTransport``
+--------------------------------------------------------------------------
+This module used to resolve and validate the hostname *once*, at call time,
+without pinning the actual TCP connection to the IP that was validated — a
+window in which a sufficiently motivated attacker who controls DNS for the
+target hostname could rebind the name to a private IP *between* our check and
+httpx's own connect() a moment later (TOCTOU).
+
+That gap is now closed for plain-httpx call sites via
+:func:`guarded_async_client`, which returns an ``httpx.AsyncClient`` whose
+transport is a :class:`PinnedAsyncHTTPTransport`. The mechanism:
+
+  * :class:`PinnedAsyncHTTPTransport` subclasses ``httpx.AsyncHTTPTransport``
+    (so it inherits its TLS/proxy/limits setup unchanged) and swaps in its own
+    ``httpcore.AsyncConnectionPool`` built with a ``network_backend`` that
+    wraps :class:`_PinnedNetworkBackend`.
+  * ``_PinnedNetworkBackend.connect_tcp(host, port, ...)`` is the *only* hook
+    that changes: when ``host`` matches the guarded hostname, it dials one of
+    the validated IPs instead of letting the OS resolver run again — this is
+    exactly the seam httpcore exposes for a custom resolver
+    (``httpcore.AsyncConnectionPool(network_backend=...)``).
+  * Crucially, TLS SNI and certificate verification are **not** affected: per
+    ``httpcore``'s own ``AsyncHTTPConnection._connect``, ``server_hostname``
+    for ``start_tls`` defaults to the connection's ``Origin.host`` — i.e. the
+    *original hostname from the URL* — completely independent of what
+    ``network_backend.connect_tcp`` actually dialed. So the socket connects to
+    the pinned IP while the ``Host`` header, SNI, and cert verification all
+    still use the real hostname: HTTPS keeps working exactly as if no pinning
+    were in place.
+  * Defense in depth: ``_PinnedNetworkBackend.connect_tcp`` re-runs
+    :func:`is_ip_blocked` on the IP it is about to dial (not just the IPs
+    validated a moment earlier), so even a compromised/rebound resolver
+    swapped in after validation can't smuggle a blocked address through.
+
+:func:`guarded_async_client` is the one-stop call for callers that just want
+"validate this URL and get me a client safe to fetch it with" — it validates
+the URL, builds the pinned client, and returns ``(client, validated_url)``.
+Callers that need a transport instead of a full client (rare) can use
+:class:`PinnedAsyncHTTPTransport` directly.
+
+Residual scope — SDK-only sites: a few call sites (LLM SDKs — ``openai``'s
+``AsyncOpenAI``, ``crawl4ai``'s ``LLMConfig``) don't take an httpx transport
+in a way this module can cleanly intercept in every case, or go through a
+vendor SDK's own connection handling. Those sites keep call-time
+``validate_public_url``/``avalidate_public_url`` validation only (the
+pre-existing mitigation) and retain a residual DNS-rebinding TOCTOU window —
+documented at each such call site rather than silently left unmentioned.
 """
 
 from __future__ import annotations
@@ -49,7 +81,10 @@ from __future__ import annotations
 import asyncio
 import ipaddress
 import socket
+import typing
 from urllib.parse import urlparse
+
+import httpx
 
 __all__ = [
     "SSRFValidationError",
@@ -57,6 +92,8 @@ __all__ = [
     "validate_public_url_and_ip",
     "is_ip_blocked",
     "resolve_hostname",
+    "PinnedAsyncHTTPTransport",
+    "guarded_async_client",
 ]
 
 _ALLOWED_SCHEMES = {"http", "https"}
@@ -198,3 +235,163 @@ async def avalidate_public_url_and_ip(url: str) -> tuple[str, list[str]]:
     """Async ``asyncio.to_thread`` wrapper around
     :func:`validate_public_url_and_ip`."""
     return await asyncio.to_thread(validate_public_url_and_ip, url)
+
+
+# ── DNS-rebinding-safe connection pinning ────────────────────────────────────
+#
+# See the module docstring's "DNS-rebinding closure" section for the full
+# mechanism explanation. Summary: httpcore's AsyncConnectionPool accepts a
+# ``network_backend`` whose ``connect_tcp(host, port, ...)`` is the single hook
+# that actually opens the socket; everything else (TLS SNI/server_hostname,
+# cert verification, the Host header) is derived by httpcore/httpx from the
+# request's original hostname and is untouched by what IP connect_tcp dials.
+
+
+class _PinnedNetworkBackend:
+    """``httpcore``-shaped async network backend that pins one hostname to a
+    fixed set of already-validated IPs.
+
+    Wraps ``httpcore``'s own :class:`~httpcore._backends.auto.AutoBackend` (so
+    every other backend behaviour — unix sockets, sleep/backoff — is
+    unchanged) and overrides only ``connect_tcp``: when the requested ``host``
+    matches ``self._hostname``, it dials one of ``self._ips`` instead of
+    letting the OS resolver run a second time. Any other host (e.g. a proxy)
+    passes through unpinned.
+
+    Defense in depth: re-checks :func:`is_ip_blocked` on the IP it is about to
+    dial — not just the IPs validated a moment earlier by the caller — so a
+    resolver swapped out from under us after validation still can't smuggle a
+    blocked address through this seam.
+    """
+
+    def __init__(self, hostname: str, ips: list[str]) -> None:
+        self._hostname = hostname
+        self._ips = ips
+        self._next_ip_index = 0
+        from httpcore._backends.auto import AutoBackend
+
+        self._delegate = AutoBackend()
+
+    def _pick_ip(self) -> str:
+        # Round-robin over the validated IPs (mirrors "any A/AAAA record is
+        # fine" DNS behaviour) rather than always hammering the first one.
+        ip = self._ips[self._next_ip_index % len(self._ips)]
+        self._next_ip_index += 1
+        return ip
+
+    async def connect_tcp(
+        self,
+        host: str,
+        port: int,
+        timeout: float | None = None,
+        local_address: str | None = None,
+        socket_options: typing.Any = None,
+    ) -> typing.Any:
+        dial_host = host
+        if host == self._hostname:
+            dial_host = self._pick_ip()
+            try:
+                ip_obj = ipaddress.ip_address(dial_host)
+            except ValueError:
+                ip_obj = None
+            if ip_obj is not None and is_ip_blocked(ip_obj):
+                raise SSRFValidationError(
+                    f"pinned connect target {dial_host!r} for host {host!r} is a "
+                    "non-public address — refused at connect time (SSRF guard "
+                    "defense in depth)"
+                )
+        return await self._delegate.connect_tcp(
+            dial_host,
+            port,
+            timeout=timeout,
+            local_address=local_address,
+            socket_options=socket_options,
+        )
+
+    async def connect_unix_socket(
+        self, path: str, timeout: float | None = None, socket_options: typing.Any = None
+    ) -> typing.Any:  # pragma: no cover - not used by any call site in this codebase
+        return await self._delegate.connect_unix_socket(
+            path, timeout=timeout, socket_options=socket_options
+        )
+
+    async def sleep(self, seconds: float) -> None:
+        await self._delegate.sleep(seconds)
+
+
+class PinnedAsyncHTTPTransport(httpx.AsyncHTTPTransport):
+    """``httpx.AsyncHTTPTransport`` that pins ``hostname`` to ``ips``.
+
+    Inherits ``httpx.AsyncHTTPTransport.__init__`` verbatim (so TLS
+    ``verify``/``cert``/``trust_env``, HTTP/1.1 vs HTTP/2, proxy and
+    connection-limit configuration all work exactly as they would for a plain
+    ``httpx.AsyncClient``) and then replaces the ``httpcore.AsyncConnectionPool``
+    it built with an equivalent one constructed with a
+    :class:`_PinnedNetworkBackend`. ``handle_async_request`` itself is
+    unchanged (inherited) — it just delegates to ``self._pool`` either way.
+    """
+
+    def __init__(
+        self,
+        hostname: str,
+        ips: list[str],
+        *,
+        verify: "bool | str" = True,
+        http1: bool = True,
+        http2: bool = False,
+        **kwargs: typing.Any,
+    ) -> None:
+        super().__init__(verify=verify, http1=http1, http2=http2, **kwargs)
+        import httpcore
+
+        # super().__init__() already built self._pool (a plain
+        # httpcore.AsyncConnectionPool, since we never pass proxy= — this
+        # class doesn't need to support proxying) with the ssl_context/limits/
+        # http1/http2/retries/etc this call was configured with. Re-read those
+        # back off the pool it just built rather than recomputing verify/cert
+        # into an ssl.SSLContext ourselves (that logic is private to
+        # httpx._config.create_ssl_context) — then rebuild an equivalent pool
+        # with our pinning network_backend swapped in. This is the only piece
+        # of AsyncHTTPTransport.__init__'s behaviour we override.
+        built_pool = self._pool
+        self._pool = httpcore.AsyncConnectionPool(
+            ssl_context=built_pool._ssl_context,
+            max_connections=built_pool._max_connections,
+            max_keepalive_connections=built_pool._max_keepalive_connections,
+            keepalive_expiry=built_pool._keepalive_expiry,
+            http1=built_pool._http1,
+            http2=built_pool._http2,
+            retries=built_pool._retries,
+            local_address=built_pool._local_address,
+            uds=built_pool._uds,
+            socket_options=built_pool._socket_options,
+            network_backend=_PinnedNetworkBackend(hostname, ips),
+        )
+
+
+async def guarded_async_client(
+    url: str, **client_kwargs: typing.Any
+) -> tuple[httpx.AsyncClient, str]:
+    """Validate ``url`` (SSRF guard) and return ``(client, validated_url)``
+    where ``client`` is an ``httpx.AsyncClient`` whose transport is pinned to
+    the IP(s) that were just validated for ``url``'s hostname — closing the
+    DNS-rebinding TOCTOU window between this validation and the connection
+    ``client`` will actually make (see the module docstring).
+
+    A raw-IP URL (no hostname to rebind) still goes through
+    :class:`PinnedAsyncHTTPTransport` for consistency and the connect-time
+    ``is_ip_blocked`` defense-in-depth re-check, pinned to that single IP.
+
+    ``client_kwargs`` are forwarded to ``httpx.AsyncClient`` verbatim (timeout,
+    headers, follow_redirects, etc) except ``transport``, which this function
+    owns — passing it raises ``TypeError`` (same as httpx would for a
+    duplicate keyword) so a caller doesn't accidentally silently lose pinning.
+    """
+    if "transport" in client_kwargs:
+        raise TypeError("guarded_async_client() sets 'transport' itself — do not pass one")
+
+    validated_url, ips = await avalidate_public_url_and_ip(url)
+    hostname = urlparse(validated_url).hostname or ""
+    transport = PinnedAsyncHTTPTransport(hostname, ips)
+    client = httpx.AsyncClient(transport=transport, **client_kwargs)
+    return client, validated_url

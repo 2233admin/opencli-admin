@@ -48,7 +48,11 @@ from typing import TYPE_CHECKING, Any
 from backend.channels.base import AbstractChannel, Capabilities, ChannelResult
 from backend.channels.registry import register_channel
 from backend.pipeline import events
-from backend.security.url_guard import SSRFValidationError, avalidate_public_url
+from backend.security.url_guard import (
+    PinnedAsyncHTTPTransport,
+    SSRFValidationError,
+    avalidate_public_url_and_ip,
+)
 
 # risk / perception import only stdlib — safe at registry-load time. The loop is
 # imported lazily inside collect() because backend.skills.loop imports
@@ -215,17 +219,32 @@ async def _build_model_call(provider: dict[str, Any]) -> Any:
     malicious/misconfigured source ship the LLM key to an internal host or an
     attacker-controlled public endpoint. No base_url configured (provider's
     own default) is left unvalidated.
+
+    DNS-rebinding closure (AUDIT B3 follow-up): ``AsyncOpenAI`` accepts an
+    ``http_client`` (any ``httpx.AsyncClient``), so when ``base_url`` is
+    validated we also pin the connection to the resolved IP(s) via a
+    :class:`~backend.security.url_guard.PinnedAsyncHTTPTransport` — the same
+    mechanism ``guarded_async_client`` uses for plain-httpx call sites. No
+    base_url configured leaves ``http_client`` unset (AsyncOpenAI's own
+    default client), unchanged from before.
     """
     from openai import AsyncOpenAI
 
     api_key = provider.get("api_key") or ""
     base_url = provider.get("base_url") or None
+    pinned_http_client = None
     if base_url:
         try:
-            base_url = await avalidate_public_url(base_url)
+            base_url, ips = await avalidate_public_url_and_ip(base_url)
         except SSRFValidationError as exc:
             raise ValueError(f"skill channel: provider base_url rejected: {exc}") from exc
-    client = AsyncOpenAI(api_key=api_key, base_url=base_url)
+        from urllib.parse import urlparse as _urlparse
+
+        import httpx
+
+        hostname = _urlparse(base_url).hostname or ""
+        pinned_http_client = httpx.AsyncClient(transport=PinnedAsyncHTTPTransport(hostname, ips))
+    client = AsyncOpenAI(api_key=api_key, base_url=base_url, http_client=pinned_http_client)
 
     async def model_call(
         messages: list[dict[str, Any]], *, tools: Any, model: str, xml: bool

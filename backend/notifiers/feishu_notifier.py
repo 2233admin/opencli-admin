@@ -7,11 +7,9 @@ import re
 import time
 from typing import Any
 
-import httpx
-
 from backend.notifiers.base import AbstractNotifier, NotificationPayload
 from backend.notifiers.registry import register_notifier
-from backend.security.url_guard import SSRFValidationError, avalidate_public_url
+from backend.security.url_guard import SSRFValidationError, guarded_async_client
 
 _PLACEHOLDER_RE = re.compile(r"\{\{(\w+)\}\}")
 
@@ -45,7 +43,11 @@ class FeishuNotifier(AbstractNotifier):
         timeout: int = config.get("timeout", 15)
 
         try:
-            webhook_url = await avalidate_public_url(webhook_url)
+            # guarded_async_client validates webhook_url AND pins the
+            # connection to the IP(s) that validation resolved (DNS-rebinding
+            # TOCTOU closure — AUDIT B3 follow-up; see
+            # backend.security.url_guard's module docstring).
+            client, webhook_url = await guarded_async_client(webhook_url, timeout=timeout)
         except SSRFValidationError:
             return False
 
@@ -72,7 +74,7 @@ class FeishuNotifier(AbstractNotifier):
 
         # follow_redirects left at httpx's default (False) — see webhook_notifier
         # for the SSRF-via-redirect reasoning.
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            resp = await client.post(webhook_url, json=body)
+        async with client as opened_client:
+            resp = await opened_client.post(webhook_url, json=body)
             result = resp.json()
             return result.get("code", -1) == 0

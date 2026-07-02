@@ -16,7 +16,11 @@ from backend.channels.base import (
     FetchResult,
 )
 from backend.channels.registry import register_channel
-from backend.security.url_guard import SSRFValidationError, avalidate_public_url
+from backend.security.url_guard import (
+    SSRFValidationError,
+    avalidate_public_url,
+    guarded_async_client,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -95,11 +99,22 @@ class ApiChannel(AbstractChannel):
         # follow_redirects defaults to False on httpx.AsyncClient — a validated
         # URL must not be allowed to 30x-redirect to a private/loopback/fleet
         # address (SSRF via redirect), so this is left unset deliberately.
+        # ctx.http is the runner-shared client (connection pinning there is
+        # out of this file's boundary); the one-shot path is pinned via
+        # guarded_async_client (DNS-rebinding TOCTOU closure, AUDIT B3).
         if ctx.http is not None:
             response = await self._send(ctx.http, method, url, query_params, request_body, headers, timeout)
         else:
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                response = await self._send(client, method, url, query_params, request_body, headers, timeout)
+            try:
+                client, url = await guarded_async_client(url, timeout=timeout)
+            except SSRFValidationError as exc:
+                raise ChannelFetchError(
+                    f"api channel URL rejected: {exc}", error_type="SSRFValidationError"
+                ) from exc
+            async with client as opened_client:
+                response = await self._send(
+                    opened_client, method, url, query_params, request_body, headers, timeout
+                )
 
         try:
             data = response.json()
@@ -243,7 +258,7 @@ class ApiChannel(AbstractChannel):
         url = base_url.rstrip("/") + "/" + endpoint.lstrip("/") if endpoint else base_url
 
         try:
-            url = await avalidate_public_url(url)
+            client, url = await guarded_async_client(url, timeout=5)
         except SSRFValidationError as exc:
             logger.warning("api channel health_check: URL rejected: %s", exc)
             return False
@@ -251,10 +266,10 @@ class ApiChannel(AbstractChannel):
         headers = await self._resolve_auth_headers(config.get("auth", {}), source_id, base_url)
 
         try:
-            async with httpx.AsyncClient(timeout=5) as client:
-                response = await client.head(url, headers=headers)
+            async with client as opened_client:
+                response = await opened_client.head(url, headers=headers)
                 if response.status_code in (404, 405):
-                    response = await client.get(url, headers=headers)
+                    response = await opened_client.get(url, headers=headers)
                 response.raise_for_status()
             return True
         except Exception as exc:

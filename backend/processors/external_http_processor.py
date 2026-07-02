@@ -7,11 +7,9 @@ import re
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-import httpx
-
 from backend.processors.base import AbstractProcessor, ProcessingResult
 from backend.processors.registry import register_processor
-from backend.security.url_guard import SSRFValidationError, avalidate_public_url
+from backend.security.url_guard import SSRFValidationError, guarded_async_client
 
 if TYPE_CHECKING:
     from backend.models.record import CollectedRecord
@@ -71,13 +69,6 @@ class ExternalHTTPProcessor(AbstractProcessor):
         if not endpoint:
             return ProcessingResult(success=False, error="external_http endpoint is required")
 
-        try:
-            endpoint = await avalidate_public_url(str(endpoint))
-        except SSRFValidationError as exc:
-            return ProcessingResult(
-                success=False, error=f"external_http endpoint rejected: {exc}"
-            )
-
         timeout = float(cfg.get("timeout", 60))
         headers = dict(cfg.get("headers", {}))
         auth_header = cfg.get("auth_header")
@@ -91,8 +82,20 @@ class ExternalHTTPProcessor(AbstractProcessor):
         agent_id = cfg.get("agent_id")
         enrichments: list[dict[str, Any]] = []
 
+        try:
+            # guarded_async_client validates endpoint AND pins the connection
+            # to the IP(s) that validation resolved (DNS-rebinding TOCTOU
+            # closure — AUDIT B3 follow-up; see backend.security.url_guard's
+            # module docstring). One client, reused across every record in
+            # this batch (matches the original single `async with` scope).
+            client, endpoint = await guarded_async_client(str(endpoint), timeout=timeout)
+        except SSRFValidationError as exc:
+            return ProcessingResult(
+                success=False, error=f"external_http endpoint rejected: {exc}"
+            )
+
         logger.info("external_http processor | endpoint=%s records=%d", endpoint, len(records))
-        async with httpx.AsyncClient(timeout=timeout) as client:
+        async with client as opened_client:
             for i, record in enumerate(records):
                 context = {
                     **getattr(record, "raw_data", {}),
@@ -107,7 +110,7 @@ class ExternalHTTPProcessor(AbstractProcessor):
                     payload["agent_id"] = agent_id
 
                 try:
-                    resp = await client.post(str(endpoint), json=payload, headers=headers)
+                    resp = await opened_client.post(str(endpoint), json=payload, headers=headers)
                     resp.raise_for_status()
                     data = resp.json()
                     enrichment = data if isinstance(data, dict) else {"result": data}

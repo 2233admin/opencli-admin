@@ -24,7 +24,7 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 
-from backend.security.url_guard import SSRFValidationError, avalidate_public_url
+from backend.security.url_guard import SSRFValidationError, guarded_async_client
 
 if TYPE_CHECKING:
     from backend.models.provider import ModelProvider
@@ -98,10 +98,16 @@ async def call_llm(system: str, user: str, provider: dict[str, Any]) -> str:
     :class:`SSRFValidationError` (not a silent empty string) so the caller
     sees a clear rejection instead of a confusing downstream connection
     failure.
+
+    DNS-rebinding closure (AUDIT B3 follow-up): this is a plain-httpx call
+    site (not a vendor SDK), so when ``base_url`` goes through the guard it
+    also gets a connection pinned to the validated IP(s) via
+    :func:`~backend.security.url_guard.guarded_async_client` — same mechanism
+    every other httpx call site in this codebase uses. The hardcoded local
+    Ollama default is never pinned either (nothing was validated to pin to;
+    a plain client is used exactly as before).
     """
     base_url = provider.get("base_url") or _DEFAULT_PROVIDER["base_url"]
-    if base_url != _DEFAULT_PROVIDER["base_url"]:
-        base_url = await avalidate_public_url(base_url)
     model = provider.get("model", _DEFAULT_PROVIDER["model"])
     api_key = provider.get("api_key")
     api_style = provider.get("api_style", "openai")
@@ -115,7 +121,15 @@ async def call_llm(system: str, user: str, provider: dict[str, Any]) -> str:
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
 
-    async with httpx.AsyncClient(timeout=timeout) as client:
+    if base_url != _DEFAULT_PROVIDER["base_url"]:
+        try:
+            client, base_url = await guarded_async_client(base_url, timeout=timeout)
+        except SSRFValidationError:
+            raise
+    else:
+        client = httpx.AsyncClient(timeout=timeout)
+
+    async with client:
         if api_style == "ollama":
             resp = await client.post(
                 base_url.rstrip("/") + "/api/chat",

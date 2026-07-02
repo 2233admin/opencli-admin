@@ -202,6 +202,16 @@ class Crawl4AIChannel(AbstractChannel):
         # key to whatever internal/attacker host base_url points at). No
         # base_url configured (None → provider's own default endpoint) is fine
         # and is not validated here.
+        #
+        # Residual DNS-rebinding TOCTOU (AUDIT B3 follow-up, documented not
+        # silently left): unlike this repo's own httpx call sites (see
+        # backend.security.url_guard.guarded_async_client), LLMConfig hands
+        # base_url to litellm/crawl4ai's own HTTP client internals, which this
+        # module has no clean seam to pin to a validated IP through. This
+        # call-time validate_public_url check remains the only mitigation
+        # here — a DNS rebind between this check and litellm's own connect()
+        # is not closed. Low practical severity (base_url is operator/DB
+        # config, not attacker-supplied per-request input), but real.
         base_url = provider.base_url or None
         if base_url:
             try:

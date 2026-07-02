@@ -15,7 +15,11 @@ from backend.channels.base import (
     FetchResult,
 )
 from backend.channels.registry import register_channel
-from backend.security.url_guard import SSRFValidationError, avalidate_public_url
+from backend.security.url_guard import (
+    SSRFValidationError,
+    avalidate_public_url,
+    guarded_async_client,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -54,31 +58,64 @@ class WebScraperChannel(AbstractChannel):
         timeout: int = config.get("timeout", 30)
         list_selector: str = config.get("list_selector", "")
 
-        try:
-            url = await avalidate_public_url(url)
-        except SSRFValidationError as exc:
-            raise ChannelFetchError(
-                f"web_scraper URL rejected: {exc}", error_type="SSRFValidationError"
-            ) from exc
-
-        merged_headers = {
-            "User-Agent": "Mozilla/5.0 (compatible; opencli-admin/1.0)",
-            **headers,
-        }
-        if config.get("auth", {}).get("type") == "cookie":
-            cookie_header = await self._resolve_cookie_header(url)
-            if cookie_header:
-                merged_headers["Cookie"] = cookie_header
-
         # follow_redirects=False: a validated URL can still 30x-redirect to a
-        # private/loopback/fleet address, bypassing the check above.
+        # private/loopback/fleet address, bypassing the check above. The
+        # ctx.http path only gets plain call-time validation (the runner-
+        # shared client's connection pinning, if any, is out of this file's
+        # boundary); the one-shot path below is pinned via guarded_async_client
+        # (DNS-rebinding TOCTOU closure — AUDIT B3 follow-up).
         if ctx.http is not None:
+            try:
+                url = await avalidate_public_url(url)
+            except SSRFValidationError as exc:
+                raise ChannelFetchError(
+                    f"web_scraper URL rejected: {exc}", error_type="SSRFValidationError"
+                ) from exc
+
+            merged_headers = {
+                "User-Agent": "Mozilla/5.0 (compatible; opencli-admin/1.0)",
+                **headers,
+            }
+            if config.get("auth", {}).get("type") == "cookie":
+                cookie_header = await self._resolve_cookie_header(url)
+                if cookie_header:
+                    merged_headers["Cookie"] = cookie_header
+
             response = await self._get(ctx.http, url, timeout, headers=merged_headers)
         else:
-            async with httpx.AsyncClient(
-                headers=merged_headers, follow_redirects=False, timeout=timeout
-            ) as client:
-                response = await self._get(client, url, timeout)
+            # Validate first (need the normalized url for cookie-domain
+            # resolution and to build merged_headers before the client is
+            # constructed — existing tests assert headers is a constructor
+            # kwarg, matching the pre-pinning httpx.AsyncClient(headers=...)
+            # call shape) — then hand the already-validated url straight to
+            # guarded_async_client, which re-validates+pins in one step.
+            try:
+                url = await avalidate_public_url(url)
+            except SSRFValidationError as exc:
+                raise ChannelFetchError(
+                    f"web_scraper URL rejected: {exc}", error_type="SSRFValidationError"
+                ) from exc
+
+            merged_headers = {
+                "User-Agent": "Mozilla/5.0 (compatible; opencli-admin/1.0)",
+                **headers,
+            }
+            if config.get("auth", {}).get("type") == "cookie":
+                cookie_header = await self._resolve_cookie_header(url)
+                if cookie_header:
+                    merged_headers["Cookie"] = cookie_header
+
+            try:
+                client, url = await guarded_async_client(
+                    url, headers=merged_headers, follow_redirects=False, timeout=timeout
+                )
+            except SSRFValidationError as exc:
+                raise ChannelFetchError(
+                    f"web_scraper URL rejected: {exc}", error_type="SSRFValidationError"
+                ) from exc
+
+            async with client as opened_client:
+                response = await self._get(opened_client, url, timeout)
 
         soup = BeautifulSoup(response.text, "lxml")
 
@@ -169,27 +206,30 @@ class WebScraperChannel(AbstractChannel):
         if not url:
             return False
 
-        try:
-            url = await avalidate_public_url(url)
-        except SSRFValidationError as exc:
-            logger.warning("web_scraper health_check: URL rejected: %s", exc)
-            return False
-
         headers = {
             "User-Agent": "Mozilla/5.0 (compatible; opencli-admin/1.0)",
             **config.get("headers", {}),
         }
+
+        try:
+            # guarded_async_client pins the connection to the validated IP(s)
+            # — DNS-rebinding TOCTOU closure (AUDIT B3 follow-up). Same
+            # follow_redirects=False SSRF-via-redirect reasoning as fetch().
+            client, url = await guarded_async_client(url, follow_redirects=False, timeout=5)
+        except SSRFValidationError as exc:
+            logger.warning("web_scraper health_check: URL rejected: %s", exc)
+            return False
+
         if config.get("auth", {}).get("type") == "cookie":
             cookie_header = await self._resolve_cookie_header(url)
             if cookie_header:
                 headers["Cookie"] = cookie_header
 
         try:
-            # follow_redirects=False — same SSRF-via-redirect reasoning as fetch().
-            async with httpx.AsyncClient(follow_redirects=False, timeout=5) as client:
-                response = await client.head(url, headers=headers)
+            async with client as opened_client:
+                response = await opened_client.head(url, headers=headers)
                 if response.status_code in (404, 405):
-                    response = await client.get(url, headers=headers)
+                    response = await opened_client.get(url, headers=headers)
                 response.raise_for_status()
             return True
         except Exception as exc:
