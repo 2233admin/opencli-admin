@@ -1,12 +1,31 @@
 """DBCursorStore — per-source cursor persisted in source_cursors, upserted on save."""
 
 import asyncio
+import os
 from unittest.mock import patch
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from backend.pipeline.cursor_store import DBCursorStore
+
+# The concurrency tests below run on the default `db_engine` fixture (SQLite in
+# CI/local), which does NOT actually enforce `SELECT ... FOR UPDATE` row locks —
+# so on SQLite they prove the code PATH (insert-race fallback, no unhandled
+# error, no lost value) but NOT that the lock genuinely serializes contending
+# writers. The `test_concurrent_saves_postgres_*` variant re-runs the same
+# scenario against a real Postgres (where FOR UPDATE is enforced), and is the
+# one that actually closes AUDIT follow-up (c). It is skipped unless a Postgres
+# URL is provided (env TEST_DATABASE_URL_PG, or DATABASE_URL if it's postgres),
+# so it's inert locally/on SQLite and active in a Postgres-backed CI run.
+_PG_URL = os.environ.get("TEST_DATABASE_URL_PG") or (
+    os.environ.get("DATABASE_URL", "")
+    if os.environ.get("DATABASE_URL", "").startswith(("postgresql", "postgres"))
+    else ""
+)
+_requires_postgres = pytest.mark.skipif(
+    not _PG_URL, reason="no Postgres URL (TEST_DATABASE_URL_PG / postgres DATABASE_URL) — FOR UPDATE locking can only be verified on Postgres"
+)
 
 
 def _sessionmaker(db_engine):
@@ -94,3 +113,48 @@ async def test_concurrent_saves_no_lost_update_first_insert_race(db_engine):
 
         final = await store.load("src-new")
         assert final in ({"etag": "from-A"}, {"etag": "from-B"})
+
+
+# ── AUDIT follow-up (c): FOR UPDATE locking verified on real Postgres ───────
+
+@_requires_postgres
+@pytest.mark.asyncio
+async def test_concurrent_saves_postgres_for_update_serializes():
+    """Same no-lost-update scenario as the SQLite tests above, but against a
+    real Postgres where `SELECT ... FOR UPDATE` is actually enforced — this is
+    the run that genuinely proves the row lock serializes contending writers
+    (SQLite silently ignores FOR UPDATE, so the tests above can't). Skipped
+    unless a Postgres URL is configured; intended for the Postgres-backed CI
+    job (which already stands up Postgres + runs `alembic upgrade head`)."""
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    from backend.database import Base
+
+    url = _PG_URL
+    for prefix in ("postgresql+asyncpg://", "postgresql://", "postgres://"):
+        if url.startswith(prefix):
+            url = "postgresql+asyncpg://" + url[len(prefix):]
+            break
+
+    engine = create_async_engine(url)
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)  # idempotent (checkfirst)
+
+        with patch("backend.database.AsyncSessionLocal", _sessionmaker(engine)):
+            store = DBCursorStore()
+            await store.save("pg-src", {"etag": "seed"})
+
+            results = await asyncio.gather(
+                store.save("pg-src", {"etag": "from-A"}),
+                store.save("pg-src", {"etag": "from-B"}),
+                return_exceptions=True,
+            )
+            assert results == [None, None]
+
+            final = await store.load("pg-src")
+            assert final in ({"etag": "from-A"}, {"etag": "from-B"})
+    finally:
+        async with engine.begin() as conn:
+            await conn.exec_driver_sql("DELETE FROM source_cursors WHERE source_id = 'pg-src'")
+        await engine.dispose()

@@ -161,6 +161,17 @@ jobs:
           alembic downgrade -1
           alembic upgrade head
 
+      # AUDIT follow-up (c): the cursor concurrency tests run on SQLite in the
+      # backend job, where `SELECT ... FOR UPDATE` is a silent no-op — they
+      # prove the code path but not that the lock serializes writers. Re-run the
+      # Postgres-gated variant here (schema already at head above, DATABASE_URL
+      # is Postgres so the test's skip-gate activates), where the row lock is
+      # actually enforced, so a regression in cursor_store's per-source locking
+      # is caught. --no-cov: this is a targeted single-test step, not a coverage
+      # run (pyproject's addopts would otherwise fail it under the 80% gate).
+      - name: cursor FOR UPDATE locking (Postgres)
+        run: pytest tests/unit/pipeline/test_db_cursor_store.py -k postgres --no-cov -p no:cacheprovider
+
   cargo:
     runs-on: ubuntu-latest
     name: ODP Rust (odp-rs)
