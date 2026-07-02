@@ -74,8 +74,14 @@ class SourceTrend:
         self.rate_limited_runs = rate_limited_runs
 
 
-def _row_to_measurement(row: SourceMeasurementRow) -> SourceMeasurement:
-    """Map a persisted ``source_measurements`` row onto the pure contract."""
+def row_to_measurement(row: SourceMeasurementRow) -> SourceMeasurement:
+    """Map a persisted ``source_measurements`` row onto the pure contract.
+
+    Public (PR-Control-3.5): the outcome-judgment pass
+    (``backend.control.outcomes``) re-classifies a source from its
+    post-decision rows and must use THIS mapping — not a re-derived copy —
+    so a decision and its later judgment read the sensor identically.
+    """
     return SourceMeasurement.derive(
         source_id=row.source_id,
         run_id=row.run_id,
@@ -100,6 +106,26 @@ def _row_to_measurement(row: SourceMeasurementRow) -> SourceMeasurement:
     )
 
 
+async def latest_measurement_row(
+    session: AsyncSession, source_id: str
+) -> Optional[SourceMeasurementRow]:
+    """Return the newest persisted ``source_measurements`` row for a source,
+    or ``None`` when the source has never had one recorded.
+
+    Public (PR-Control-3.5): the control-state endpoint needs the ROW (its
+    ``id``) — not just the mapped contract — to stamp provenance
+    (``measurement_id``) onto advisory-ledger entries. Read-only.
+    """
+    return (
+        await session.execute(
+            select(SourceMeasurementRow)
+            .where(SourceMeasurementRow.source_id == source_id)
+            .order_by(SourceMeasurementRow.measured_at.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+
+
 async def build_measurement(
     session: AsyncSession, source_id: str
 ) -> Optional[SourceMeasurement]:
@@ -110,17 +136,10 @@ async def build_measurement(
     Read-only. Returns ``None`` if the source has never run at all (neither a
     ``source_measurements`` row nor a TaskRun row).
     """
-    latest_row = (
-        await session.execute(
-            select(SourceMeasurementRow)
-            .where(SourceMeasurementRow.source_id == source_id)
-            .order_by(SourceMeasurementRow.measured_at.desc())
-            .limit(1)
-        )
-    ).scalar_one_or_none()
+    latest_row = await latest_measurement_row(session, source_id)
 
     if latest_row is not None:
-        return _row_to_measurement(latest_row)
+        return row_to_measurement(latest_row)
 
     return await _build_measurement_from_task_events(session, source_id)
 
@@ -152,6 +171,20 @@ async def build_trend(
         )
     ).scalars().all()
 
+    return trend_from_rows(rows)
+
+
+def trend_from_rows(
+    rows: list[SourceMeasurementRow],
+) -> Optional[SourceTrend]:
+    """Summarize an already-fetched, newest-first row window into a
+    :class:`SourceTrend`. Pure — no I/O; returns ``None`` for an empty window.
+
+    Factored out of :func:`build_trend` (PR-Control-3.5) so the outcome pass
+    (``backend.control.outcomes``) can trend over a POST-decision row window
+    with the exact same math the live endpoint uses — the streak/avg/count
+    semantics documented on :func:`build_trend` apply unchanged.
+    """
     if not rows:
         return None
 

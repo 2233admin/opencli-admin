@@ -66,6 +66,66 @@ class SuggestedActionRead(BaseModel):
     payload: dict[str, Any] = Field(default_factory=dict)
 
 
+class OutcomeEvaluationRead(BaseModel):
+    """Counts from one ``backend.control.outcomes.evaluate_pending_outcomes``
+    pass — how many pending ledger rows were judged, and to which verdict.
+
+    ``evaluated`` is the sum of the three verdict buckets from THIS pass;
+    ``still_pending`` counts rows left for a later pass (too young, or no
+    post-decision measurement yet without being stale).
+    """
+
+    evaluated: int
+    recovered: int
+    persisted: int
+    insufficient_data: int
+    still_pending: int
+
+
+class AdvisoryReportTotalsRead(BaseModel):
+    """Outcome tallies over a set of advisory-ledger rows.
+
+    ``recovery_rate`` = recovered / (recovered + persisted); null when no row
+    in the set has reached a recovered/persisted verdict yet (a 0-of-0 rate
+    would be a fabricated signal, not a measurement).
+    """
+
+    total: int
+    pending: int
+    evaluated: int
+    recovered: int
+    persisted: int
+    insufficient_data: int
+    recovery_rate: Optional[float] = None
+
+
+class AdvisoryReportBucketRead(AdvisoryReportTotalsRead):
+    """Outcome tallies for one (state, action_type) pair of the advisory
+    evidence ledger — e.g. "everything we suggested pause_source for while
+    auth_failed"."""
+
+    state: str
+    action_type: str
+
+
+class AdvisoryReportRead(BaseModel):
+    """Agreement/recovery report over the ``control_actions`` evidence ledger
+    (PR-Control-3.5) — the gate data for ever flipping
+    ``Settings.control_mode`` to "automatic" per state class.
+
+    ``buckets`` groups rows by (state, action_type); ``totals`` is the same
+    tally over the whole ledger; ``mode_breakdown`` counts rows per decision
+    mode ("advisory" today — "automatic" rows appear only once PR-Control-4's
+    actuator exists and shares this ledger). ``evaluation`` reports the lazy
+    outcome pass this report ran before aggregating.
+    """
+
+    buckets: list[AdvisoryReportBucketRead] = Field(default_factory=list)
+    totals: AdvisoryReportTotalsRead
+    mode_breakdown: dict[str, int] = Field(default_factory=dict)
+    evaluation: OutcomeEvaluationRead
+
+
 class SourceControlStateRead(BaseModel):
     """Read-only, advisory control view of a source.
 

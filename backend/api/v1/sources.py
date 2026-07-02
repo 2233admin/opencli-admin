@@ -9,6 +9,7 @@ from backend.auth.manager import AuthManager
 from backend.config import get_settings
 from backend.control import aggregation, evaluator
 from backend.control.coverage import compute_sensor_coverage, derive_confidence, missing_signals
+from backend.control.ledger import record_advisory_actions
 from backend.control.objectives import SourceObjective
 from backend.control.policies import suggest_actions
 from backend.database import get_db
@@ -236,12 +237,14 @@ async def get_source_control_state(
     that state onto advisory ``ControlAction`` suggestions
     (``backend.control.policies``).
 
-    ADVISORY ONLY: this endpoint performs no writes anywhere. It never
-    mutates the source's ``DataSource`` row (no pause/resume, no interval
-    change, no config write), never calls the scheduler, and does not create
-    any control_actions audit row — there is no such table in this PR. It
-    only classifies and suggests; a human (or a future PR-Control-4 actuator,
-    gated by ``Settings.control_mode``) decides whether to act.
+    ADVISORY ONLY: this endpoint never mutates the source's ``DataSource``
+    row (no pause/resume, no interval change, no config write) and never
+    calls the scheduler. Per PR-Control-3.5, a non-empty suggestion list IS
+    persisted as evidence to the ``control_actions`` ledger
+    (``backend.control.ledger.record_advisory_actions``) — recording that a
+    suggestion was made is not the same as acting on it; only a human (or a
+    future PR-Control-4 actuator, gated by ``Settings.control_mode``) decides
+    whether to act.
 
     404 if the source itself doesn't exist. Every other failure mode (no run
     evidence yet, ODP fully down) degrades gracefully to nulls/False fields —
@@ -253,7 +256,12 @@ async def get_source_control_state(
 
     settings = get_settings()
     objective = SourceObjective()
-    measurement = await aggregation.build_measurement(db, source_id)
+    measurement_row = await aggregation.latest_measurement_row(db, source_id)
+    measurement = (
+        aggregation.row_to_measurement(measurement_row)
+        if measurement_row is not None
+        else await aggregation.build_measurement(db, source_id)
+    )
     trend_summary = await aggregation.build_trend(db, source_id)
     system_context = await _build_system_context(objective)
 
@@ -329,6 +337,31 @@ async def get_source_control_state(
                     "control_mode": settings.control_mode,
                 },
             )
+
+            # PR-Control-3.5: persist each suggestion to the advisory evidence
+            # ledger (backend.control.ledger) so a later outcome pass can judge
+            # whether it was justified. Same request session — the ledger
+            # write shares this request's transaction — and same best-effort
+            # stance as the events.emit() call above: recording evidence must
+            # never turn this read-only, advisory endpoint into a 500.
+            try:
+                await record_advisory_actions(
+                    db,
+                    source_id=source_id,
+                    state=control_state,
+                    actions=actions,
+                    measurement=measurement,
+                    measurement_row_id=(
+                        measurement_row.id if measurement_row is not None else None
+                    ),
+                    run_id=(
+                        measurement_row.run_id if measurement_row is not None else None
+                    ),
+                    mode=settings.control_mode,
+                    dedup_seconds=settings.control_advisory_dedup_seconds,
+                )
+            except Exception as exc:  # pragma: no cover - defensive guard
+                logger.warning("control-state: ledger write failed: %s", exc)
 
     return ApiResponse.ok(
         SourceControlStateRead(

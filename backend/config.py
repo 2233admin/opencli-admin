@@ -105,6 +105,24 @@ class Settings(BaseSettings):
     # no actuator yet. Changing this setting alone has no runtime effect today.
     control_mode: Literal["advisory", "automatic"] = "advisory"
 
+    # PR-Control-3.5 (advisory evidence ledger). The control-state endpoint is
+    # polled by the frontend, so identical consecutive suggestions must
+    # deduplicate instead of spamming control_actions rows: a suggestion is
+    # skipped when the latest ledger row for the same (source_id, action_type)
+    # carries the same state and is younger than this window. 600s ≈ well over
+    # any sane poll interval while still recording a fresh row when the same
+    # problem persists across a new decision epoch.
+    control_advisory_dedup_seconds: int = 600
+    # Outcome judgment (backend/control/outcomes.py): how long a ledger row
+    # must age before its suggestion is judged against subsequent
+    # source_measurements evidence (the plant needs time to produce a
+    # post-decision reading)...
+    control_outcome_min_age_seconds: int = 3600
+    # ...and after how long with NO post-decision measurement at all we stop
+    # waiting and record "insufficient_data" — an honest "we never got to see"
+    # rather than a verdict.
+    control_outcome_stale_seconds: int = 86400
+
     @property
     def is_sqlite(self) -> bool:
         return "sqlite" in self.database_url

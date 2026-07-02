@@ -1,6 +1,7 @@
 from backend.models.agent import AIAgent
 from backend.models.base import TimestampMixin
 from backend.models.browser import BrowserBinding, BrowserInstance
+from backend.models.control_action import ControlActionRecord
 from backend.models.cookie_jar import CookieJarEntry
 from backend.models.edge_node import EdgeNode, EdgeNodeEvent
 from backend.models.notification import NotificationLog, NotificationRule
@@ -30,6 +31,7 @@ __all__ = [
     "SourceCursor",
     "SourceMeasurement",
     "OdpSystemMeasurement",
+    "ControlActionRecord",
     "CollectionTask",
     "TaskRun",
     "TaskRunEvent",

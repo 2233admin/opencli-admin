@@ -620,3 +620,24 @@ async def test_control_state_never_mutates_the_data_source(
     assert before["enabled"] == after["enabled"] == sample_source_data["enabled"]
     assert before["channel_config"] == after["channel_config"]
     assert before == after
+
+    # PR-Control-3.5: recording evidence is NOT the same as acting on it —
+    # the suggestion IS persisted to the advisory ledger (control_actions),
+    # but that write targets a brand-new evidence table, never the
+    # DataSource row asserted untouched above.
+    from sqlalchemy import select
+
+    from backend.models.control_action import ControlActionRecord
+
+    ledger_rows = (
+        (
+            await db_session.execute(
+                select(ControlActionRecord).where(ControlActionRecord.source_id == source_id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert ledger_rows
+    assert all(row.executed is False for row in ledger_rows)
+    assert all(row.mode == "advisory" for row in ledger_rows)
