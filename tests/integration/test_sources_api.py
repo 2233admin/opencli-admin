@@ -234,3 +234,110 @@ async def test_import_opml_endpoint_invalid_xml_returns_400(client):
         files={"file": ("feeds.opml", b"<not-xml", "text/x-opml")},
     )
     assert response.status_code == 400
+
+
+# ── control-state (PR-Control-2): read-only sensor readings + derived state ────
+@pytest.mark.asyncio
+async def test_control_state_not_found(client):
+    response = await client.get("/api/v1/sources/nonexistent-id/control-state")
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_control_state_source_never_ran(client, sample_source_data):
+    create_resp = await client.post("/api/v1/sources", json=sample_source_data)
+    source_id = create_resp.json()["data"]["id"]
+
+    response = await client.get(f"/api/v1/sources/{source_id}/control-state")
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["source_id"] == source_id
+    assert data["measurement"] is None
+    assert data["control_state"] is None
+    # objective defaults are always present
+    assert data["objective"]["max_error_rate"] == 0.05
+    assert data["objective"]["max_pending"] == 1000
+
+
+@pytest.mark.asyncio
+async def test_control_state_with_run_evidence(client, db_session, sample_source_data):
+    """A healthy completed run yields a populated measurement + HEALTHY state.
+
+    The client fixture and db_session share the same injected session, so
+    evidence inserted here is visible to the endpoint's aggregation query.
+    """
+    from datetime import datetime, timezone
+
+    from backend.models.task import CollectionTask, TaskRun, TaskRunEvent
+
+    create_resp = await client.post("/api/v1/sources", json=sample_source_data)
+    source_id = create_resp.json()["data"]["id"]
+
+    task = CollectionTask(source_id=source_id, trigger_type="manual", parameters={})
+    db_session.add(task)
+    await db_session.flush()
+
+    run = TaskRun(
+        task_id=task.id,
+        status="completed",
+        finished_at=datetime(2026, 7, 2, tzinfo=timezone.utc),
+        duration_ms=1000,
+        records_collected=9,
+    )
+    db_session.add(run)
+    await db_session.flush()
+    db_session.add(
+        TaskRunEvent(
+            run_id=run.id, level="info", step="complete", message="done",
+            detail={"collected": 10, "stored": 9, "skipped": 1},
+        )
+    )
+    await db_session.flush()
+
+    response = await client.get(f"/api/v1/sources/{source_id}/control-state")
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["measurement"] is not None
+    assert data["measurement"]["accepted"] == 9
+    assert data["measurement"]["duplicates"] == 1
+    assert data["measurement"]["rejected"] == 0  # 10 - 9 - 1
+    # error_rate = 0/10 = 0.0 -> HEALTHY
+    assert data["control_state"] == "healthy"
+
+
+@pytest.mark.asyncio
+async def test_control_state_degraded_when_errors(client, db_session, sample_source_data):
+    from datetime import datetime, timezone
+
+    from backend.models.task import CollectionTask, TaskRun, TaskRunEvent
+
+    create_resp = await client.post("/api/v1/sources", json=sample_source_data)
+    source_id = create_resp.json()["data"]["id"]
+
+    task = CollectionTask(source_id=source_id, trigger_type="manual", parameters={})
+    db_session.add(task)
+    await db_session.flush()
+
+    run = TaskRun(
+        task_id=task.id,
+        status="completed",
+        finished_at=datetime(2026, 7, 2, tzinfo=timezone.utc),
+        duration_ms=1000,
+        records_collected=1,
+    )
+    db_session.add(run)
+    await db_session.flush()
+    # collected=10, stored=1, skipped=0 -> rejected=9 -> error_rate=9/10=0.9 > 0.05
+    db_session.add(
+        TaskRunEvent(
+            run_id=run.id, level="info", step="complete", message="done",
+            detail={"collected": 10, "stored": 1, "skipped": 0},
+        )
+    )
+    await db_session.flush()
+
+    response = await client.get(f"/api/v1/sources/{source_id}/control-state")
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["measurement"]["rejected"] == 9
+    assert data["control_state"] == "degraded"

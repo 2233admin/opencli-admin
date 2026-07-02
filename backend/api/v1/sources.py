@@ -5,8 +5,11 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.auth.manager import AuthManager
+from backend.control import aggregation, evaluator
+from backend.control.objectives import SourceObjective
 from backend.database import get_db
 from backend.schemas.common import ApiResponse, PaginationMeta
+from backend.schemas.control import SourceControlStateRead
 from backend.schemas.credential import CredentialCreate, CredentialKeyRead
 from backend.schemas.source import DataSourceCreate, DataSourceDetail, DataSourceRead, DataSourceUpdate
 from backend.services import source_service
@@ -168,3 +171,42 @@ async def delete_source_credential(
         raise HTTPException(status_code=404, detail="Source not found")
     await AuthManager().delete(source_id, key_name)
     return ApiResponse.ok(None)
+
+
+@router.get(
+    "/{source_id}/control-state",
+    response_model=ApiResponse[SourceControlStateRead],
+)
+async def get_source_control_state(
+    source_id: str, db: AsyncSession = Depends(get_db)
+) -> ApiResponse:
+    """Read-only control view of a source (PR-Control-2).
+
+    Aggregates the source's latest run evidence into a ``SourceMeasurement`` and
+    derives a provisional ``SourceControlState`` from it (see
+    ``backend.control.evaluator`` — PR-Control-3 replaces that with the real
+    evaluator/policies engine). This endpoint exposes sensor readings only; it
+    performs no writes and does not affect collection/pipeline/runner behavior.
+
+    ``measurement``/``control_state`` are null when the source has never run.
+    The ``objective`` is the ``SourceObjective`` defaults for now — per-source
+    objective overrides are not stored yet (future work).
+    """
+    source = await source_service.get_source(db, source_id)
+    if not source:
+        raise HTTPException(status_code=404, detail="Source not found")
+
+    objective = SourceObjective()
+    measurement = await aggregation.build_measurement(db, source_id)
+    control_state = (
+        evaluator.evaluate(measurement, objective) if measurement is not None else None
+    )
+
+    return ApiResponse.ok(
+        SourceControlStateRead(
+            source_id=source_id,
+            measurement=measurement,
+            control_state=control_state,
+            objective=objective,
+        )
+    )
