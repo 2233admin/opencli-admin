@@ -15,6 +15,7 @@ from backend.channels.base import (
     FetchResult,
 )
 from backend.channels.registry import register_channel
+from backend.security.url_guard import SSRFValidationError, avalidate_public_url
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +54,13 @@ class WebScraperChannel(AbstractChannel):
         timeout: int = config.get("timeout", 30)
         list_selector: str = config.get("list_selector", "")
 
+        try:
+            url = await avalidate_public_url(url)
+        except SSRFValidationError as exc:
+            raise ChannelFetchError(
+                f"web_scraper URL rejected: {exc}", error_type="SSRFValidationError"
+            ) from exc
+
         merged_headers = {
             "User-Agent": "Mozilla/5.0 (compatible; opencli-admin/1.0)",
             **headers,
@@ -62,11 +70,13 @@ class WebScraperChannel(AbstractChannel):
             if cookie_header:
                 merged_headers["Cookie"] = cookie_header
 
+        # follow_redirects=False: a validated URL can still 30x-redirect to a
+        # private/loopback/fleet address, bypassing the check above.
         if ctx.http is not None:
             response = await self._get(ctx.http, url, timeout, headers=merged_headers)
         else:
             async with httpx.AsyncClient(
-                headers=merged_headers, follow_redirects=True, timeout=timeout
+                headers=merged_headers, follow_redirects=False, timeout=timeout
             ) as client:
                 response = await self._get(client, url, timeout)
 
@@ -159,6 +169,12 @@ class WebScraperChannel(AbstractChannel):
         if not url:
             return False
 
+        try:
+            url = await avalidate_public_url(url)
+        except SSRFValidationError as exc:
+            logger.warning("web_scraper health_check: URL rejected: %s", exc)
+            return False
+
         headers = {
             "User-Agent": "Mozilla/5.0 (compatible; opencli-admin/1.0)",
             **config.get("headers", {}),
@@ -169,7 +185,8 @@ class WebScraperChannel(AbstractChannel):
                 headers["Cookie"] = cookie_header
 
         try:
-            async with httpx.AsyncClient(follow_redirects=True, timeout=5) as client:
+            # follow_redirects=False — same SSRF-via-redirect reasoning as fetch().
+            async with httpx.AsyncClient(follow_redirects=False, timeout=5) as client:
                 response = await client.head(url, headers=headers)
                 if response.status_code in (404, 405):
                     response = await client.get(url, headers=headers)

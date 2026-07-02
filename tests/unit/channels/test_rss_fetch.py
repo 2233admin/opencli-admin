@@ -2,11 +2,25 @@
 runner driving it end to end (the thin-channel / thick-runner vertical slice)."""
 
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import pytest
 
 from backend.channels.base import FetchContext
 from backend.channels.rss_channel import RSSChannel
+
+
+@pytest.fixture(autouse=True)
+def _fake_dns():
+    """fetch()/collect() now run feed_url through backend.security.url_guard
+    (SSRF guard — AUDIT item B3), which resolves the host via
+    socket.getaddrinfo. These tests use an unresolvable placeholder host
+    ("x") with an injected fake http client, so fake a public-IP resolution
+    for every hostname — keeps them decoupled from live DNS entirely."""
+    with patch(
+        "socket.getaddrinfo", return_value=[(None, None, None, "", ("93.184.216.34", 0))]
+    ):
+        yield
 
 _RSS = """<?xml version="1.0"?>
 <rss version="2.0"><channel><title>Feed</title>

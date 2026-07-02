@@ -35,6 +35,7 @@ from backend.channels.base import (
     FetchResult,
 )
 from backend.channels.registry import register_channel
+from backend.security.url_guard import SSRFValidationError, avalidate_public_url
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +64,12 @@ class Crawl4AIChannel(AbstractChannel):
         url: str = config.get("url", "")
         if not url:
             raise ChannelFetchError("crawl4ai channel: 'url' is required")
+        try:
+            url = await avalidate_public_url(url)
+        except SSRFValidationError as exc:
+            raise ChannelFetchError(
+                f"crawl4ai URL rejected: {exc}", error_type="SSRFValidationError"
+            ) from exc
         list_selector: str = config.get("list_selector", "")
         selectors: dict[str, str] = config.get("selectors", {})
         wait_for: str | None = config.get("wait_for")
@@ -189,6 +196,22 @@ class Crawl4AIChannel(AbstractChannel):
                 "(add one under Providers first)"
             )
 
+        # Key-exfil guard: a provider's base_url is DB-stored config, not a
+        # hardcoded trusted endpoint — if it doesn't pass the SSRF/public-host
+        # check, we must not attach the API key or call it (that would ship the
+        # key to whatever internal/attacker host base_url points at). No
+        # base_url configured (None → provider's own default endpoint) is fine
+        # and is not validated here.
+        base_url = provider.base_url or None
+        if base_url:
+            try:
+                base_url = await avalidate_public_url(base_url)
+            except SSRFValidationError as exc:
+                raise ChannelFetchError(
+                    f"crawl4ai LLM extraction: provider base_url rejected: {exc}",
+                    error_type="SSRFValidationError",
+                ) from exc
+
         litellm_prefix = {"claude": "anthropic", "openai": "openai", "local": "openai"}.get(
             provider.provider_type, "openai"
         )
@@ -198,7 +221,7 @@ class Crawl4AIChannel(AbstractChannel):
         return LLMConfig(
             provider=f"{litellm_prefix}/{provider.default_model or default_model}",
             api_token=provider.api_key or None,
-            base_url=provider.base_url or None,
+            base_url=base_url,
         )
 
     @staticmethod
@@ -242,6 +265,12 @@ class Crawl4AIChannel(AbstractChannel):
             return True  # no source context to probe (e.g. called standalone)
         url: str = config.get("url", "")
         if not url:
+            return False
+
+        try:
+            url = await avalidate_public_url(url)
+        except SSRFValidationError as exc:
+            logger.warning("crawl4ai health_check: URL rejected: %s", exc)
             return False
 
         cookies: list[dict] = []

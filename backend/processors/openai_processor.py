@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 from backend.processors.base import AbstractProcessor, ProcessingResult
 from backend.processors.registry import register_processor
+from backend.security.url_guard import SSRFValidationError, avalidate_public_url
 
 if TYPE_CHECKING:
     from backend.models.record import CollectedRecord
@@ -39,6 +40,16 @@ class OpenAIProcessor(AbstractProcessor):
 
         api_key = config.get("api_key") or __import__("os").environ.get("OPENAI_API_KEY", "")
         base_url: str | None = config.get("base_url") or None
+        # Key-exfil guard: base_url is DB/config-supplied — if it doesn't pass
+        # the SSRF/public-host check, don't attach api_key to a client pointed
+        # at it. None (OpenAI's own default endpoint) is left unvalidated.
+        if base_url:
+            try:
+                base_url = await avalidate_public_url(base_url)
+            except SSRFValidationError as exc:
+                return ProcessingResult(
+                    success=False, error=f"openai processor: base_url rejected: {exc}"
+                )
         model = config.get("model", "gpt-4o-mini")
         max_tokens = config.get("max_tokens", 1024)
         use_json_mode = config.get("json_mode", base_url is None)

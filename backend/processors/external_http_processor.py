@@ -11,6 +11,7 @@ import httpx
 
 from backend.processors.base import AbstractProcessor, ProcessingResult
 from backend.processors.registry import register_processor
+from backend.security.url_guard import SSRFValidationError, avalidate_public_url
 
 if TYPE_CHECKING:
     from backend.models.record import CollectedRecord
@@ -69,6 +70,13 @@ class ExternalHTTPProcessor(AbstractProcessor):
         endpoint = cfg.get("endpoint") or cfg.get("url")
         if not endpoint:
             return ProcessingResult(success=False, error="external_http endpoint is required")
+
+        try:
+            endpoint = await avalidate_public_url(str(endpoint))
+        except SSRFValidationError as exc:
+            return ProcessingResult(
+                success=False, error=f"external_http endpoint rejected: {exc}"
+            )
 
         timeout = float(cfg.get("timeout", 60))
         headers = dict(cfg.get("headers", {}))

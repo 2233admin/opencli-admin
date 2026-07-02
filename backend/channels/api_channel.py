@@ -16,6 +16,7 @@ from backend.channels.base import (
     FetchResult,
 )
 from backend.channels.registry import register_channel
+from backend.security.url_guard import SSRFValidationError, avalidate_public_url
 
 logger = logging.getLogger(__name__)
 
@@ -81,9 +82,19 @@ class ApiChannel(AbstractChannel):
         result_path: str = config.get("result_path", "")
 
         url = base_url.rstrip("/") + "/" + endpoint.lstrip("/")
+        try:
+            url = await avalidate_public_url(url)
+        except SSRFValidationError as exc:
+            raise ChannelFetchError(
+                f"api channel URL rejected: {exc}", error_type="SSRFValidationError"
+            ) from exc
+
         headers = await self._resolve_auth_headers(auth_config, ctx.source_id, base_url)
         headers.update(extra_headers)
 
+        # follow_redirects defaults to False on httpx.AsyncClient — a validated
+        # URL must not be allowed to 30x-redirect to a private/loopback/fleet
+        # address (SSRF via redirect), so this is left unset deliberately.
         if ctx.http is not None:
             response = await self._send(ctx.http, method, url, query_params, request_body, headers, timeout)
         else:
@@ -230,6 +241,12 @@ class ApiChannel(AbstractChannel):
             return False
         endpoint: str = config.get("endpoint", "")
         url = base_url.rstrip("/") + "/" + endpoint.lstrip("/") if endpoint else base_url
+
+        try:
+            url = await avalidate_public_url(url)
+        except SSRFValidationError as exc:
+            logger.warning("api channel health_check: URL rejected: %s", exc)
+            return False
 
         headers = await self._resolve_auth_headers(config.get("auth", {}), source_id, base_url)
 

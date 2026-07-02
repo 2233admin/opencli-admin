@@ -48,6 +48,7 @@ from typing import TYPE_CHECKING, Any
 from backend.channels.base import AbstractChannel, Capabilities, ChannelResult
 from backend.channels.registry import register_channel
 from backend.pipeline import events
+from backend.security.url_guard import SSRFValidationError, avalidate_public_url
 
 # risk / perception import only stdlib — safe at registry-load time. The loop is
 # imported lazily inside collect() because backend.skills.loop imports
@@ -198,7 +199,7 @@ class _PerceivingPage:
         return getattr(self._sp, name)
 
 
-def _build_model_call(provider: dict[str, Any]) -> Any:
+async def _build_model_call(provider: dict[str, Any]) -> Any:
     """Bind an ``async (messages, *, tools, model, xml) -> reply`` model caller.
 
     Reuses the agent dock's OpenAI-compatible client shape
@@ -207,11 +208,23 @@ def _build_model_call(provider: dict[str, Any]) -> Any:
     gateway) is driven exactly like ``backend.api.v1.chat`` drives the console
     model. ``reply`` is the raw OpenAI chat object the loop already knows how to
     normalize (both ``tool_calls`` and the Qwen XML ``<tool_use>`` path).
+
+    Key-exfil guard: ``provider`` is DB/config-supplied (``channel_config.
+    provider``), so its ``base_url`` is validated before the API key is ever
+    attached to a client pointed at it — an unvalidated base_url would let a
+    malicious/misconfigured source ship the LLM key to an internal host or an
+    attacker-controlled public endpoint. No base_url configured (provider's
+    own default) is left unvalidated.
     """
     from openai import AsyncOpenAI
 
     api_key = provider.get("api_key") or ""
     base_url = provider.get("base_url") or None
+    if base_url:
+        try:
+            base_url = await avalidate_public_url(base_url)
+        except SSRFValidationError as exc:
+            raise ValueError(f"skill channel: provider base_url rejected: {exc}") from exc
     client = AsyncOpenAI(api_key=api_key, base_url=base_url)
 
     async def model_call(
@@ -543,6 +556,11 @@ class SkillChannel(AbstractChannel):
         # unless the source opts a trusted skill into unattended running.
         auto_confirm = bool(config.get("auto_confirm", False))
 
+        try:
+            model_call = await _build_model_call(provider)
+        except ValueError as exc:
+            return ChannelResult.fail(str(exc), error_type="SSRFValidationError")
+
         from backend.browser_pool import get_pool
         from backend.skills.loop import run_skill_loop  # lazy: breaks import cycle
         from backend.skills.page import open_skill_page
@@ -558,7 +576,6 @@ class SkillChannel(AbstractChannel):
                     task[:80], mode, cdp_endpoint, model, auto_confirm, run_id,
                 )
 
-                model_call = _build_model_call(provider)
                 skill_page = await open_skill_page(cdp_endpoint)
                 try:
                     page = _PerceivingPage(skill_page)

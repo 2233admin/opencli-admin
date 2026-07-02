@@ -24,6 +24,8 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 
+from backend.security.url_guard import SSRFValidationError, avalidate_public_url
+
 if TYPE_CHECKING:
     from backend.models.provider import ModelProvider
 
@@ -81,8 +83,25 @@ def provider_from_model(mp: "ModelProvider") -> dict[str, Any]:
 
 async def call_llm(system: str, user: str, provider: dict[str, Any]) -> str:
     """One chat completion against the provider. Supports OpenAI-compatible
-    (/v1/chat/completions) and native Ollama (/api/chat) styles."""
-    base_url = provider.get("base_url", _DEFAULT_PROVIDER["base_url"])
+    (/v1/chat/completions) and native Ollama (/api/chat) styles.
+
+    Key-exfil guard: when ``provider['base_url']`` is explicitly supplied
+    (sourced from a saved ``ModelProvider`` row — DB-stored config), it's
+    validated through the SSRF guard before the API key is attached to any
+    request — an unvalidated base_url would ship the key to whatever host it
+    points at (internal service or attacker-controlled public endpoint). The
+    *hardcoded* ``_DEFAULT_PROVIDER["base_url"]`` (local Ollama at
+    ``localhost:11434`` — this module's own no-provider-configured fallback,
+    not user/DB input) is intentionally NOT run through the guard: it's a
+    fixed operator-intended local endpoint, and blocking loopback
+    unconditionally here would break that legitimate default. Raises
+    :class:`SSRFValidationError` (not a silent empty string) so the caller
+    sees a clear rejection instead of a confusing downstream connection
+    failure.
+    """
+    base_url = provider.get("base_url") or _DEFAULT_PROVIDER["base_url"]
+    if base_url != _DEFAULT_PROVIDER["base_url"]:
+        base_url = await avalidate_public_url(base_url)
     model = provider.get("model", _DEFAULT_PROVIDER["model"])
     api_key = provider.get("api_key")
     api_style = provider.get("api_style", "openai")

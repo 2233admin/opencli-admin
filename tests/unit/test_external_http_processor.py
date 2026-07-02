@@ -45,7 +45,15 @@ async def test_external_http_processor_posts_prompt_and_record():
         return FakeResponse()
 
     processor = ExternalHTTPProcessor()
-    with patch("httpx.AsyncClient.post", new=fake_post):
+    # This endpoint now runs through backend.security.url_guard (SSRF guard —
+    # AUDIT item B3), which resolves the hostname via socket.getaddrinfo.
+    # "agent-service" is a Docker Compose service name (resolves fine inside
+    # the compose network in production) but isn't resolvable from this test
+    # sandbox — fake a public-IP resolution so the test stays decoupled from
+    # live DNS/network access entirely (same pattern as test_api_channel.py).
+    with patch("httpx.AsyncClient.post", new=fake_post), patch(
+        "socket.getaddrinfo", return_value=[(None, None, None, "", ("93.184.216.34", 0))]
+    ):
         result = await processor.process(
             records=[_record()],
             prompt_template="Summarize {{title}} by {{author}}",

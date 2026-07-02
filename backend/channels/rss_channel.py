@@ -14,6 +14,7 @@ from backend.channels.base import (
     FetchResult,
 )
 from backend.channels.registry import register_channel
+from backend.security.url_guard import SSRFValidationError, avalidate_public_url
 
 
 @register_channel
@@ -33,7 +34,18 @@ class RSSChannel(AbstractChannel):
         timeout: int = config.get("timeout", 30)
 
         try:
-            async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+            feed_url = await avalidate_public_url(feed_url)
+        except SSRFValidationError as exc:
+            return ChannelResult.fail(
+                f"RSS feed URL rejected: {exc}", error_type="SSRFValidationError"
+            )
+
+        try:
+            # follow_redirects=False: a validated public URL could otherwise
+            # 30x-redirect to a private/loopback/fleet address, bypassing the
+            # check above (SSRF via redirect). RSS feeds don't legitimately
+            # need cross-host redirect chains for this use case.
+            async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
                 response = await client.get(
                     feed_url,
                     headers={"User-Agent": "opencli-admin/1.0 (+https://github.com)"},
@@ -94,16 +106,26 @@ class RSSChannel(AbstractChannel):
         timeout: int = config.get("timeout", 30)
         cursor = ctx.cursor or {}
 
+        try:
+            feed_url = await avalidate_public_url(feed_url)
+        except SSRFValidationError as exc:
+            raise ChannelFetchError(
+                f"RSS feed URL rejected: {exc}", error_type="SSRFValidationError"
+            ) from exc
+
         headers = {"User-Agent": "opencli-admin/1.0 (+https://github.com)"}
         if cursor.get("etag"):
             headers["If-None-Match"] = cursor["etag"]
         if cursor.get("last_modified"):
             headers["If-Modified-Since"] = cursor["last_modified"]
 
+        # follow_redirects=False on the one-shot path — see collect()'s comment;
+        # ctx.http is the runner-shared client (its redirect policy is the
+        # runner's concern, out of this file's boundary).
         if ctx.http is not None:
             response = await ctx.http.get(feed_url, headers=headers, timeout=timeout)
         else:
-            async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+            async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
                 response = await client.get(feed_url, headers=headers)
 
         if response.status_code == 304:

@@ -529,6 +529,7 @@ function InstanceCard({
     mutationFn: ({ agent_url, agent_protocol }: { agent_url: string; agent_protocol: string }) =>
       updateChromeInstanceConfig(url, { agent_url: agent_url || null, agent_protocol: agent_protocol || null }),
     onSuccess: () => { setEditingAgentUrl(false); onConfigChanged() },
+    onError: (err) => toast.error(err instanceof Error ? err.message : '保存 Agent 地址失败'),
   })
   const novncUrl = `http://${window.location.hostname}:${novncPort}`
   const label = instanceLabel(url)
@@ -789,6 +790,10 @@ export default function BrowsersPage() {
           .catch(() => {})
       }, 2000)
       setTimeout(() => { clearInterval(poll); setRestartMsg(null) }, 30_000)
+    },
+    onError: (err) => {
+      setRestartMsg(null)
+      toast.error(err instanceof Error ? err.message : t('browsers.restartApi') + ' 失败')
     },
   })
 

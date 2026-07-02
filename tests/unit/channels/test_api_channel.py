@@ -9,6 +9,20 @@ from backend.channels.api_channel import ApiChannel, _resolve_dict_secrets, _res
 from backend.channels.base import ChannelFetchError, FetchContext
 
 
+@pytest.fixture(autouse=True)
+def _fake_dns():
+    """This channel now runs every base_url+endpoint through
+    backend.security.url_guard (SSRF guard — AUDIT item B3), which resolves
+    the hostname via socket.getaddrinfo. The fixture URLs here
+    (api.example.com etc.) are illustrative and don't actually resolve, so
+    fake a public-IP resolution for every hostname — keeps these tests
+    decoupled from live DNS/network access entirely."""
+    with patch(
+        "socket.getaddrinfo", return_value=[(None, None, None, "", ("93.184.216.34", 0))]
+    ):
+        yield
+
+
 # ── _resolve_secrets ───────────────────────────────────────────────────────────
 
 def test_resolve_secrets_with_env(monkeypatch):

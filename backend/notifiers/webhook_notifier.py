@@ -10,6 +10,7 @@ import httpx
 
 from backend.notifiers.base import AbstractNotifier, NotificationPayload
 from backend.notifiers.registry import register_notifier
+from backend.security.url_guard import SSRFValidationError, avalidate_public_url
 
 
 @register_notifier
@@ -21,6 +22,11 @@ class WebhookNotifier(AbstractNotifier):
         secret: str = config.get("secret", "")
         timeout: int = config.get("timeout", 15)
         extra_headers: dict = config.get("headers", {})
+
+        try:
+            url = await avalidate_public_url(url)
+        except SSRFValidationError:
+            return False
 
         body = {
             "event": payload.event,
@@ -37,6 +43,9 @@ class WebhookNotifier(AbstractNotifier):
             sig = hmac.new(secret.encode(), body_bytes, hashlib.sha256).hexdigest()
             headers["X-Signature-256"] = f"sha256={sig}"
 
+        # httpx.AsyncClient defaults follow_redirects=False — kept unset
+        # deliberately so a validated URL can't 30x-redirect to a private/
+        # loopback/fleet address (SSRF via redirect).
         async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.post(url, content=body_bytes, headers=headers)
             return response.is_success

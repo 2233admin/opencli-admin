@@ -176,9 +176,15 @@ def _patch_browser_and_model(monkeypatch, fake_page, script):
 
     monkeypatch.setattr("backend.skills.page.open_skill_page", fake_open)
     # No real LLM: the channel's model_call binder returns the scripted caller.
+    # _build_model_call is async (it validates provider.base_url through the
+    # SSRF guard before attaching an API key — AUDIT item B3), so the stub
+    # must be awaitable too.
+    async def _fake_build_model_call(provider):
+        return _scripted_model_call(script)
+
     monkeypatch.setattr(
         "backend.channels.skill_channel._build_model_call",
-        lambda provider: _scripted_model_call(script),
+        _fake_build_model_call,
     )
 
     # browser_pool.acquire must yield a CDP endpoint without a real browser.

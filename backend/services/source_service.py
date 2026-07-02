@@ -11,6 +11,7 @@ from backend.channels.registry import get_channel
 from backend.models.source import DataSource
 from backend.models.source_credential import SourceCredential
 from backend.schemas.source import DataSourceCreate, DataSourceUpdate
+from backend.security.url_guard import SSRFValidationError, avalidate_public_url
 
 #: common feed paths probed when a site's <head> has no <link rel="alternate">
 #: feed tags at all (many blogs/CMSes still serve a feed at one of these).
@@ -108,7 +109,15 @@ async def discover_feeds(url: str) -> list[dict[str, Any]]:
     candidates: list[dict[str, Any]] = []
     seen: set[str] = set()
 
-    async with httpx.AsyncClient(follow_redirects=True, timeout=10) as client:
+    try:
+        url = await avalidate_public_url(url)
+    except SSRFValidationError:
+        return []
+
+    # follow_redirects=False: a validated URL can still 30x-redirect to a
+    # private/loopback/fleet address (SSRF via redirect) — this endpoint takes
+    # a raw user-supplied homepage URL at setup time, so it's a prime target.
+    async with httpx.AsyncClient(follow_redirects=False, timeout=10) as client:
         try:
             response = await client.get(url)
             response.raise_for_status()
@@ -121,6 +130,13 @@ async def discover_feeds(url: str) -> list[dict[str, Any]]:
             href = link.get("href")
             if mime in _FEED_MIME_TYPES and href:
                 feed_url = urljoin(str(response.url), href)
+                # The derived feed_url is attacker-influenceable (comes from the
+                # fetched page's own <link href>), so it needs the same check as
+                # the original url, not just a "we already validated the site" pass.
+                try:
+                    feed_url = await avalidate_public_url(feed_url)
+                except SSRFValidationError:
+                    continue
                 if feed_url not in seen:
                     seen.add(feed_url)
                     candidates.append({"url": feed_url, "title": link.get("title")})
@@ -133,6 +149,10 @@ async def discover_feeds(url: str) -> list[dict[str, Any]]:
         base = f"{parsed.scheme}://{parsed.netloc}"
         for path in _COMMON_FEED_PATHS:
             probe_url = base + path
+            try:
+                probe_url = await avalidate_public_url(probe_url)
+            except SSRFValidationError:
+                continue
             try:
                 probe = await client.get(probe_url)
             except Exception:

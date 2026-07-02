@@ -11,6 +11,7 @@ import httpx
 
 from backend.notifiers.base import AbstractNotifier, NotificationPayload
 from backend.notifiers.registry import register_notifier
+from backend.security.url_guard import SSRFValidationError, avalidate_public_url
 
 _PLACEHOLDER_RE = re.compile(r"\{\{(\w+)\}\}")
 
@@ -43,6 +44,11 @@ class FeishuNotifier(AbstractNotifier):
         )
         timeout: int = config.get("timeout", 15)
 
+        try:
+            webhook_url = await avalidate_public_url(webhook_url)
+        except SSRFValidationError:
+            return False
+
         data = {"source_id": payload.source_id, **(payload.data or {})}
         title = _render(title_template, data)
         content = _render(content_template, data)
@@ -64,6 +70,8 @@ class FeishuNotifier(AbstractNotifier):
             body["timestamp"] = str(ts)
             body["sign"] = _feishu_sign(secret, ts)
 
+        # follow_redirects left at httpx's default (False) — see webhook_notifier
+        # for the SSRF-via-redirect reasoning.
         async with httpx.AsyncClient(timeout=timeout) as client:
             resp = await client.post(webhook_url, json=body)
             result = resp.json()
