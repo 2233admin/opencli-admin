@@ -12,7 +12,27 @@ tests and single-process use, and ``DBCursorStore`` backed by the
 adapters changes nothing above.
 """
 
+from dataclasses import dataclass
 from typing import Any, Protocol
+
+
+@dataclass(frozen=True)
+class CommitResult:
+    """The REAL outcome of one ``CursorStore.save()`` call — not a guess.
+
+    ``advanced`` is True only when the stored cursor value actually changed
+    (a brand-new row being written for a source that had none counts as
+    "advanced" too — there IS a new persisted value where there wasn't one).
+    It is False when the caller re-saved the same value that was already
+    there (a no-op write). Callers (the runner / pipeline / recorder) use this
+    to feed a truthful ``cursor_advanced`` into ``SourceMeasurement`` instead
+    of assuming "save() was called" means "the cursor moved" — see
+    docs/CONTROL_THEORY_ARCHITECTURE.md §0 and §2 principle 3.
+    """
+
+    advanced: bool
+    old_cursor: dict[str, Any] | None
+    new_cursor: dict[str, Any] | None
 
 
 class CursorStore(Protocol):
@@ -21,7 +41,7 @@ class CursorStore(Protocol):
 
     async def load(self, source_id: str) -> dict[str, Any] | None: ...
 
-    async def save(self, source_id: str, cursor: dict[str, Any]) -> None: ...
+    async def save(self, source_id: str, cursor: dict[str, Any]) -> CommitResult: ...
 
 
 class InMemoryCursorStore:
@@ -34,8 +54,11 @@ class InMemoryCursorStore:
     async def load(self, source_id: str) -> dict[str, Any] | None:
         return self._cursors.get(source_id)
 
-    async def save(self, source_id: str, cursor: dict[str, Any]) -> None:
-        self._cursors[source_id] = dict(cursor)
+    async def save(self, source_id: str, cursor: dict[str, Any]) -> CommitResult:
+        old = self._cursors.get(source_id)
+        new = dict(cursor)
+        self._cursors[source_id] = new
+        return CommitResult(advanced=(old != new), old_cursor=old, new_cursor=new)
 
 
 class DBCursorStore:
@@ -60,9 +83,15 @@ class DBCursorStore:
             ).scalar_one_or_none()
             return dict(row.cursor) if row and row.cursor else None
 
-    async def save(self, source_id: str, cursor: dict[str, Any]) -> None:
+    async def save(self, source_id: str, cursor: dict[str, Any]) -> CommitResult:
         """Upsert the cursor row, serialized per-source so two concurrent runs of
         the same source cannot lose an update.
+
+        Returns a ``CommitResult`` reflecting the REAL commit: ``advanced`` is
+        True when the stored value actually changed (including the
+        first-ever row for a source), False when the caller re-saved an
+        identical value onto an existing row (a true no-op write) — see
+        ``CommitResult``'s docstring.
 
         Plain SELECT-then-INSERT/UPDATE (the prior implementation) has a race: two
         concurrent ``save()`` calls for the same ``source_id`` can both SELECT
@@ -103,15 +132,24 @@ class DBCursorStore:
                     )
                 ).scalar_one_or_none()
                 if row is not None:
-                    row.cursor = dict(cursor)
+                    old_cursor = dict(row.cursor) if row.cursor else None
+                    new_cursor = dict(cursor)
+                    row.cursor = new_cursor
                     await session.commit()
-                    return
+                    return CommitResult(
+                        advanced=(old_cursor != new_cursor),
+                        old_cursor=old_cursor,
+                        new_cursor=new_cursor,
+                    )
 
                 try:
+                    new_cursor = dict(cursor)
                     async with session.begin_nested():
-                        session.add(SourceCursor(source_id=source_id, cursor=dict(cursor)))
+                        session.add(SourceCursor(source_id=source_id, cursor=new_cursor))
                     await session.commit()
-                    return
+                    # First-ever row for this source: there is now a persisted
+                    # value where there wasn't one — that counts as advanced.
+                    return CommitResult(advanced=True, old_cursor=None, new_cursor=new_cursor)
                 except IntegrityError:
                     # Lost the insert race: another concurrent save() created
                     # the row first (or is in the middle of doing so). Roll

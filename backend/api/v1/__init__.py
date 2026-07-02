@@ -6,6 +6,7 @@ from backend.api.v1 import (
     agents,
     browsers,
     chat,
+    control,
     cookies,
     dashboard,
     nodes,
@@ -28,6 +29,7 @@ v1_router = APIRouter(prefix="/api/v1")
 v1_router.include_router(agents.router)
 v1_router.include_router(browsers.router)
 v1_router.include_router(chat.router)
+v1_router.include_router(control.router)
 v1_router.include_router(cookies.router)
 v1_router.include_router(nodes.router)
 v1_router.include_router(providers.router)

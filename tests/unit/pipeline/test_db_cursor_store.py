@@ -7,7 +7,7 @@ from unittest.mock import patch
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from backend.pipeline.cursor_store import DBCursorStore
+from backend.pipeline.cursor_store import CommitResult, DBCursorStore
 
 # The concurrency tests below run on the default `db_engine` fixture (SQLite in
 # CI/local), which does NOT actually enforce `SELECT ... FOR UPDATE` row locks —
@@ -42,7 +42,8 @@ async def test_load_missing_returns_none(db_engine):
 async def test_save_then_load_roundtrip(db_engine):
     with patch("backend.database.AsyncSessionLocal", _sessionmaker(db_engine)):
         store = DBCursorStore()
-        await store.save("src-1", {"etag": "abc"})
+        result = await store.save("src-1", {"etag": "abc"})
+        assert result == CommitResult(advanced=True, old_cursor=None, new_cursor={"etag": "abc"})
         assert await store.load("src-1") == {"etag": "abc"}
 
 
@@ -50,9 +51,30 @@ async def test_save_then_load_roundtrip(db_engine):
 async def test_save_upserts_one_row_per_source(db_engine):
     with patch("backend.database.AsyncSessionLocal", _sessionmaker(db_engine)):
         store = DBCursorStore()
-        await store.save("src-1", {"etag": "v1"})
-        await store.save("src-1", {"etag": "v2", "last_modified": "Wed"})
+        first = await store.save("src-1", {"etag": "v1"})
+        second = await store.save("src-1", {"etag": "v2", "last_modified": "Wed"})
+        assert first.advanced is True
+        assert second == CommitResult(
+            advanced=True,
+            old_cursor={"etag": "v1"},
+            new_cursor={"etag": "v2", "last_modified": "Wed"},
+        )
         assert await store.load("src-1") == {"etag": "v2", "last_modified": "Wed"}
+
+
+@pytest.mark.asyncio
+async def test_save_same_value_twice_is_not_advanced(db_engine):
+    """Re-saving an identical cursor onto an existing row is a true no-op —
+    CommitResult.advanced must be False so a caller doesn't record a
+    cursor_advanced=True that didn't actually move anything."""
+    with patch("backend.database.AsyncSessionLocal", _sessionmaker(db_engine)):
+        store = DBCursorStore()
+        first = await store.save("src-1", {"etag": "same"})
+        second = await store.save("src-1", {"etag": "same"})
+        assert first.advanced is True  # first-ever row
+        assert second.advanced is False  # identical re-save
+        assert second.old_cursor == {"etag": "same"}
+        assert second.new_cursor == {"etag": "same"}
 
 
 @pytest.mark.asyncio
@@ -82,8 +104,13 @@ async def test_concurrent_saves_no_lost_update_existing_row(db_engine):
             return_exceptions=True,
         )
 
-        # Neither concurrent save should raise.
-        assert results == [None, None]
+        # Neither concurrent save should raise, and each returns a real
+        # CommitResult (not None) reflecting what it actually committed. (On
+        # SQLite, which doesn't enforce FOR UPDATE, exactly which of the two
+        # calls observes which "old" value isn't guaranteed — only that both
+        # return a real CommitResult with no exception, same as before this
+        # change's return-type upgrade.)
+        assert all(isinstance(r, CommitResult) for r in results)
 
         final = await store.load("src-1")
         # The lost-update bug this guards against: final == the seed value
@@ -109,7 +136,11 @@ async def test_concurrent_saves_no_lost_update_first_insert_race(db_engine):
             return_exceptions=True,
         )
 
-        assert results == [None, None]
+        assert all(isinstance(r, CommitResult) for r in results)
+        # A brand-new source: whichever call wins the INSERT, and whichever
+        # falls back to the locked UPDATE, both persist a real value where
+        # there was none — both count as advanced.
+        assert all(r.advanced is True for r in results)
 
         final = await store.load("src-new")
         assert final in ({"etag": "from-A"}, {"etag": "from-B"})
@@ -150,7 +181,13 @@ async def test_concurrent_saves_postgres_for_update_serializes():
                 store.save("pg-src", {"etag": "from-B"}),
                 return_exceptions=True,
             )
-            assert results == [None, None]
+            # Real FOR UPDATE serialization: whichever writer commits first,
+            # the second genuinely observes the first's committed value under
+            # the lock (not a stale pre-transaction read) — since both target
+            # values differ from "seed" AND from each other, both calls are
+            # real advances, never a silently-lost update.
+            assert all(isinstance(r, CommitResult) for r in results)
+            assert all(r.advanced is True for r in results)
 
             final = await store.load("pg-src")
             assert final in ({"etag": "from-A"}, {"etag": "from-B"})

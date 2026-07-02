@@ -3,14 +3,98 @@
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from typing import Any
 
 from backend.channels.base import ChannelFetchError
+from backend.control.error_kinds import map_error_type, map_exception
+from backend.control.recorder import FreshnessInfo, record_run_measurement
 from backend.models.source import DataSource
 from backend.pipeline import events
 from backend.pipeline.error_taxonomy import effective_error_type, is_retryable
 
 logger = logging.getLogger(__name__)
+
+
+def _parse_item_timestamp(value: Any) -> datetime | None:
+    """Best-effort parse of a normalized ``published_at`` string into an aware
+    datetime. Handles RFC 822 (what feedparser/RSS produces) and ISO-8601.
+    Returns None (never raises) for anything that doesn't parse — an
+    unparseable string is evidence of ``source_ts_quality="invalid"``, not a
+    crash.
+    """
+    if not value or not isinstance(value, str):
+        return None
+    try:
+        dt = parsedate_to_datetime(value)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+    except (TypeError, ValueError):
+        pass
+    try:
+        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+    except (TypeError, ValueError):
+        return None
+
+
+def _derive_freshness(new_records: list[Any], now: datetime) -> FreshnessInfo:
+    """Honestly derive freshness quality from whatever item timestamps the
+    sink's normalized records already carry (``normalized_data['published_at']``
+    — set by ``backend.pipeline.normalizer`` from the item's own date field,
+    e.g. RSS's ``published``). No channel wiring is added here — if a channel
+    never produced a date field, or none of it parses, this returns
+    ``quality="missing"``/``"invalid"`` rather than fabricating a timestamp.
+
+    * Every accepted record's raw published_at string is empty → "observed_fallback"
+      (there's no source-provided time signal at all; wall-clock collection time
+      stands in for it).
+    * At least one non-empty published_at string, all unparsable → "invalid".
+    * At least one parses → "source", using the newest parsed value.
+    * No accepted records at all this run → "missing" (nothing to derive from).
+    """
+    if not new_records:
+        return FreshnessInfo(newest_observed_at=now, quality="missing")
+
+    raw_values: list[str] = []
+    for rec in new_records:
+        normalized = getattr(rec, "normalized_data", None) or {}
+        raw_values.append(normalized.get("published_at") or "")
+
+    if not any(raw_values):
+        return FreshnessInfo(newest_observed_at=now, quality="observed_fallback")
+
+    parsed = [p for v in raw_values if v and (p := _parse_item_timestamp(v)) is not None]
+    if not parsed:
+        return FreshnessInfo(newest_observed_at=now, quality="invalid")
+
+    newest_source_ts = max(parsed)
+    lag = int((now - newest_source_ts).total_seconds())
+    return FreshnessInfo(
+        newest_source_ts=newest_source_ts,
+        newest_observed_at=now,
+        freshness_lag_seconds=lag,
+        quality="source",
+    )
+
+
+async def _record_measurement_best_effort(**kwargs: Any) -> None:
+    """Wrap ``record_run_measurement`` in its own short-lived session, commit,
+    and swallow failures (mirrors ``events.emit``): a measurement-recording bug
+    must never fail or mask the run it's trying to observe (§0 — the sensor
+    must not become a new source of run failures either).
+    """
+    try:
+        from backend.database import AsyncSessionLocal
+
+        async with AsyncSessionLocal() as session:
+            await record_run_measurement(session, **kwargs)
+            await session.commit()
+    except Exception as exc:
+        logger.warning("record_run_measurement failed (non-fatal): %s", exc)
 
 
 @dataclass
@@ -140,6 +224,13 @@ async def run_pipeline(
             # autoretry_for policy applies instead of burning a permanent
             # failure on a transient fault.
             raise
+        if run_id:
+            await _record_measurement_best_effort(
+                source_id=source.id, run_id=run_id,
+                fetch_latency_ms=int((datetime.now(timezone.utc) - step1_start).total_seconds() * 1000),
+                error_kind=map_exception(exc),
+                raw={"stage": "collect", "error": str(exc), "error_type": error_type},
+            )
         return PipelineResult(success=False, source_id=source.id, error=str(exc))
 
     if not channel_result.success:
@@ -156,6 +247,13 @@ async def run_pipeline(
             )
         if is_retryable(channel_result.error_type):
             raise ChannelFetchError(channel_result.error or "collect failed")
+        if run_id:
+            await _record_measurement_best_effort(
+                source_id=source.id, run_id=run_id,
+                fetch_latency_ms=int((datetime.now(timezone.utc) - step1_start).total_seconds() * 1000),
+                error_type=channel_result.error_type,
+                raw={"stage": "collect", "error": channel_result.error},
+            )
         return PipelineResult(success=False, source_id=source.id, error=channel_result.error)
 
     step1_elapsed = int((datetime.now(timezone.utc) - step1_start).total_seconds() * 1000)
@@ -204,6 +302,14 @@ async def run_pipeline(
             )
         if is_retryable(error_type):
             raise
+        if run_id:
+            await _record_measurement_best_effort(
+                source_id=source.id, run_id=run_id,
+                accepted=0, duplicates=0, rejected=channel_result.count,
+                fetch_latency_ms=step1_elapsed,
+                error_kind=map_exception(exc),
+                raw={"stage": "store", "error": str(exc), "error_type": error_type},
+            )
         return PipelineResult(
             success=False,
             source_id=source.id,
@@ -255,12 +361,18 @@ async def run_pipeline(
     # ODP-side guarantee, tracked separately.)
     pending_cursor = channel_result.metadata.pop("__cursor_pending__", None)
     cursor_source_id = channel_result.metadata.pop("__cursor_source_id__", None)
+    # Real commit result (backend.pipeline.cursor_store.CommitResult), not a
+    # guess — False for non-incremental channels/runs that never staged a
+    # cursor at all, so cursor_advanced in the measurement below reflects
+    # what actually got persisted, never "save() was called".
+    cursor_advanced = False
     if pending_cursor is not None and cursor_source_id is not None:
         from backend.pipeline.cursor_store import DBCursorStore
 
-        await DBCursorStore().save(cursor_source_id, pending_cursor)
-        logger.info("[task:%s] cursor committed post-write | source=%s",
-                    task_id, cursor_source_id)
+        commit_result = await DBCursorStore().save(cursor_source_id, pending_cursor)
+        cursor_advanced = commit_result.advanced
+        logger.info("[task:%s] cursor committed post-write | source=%s advanced=%s",
+                    task_id, cursor_source_id, cursor_advanced)
 
     # Step 4: AI processing
     effective_ai_config = agent_config or source.ai_config
@@ -350,6 +462,27 @@ async def run_pipeline(
                 "stored": len(new_records),
                 "skipped": skipped,
             },
+        )
+        completed_at = datetime.now(timezone.utc)
+        # A successful run has no terminal error_type by definition — shadow-sink
+        # errors are non-blocking (the run still succeeded) and are already
+        # surfaced via the "complete" event above and PipelineResult.metadata;
+        # they're carried into raw here too so they're visible alongside the
+        # measurement, without fabricating a fake error_kind for a run that
+        # actually succeeded.
+        await _record_measurement_best_effort(
+            source_id=source.id, run_id=run_id,
+            accepted=len(new_records), duplicates=skipped, rejected=sink_result.rejected,
+            fetch_latency_ms=step1_elapsed, store_latency_ms=duration_ms - step1_elapsed,
+            cursor_advanced=cursor_advanced,
+            freshness=_derive_freshness(new_records, completed_at),
+            raw={
+                "stage": "complete",
+                "collected": channel_result.count,
+                "duration_ms": duration_ms,
+                "shadow_errors": shadow_errors or None,
+            },
+            measured_at=completed_at,
         )
 
     return PipelineResult(
