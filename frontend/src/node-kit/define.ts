@@ -1,7 +1,7 @@
 // defineNode — the human authoring entry. Identity + light normalization so a
 // spec is complete and safe to register. Agents skip this and emit raw JSON that
 // registry.instantiate() validates against the registered spec.
-import type { ConfigSchema, ConfigValues, NodeSpec } from './spec'
+import type { ConfigSchema, ConfigValues, NodeSpec } from './spec.ts'
 
 export function defineNode<C extends ConfigValues = ConfigValues>(spec: NodeSpec<C>): NodeSpec<C> {
   if (!spec.type) throw new Error('defineNode: spec.type is required')

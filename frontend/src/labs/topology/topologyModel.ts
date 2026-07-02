@@ -134,6 +134,55 @@ export interface TopologyOptions {
   maxNotifications?: number
 }
 
+// ── Canvas palette (issue: node-editor basics) ──────────────────────────────
+// Creatable source types for the topology canvas's drag/click palette. Mirrors
+// SourcesPage's CHANNEL_TYPES — kept as a separate literal here (rather than an
+// import) because SourcesPage's ChannelType lives in a component file this
+// package does not own; the string literals themselves are the actual contract
+// (DataSource.channel_type in api/types.ts).
+export type PaletteChannelType = 'opencli' | 'rss' | 'api' | 'web_scraper' | 'crawl4ai' | 'cli' | 'skill'
+
+export interface PaletteSourceItem {
+  type: PaletteChannelType
+  label: string
+  hint: string
+}
+
+export const TOPOLOGY_PALETTE_SOURCES: PaletteSourceItem[] = [
+  { type: 'opencli', label: 'OpenCLI', hint: '账号环境 / 浏览器采集' },
+  { type: 'rss', label: 'RSS', hint: '订阅流' },
+  { type: 'api', label: 'API', hint: '结构化接口' },
+  { type: 'web_scraper', label: 'Web', hint: '网页抓取' },
+  { type: 'crawl4ai', label: 'Crawl4AI', hint: 'JS 渲染页面 + 反爬' },
+  { type: 'cli', label: 'Command', hint: '本地命令' },
+  { type: 'skill', label: 'Skill', hint: '技能库执行' },
+]
+
+/** Timestamp suffix used to give freshly-dropped sources a unique default name. */
+function paletteNameSuffix(now = new Date()): string {
+  return `${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}-${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`
+}
+
+/** Drop-position → create-payload mapping (issue: palette / drag-create).
+ * Pure: given a palette channel type (+ optional flow-space drop position for
+ * future position-aware seeding) produces the DataSource creation payload the
+ * canvas hands to the real create-source mutation. Never fabricates a node —
+ * callers must submit this through the actual API and let refetch add the
+ * node once the backend confirms it exists. */
+export function paletteDropToCreatePayload(
+  type: PaletteChannelType,
+  _position?: { x: number; y: number },
+  now = new Date(),
+): Partial<DataSource> {
+  return {
+    name: `${type}-${paletteNameSuffix(now)}`,
+    channel_type: type,
+    channel_config: {},
+    enabled: true,
+    tags: [],
+  }
+}
+
 const KIND_COLUMN: Record<TopologyKind, number> = {
   source: 0,
   schedule: 1,

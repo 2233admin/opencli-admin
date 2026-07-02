@@ -5,11 +5,27 @@ import { useCallback } from 'react'
 import { useReactFlow } from '@xyflow/react'
 
 import type { ConfigValues, NodeRenderContext, NodeSpec } from '../spec'
+import type { RunLogEntry } from '../runtime/runLog'
 import { NodeField, NodeFieldEdit, NodeHeader, NodeOpButton, NodePort } from './atoms'
 
 export interface KitNodeData<C extends ConfigValues = ConfigValues> {
   config: C
   facts?: Record<string, unknown>
+  /** live execution state for this node instance, set by the host (NodeWorkbench)
+   *  from its runState map during/after a runGraph() call. Absent = never run
+   *  (or state was cleared for a new run) — renders as the normal idle look. */
+  runState?: RunLogEntry
+}
+
+// Border/ring per execution state — 'queued' reads dim/inert, 'running' pulses
+// amber (in-flight), 'success'/'error' land on a static emerald/red border so
+// the outcome is legible without re-reading the run log panel.
+const RUN_STATE_BORDER: Record<RunLogEntry['state'], string> = {
+  queued: 'border-zinc-700/60',
+  running: 'border-amber-400/70 animate-pulse',
+  success: 'border-emerald-500/70',
+  error: 'border-red-500/70',
+  skipped: 'border-zinc-700/40',
 }
 
 export function KitNode<C extends ConfigValues = ConfigValues>({
@@ -26,6 +42,7 @@ export function KitNode<C extends ConfigValues = ConfigValues>({
   const { updateNodeData } = useReactFlow()
   const config = (data.config ?? {}) as C
   const facts = data.facts ?? {}
+  const runState = data.runState
 
   // Inline config edit: write the changed field back onto this node's data.config.
   const setField = useCallback(
@@ -44,12 +61,16 @@ export function KitNode<C extends ConfigValues = ConfigValues>({
     emit: () => {},
   }
 
+  const runBorder = runState ? RUN_STATE_BORDER[runState.state] : null
+
   return (
     <div
       style={{ width: 248 }}
+      title={runState?.state === 'error' ? runState.detail.errorMessage : undefined}
       className={[
         'relative rounded-lg border bg-[#0a0a0c]/95 px-3 py-3 text-left shadow-xl backdrop-blur transition-colors',
-        selected ? 'border-sky-500 ring-2 ring-sky-500/30' : 'border-white/[0.12] hover:border-white/30',
+        runBorder ?? (selected ? 'border-sky-500 ring-2 ring-sky-500/30' : 'border-white/[0.12] hover:border-white/30'),
+        runBorder && selected ? 'ring-2 ring-sky-500/30' : '',
       ].join(' ')}
     >
       {spec.ports.inputs.map((p) => (
@@ -59,7 +80,19 @@ export function KitNode<C extends ConfigValues = ConfigValues>({
         <NodePort key={`out-${p.id}`} port={p} side="output" />
       ))}
 
-      <NodeHeader icon={spec.icon} title={spec.title} subtitle={spec.subtitle} />
+      <div className="flex items-start justify-between gap-1.5">
+        <NodeHeader icon={spec.icon} title={spec.title} subtitle={spec.subtitle} />
+        {runState?.state === 'success' && runState.detail.durationMs != null && (
+          <span className="shrink-0 rounded-sm border border-emerald-500/35 bg-emerald-500/10 px-1 py-0.5 font-code text-[9px] text-emerald-200">
+            {runState.detail.durationMs}ms
+          </span>
+        )}
+        {runState?.state === 'error' && (
+          <span className="shrink-0 rounded-sm border border-red-500/35 bg-red-500/10 px-1 py-0.5 font-code text-[9px] text-red-200">
+            ERR
+          </span>
+        )}
+      </div>
 
       <div className="mt-2.5">
         {spec.render ? (

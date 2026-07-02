@@ -41,9 +41,31 @@ export { KitNode, type KitNodeData } from './render/KitNode'
 export { nodeTypesForXyflow } from './render/nodeTypes'
 export { NodeWorkbench, type WorkbenchSeed } from './render/NodeWorkbench'
 export { NodeInspector } from './render/NodeInspector'
+export { RunLogPanel } from './render/RunLogPanel'
 
 // runtime — self-built P0 executor (topo-sort → run pure nodes → backend hook → artifact)
-export { runGraph, type RunNode, type RunEdge, type RunGraphResult, type BackendRunner } from './runtime/engine'
+export {
+  runGraph,
+  type RunNode,
+  type RunEdge,
+  type RunGraphResult,
+  type BackendRunner,
+  type NodeStateObserver,
+} from './runtime/engine'
+// runtime — execution visualizer's pure state/log projection (framework-free)
+export {
+  applyRunEvent,
+  summarizeRun,
+  toRunLogRows,
+  truncatePreview,
+  EMPTY_RUN_STATE,
+  type RunNodeState,
+  type RunNodeDetail,
+  type RunLogEntry,
+  type RunStateMap,
+  type RunLogRowView,
+  type RunSummaryView,
+} from './runtime/runLog'
 export {
   NodeHeader,
   NodePort,

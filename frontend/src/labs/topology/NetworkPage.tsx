@@ -1,10 +1,12 @@
 import { useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { Edge, Node } from '@xyflow/react'
 import { MarkerType } from '@xyflow/react'
 import { ChevronRight, RefreshCw, Sparkles, SlidersHorizontal, X } from 'lucide-react'
+import { toast } from 'sonner'
 
 import {
+  deleteSource,
   listAgents,
   listNodes,
   listNotificationLogs,
@@ -27,11 +29,13 @@ import type {
   WorkerNode,
 } from '../../api/types'
 import Card from '../../components/Card'
+import ConfirmDialog from '../../components/ConfirmDialog'
 import ErrorAlert from '../../components/ErrorAlert'
 import { cn } from '../../lib/utils'
 import { AgentDock, type DockContextNode } from './AgentDock'
 import { ODP_NODE_ID, odpSystemGraphNode } from './odpNode'
 import { ReactFlowTopologyCanvas } from './ReactFlowTopologyCanvas'
+import { TopologyCanvasDropZone, TopologyPalette } from './TopologyPalette'
 import { ALL_NODES, NodeWorkbench, hasNode, registerNodes, registerSavedMacros, type WorkbenchSeed } from '../../node-kit'
 
 // L3 atomic layer lives below 采集网络's L2 stages — register the atom library
@@ -85,12 +89,16 @@ const PROJECT_COL_GAP = 300
 const PROJECT_ROW_GAP = 200
 
 export default function NetworkPage() {
+  const qc = useQueryClient()
   const [divePath, setDivePath] = useState<string[]>([])
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
   // Right-edge pull-out drawer: 'node' = operate selected node, 'agent' = chat dock, null = collapsed.
   const [rightPanel, setRightPanel] = useState<'node' | 'agent' | null>(null)
   // L3: dive below an L2 project into its atomic node-kit graph.
   const [atomMode, setAtomMode] = useState(false)
+  // Delete-key on a source/project node asks first — deleting a DB entity is
+  // never silent (issue: editor basics). sourceId + name for the confirm copy.
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null)
 
   const sourcesQuery = useQuery({ queryKey: ['network', 'sources'], queryFn: () => listSources({ limit: 100 }), refetchInterval: 30_000 })
   const tasksQuery = useQuery({ queryKey: ['network', 'tasks'], queryFn: () => listTasks({ limit: 100 }), refetchInterval: 10_000 })
@@ -149,6 +157,29 @@ export default function NetworkPage() {
   const queryError = queries.find((q) => q.error)?.error
 
   const refetchAll = () => queries.forEach((q) => q.refetch())
+
+  // Delete flow for the canvas's delete key — the canvas only ever *requests*
+  // a delete (see ReactFlowTopologyCanvas.onRequestDeleteSource); this page
+  // owns the confirm dialog + the real API call, same pattern as SourcesPage's
+  // own delete flow (ConfirmDialog + deleteSource mutation).
+  const deleteSourceMut = useMutation({
+    mutationFn: (id: string) => deleteSource(id),
+    onSuccess: (_data, deletedId) => {
+      qc.invalidateQueries({ queryKey: ['network', 'sources'] })
+      qc.invalidateQueries({ queryKey: ['sources'] })
+      if (divedSourceId === deletedId) popTo(0)
+      if (selectedNodeId === deletedId) setSelectedNodeId(null)
+      setDeleteTarget(null)
+      toast.success('已删除采集节点')
+      refetchAll()
+    },
+    onError: (err) => toast.error(err instanceof Error ? err.message : '删除失败'),
+  })
+
+  const requestDeleteSource = (sourceId: string) => {
+    const source = input.sources.find((s) => s.id === sourceId)
+    setDeleteTarget({ id: sourceId, name: source?.name ?? sourceId })
+  }
 
   const handleSelect = (id: string) => {
     setSelectedNodeId(id)
@@ -227,19 +258,27 @@ export default function NetworkPage() {
           <NodeWorkbench key={divedSource.id} seed={sourceToAtomGraph(divedSource)} />
         </div>
       ) : (
-      <div className="relative h-[74vh] min-h-[560px] overflow-hidden rounded-md border border-white/[0.1] bg-black">
-        <div className="absolute inset-0 pr-10">
+      <div className="relative flex h-[74vh] min-h-[560px] overflow-hidden rounded-md border border-white/[0.1] bg-black">
+        {/* palette only makes sense at L0 root — a project's subnet (L1) is
+         * derived read-only from that one source's real schedules/tasks/etc,
+         * there is nothing new to "create" by dropping a channel type there. */}
+        {!divedSourceId && <TopologyPalette onCreated={refetchAll} />}
+
+        <div className="relative min-w-0 flex-1 pr-10">
           {nodes.length === 0 ? (
             <EmptyState dived={Boolean(divedSourceId)} />
           ) : (
-            <ReactFlowTopologyCanvas
-              nodes={nodes}
-              edges={edges}
-              selectedNodeId={selectedNodeId}
-              onSelectNode={handleSelect}
-              onNodeDoubleClick={handleDoubleClick}
-              viewKey={divedSourceId ?? 'root'}
-            />
+            <TopologyCanvasDropZone onCreated={refetchAll}>
+              <ReactFlowTopologyCanvas
+                nodes={nodes}
+                edges={edges}
+                selectedNodeId={selectedNodeId}
+                onSelectNode={handleSelect}
+                onNodeDoubleClick={handleDoubleClick}
+                viewKey={divedSourceId ?? 'root'}
+                onRequestDeleteSource={!divedSourceId ? requestDeleteSource : undefined}
+              />
+            </TopologyCanvasDropZone>
           )}
         </div>
 
@@ -287,6 +326,15 @@ export default function NetworkPage() {
         </div>
       </div>
       )}
+
+      <ConfirmDialog
+        open={Boolean(deleteTarget)}
+        onOpenChange={(open) => { if (!open) setDeleteTarget(null) }}
+        title={`删除采集节点「${deleteTarget?.name ?? ''}」？`}
+        description="将删除该数据源及其关联的计划/任务在画布上的引用。此操作不可撤销。"
+        confirmLabel={deleteSourceMut.isPending ? '删除中…' : '确认删除'}
+        onConfirm={() => { if (deleteTarget) deleteSourceMut.mutate(deleteTarget.id) }}
+      />
     </div>
   )
 }

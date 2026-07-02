@@ -33,7 +33,7 @@ import {
   type Node,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { Boxes, Network, Play, Sparkles, Trash2 } from 'lucide-react'
+import { Boxes, Loader2, Network, Play, Sparkles, Square, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import {
@@ -49,12 +49,14 @@ import {
 import { instantiateGraph, type AgentGraph } from '../agent/graph'
 import { getNode, instantiate, listNodes } from '../registry'
 import { runGraph } from '../runtime/engine'
+import { applyRunEvent, summarizeRun, toRunLogRows, EMPTY_RUN_STATE, type RunStateMap } from '../runtime/runLog'
 import type { ConfigValues, NodeCategory, NodeSpec } from '../spec'
 import { iconByName } from './atoms'
 import { elkLayout } from './elkLayout'
 import { NodeInspector } from './NodeInspector'
 import { NodeSearchMenu } from './NodeSearchMenu'
 import { nodeTypesForXyflow } from './nodeTypes'
+import { RunLogPanel } from './RunLogPanel'
 
 const CATEGORY_LABEL: Record<NodeCategory, string> = {
   source: '源', transform: '变换', sink: '汇', control: '控制', display: '展示', agent: '智能体', custom: '其它',
@@ -74,6 +76,16 @@ function makeNode(type: string, position: { x: number; y: number }, seq: number)
 function stripTransient(n: Node): Node {
   const { className: _c, selected: _s, dragging: _d, ...rest } = n
   return rest as Node
+}
+
+// Run log rows only carry a nodeId (the engine is React-free); resolve a
+// human title from the live xyflow node list, falling back to the spec title
+// for the node's type, then the raw id if the node was since deleted.
+function nodeTitleFor(nodes: Node[], nodeId: string): string {
+  const n = nodes.find((nn) => nn.id === nodeId)
+  if (!n) return nodeId
+  const spec = getNode(String(n.type))
+  return spec?.title ?? String(n.type)
 }
 
 function centroid(ns: Node[]): { x: number; y: number } {
@@ -131,6 +143,15 @@ function WorkbenchInner({ seed }: { seed?: WorkbenchSeed }) {
   const [search, setSearch] = useState<{ rx: number; ry: number; cx: number; cy: number } | null>(null)
   const [dragType, setDragType] = useState<string | null>(null)
   const [laying, setLaying] = useState(false)
+  const [running, setRunning] = useState(false)
+  const [runState, setRunState] = useState<RunStateMap>(EMPTY_RUN_STATE)
+  // Ref mirror of runState for the run observer: events arrive from async
+  // engine code, and accumulating on the ref lets us call xyflow's
+  // updateNodeData OUTSIDE the setState updater (calling it inside the
+  // updater is a setState-during-render violation against BatchProvider).
+  const runStateRef = useRef<RunStateMap>(EMPTY_RUN_STATE)
+  const runSeq = useRef(0)
+  const abortRef = useRef<{ aborted: boolean } | null>(null)
 
   const { setNodeRef: setDropRef } = useDroppable({ id: 'canvas' })
   const setWrap = useCallback(
@@ -278,12 +299,23 @@ function WorkbenchInner({ seed }: { seed?: WorkbenchSeed }) {
     [expandMacroNode],
   )
 
-  // run the graph through the self-built P0 runtime
+  // Push the latest runState entry for one node onto its xyflow node.data so
+  // KitNode can render it — mirrors how config edits already flow (updateNodeData).
+  const pushRunStateToNode = useCallback(
+    (nodeId: string, map: RunStateMap) => {
+      updateNodeData(nodeId, { runState: map[nodeId] })
+    },
+    [updateNodeData],
+  )
+
+  // run the graph through the self-built P0 runtime, observing per-node state
+  // transitions into runState (drives KitNode borders + the run log panel).
   const runNow = useCallback(async () => {
     if (nodes.length === 0) {
       toast.message('画布为空，先加几个节点')
       return
     }
+    if (running) return
     // Flatten macros → atoms before running; the engine is macro-blind by design.
     const flat = flattenForRun(nodes, edges)
     const rn = flat.nodes.map((n) => ({
@@ -292,12 +324,40 @@ function WorkbenchInner({ seed }: { seed?: WorkbenchSeed }) {
       config: ((n.data as { config?: ConfigValues })?.config ?? {}) as ConfigValues,
     }))
     const re = flat.edges.map((e) => ({ source: e.source, sourceHandle: e.sourceHandle, target: e.target, targetHandle: e.targetHandle }))
-    const res = await runGraph(rn, re)
-    const errCount = Object.keys(res.errors).length
-    if (errCount) toast.error(`运行完成 · ${errCount} 个节点出错（看 console）`)
-    else toast.success(`运行完成 · ${res.order.length} 节点 · artifact ${Object.keys(res.artifact).length} 项`)
-    console.log('[node-kit runGraph]', res)
-  }, [nodes, edges])
+
+    // fresh run: clear the panel + every node's stale border before starting
+    runStateRef.current = EMPTY_RUN_STATE
+    setRunState(EMPTY_RUN_STATE)
+    for (const n of rn) pushRunStateToNode(n.id, EMPTY_RUN_STATE)
+    runSeq.current = 0
+    const signal = { aborted: false }
+    abortRef.current = signal
+    setRunning(true)
+
+    try {
+      const res = await runGraph(rn, re, {
+        signal,
+        observer: (nodeId, state, detail) => {
+          const seq = runSeq.current++
+          const next = applyRunEvent(runStateRef.current, nodeId, state, detail, seq)
+          runStateRef.current = next
+          setRunState(next)
+          pushRunStateToNode(nodeId, next)
+        },
+      })
+      const errCount = Object.keys(res.errors).length
+      if (signal.aborted) toast.message('运行已停止')
+      else if (errCount) toast.error(`运行完成 · ${errCount} 个节点出错`)
+      else toast.success(`运行完成 · ${res.order.length} 节点 · artifact ${Object.keys(res.artifact).length} 项`)
+    } finally {
+      setRunning(false)
+      abortRef.current = null
+    }
+  }, [nodes, edges, running, pushRunStateToNode])
+
+  const stopRun = useCallback(() => {
+    if (abortRef.current) abortRef.current.aborted = true
+  }, [])
 
   // ELK auto-layout: snap the scattered graph into a clean left→right dataflow.
   const tidy = useCallback(async () => {
@@ -471,10 +531,21 @@ function WorkbenchInner({ seed }: { seed?: WorkbenchSeed }) {
             <button
               type="button"
               onClick={runNow}
-              className="inline-flex items-center gap-1 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-100 transition hover:bg-emerald-500/20"
+              disabled={running}
+              className="inline-flex items-center gap-1 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-100 transition hover:bg-emerald-500/20 disabled:opacity-50"
             >
-              <Play size={12} /> 运行
+              {running ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />} {running ? '运行中…' : '运行'}
             </button>
+            {running && (
+              <button
+                type="button"
+                onClick={stopRun}
+                title="在当前节点执行完后停止后续节点"
+                className="inline-flex items-center gap-1 rounded-md border border-red-500/40 bg-red-500/10 px-2.5 py-1 text-[11px] font-semibold text-red-100 transition hover:bg-red-500/20"
+              >
+                <Square size={12} /> 停止
+              </button>
+            )}
             <button
               type="button"
               onClick={() => {
@@ -486,6 +557,8 @@ function WorkbenchInner({ seed }: { seed?: WorkbenchSeed }) {
               <Trash2 size={12} /> 清空
             </button>
           </div>
+
+          <RunLogPanel runState={runState} titleFor={(id) => nodeTitleFor(nodes, id)} />
         </div>
         {selectedOne && <NodeInspector node={selectedOne} onField={setSelectedField} />}
       </div>

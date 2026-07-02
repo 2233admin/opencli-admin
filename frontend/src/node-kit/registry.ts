@@ -1,8 +1,8 @@
 // The one registry. Both authoring paths land here: humans via registerNode,
 // agents via instantiate(json). Framework-agnostic (no React) so the contract
 // layer stays portable; the xyflow binding lives in render/nodeTypes.tsx.
-import { parseConfig, type ConfigParseResult } from './define'
-import type { ConfigValues, NodeCategory, NodeInstance, NodeSpec } from './spec'
+import { parseConfig, type ConfigParseResult } from './define.ts'
+import type { ConfigValues, NodeCategory, NodeInstance, NodeSpec } from './spec.ts'
 
 const REGISTRY = new Map<string, NodeSpec<any>>()
 

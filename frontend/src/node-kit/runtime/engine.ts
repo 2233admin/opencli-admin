@@ -3,8 +3,9 @@
 // (spec.run) → dispatch backend-only nodes via a hook → collect terminal artifact.
 // No external execution engine; ~one file. Adding richer scheduling later must
 // not change this signature.
-import { getNode } from '../registry'
-import type { ConfigValues, RunResult } from '../spec'
+import { getNode } from '../registry.ts'
+import type { ConfigValues, RunResult } from '../spec.ts'
+import type { RunNodeDetail, RunNodeState } from './runLog.ts'
 
 export interface RunNode {
   id: string
@@ -19,6 +20,12 @@ export interface RunEdge {
 }
 export type BackendRunner = (node: RunNode, inputs: Record<string, unknown>) => Promise<RunResult>
 
+/** Observability hook: fired on every node-state transition during a run, in
+ *  execution order (queued for the whole run up front, then running/success/
+ *  error/skipped per node as the Kahn-ordered loop walks it). Purely additive
+ *  — omitting `opts.observer` reproduces the old silent behavior exactly. */
+export type NodeStateObserver = (nodeId: string, state: RunNodeState, detail?: RunNodeDetail) => void
+
 export interface RunGraphResult {
   order: string[]
   outputs: Record<string, RunResult>
@@ -30,7 +37,7 @@ export interface RunGraphResult {
 export async function runGraph(
   nodes: RunNode[],
   edges: RunEdge[],
-  opts: { backend?: BackendRunner } = {},
+  opts: { backend?: BackendRunner; observer?: NodeStateObserver; signal?: { aborted: boolean } } = {},
 ): Promise<RunGraphResult> {
   const byId = new Map(nodes.map((n) => [n.id, n]))
   const incoming = new Map<string, RunEdge[]>()
@@ -73,9 +80,20 @@ export async function runGraph(
     }
   }
 
+  // Announce the whole run order up front so a UI can pre-render every node as
+  // 'queued' before execution reaches it (matches the React Flow workflow-editor
+  // template's "runner" look: the whole graph is visibly queued, then lights up
+  // node-by-node).
+  for (const id of order) opts.observer?.(id, 'queued')
+  for (const n of nodes) if (!order.includes(n.id)) opts.observer?.(n.id, 'skipped', { errorMessage: errors[n.id] })
+
   // 3/4. execute in order
   const outputs: Record<string, RunResult> = {}
   for (const id of order) {
+    if (opts.signal?.aborted) {
+      opts.observer?.(id, 'skipped', { errorMessage: '已停止' })
+      continue
+    }
     const node = byId.get(id) as RunNode
     const spec = getNode(node.type)
     const inputs: Record<string, unknown> = {}
@@ -83,6 +101,8 @@ export async function runGraph(
       const up = outputs[e.source]
       if (up) inputs[e.targetHandle ?? 'in'] = up[e.sourceHandle ?? 'out']
     }
+    opts.observer?.(id, 'running')
+    const startedAt = Date.now()
     try {
       if (spec?.run) {
         outputs[id] = await spec.run({ id, config: node.config, inputs })
@@ -92,9 +112,15 @@ export async function runGraph(
         // backend-only node with no runner wired yet → mark, don't crash
         outputs[id] = { _pending: `${spec?.title ?? node.type} 需后端执行（未接 backend runner）` }
       }
+      opts.observer?.(id, 'success', {
+        durationMs: Date.now() - startedAt,
+        outputPreview: previewOutput(outputs[id]),
+      })
     } catch (err) {
-      errors[id] = err instanceof Error ? err.message : String(err)
+      const message = err instanceof Error ? err.message : String(err)
+      errors[id] = message
       outputs[id] = {}
+      opts.observer?.(id, 'error', { durationMs: Date.now() - startedAt, errorMessage: message })
     }
   }
 
@@ -104,4 +130,15 @@ export async function runGraph(
   for (const id of order) if (!hasOut.has(id)) artifact[id] = outputs[id]
 
   return { order, outputs, errors, warnings, artifact }
+}
+
+/** Short, safe one-line preview of a node's RunResult for the run log row —
+ *  never throws on cyclic/exotic values (falls back to String()). */
+function previewOutput(result: RunResult): string {
+  try {
+    const s = JSON.stringify(result)
+    return s ?? String(result)
+  } catch {
+    return String(result)
+  }
 }

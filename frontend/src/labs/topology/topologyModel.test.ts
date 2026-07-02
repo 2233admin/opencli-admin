@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 
-import { buildTopologyGraph, fallbackLayout, nodeId } from './topologyModel.ts'
+import {
+  buildTopologyGraph,
+  fallbackLayout,
+  nodeId,
+  paletteDropToCreatePayload,
+  TOPOLOGY_PALETTE_SOURCES,
+} from './topologyModel.ts'
 import type {
   AIAgent,
   CollectedRecord,
@@ -201,5 +207,36 @@ describe('topology model', () => {
       { x: 0, y: 0 },
       { x: 200, y: 0 },
     ])
+  })
+})
+
+describe('topology palette', () => {
+  it('lists one creatable item per channel type, matching SourcesPage CHANNEL_TYPES', () => {
+    const types = TOPOLOGY_PALETTE_SOURCES.map((item) => item.type)
+    assert.deepEqual(types, ['opencli', 'rss', 'api', 'web_scraper', 'crawl4ai', 'cli', 'skill'])
+    // every item has a non-empty label + hint (rendered in the rail)
+    for (const item of TOPOLOGY_PALETTE_SOURCES) {
+      assert.ok(item.label.length > 0)
+      assert.ok(item.hint.length > 0)
+    }
+  })
+
+  it('maps a palette drop to a real DataSource create payload, not a fabricated node', () => {
+    const now = new Date('2026-07-02T09:05:00Z')
+    const payload = paletteDropToCreatePayload('rss', { x: 120, y: 80 }, now)
+
+    assert.equal(payload.channel_type, 'rss')
+    assert.deepEqual(payload.channel_config, {})
+    assert.equal(payload.enabled, true)
+    assert.deepEqual(payload.tags, [])
+    assert.match(payload.name ?? '', /^rss-\d{4}-\d{4}$/)
+    // no id/created_at/etc — this is a creation payload, never a synthesized entity
+    assert.ok(!('id' in payload))
+  })
+
+  it('produces distinct default names per channel type at the same instant', () => {
+    const now = new Date('2026-07-02T09:05:00Z')
+    const names = TOPOLOGY_PALETTE_SOURCES.map((item) => paletteDropToCreatePayload(item.type, undefined, now).name)
+    assert.equal(new Set(names).size, names.length)
   })
 })

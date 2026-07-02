@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import {
   Background,
   BackgroundVariant,
@@ -13,9 +13,14 @@ import {
 } from '@xyflow/react'
 import type { Edge, Node } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
+import { Network } from 'lucide-react'
 
 import type { TopologyHealth, TopologyNodeData } from './topologyModel'
 import { ALL_NODES, hasNode, nodeTypesForXyflow, registerNodes, registerSavedMacros } from '../../node-kit'
+// elkLayout is not re-exported from node-kit's public index (only NodeWorkbench
+// uses it today) — import the module directly, same call signature NodeWorkbench
+// uses at ~line 310 (elkLayout(nodes, edges) => Promise<Node[]>, then fitView).
+import { elkLayout } from '../../node-kit/render/elkLayout'
 
 // The collection.* specs must exist before this canvas mounts (it may mount
 // before NetworkPage runs its own registerNodes). Idempotent: the registry is a
@@ -37,6 +42,10 @@ interface ReactFlowTopologyCanvasProps {
   /** Changes on dive (L0↔L1); drives an animated fitView instead of a remount. */
   viewKey?: string
   headerLabel?: string
+  /** Delete key pressed on a SOURCE (project) node — the canvas never deletes a
+   * DB entity itself, it only reports the request. Omit to disable delete-key
+   * handling entirely for entity nodes (safer default than silent removal). */
+  onRequestDeleteSource?: (sourceId: string) => void
 }
 
 // M3 emphasized-decelerate ~ approximated as easeOutQuart for the d3 viewport tween.
@@ -75,10 +84,12 @@ function ReactFlowTopologyCanvasInner({
   onNodeDoubleClick,
   viewKey,
   headerLabel,
+  onRequestDeleteSource,
 }: ReactFlowTopologyCanvasProps) {
   const [rfNodes, setRfNodes, onNodesChange] = useNodesState<TopologyFlowNode>([])
   const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState<TopologyFlowEdge>([])
   const { fitView } = useReactFlow()
+  const [laying, setLaying] = useState(false)
   // One nodeTypes map from the registry (KitNode bound per spec.type). Only the
   // set of registered types matters, so it's stable for this component's life.
   const nodeTypes = useMemo(() => nodeTypesForXyflow(), [])
@@ -144,12 +155,54 @@ function ReactFlowTopologyCanvasInner({
     return () => cancelAnimationFrame(raf)
   }, [viewKey, fitView])
 
+  // AUTO-LAYOUT (issue: node-editor basics) — same elkLayout call NodeWorkbench
+  // uses (nodes, edges) => Promise<Node[]>, then fitView. Runs on the live
+  // rfNodes/rfEdges (post user drag) rather than the raw props so a manual
+  // auto-layout pass respects whatever is currently on screen.
+  const runAutoLayout = useCallback(async () => {
+    if (rfNodes.length === 0) return
+    setLaying(true)
+    try {
+      const laidOut = await elkLayout(rfNodes, rfEdges)
+      setRfNodes(laidOut as TopologyFlowNode[])
+      requestAnimationFrame(() => {
+        fitView({ padding: 0.16, maxZoom: 1, duration: prefersReducedMotion() ? 0 : 400, ease: m3Decel })
+      })
+    } catch (err) {
+      console.error('[topology] auto-layout failed', err)
+    } finally {
+      setLaying(false)
+    }
+  }, [rfNodes, rfEdges, setRfNodes, fitView])
+
+  // DELETE-KEY (issue: editor basics) — topology nodes are real DB entities, so
+  // xyflow must never remove them from its own state; onNodesDelete here is a
+  // read-only interceptor (nodes stay because there's no local mutation of
+  // rfNodes on delete) that forwards a delete *request* for SOURCE/project
+  // nodes to the parent, which owns the actual confirm+API-delete flow. Non-
+  // project nodes (schedule/task/agent/record/...) have no delete affordance
+  // here — deleting those isn't part of this canvas's contract.
+  const handleNodesDelete = useCallback(
+    (deleted: TopologyFlowNode[]) => {
+      if (!onRequestDeleteSource) return
+      for (const node of deleted) {
+        const isProject = readDetailString(node.data.detail, 'kind', '') === 'project'
+        const sourceId = readDetailString(node.data.detail, 'source_id', '') || node.data.detail?.id
+        if (isProject && typeof sourceId === 'string' && sourceId) {
+          onRequestDeleteSource(sourceId)
+        }
+      }
+    },
+    [onRequestDeleteSource],
+  )
+
   return (
     <ReactFlow
       nodes={rfNodes}
       edges={rfEdges}
       onNodesChange={onNodesChange}
       onEdgesChange={onEdgesChange}
+      onNodesDelete={handleNodesDelete}
       nodeTypes={nodeTypes}
       onNodeClick={(_, node) => onSelectNode(node.id)}
       onNodeDoubleClick={onNodeDoubleClick ? (_, node) => onNodeDoubleClick(node.id) : undefined}
@@ -161,6 +214,17 @@ function ReactFlowTopologyCanvasInner({
       nodesConnectable={false}
       proOptions={{ hideAttribution: true }}
       className="bg-[#060608]"
+      // EDITOR BASICS (issue: node-editor basics) — multi-select via drag
+      // (including partial intersection, not just full-enclosure), 8px snap
+      // grid, and scroll-to-pan so the canvas behaves like a real node editor
+      // rather than a passive diagram.
+      selectionOnDrag
+      selectNodesOnDrag={false}
+      panOnDrag={[1, 2]}
+      panOnScroll
+      snapToGrid
+      snapGrid={[8, 8]}
+      deleteKeyCode={onRequestDeleteSource ? ['Backspace', 'Delete'] : null}
     >
       <Background variant={BackgroundVariant.Dots} color="#2a2a32" gap={22} size={1.6} />
       <Controls position="bottom-left" showInteractive={false} />
@@ -175,6 +239,17 @@ function ReactFlowTopologyCanvasInner({
         <div className="rounded-md border border-white/10 bg-black/80 px-3 py-1.5 text-[11px] text-zinc-400 shadow-lg">
           <span className="font-code text-zinc-600">{headerLabel ?? `采集管线 · ${rfNodes.length} stages`}</span>
         </div>
+      </Panel>
+      <Panel position="top-right">
+        <button
+          type="button"
+          onClick={runAutoLayout}
+          disabled={laying}
+          title="按数据流自动排版 (ELK)"
+          className="inline-flex items-center gap-1.5 rounded-md border border-sky-500/40 bg-sky-500/10 px-2.5 py-1.5 text-[11px] font-semibold text-sky-100 shadow-lg transition hover:bg-sky-500/20 disabled:opacity-50"
+        >
+          <Network size={12} /> {laying ? '布局中…' : '自动布局'}
+        </button>
       </Panel>
     </ReactFlow>
   )
