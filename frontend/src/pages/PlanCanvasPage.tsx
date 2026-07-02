@@ -1,12 +1,26 @@
-// Collection Canvas — edit lens (Plan IR issue 07, docs/plan-ir-PRD.md
-// ADR-0008). The authoring surface: palette -> Draft Source Node -> inspector
-// (materialize/edit) -> wire -> save through the Plans API (issue 02). Reuses
-// node-kit's registry/KitNode/elkLayout, the existing ChannelConfigForm as the
-// inspector's internals, ConfirmDialog for the detach-not-delete flow, and the
-// existing i18n layer for every user-facing string. View-model logic (IR<->
-// canvas projection, draft lifecycle, preset->param mapping, error anchoring)
-// lives in lib/planCanvasModel.ts as framework-free functions with node --test
-// coverage — this file only wires those pure functions to xyflow/React Query.
+// Collection Canvas — edit + observe lenses (Plan IR issue 07/08,
+// docs/plan-ir-PRD.md ADR-0008). ONE canvas, two lenses (PageHeader toggle),
+// no separate page/route:
+//  - edit: palette -> Draft Source Node -> inspector (materialize/edit) ->
+//    wire -> save through the Plans API (issue 02).
+//  - observe (issue 08): source nodes get their existing per-source
+//    ControlBadge/SensorCoverageBadge strip (stamping config.__entityId, the
+//    same convention the main topology canvas uses — see node-kit/nodes/
+//    sources.tsx SourceBody); shared nodes get Plan Health
+//    (GET /plans/{id}/health, 15s poll, same precedent as
+//    node-kit/render/controlState.tsx's CONTROL_STATE_POLL_MS); a Run button
+//    dispatches POST /plans/{id}/run and projects the response (+ health
+//    refetch) onto per-node execution state using KitNode's existing
+//    running/success/error border convention (node-kit/render/KitNode.tsx
+//    RUN_STATE_BORDER) — no new execution-state visuals invented here.
+// Reuses node-kit's registry/KitNode/elkLayout, the existing ChannelConfigForm
+// as the inspector's internals, ConfirmDialog for the detach-not-delete flow,
+// and the existing i18n layer for every user-facing string. View-model logic
+// (IR<->canvas projection, draft lifecycle, preset->param mapping, error
+// anchoring, lens state, run-state projection) lives in
+// lib/planCanvasModel.ts / lib/planRunModel.ts as framework-free functions
+// with node --test coverage — this file only wires those pure functions to
+// xyflow/React Query.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -29,16 +43,18 @@ import {
   type Node,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { Save } from 'lucide-react'
+import { Eye, Pencil, Play, Save } from 'lucide-react'
 
-import { createPlan, getPlan, updatePlan } from '../api/endpoints'
+import { getPlanHealth, createPlan, getPlan, runPlan, updatePlan } from '../api/endpoints'
 import type { PlanEdge, PlanNode } from '../api/types'
 import ConfirmDialog from '../components/ConfirmDialog'
 import ErrorAlert from '../components/ErrorAlert'
 import { PageLoader } from '../components/LoadingSpinner'
 import PageHeader from '../components/PageHeader'
 import { ALL_NODES, nodeTypesForXyflow, registerNodes } from '../node-kit'
+import { CONTROL_STATE_POLL_MS } from '../node-kit/render/controlState'
 import { elkLayout } from '../node-kit/render/elkLayout'
+import type { RunStateMap } from '../node-kit/runtime/runLog'
 import {
   anchorValidationErrors,
   canvasToPlanGraph,
@@ -54,6 +70,16 @@ import {
   type CanvasGraph,
   type CanvasNode,
 } from '../lib/planCanvasModel'
+import {
+  evaluateRunGate,
+  markNodesRunning,
+  mergeRunState,
+  projectHealthOntoSharedNodes,
+  projectPlanRunOntoNodes,
+  sourceNodeIds,
+  toggleLens,
+  type PlanCanvasLens,
+} from '../lib/planRunModel'
 import { PlanCanvasInspector } from './PlanCanvasInspector'
 import { PALETTE_DRAG_MIME, PlanCanvasPalette, parsePalettePayload, type PaletteDropPayload } from './PlanCanvasPalette'
 
@@ -61,17 +87,36 @@ const PLAN_IR_VERSION = '1.0.0'
 
 registerNodes(ALL_NODES)
 
-type FlowNode = Node<{ config: Record<string, unknown>; facts: Record<string, unknown> }>
+type FlowNode = Node<{
+  config: Record<string, unknown>
+  facts: Record<string, unknown>
+  runState?: RunStateMap[string]
+}>
 type FlowEdge = Edge
 
-function toFlowNode(n: CanvasNode, draft: boolean, errors: string[]): FlowNode {
+function toFlowNode(
+  n: CanvasNode,
+  draft: boolean,
+  errors: string[],
+  opts: { observe: boolean; runState?: RunStateMap[string] },
+): FlowNode {
+  // Observe lens (issue 08): stamp config.__entityId with the real source id
+  // so a materialized source node's SourceBody (node-kit/nodes/sources.tsx)
+  // activates its existing ControlBadge/SensorCoverageBadge polling strip —
+  // the exact convention the main topology canvas already uses. The edit
+  // lens never stamps this, so editing never accidentally starts polling.
+  const config =
+    opts.observe && n.planNode.kind === 'source' && n.planNode.source_id
+      ? { ...n.planNode.params, __entityId: n.planNode.source_id }
+      : n.planNode.params
   return {
     id: n.id,
     type: n.type,
     position: n.position,
     data: {
-      config: n.planNode.params,
+      config,
       facts: { __draft: draft, __errors: errors },
+      runState: opts.runState,
     },
   }
 }
@@ -116,6 +161,57 @@ function PlanCanvasInner() {
   const wrapRef = useRef<HTMLDivElement | null>(null)
   const seq = useRef(0)
 
+  // ── Observe lens (issue 08) ────────────────────────────────────────────────
+  const [lens, setLens] = useState<PlanCanvasLens>('edit')
+  const isObserve = lens === 'observe'
+  const [runState, setRunState] = useState<RunStateMap>({})
+
+  // Plan Health for shared nodes — same 15s poll precedent as the source
+  // control-state strip (node-kit/render/controlState.tsx CONTROL_STATE_POLL_MS).
+  // Only polls once there's a saved Plan (a brand-new unsaved Plan has no
+  // health rows to fetch) and only while the observe lens is showing.
+  const planHealthQuery = useQuery({
+    queryKey: ['plan-canvas', 'plan-health', planId],
+    queryFn: () => getPlanHealth(planId as string),
+    enabled: Boolean(planId) && isObserve,
+    refetchInterval: isObserve ? CONTROL_STATE_POLL_MS : false,
+  })
+
+  // Merge Plan Health (shared nodes) under whatever the last run projected —
+  // a run's own response is fresher than a subsequent poll landing later,
+  // but a poll after the run completes should still refresh Plan Health, so
+  // this recomputes the shared-node half of runState on every health fetch
+  // without touching the source-node half.
+  useEffect(() => {
+    if (!planHealthQuery.data) return
+    const healthState = projectHealthOntoSharedNodes(planNodes, planHealthQuery.data.data)
+    setRunState((prev) => mergeRunState(prev, healthState))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [planHealthQuery.data])
+
+  const { draft: planDraftFlag, runnable: planRunnableFlag } = deriveDraftAndRunnable(planNodes)
+  const runGate = evaluateRunGate({ draft: planDraftFlag, runnable: planRunnableFlag })
+
+  const runMut = useMutation({
+    mutationFn: async () => {
+      const ids = sourceNodeIds(planNodes)
+      setRunState((prev) => mergeRunState(prev, markNodesRunning(ids)))
+      return runPlan(planId as string)
+    },
+    onSuccess: (result) => {
+      setRunState((prev) => mergeRunState(prev, projectPlanRunOntoNodes(planNodes, result)))
+      qc.invalidateQueries({ queryKey: ['plan-canvas', 'plan-health', planId] })
+      if (result.success) {
+        toast.success(t('planCanvas.run.success'))
+      } else {
+        toast.error(result.error ? t('planCanvas.run.partialFailure', { error: result.error }) : t('planCanvas.run.failed'))
+      }
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : t('planCanvas.run.failed'))
+    },
+  })
+
   const nodeTypes = useMemo(() => nodeTypesForXyflow(), [])
 
   // Load an existing Plan's graph onto the canvas (round-trip fidelity: the
@@ -147,19 +243,17 @@ function PlanCanvasInner() {
       return currentGraph.nodes.map((n, index) => {
         const draft = n.planNode.kind === 'source' && n.planNode.draft === true && !n.planNode.source_id
         const errors = errorsByNode.get(n.id) ?? []
-        const flow = toFlowNode(n, draft, errors)
+        const flow = toFlowNode(n, draft, errors, { observe: isObserve, runState: runState[n.id] })
         return { ...flow, position: posById.get(n.id) ?? n.position ?? fallbackPosition(index) }
       })
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentGraph, errorsByNode])
+  }, [currentGraph, errorsByNode, isObserve, runState])
 
   useEffect(() => {
     setRfEdges(currentGraph.edges.map(toFlowEdge))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentGraph])
-
-  const { draft: planDraftFlag, runnable: planRunnableFlag } = deriveDraftAndRunnable(planNodes)
 
   const selectedPlanNode = selectedId ? planNodes.find((n) => n.id === selectedId) ?? null : null
 
@@ -339,6 +433,51 @@ function PlanCanvasInner() {
                 {t('planCanvas.runnableBadge')}
               </span>
             )}
+
+            <div className="flex items-center rounded-md border border-white/[0.12] bg-black/40 p-0.5 text-xs">
+              <button
+                type="button"
+                onClick={() => setLens('edit')}
+                aria-pressed={lens === 'edit'}
+                className={`inline-flex h-7 items-center gap-1.5 rounded-sm px-2.5 font-semibold transition ${
+                  lens === 'edit' ? 'bg-sky-500/20 text-sky-100' : 'text-zinc-400 hover:text-zinc-200'
+                }`}
+              >
+                <Pencil className="h-3 w-3" />
+                {t('planCanvas.lensEdit')}
+              </button>
+              <button
+                type="button"
+                onClick={() => setLens(toggleLens('edit'))}
+                aria-pressed={lens === 'observe'}
+                className={`inline-flex h-7 items-center gap-1.5 rounded-sm px-2.5 font-semibold transition ${
+                  lens === 'observe' ? 'bg-sky-500/20 text-sky-100' : 'text-zinc-400 hover:text-zinc-200'
+                }`}
+              >
+                <Eye className="h-3 w-3" />
+                {t('planCanvas.lensObserve')}
+              </button>
+            </div>
+
+            {isObserve && (
+              <button
+                type="button"
+                disabled={!runGate.canRun || isNew || runMut.isPending}
+                title={
+                  isNew
+                    ? t('planCanvas.run.blockedUnsaved')
+                    : runGate.reason
+                      ? t(`planCanvas.run.blocked.${runGate.reason}`)
+                      : undefined
+                }
+                onClick={() => runMut.mutate()}
+                className="inline-flex h-8 items-center gap-1.5 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 text-xs font-semibold text-emerald-100 hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <Play className="h-3.5 w-3.5" />
+                {runMut.isPending ? t('planCanvas.run.running') : t('planCanvas.run.action')}
+              </button>
+            )}
+
             <button
               type="button"
               disabled={saveMut.isPending}
@@ -351,6 +490,12 @@ function PlanCanvasInner() {
           </div>
         }
       />
+
+      {isObserve && !runGate.canRun && !isNew && (
+        <div className="rounded-md border border-amber-400/25 bg-amber-400/[0.06] px-3 py-2 text-[11px] text-amber-200">
+          {t(`planCanvas.run.blocked.${runGate.reason}`)}
+        </div>
+      )}
 
       <div className="relative flex h-[74vh] min-h-[560px] overflow-hidden rounded-md border border-white/[0.1] bg-black">
         <PlanCanvasPalette onPick={onPaletteClickPick} />

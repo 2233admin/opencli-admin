@@ -638,3 +638,59 @@ export interface Preset {
 }
 
 export type PresetsGrouped = Record<string, Preset[]>
+
+// ── Plan run + health (Plan IR issue 03/04/08) ───────────────────────────────
+// Mirrors backend.schemas.plan.{SourceSegmentRead,SharedSegmentRead,
+// PlanRunRead,PlanHealthRead} field-for-field. Consumed by lib/planRunModel.ts
+// to project a completed run onto per-node execution state (issue 08).
+
+export interface SourceSegmentRead {
+  node_id: string
+  source_id?: string | null
+  task_id?: string | null
+  run_id?: string | null
+  success: boolean
+  collected: number
+  stored: number
+  skipped: number
+  error?: string | null
+}
+
+export interface SharedSegmentRead {
+  run_key: string
+  success: boolean
+  failed_node_id?: string | null
+  error?: string | null
+  items_in: number
+  stored: number
+  skipped: number
+}
+
+export interface PlanRunRead {
+  plan_id: string
+  source_id: string
+  task_id: string
+  run_id?: string | null
+  success: boolean
+  collected: number
+  stored: number
+  skipped: number
+  error?: string | null
+  source_results: SourceSegmentRead[]
+  shared_segment?: SharedSegmentRead | null
+}
+
+export interface PlanHealthRead {
+  id: string
+  plan_id: string
+  run_key: string
+  node_id: string
+  node_type: string
+  success: boolean
+  duration_ms: number
+  items_in: number
+  items_out: number
+  error_message?: string | null
+  detail: Record<string, unknown>
+  recorded_at: string
+}

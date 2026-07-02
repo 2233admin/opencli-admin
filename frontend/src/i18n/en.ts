@@ -622,6 +622,20 @@ const en: Translations = {
     detachConfirmDescription: 'Only detaches it from the Plan graph — the underlying data source entity is never deleted, and it can be wired back in anytime.',
     detachConfirmAction: 'Confirm remove',
     errorsBadge: '{{count}} validation error(s)',
+    lensEdit: 'Edit',
+    lensObserve: 'Observe',
+    run: {
+      action: 'Run plan',
+      running: 'Running…',
+      success: 'Plan run completed successfully',
+      failed: 'Plan run failed',
+      partialFailure: 'Plan run finished with errors: {{error}}',
+      blockedUnsaved: 'Save the Plan before running it',
+      blocked: {
+        draft: 'This Plan has unmaterialized draft source nodes — materialize every source before running',
+        'not-runnable': 'This Plan has no materialized source nodes to run',
+      },
+    },
   },
 }
 

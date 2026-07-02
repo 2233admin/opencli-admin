@@ -620,6 +620,20 @@ const zh = {
     detachConfirmDescription: '仅从 Plan 图中断开连接，不会删除底层数据源实体，可随时重新拖入引用。',
     detachConfirmAction: '确认移除',
     errorsBadge: '{{count}} 个校验错误',
+    lensEdit: '编辑',
+    lensObserve: '观察',
+    run: {
+      action: '运行 Plan',
+      running: '运行中…',
+      success: 'Plan 运行成功',
+      failed: 'Plan 运行失败',
+      partialFailure: 'Plan 运行结束但存在错误：{{error}}',
+      blockedUnsaved: '请先保存 Plan 再运行',
+      blocked: {
+        draft: '该 Plan 存在尚未材化的草稿源节点 — 请先材化所有源节点再运行',
+        'not-runnable': '该 Plan 没有已材化的源节点可运行',
+      },
+    },
   },
 }
 

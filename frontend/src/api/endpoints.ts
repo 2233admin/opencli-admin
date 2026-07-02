@@ -21,7 +21,9 @@ import type {
   NotificationRule,
   OdpSystemState,
   PlanGraph,
+  PlanHealthRead,
   PlanRead,
+  PlanRunRead,
   PresetsGrouped,
   Skill,
   SourceControlState,
@@ -391,3 +393,15 @@ export const updatePlan = (id: string, data: { name?: string; graph?: PlanGraph 
 
 export const deletePlan = (id: string) =>
   apiClient.delete<ApiResponse<null>>(`/plans/${id}`).then((r) => r.data)
+
+// ── Plan run + health (Plan IR issue 03/04/08) — Collection Canvas observe lens ──
+// runPlan invokes the SYNCHRONOUS manual whole-plan run endpoint
+// (backend/api/v1/plans.py run_plan) — the response already reflects the
+// completed run (or its per-source/shared-segment failure detail), no
+// polling needed. getPlanHealth is read-only Plan Health for the observe
+// lens's shared-node badges (issue 04's per-node health dimension).
+export const runPlan = (id: string, parameters: Record<string, unknown> = {}) =>
+  apiClient.post<ApiResponse<PlanRunRead>>(`/plans/${id}/run`, parameters).then((r) => r.data.data)
+
+export const getPlanHealth = (id: string, params?: { run_key?: string; page?: number; limit?: number }) =>
+  apiClient.get<ApiResponse<PlanHealthRead[]>>(`/plans/${id}/health`, { params }).then((r) => r.data)
