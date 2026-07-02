@@ -43,10 +43,11 @@ import {
   type Node,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { Eye, LayoutGrid, Pencil, Play, Save, Workflow } from 'lucide-react'
+import { Eye, LayoutGrid, Network, Pencil, Play, Save, Workflow } from 'lucide-react'
 
 import { getPlanHealth, createPlan, getPlan, runPlan, updatePlan } from '../api/endpoints'
 import type { PlanEdge, PlanNode } from '../api/types'
+import { CanvasToolbarButton } from '../components/CanvasToolbarButton'
 import ConfirmDialog from '../components/ConfirmDialog'
 import ErrorAlert from '../components/ErrorAlert'
 import { PageLoader } from '../components/LoadingSpinner'
@@ -461,8 +462,8 @@ function PlanCanvasInner() {
             </div>
 
             {isObserve && (
-              <button
-                type="button"
+              <CanvasToolbarButton
+                tone="affirmative"
                 disabled={!runGate.canRun || isNew || runMut.isPending}
                 title={
                   isNew
@@ -472,22 +473,20 @@ function PlanCanvasInner() {
                       : undefined
                 }
                 onClick={() => runMut.mutate()}
-                className="inline-flex h-8 items-center gap-1.5 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 text-xs font-semibold text-emerald-100 hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-40"
+                icon={<Play className="h-3.5 w-3.5" />}
               >
-                <Play className="h-3.5 w-3.5" />
                 {runMut.isPending ? t('planCanvas.run.running') : t('planCanvas.run.action')}
-              </button>
+              </CanvasToolbarButton>
             )}
 
-            <button
-              type="button"
+            <CanvasToolbarButton
+              tone="accent"
               disabled={saveMut.isPending}
               onClick={() => saveMut.mutate()}
-              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-sky-500/40 bg-sky-500/10 px-3 text-xs font-semibold text-sky-100 hover:bg-sky-500/20 disabled:opacity-50"
+              icon={<Save className="h-3.5 w-3.5" />}
             >
-              <Save className="h-3.5 w-3.5" />
               {saveMut.isPending ? t('planCanvas.saving') : t('planCanvas.save')}
-            </button>
+            </CanvasToolbarButton>
           </div>
         }
       />
@@ -536,14 +535,15 @@ function PlanCanvasInner() {
             <Controls position="bottom-left" showInteractive={false} />
             <MiniMap position="bottom-right" maskColor="rgba(6,6,8,0.78)" pannable zoomable />
             <Panel position="top-right">
-              <button
-                type="button"
+              <CanvasToolbarButton
+                tone="accent"
                 onClick={runAutoLayout}
                 disabled={laying}
-                className="inline-flex items-center gap-1.5 rounded-md border border-sky-500/40 bg-sky-500/10 px-2.5 py-1.5 text-[11px] font-semibold text-sky-100 shadow-lg transition hover:bg-sky-500/20 disabled:opacity-50"
+                className="shadow-lg"
+                icon={<Network className="h-3.5 w-3.5" />}
               >
                 {laying ? '…' : '自动布局'}
-              </button>
+              </CanvasToolbarButton>
             </Panel>
           </ReactFlow>
         </div>

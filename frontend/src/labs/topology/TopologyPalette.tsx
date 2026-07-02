@@ -1,20 +1,27 @@
 // Left palette rail for the 采集网络 (collection-network) canvas — issue:
-// palette / drag-create. Mirrors node-kit's NodeWorkbench left rail visually
-// (see src/node-kit/render/NodeWorkbench.tsx ~L370) but is its own component:
+// palette / drag-create. Same searchable-cmdk visual language as the plan
+// editor's palette (see pages/PlanCanvasPalette.tsx — cmdk is already a
+// dependency, CommandPalette uses the same package) so 总览 and 当前 Plan read
+// as one family, per the visual-parity task. Still its own component:
 // NetworkPage/ReactFlowTopologyCanvas own this file, node-kit is not touched.
 //
 // A palette item here is NOT a node-kit NodeSpec — it creates a real DataSource
 // via the same createSource() mutation SourcesPage uses. Dropping/clicking never
 // fabricates a node on the canvas; the canvas only shows what the next refetch
-// confirms exists in the DB (topology queries already poll).
+// confirms exists in the DB (topology queries already poll). Unlike the plan
+// editor's palette (which lists Presets fetched from GET /api/v1/presets),
+// there is nothing to fetch here — TOPOLOGY_PALETTE_SOURCES is the complete,
+// static list of real backend channel types.
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
+import { Command } from 'cmdk'
+import { Search } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { createSource } from '../../api/endpoints'
 import type { DataSource } from '../../api/types'
 import ChannelConfigForm, { type ChannelType } from '../../components/ChannelConfigForm'
-import { cn } from '../../lib/utils'
 import { paletteDropToCreatePayload, TOPOLOGY_PALETTE_SOURCES, type PaletteChannelType, type PaletteSourceItem } from './topologyModel'
 
 const DRAG_MIME = 'application/x-opencli-topology-palette'
@@ -23,20 +30,52 @@ interface TopologyPaletteProps {
   onCreated?: () => void
 }
 
-/** Left rail: click or drag a channel type onto the canvas to open the
- * create-source modal preseeded with that type. */
+function sourceMatchesQuery(item: PaletteSourceItem, query: string): boolean {
+  const q = query.trim().toLowerCase()
+  if (!q) return true
+  return item.label.toLowerCase().includes(q) || item.hint.toLowerCase().includes(q) || item.type.toLowerCase().includes(q)
+}
+
+/** Left rail: searchable cmdk panel (same pattern as PlanCanvasPalette) —
+ * click or drag a channel type onto the canvas to open the create-source
+ * modal preseeded with that type. */
 export function TopologyPalette({ onCreated }: TopologyPaletteProps) {
+  const { t } = useTranslation()
   const [draftType, setDraftType] = useState<ChannelType | null>(null)
+  const [query, setQuery] = useState('')
+
+  const filtered = TOPOLOGY_PALETTE_SOURCES.filter((item) => sourceMatchesQuery(item, query))
 
   return (
     <>
-      <div className="thin-scrollbar flex w-40 shrink-0 flex-col overflow-auto border-r border-white/8 bg-black/20 py-2">
-        <p className="px-3 pb-1 font-code text-[9px] font-semibold uppercase tracking-[0.14em] text-zinc-600">
-          新建采集源 · 拖入或点按
+      <div className="flex w-56 shrink-0 flex-col overflow-hidden border-r border-white/8 bg-black/20">
+        <p className="px-3 pb-1 pt-2 font-code text-[9px] font-semibold uppercase tracking-[0.14em] text-zinc-600">
+          {t('topology.paletteTitle')}
         </p>
-        {TOPOLOGY_PALETTE_SOURCES.map((item) => (
-          <PaletteEntry key={item.type} item={item} onClick={() => setDraftType(item.type as ChannelType)} />
-        ))}
+        <Command shouldFilter={false} className="flex min-h-0 flex-1 flex-col bg-transparent text-zinc-100">
+          <div className="flex items-center gap-1.5 border-b border-white/8 px-2.5 py-1.5">
+            <Search className="h-3.5 w-3.5 shrink-0 text-zinc-600" />
+            <Command.Input
+              value={query}
+              onValueChange={setQuery}
+              placeholder={t('topology.paletteSearchPlaceholder')}
+              className="h-6 min-w-0 flex-1 bg-transparent text-[12px] text-zinc-100 outline-hidden placeholder:text-zinc-600"
+            />
+          </div>
+          <Command.List className="thin-scrollbar flex-1 overflow-y-auto py-1">
+            <Command.Empty className="px-3 py-4 text-center text-[11px] text-zinc-600">
+              {t('topology.paletteEmpty')}
+            </Command.Empty>
+            <Command.Group
+              heading={t('topology.paletteCategorySources')}
+              className="px-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-600"
+            >
+              {filtered.map((item) => (
+                <PaletteRow key={item.type} item={item} onPick={() => setDraftType(item.type as ChannelType)} />
+              ))}
+            </Command.Group>
+          </Command.List>
+        </Command>
       </div>
 
       {draftType && (
@@ -53,26 +92,21 @@ export function TopologyPalette({ onCreated }: TopologyPaletteProps) {
   )
 }
 
-function PaletteEntry({ item, onClick }: { item: PaletteSourceItem; onClick: () => void }) {
+function PaletteRow({ item, onPick }: { item: PaletteSourceItem; onPick: () => void }) {
   return (
-    <button
-      type="button"
+    <Command.Item
+      value={`${item.label} ${item.hint} ${item.type}`}
+      onSelect={onPick}
+      className="mx-1 flex cursor-pointer flex-col items-start gap-0.5 rounded-md px-2 py-1.5 text-left aria-selected:bg-sky-500/15"
       draggable
       onDragStart={(e) => {
         e.dataTransfer.setData(DRAG_MIME, item.type)
         e.dataTransfer.effectAllowed = 'copy'
       }}
-      onClick={onClick}
-      title={item.hint}
-      className={cn(
-        'mx-2 mb-1 flex flex-col items-start gap-0.5 rounded-md border border-white/8 bg-white/3 px-2.5 py-2 text-left transition',
-        'hover:border-white/20 hover:bg-white/6 active:scale-[0.98]',
-        'cursor-grab active:cursor-grabbing',
-      )}
     >
-      <span className="font-code text-[11px] font-semibold text-zinc-200">{item.label}</span>
+      <span className="truncate text-[12px] font-medium text-zinc-200">{item.label}</span>
       <span className="truncate text-[10px] text-zinc-600">{item.hint}</span>
-    </button>
+    </Command.Item>
   )
 }
 

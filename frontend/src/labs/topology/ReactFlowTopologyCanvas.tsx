@@ -15,6 +15,7 @@ import type { Edge, Node } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { Network } from 'lucide-react'
 
+import { CanvasToolbarButton } from '../../components/CanvasToolbarButton'
 import type { TopologyHealth, TopologyNodeData } from './topologyModel'
 import { ALL_NODES, hasNode, nodeTypesForXyflow, registerNodes, registerSavedMacros } from '../../node-kit'
 // elkLayout is not re-exported from node-kit's public index (only NodeWorkbench
@@ -241,15 +242,16 @@ function ReactFlowTopologyCanvasInner({
         </div>
       </Panel>
       <Panel position="top-right">
-        <button
-          type="button"
+        <CanvasToolbarButton
+          tone="accent"
           onClick={runAutoLayout}
           disabled={laying}
           title="按数据流自动排版 (ELK)"
-          className="inline-flex items-center gap-1.5 rounded-md border border-sky-500/40 bg-sky-500/10 px-2.5 py-1.5 text-[11px] font-semibold text-sky-100 shadow-lg transition hover:bg-sky-500/20 disabled:opacity-50"
+          className="shadow-lg"
+          icon={<Network className="h-3.5 w-3.5" />}
         >
-          <Network size={12} /> {laying ? '布局中…' : '自动布局'}
-        </button>
+          {laying ? '布局中…' : '自动布局'}
+        </CanvasToolbarButton>
       </Panel>
     </ReactFlow>
   )

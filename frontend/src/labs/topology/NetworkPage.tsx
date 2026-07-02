@@ -30,6 +30,7 @@ import type {
   WorkerNode,
 } from '../../api/types'
 import Card from '../../components/Card'
+import { CanvasToolbarButton, canvasToolbarButtonClass } from '../../components/CanvasToolbarButton'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import ErrorAlert from '../../components/ErrorAlert'
 import { cn } from '../../lib/utils'
@@ -197,30 +198,22 @@ export default function NetworkPage() {
         <div className="flex items-center gap-2">
           {divedSource && (
             <>
-              <Link
-                to={`/sources/${divedSource.id}/control-room`}
-                className="inline-flex h-8 items-center gap-2 rounded-md border border-white/12 bg-white/4 px-3 text-xs font-semibold text-zinc-200 transition hover:border-white/24 hover:bg-white/8"
-              >
+              <Link to={`/sources/${divedSource.id}/control-room`} className={canvasToolbarButtonClass()}>
                 <SlidersHorizontal className="h-3.5 w-3.5" />
                 控制室
               </Link>
-              <Link
-                to="/plans/new"
-                className="inline-flex h-8 items-center gap-2 rounded-md border border-white/12 bg-white/4 px-3 text-xs font-semibold text-zinc-200 transition hover:border-white/24 hover:bg-white/8"
-              >
+              <Link to="/plans/new" className={canvasToolbarButtonClass()}>
                 <Workflow className="h-3.5 w-3.5" />
                 采集画布
               </Link>
             </>
           )}
-          <button
-            type="button"
+          <CanvasToolbarButton
             onClick={refetchAll}
-            className="inline-flex h-8 items-center gap-2 rounded-md border border-white/12 bg-white/4 px-3 text-xs font-semibold text-zinc-200 hover:border-white/24 hover:bg-white/8"
+            icon={<RefreshCw className={cn('h-3.5 w-3.5', isFetching && 'animate-spin')} />}
           >
-            <RefreshCw className={cn('h-3.5 w-3.5', isFetching && 'animate-spin')} />
             同步
-          </button>
+          </CanvasToolbarButton>
         </div>
       </div>
 
@@ -399,22 +392,24 @@ function NodeInspector({
   const stageCode = readDetailString(node.data.detail, 'stage_code', node.data.kind.slice(0, 2).toUpperCase())
   return (
     <Card padding={false} className="flex h-full flex-col overflow-hidden border-0 bg-[#0a0a0a]">
-      <div className="flex items-start gap-3 border-b border-white/8 px-4 py-4 pr-12">
-        <div className="grid h-10 w-10 shrink-0 place-items-center border border-white/15 bg-white/4">
-          <span className="font-code text-xs font-semibold text-zinc-200">{stageCode}</span>
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="telemetry-label">NODE · {node.data.kind}</p>
-          <h2 className="mt-0.5 truncate text-lg font-semibold text-white" title={node.data.title}>
-            {node.data.title}
-          </h2>
-          <p className="truncate text-xs text-zinc-500">{node.data.subtitle}</p>
+      <div className="flex items-start justify-between gap-2 border-b border-white/8 px-4 py-3">
+        <div className="flex min-w-0 items-start gap-3">
+          <div className="grid h-10 w-10 shrink-0 place-items-center border border-white/15 bg-white/4">
+            <span className="font-code text-xs font-semibold text-zinc-200">{stageCode}</span>
+          </div>
+          <div className="min-w-0">
+            <p className="telemetry-label">NODE · {node.data.kind}</p>
+            <h2 className="mt-0.5 truncate text-sm font-semibold text-white" title={node.data.title}>
+              {node.data.title}
+            </h2>
+            <p className="truncate text-[11px] text-zinc-500">{node.data.subtitle}</p>
+          </div>
         </div>
         <button
           type="button"
           aria-label="收起面板"
           onClick={onClose}
-          className="absolute right-3 top-3 inline-flex h-7 w-7 items-center justify-center rounded-md border border-white/12 bg-black/60 text-zinc-400 hover:border-white/[0.28] hover:text-white"
+          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-white/12 bg-black/60 text-zinc-400 hover:border-white/[0.28] hover:text-white"
         >
           <X className="h-4 w-4" />
         </button>
