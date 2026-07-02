@@ -22,6 +22,7 @@ import type {
   OdpSystemState,
   Skill,
   SourceControlState,
+  SourceMeasurementRecord,
   SystemConfig,
   TaskRun,
   TaskRunEvent,
@@ -73,6 +74,23 @@ export const deleteSourceCredential = (id: string, keyName: string) =>
 // "healthy". No websocket in v0 — TanStack Query refetchInterval only.
 export const getSourceControlState = (id: string) =>
   apiClient.get<ApiResponse<SourceControlState>>(`/sources/${id}/control-state`).then((r) => r.data.data)
+
+// Set, update, or clear (objective_override: null) a source's per-source
+// SourceObjective override. The resolved objective (override merged over
+// defaults) is what control-state actually classifies against.
+export const setSourceObjective = (id: string, objectiveOverride: Record<string, unknown> | null) =>
+  apiClient
+    .patch<ApiResponse<DataSource>>(`/sources/${id}/objective`, { objective_override: objectiveOverride })
+    .then((r) => r.data.data)
+
+// Raw per-run sensor history behind control-state's folded latest-measurement
+// + trend summary — the Source Control Room's trend chart data. Paginated,
+// newest-first, like every other list endpoint. Zero rows is a legitimate
+// "pre-measurement source" state, not an error.
+export const listSourceMeasurements = (id: string, params?: { page?: number; limit?: number }) =>
+  apiClient
+    .get<ApiResponse<SourceMeasurementRecord[]>>(`/sources/${id}/measurements`, { params })
+    .then((r) => r.data)
 
 // ── Control (issue 07 — topology ODP node + action history) ────────────────────
 // System-level ODP data-plane snapshot: no source_id, singleton. Same

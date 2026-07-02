@@ -210,6 +210,51 @@ class SourceControlStateRead(BaseModel):
     control_mode: str
 
 
+class SourceMeasurementRecordRead(BaseModel):
+    """One persisted source_measurements row (Source Control Room trend
+    endpoint — ``GET /sources/{source_id}/measurements``).
+
+    Mirrors ``backend.models.source_measurement.SourceMeasurement`` field for
+    field (the DB row shape), NOT ``backend.control.measurements.
+    SourceMeasurement`` (the in-memory pydantic contract embedded as
+    ``SourceControlStateRead.measurement`` — that one is derived per-decision
+    and lacks ``id``/``created_at``/``updated_at``). This is the raw time
+    series an operator drills into; the control-state endpoint only ever
+    exposes the latest reading plus a folded trend, never the full history.
+    """
+
+    id: str
+    source_id: str
+    run_id: str
+    measured_at: datetime
+
+    accepted: int
+    duplicates: int
+    rejected: int
+
+    error_rate: float
+    duplicate_rate: float
+    error_kinds: dict[str, int] = Field(default_factory=dict)
+
+    fetch_latency_ms: Optional[int] = None
+    ingest_latency_ms: Optional[int] = None
+    store_latency_ms: Optional[int] = None
+
+    cursor_advanced: bool
+
+    newest_source_ts: Optional[datetime] = None
+    newest_observed_at: Optional[datetime] = None
+    freshness_lag_seconds: Optional[int] = None
+    source_ts_quality: str
+
+    raw: dict[str, Any] = Field(default_factory=dict)
+
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 class ControlActionRecordRead(BaseModel):
     """One Evidence Ledger row (issue 07 — read-only action history listing).
 

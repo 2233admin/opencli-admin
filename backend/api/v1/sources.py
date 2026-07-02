@@ -16,6 +16,7 @@ from backend.schemas.common import ApiResponse, PaginationMeta
 from backend.schemas.control import (
     FallbackTrendRead,
     SourceControlStateRead,
+    SourceMeasurementRecordRead,
     SuggestedActionRead,
     TrendRead,
 )
@@ -27,7 +28,7 @@ from backend.schemas.source import (
     DataSourceUpdate,
     SourceObjectiveOverridePatch,
 )
-from backend.services import source_service
+from backend.services import measurement_service, source_service
 
 logger = logging.getLogger(__name__)
 
@@ -306,4 +307,45 @@ async def get_source_control_state(
             suggested_actions=suggestions,
             control_mode=settings.control_mode,
         )
+    )
+
+
+@router.get(
+    "/{source_id}/measurements",
+    response_model=ApiResponse[list[SourceMeasurementRecordRead]],
+)
+async def list_source_measurements(
+    source_id: str,
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse:
+    """Paginated, newest-first listing over a source's raw source_measurements
+    time series (Source Control Room trend endpoint).
+
+    Distinct from ``GET /{source_id}/control-state``, which folds only the
+    LATEST measurement (plus a rolling trend summary) into one decision
+    snapshot: this endpoint is the operator's drill-in view of the full
+    per-run sensor history behind that snapshot, paginated like every other
+    list endpoint (see ``control_ledger_service.list_control_actions`` for
+    the sibling pattern this mirrors).
+
+    404 if the source itself doesn't exist, matching every other
+    ``/sources/{id}/*`` endpoint. A source with zero measurement rows
+    (pre-measurement) returns 200 with an empty ``data`` list and
+    ``meta.total == 0`` — that is a legitimate, honest state, not an error.
+    Read-only: nothing here writes to source_measurements.
+    """
+    source = await source_service.get_source(db, source_id)
+    if not source:
+        raise HTTPException(status_code=404, detail="Source not found")
+
+    rows, total = await measurement_service.list_measurements(
+        db, source_id=source_id, page=page, limit=limit
+    )
+    return ApiResponse.ok(
+        data=[SourceMeasurementRecordRead.model_validate(r) for r in rows],
+        meta=PaginationMeta(
+            total=total, page=page, limit=limit, pages=max(1, -(-total // limit))
+        ),
     )

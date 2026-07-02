@@ -48,6 +48,18 @@ export interface DataSource {
   ai_config?: Record<string, unknown>
   enabled: boolean
   tags: string[]
+  // Issue 02: the raw stored per-source SourceObjective override, null when
+  // none is set — the UNRESOLVED override dict. See SourceControlState.objective
+  // for the RESOLVED shape (override merged over defaults) control-state
+  // actually classifies against. Optional so this type stays valid against
+  // any DataSource response predating issue 02.
+  objective_override?: Record<string, unknown> | null
+  // Issue 03 (Control Cycle + Actuator): set by an executed require_review
+  // action; a human clears it, the Control Cycle never does.
+  review_required?: boolean
+  // Issue 03: set alongside enabled=false by an executed pause action; null
+  // once resumed (manually or by the Control Cycle's TTL auto-resume).
+  paused_until?: string | null
   created_at: string
   updated_at: string
 }
@@ -293,6 +305,11 @@ export interface SourceMeasurement {
   odp_stream_lag?: number | null
   odp_pending?: number | null
   dlq_count: number
+  // source | observed_fallback | missing | invalid | synthetic — mirrors
+  // backend.control.measurements.SourceMeasurement.source_ts_quality. Absent
+  // (not just null) on measurements built from the pre-C1 TaskRunEvent
+  // fallback path, which has no freshness quality signal at all.
+  source_ts_quality?: string | null
   observed_at: string
 }
 
@@ -514,4 +531,34 @@ export interface AdvisoryReport {
     insufficient_data: number
     still_pending: number
   }
+}
+
+// ── Source measurement history (Source Control Room — GET /sources/{id}/measurements) ─
+// One persisted source_measurements row — the raw per-run sensor reading, NOT
+// the same shape as SourceMeasurement above (that one is the in-memory,
+// decision-time contract embedded in SourceControlState; this one is the
+// stored DB row, with id/created_at/updated_at and the full derivation
+// inputs). Mirrors backend/schemas/control.py's SourceMeasurementRecordRead.
+export interface SourceMeasurementRecord {
+  id: string
+  source_id: string
+  run_id: string
+  measured_at: string
+  accepted: number
+  duplicates: number
+  rejected: number
+  error_rate: number
+  duplicate_rate: number
+  error_kinds: Record<string, number>
+  fetch_latency_ms: number | null
+  ingest_latency_ms: number | null
+  store_latency_ms: number | null
+  cursor_advanced: boolean
+  newest_source_ts: string | null
+  newest_observed_at: string | null
+  freshness_lag_seconds: number | null
+  source_ts_quality: string
+  raw: Record<string, unknown>
+  created_at: string
+  updated_at: string
 }

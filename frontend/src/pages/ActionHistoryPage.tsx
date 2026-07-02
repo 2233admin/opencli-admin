@@ -11,6 +11,7 @@ import ErrorAlert from '../components/ErrorAlert'
 import { PageLoader } from '../components/LoadingSpinner'
 import Pagination from '../components/Pagination'
 import PageHeader from '../components/PageHeader'
+import StatTile from '../components/StatTile'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
@@ -255,15 +256,6 @@ function VerdictBadge({ label, tone }: { label: string; tone: 'success' | 'dange
         ? 'border-red-400/35 bg-red-400/10 text-red-100'
         : 'border-zinc-500/30 bg-zinc-500/10 text-zinc-300'
   return <span className={`inline-flex border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${cls}`}>{label}</span>
-}
-
-function StatTile({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div className="border border-white/[0.08] bg-black/25 px-3 py-2">
-      <p className="font-code text-[10px] uppercase tracking-wide text-zinc-500">{label}</p>
-      <p className="mt-1 font-code text-[15px] text-zinc-100">{value}</p>
-    </div>
-  )
 }
 
 interface AdvisoryReportSectionProps {

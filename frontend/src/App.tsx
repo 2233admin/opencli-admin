@@ -18,6 +18,7 @@ const SkillDetailPage = lazy(() => import('./pages/SkillDetailPage'))
 const ProvidersPage = lazy(() => import('./pages/ProvidersPage'))
 const NodesPage = lazy(() => import('./pages/NodesPage'))
 const ActionHistoryPage = lazy(() => import('./pages/ActionHistoryPage'))
+const SourceControlRoomPage = lazy(() => import('./pages/SourceControlRoomPage'))
 const TopologyPage = lazy(() => import('./labs/topology/TopologyPage'))
 const NetworkPage = lazy(() => import('./labs/topology/NetworkPage'))
 const NodeKitPage = lazy(() => import('./labs/topology/NodeKitPage'))
@@ -86,6 +87,7 @@ export default function App() {
           />
           <Route path="topology" element={<Navigate to={isTopologyLabEnabled ? '/labs/topology' : '/dashboard'} replace />} />
           <Route path="sources" element={<LazyRoute><SourcesPage /></LazyRoute>} />
+          <Route path="sources/:sourceId/control-room" element={<LazyRoute><SourceControlRoomPage /></LazyRoute>} />
           <Route path="tasks" element={<LazyRoute><TasksPage /></LazyRoute>} />
           <Route path="records" element={<LazyRoute><RecordsPage /></LazyRoute>} />
           <Route path="schedules" element={<LazyRoute><SchedulesPage /></LazyRoute>} />

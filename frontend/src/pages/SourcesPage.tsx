@@ -1773,6 +1773,12 @@ function WorkflowInspector({
         </div>
 
         <div className="grid gap-2">
+          <Link
+            className="inline-flex items-center justify-center gap-2 rounded-md border border-white/10 px-3 py-2 text-sm font-medium text-zinc-200 hover:bg-white/[0.04]"
+            to={`/sources/${source.id}/control-room`}
+          >
+            <Activity size={14} /> 控制室
+          </Link>
           {isTopologyLabEnabled && (
             <Link className="inline-flex items-center justify-center gap-2 rounded-md bg-cyan-500 px-3 py-2 text-sm font-semibold text-slate-950 hover:bg-cyan-400" to={`/labs/topology?source=${source.id}`}>
               <ExternalLink size={14} /> 查看全局拓扑
@@ -2044,6 +2050,12 @@ function SourceConfigurationPanel({
                     </Button>
                     <Button type="button" size="xs" variant="ghost" onClick={() => onToggle(source)}>
                       {source.enabled ? '停用' : '启用'}
+                    </Button>
+                    <Button asChild size="xs" variant="outline">
+                      <Link to={`/sources/${source.id}/control-room`}>
+                        <Activity size={13} />
+                        控制室
+                      </Link>
                     </Button>
                   </div>
 
