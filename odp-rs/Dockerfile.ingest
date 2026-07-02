@@ -5,7 +5,8 @@ COPY crates ./crates
 RUN cargo build --release -p odp-ingest
 
 FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
+# curl is required for the docker-compose healthcheck (curl -f localhost:8040/health).
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /app/target/release/odp-ingest /usr/local/bin/odp-ingest
 EXPOSE 8040
 CMD ["odp-ingest"]

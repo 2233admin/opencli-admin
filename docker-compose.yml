@@ -229,6 +229,12 @@ services:
       RUST_LOG: info,odp_ingest=debug
     ports:
       - "${ODP_INGEST_PORT:-8040}:8040"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8040/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     depends_on:
       redis:
         condition: service_healthy
@@ -244,13 +250,22 @@ services:
       ODP_DATABASE_URL: postgresql://${POSTGRES_USER:-opencli}:${POSTGRES_PASSWORD:-opencli_secret}@postgres:5432/${POSTGRES_DB:-opencli_admin}
       ODP_STORE_BATCH_SIZE: ${ODP_STORE_BATCH_SIZE:-500}
       RUST_LOG: info,odp_store=debug
+    # odp-store has no HTTP/TCP listener (pure Redis-stream consumer loop), so
+    # this is a process-liveness probe, not a readiness probe: it confirms the
+    # binary hasn't crashed, not that Postgres/Redis connectivity is healthy.
+    healthcheck:
+      test: ["CMD", "pgrep", "-x", "odp-store"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     depends_on:
       redis:
         condition: service_healthy
       postgres:
         condition: service_healthy
       odp-ingest:
-        condition: service_started
+        condition: service_healthy
     restart: unless-stopped
 
   # ── III control plane (M0+M1) — docker compose --profile iii --profile odp up
@@ -280,7 +295,7 @@ services:
       iii-engine:
         condition: service_started
       odp-ingest:
-        condition: service_started
+        condition: service_healthy
     restart: unless-stopped
 
   iii-schedule-bootstrap:
