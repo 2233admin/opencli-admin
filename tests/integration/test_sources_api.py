@@ -344,8 +344,15 @@ async def test_control_state_with_run_evidence(client, db_session, sample_source
     # UNKNOWN has no first-version policy -> no suggestions.
     assert data["suggested_actions"] == []
     assert data["control_mode"] == "advisory"
-    # No source_measurements row for this source -> nothing to trend over.
-    assert data["trend"] is None
+    # Issue 06: no source_measurements row, but run history exists -> the
+    # trend falls back to task-run evidence and says so via provenance.
+    assert data["trend"] == {
+        "window": 1,
+        "zero_accepted_streak": 0,
+        "avg_error_rate": 0.0,
+        "rate_limited_runs": 0,
+        "provenance": "run_history",
+    }
 
 
 @pytest.mark.asyncio
@@ -397,6 +404,74 @@ async def test_control_state_degraded_when_errors(client, db_session, sample_sou
     assert len(data["suggested_actions"]) == 1
     assert data["suggested_actions"][0]["action_type"] == "require_review"
     assert data["suggested_actions"][0]["reason"]
+
+
+@pytest.mark.asyncio
+async def test_control_state_trend_fallback_for_pre_measurement_source(
+    client, db_session, sample_source_data, monkeypatch
+):
+    """Issue 06: a source with ZERO source_measurements rows but real task-run
+    history gets a rolling trend derived from that history, explicitly marked
+    provenance="run_history" — and the fallback trend must NOT upgrade
+    coverage/confidence (no fake HEALTHY: the state stays gated to UNKNOWN
+    because odp/error_kinds coverage is still missing)."""
+    monkeypatch.delenv("ODP_REDIS_URL", raising=False)
+    monkeypatch.delenv("REDIS_URL", raising=False)
+    monkeypatch.delenv("ODP_DATABASE_URL", raising=False)
+    monkeypatch.delenv("ODP_INGEST_URL", raising=False)
+
+    from datetime import datetime, timezone
+
+    from backend.models.task import CollectionTask, TaskRun, TaskRunEvent
+
+    create_resp = await client.post("/api/v1/sources", json=sample_source_data)
+    source_id = create_resp.json()["data"]["id"]
+
+    task = CollectionTask(source_id=source_id, trigger_type="manual", parameters={})
+    db_session.add(task)
+    await db_session.flush()
+
+    # oldest -> newest: one accepting run, then two clean-but-empty runs.
+    for day, (collected, stored) in enumerate([(10, 10), (0, 0), (0, 0)], start=1):
+        run = TaskRun(
+            task_id=task.id,
+            status="completed",
+            created_at=datetime(2026, 7, day, tzinfo=timezone.utc),
+            finished_at=datetime(2026, 7, day, tzinfo=timezone.utc),
+            duration_ms=1000,
+            records_collected=stored,
+        )
+        db_session.add(run)
+        await db_session.flush()
+        db_session.add(
+            TaskRunEvent(
+                run_id=run.id, level="info", step="complete", message="done",
+                detail={"collected": collected, "stored": stored, "skipped": 0},
+            )
+        )
+    await db_session.flush()
+
+    response = await client.get(f"/api/v1/sources/{source_id}/control-state")
+    assert response.status_code == 200
+    data = response.json()["data"]
+
+    # The fallback trend exists, with honest run-history provenance and the
+    # same streak/avg/count semantics as the measurement-backed path.
+    assert data["trend"] == {
+        "window": 3,
+        "zero_accepted_streak": 2,
+        "avg_error_rate": 0.0,
+        "rate_limited_runs": 0,
+        "provenance": "run_history",
+    }
+    # Coverage/confidence math is untouched by the fallback trend: the
+    # TaskRunEvent path still misses odp/error_kinds/cursor/freshness, so
+    # confidence stays "low" and the would-be HEALTHY stays gated to UNKNOWN.
+    assert data["measurement"] is not None
+    assert data["confidence"] == "low"
+    assert data["sensor_coverage"]["error_kinds"] is False
+    assert data["sensor_coverage"]["odp"] is False
+    assert data["control_state"] == "unknown"
 
 
 # ---------------------------------------------------------------------------

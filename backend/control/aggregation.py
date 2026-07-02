@@ -51,6 +51,16 @@ from backend.control.measurements import SourceMeasurement
 from backend.models.source_measurement import SourceMeasurement as SourceMeasurementRow
 from backend.models.task import CollectionTask, TaskRun, TaskRunEvent
 
+#: Trend provenance values (issue 06 — closeout PRD "Trend fallback").
+#: ``measurements`` = summarized over persisted ``source_measurements`` rows
+#: (the rich, truthful sensor history). ``run_history`` = derived from
+#: TaskRun/TaskRunEvent evidence via the PR-Control-2 fallback path, used only
+#: when a source has NO measurement rows at all — so a pre-measurement source
+#: still gets a trend without the fallback ever masquerading as full sensor
+#: coverage.
+TREND_PROVENANCE_MEASUREMENTS = "measurements"
+TREND_PROVENANCE_RUN_HISTORY = "run_history"
+
 
 class SourceTrend:
     """A small rolling-window summary over a source's recent
@@ -58,6 +68,12 @@ class SourceTrend:
 
     Not a Pydantic model (kept internal to control/): the API-facing shape is
     ``backend.schemas.control.TrendRead``, built from this by the endpoint.
+
+    ``provenance`` records which evidence produced the summary — see
+    :data:`TREND_PROVENANCE_MEASUREMENTS` / :data:`TREND_PROVENANCE_RUN_HISTORY`.
+    It exists so the API response can keep coverage honest (a run-history
+    fallback trend must never be presented as measurement-backed); it does NOT
+    feed the evaluator, and it never changes coverage/confidence math.
     """
 
     def __init__(
@@ -67,11 +83,13 @@ class SourceTrend:
         zero_accepted_streak: int,
         avg_error_rate: float,
         rate_limited_runs: int,
+        provenance: str = TREND_PROVENANCE_MEASUREMENTS,
     ) -> None:
         self.window = window
         self.zero_accepted_streak = zero_accepted_streak
         self.avg_error_rate = avg_error_rate
         self.rate_limited_runs = rate_limited_runs
+        self.provenance = provenance
 
 
 def row_to_measurement(row: SourceMeasurementRow) -> SourceMeasurement:
@@ -174,6 +192,27 @@ async def build_trend(
     return trend_from_rows(rows)
 
 
+async def build_trend_with_fallback(
+    session: AsyncSession, source_id: str, *, window: int = 5
+) -> Optional[SourceTrend]:
+    """:func:`build_trend`, falling back to recent TaskRun/TaskRunEvent
+    evidence when the source has NO ``source_measurements`` row at all
+    (issue 06 — pre-measurement sources).
+
+    The fallback fires only in the zero-rows case — a source with even one
+    persisted row keeps its measurement-backed trend untouched (provenance
+    ``measurements``). The fallback summary is computed with the exact same
+    streak/avg/count math as :func:`trend_from_rows`, over per-run
+    measurements derived by the same PR-Control-2 mapping
+    :func:`build_measurement` already falls back to — no second run-history
+    reader. Returns ``None`` when the source has never run at all.
+    """
+    trend = await build_trend(session, source_id, window=window)
+    if trend is not None:
+        return trend
+    return await _build_trend_from_run_history(session, source_id, window=window)
+
+
 def trend_from_rows(
     rows: list[SourceMeasurementRow],
 ) -> Optional[SourceTrend]:
@@ -185,26 +224,67 @@ def trend_from_rows(
     with the exact same math the live endpoint uses — the streak/avg/count
     semantics documented on :func:`build_trend` apply unchanged.
     """
-    if not rows:
+    return _summarize_window(
+        [
+            (row.accepted or 0, row.error_rate or 0.0, row.error_kinds or {})
+            for row in rows
+        ],
+        provenance=TREND_PROVENANCE_MEASUREMENTS,
+    )
+
+
+def _summarize_window(
+    entries: list[tuple[int, float, dict[str, int]]], *, provenance: str
+) -> Optional[SourceTrend]:
+    """The one streak/avg/count summary over a newest-first window of
+    ``(accepted, error_rate, error_kinds)`` readings. Pure — no I/O; returns
+    ``None`` for an empty window.
+
+    Shared by :func:`trend_from_rows` (measurement-backed) and the issue-06
+    run-history fallback so both provenances trend with identical math.
+    """
+    if not entries:
         return None
 
     zero_accepted_streak = 0
-    for row in rows:
-        if (row.accepted or 0) == 0:
+    for accepted, _, _ in entries:
+        if accepted == 0:
             zero_accepted_streak += 1
         else:
             break
 
-    avg_error_rate = sum(row.error_rate or 0.0 for row in rows) / len(rows)
+    avg_error_rate = sum(error_rate for _, error_rate, _ in entries) / len(entries)
     rate_limited_runs = sum(
-        1 for row in rows if (row.error_kinds or {}).get("rate_limited", 0) > 0
+        1 for _, _, error_kinds in entries if error_kinds.get("rate_limited", 0) > 0
     )
 
     return SourceTrend(
-        window=len(rows),
+        window=len(entries),
         zero_accepted_streak=zero_accepted_streak,
         avg_error_rate=avg_error_rate,
         rate_limited_runs=rate_limited_runs,
+        provenance=provenance,
+    )
+
+
+async def _recent_runs(
+    session: AsyncSession, source_id: str, limit: int
+) -> list[TaskRun]:
+    """The source's newest-first TaskRun window (PR-Control-2 evidence).
+
+    Latest runs for this source: TaskRun -> task_id -> CollectionTask.source_id.
+    TaskRun has no direct source_id column, so we join through the task.
+    """
+    return list(
+        (
+            await session.execute(
+                select(TaskRun)
+                .join(CollectionTask, TaskRun.task_id == CollectionTask.id)
+                .where(CollectionTask.source_id == source_id)
+                .order_by(TaskRun.created_at.desc())
+                .limit(limit)
+            )
+        ).scalars().all()
     )
 
 
@@ -213,22 +293,38 @@ async def _build_measurement_from_task_events(
 ) -> Optional[SourceMeasurement]:
     """PR-Control-2 fallback path: derive a measurement from TaskRun +
     TaskRunEvent evidence when no ``source_measurements`` row exists yet."""
-    # Latest run for this source: TaskRun -> task_id -> CollectionTask.source_id.
-    # TaskRun has no direct source_id column, so we join through the task.
-    latest_run = (
-        await session.execute(
-            select(TaskRun)
-            .join(CollectionTask, TaskRun.task_id == CollectionTask.id)
-            .where(CollectionTask.source_id == source_id)
-            .order_by(TaskRun.created_at.desc())
-            .limit(1)
-        )
-    ).scalar_one_or_none()
-
-    if latest_run is None:
+    runs = await _recent_runs(session, source_id, 1)
+    if not runs:
         # Source has never run — no sensor reading to report.
         return None
+    return await _measurement_from_run(session, source_id, runs[0])
 
+
+async def _build_trend_from_run_history(
+    session: AsyncSession, source_id: str, *, window: int = 5
+) -> Optional[SourceTrend]:
+    """Issue 06: derive a fallback trend for a pre-measurement source from its
+    recent TaskRun/TaskRunEvent window — the SAME evidence and per-run mapping
+    :func:`_build_measurement_from_task_events` reads, widened from the latest
+    run to the last ``window`` runs. Read-only; returns ``None`` when the
+    source has never run. Callers must only reach this when no
+    ``source_measurements`` row exists (see :func:`build_trend_with_fallback`).
+    """
+    runs = await _recent_runs(session, source_id, window)
+    entries: list[tuple[int, float, dict[str, int]]] = []
+    for run in runs:
+        m = await _measurement_from_run(session, source_id, run)
+        entries.append((m.accepted, m.error_rate, m.error_kinds or {}))
+    return _summarize_window(entries, provenance=TREND_PROVENANCE_RUN_HISTORY)
+
+
+async def _measurement_from_run(
+    session: AsyncSession, source_id: str, latest_run: TaskRun
+) -> SourceMeasurement:
+    """Map ONE TaskRun (+ its events) onto the measurement contract — the
+    per-run body of the PR-Control-2 fallback path, factored out (issue 06) so
+    the run-history trend fallback reuses this exact mapping instead of
+    growing a second reader."""
     # Prefer the durable collected/stored/skipped breakdown from the run's
     # `complete` event detail. Fall back to TaskRun.records_collected (== stored)
     # for runs that never emitted one (failed runs, or a run without a run_id).

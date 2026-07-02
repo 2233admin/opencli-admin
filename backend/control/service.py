@@ -56,12 +56,20 @@ logger = logging.getLogger(__name__)
 class TrendSummaryData:
     """Plain-data mirror of ``backend.control.aggregation.TrendSummary`` —
     kept here so callers (the endpoint's response schema, a future Control
-    Cycle) don't need to import the aggregation module's internal type."""
+    Cycle) don't need to import the aggregation module's internal type.
+
+    ``provenance`` (issue 06) mirrors ``SourceTrend.provenance``:
+    ``"measurements"`` when the trend summarizes persisted
+    ``source_measurements`` rows, ``"run_history"`` when it was derived from
+    TaskRun/TaskRunEvent evidence because the source has no measurement rows
+    yet. Informational only — it never feeds the evaluator and never changes
+    coverage/confidence."""
 
     window: int
     zero_accepted_streak: int
     avg_error_rate: float
     rate_limited_runs: int
+    provenance: str = "measurements"
 
 
 @dataclass
@@ -124,7 +132,11 @@ async def decide_for_source(
         if measurement_row is not None
         else await aggregation.build_measurement(session, source_id)
     )
-    trend_summary = await aggregation.build_trend(session, source_id)
+    # Issue 06: prefer the measurement-rows trend; a source with ZERO
+    # source_measurements rows falls back to a trend derived from its recent
+    # TaskRun/TaskRunEvent history (same evidence build_measurement's fallback
+    # reads), tagged provenance="run_history" so coverage stays honest.
+    trend_summary = await aggregation.build_trend_with_fallback(session, source_id)
 
     measurement_row_id = measurement_row.id if measurement_row is not None else None
     run_id = measurement_row.run_id if measurement_row is not None else None
@@ -135,6 +147,7 @@ async def decide_for_source(
             zero_accepted_streak=trend_summary.zero_accepted_streak,
             avg_error_rate=trend_summary.avg_error_rate,
             rate_limited_runs=trend_summary.rate_limited_runs,
+            provenance=trend_summary.provenance,
         )
         if trend_summary is not None
         else None

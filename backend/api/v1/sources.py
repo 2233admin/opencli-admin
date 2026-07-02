@@ -7,11 +7,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.auth.manager import AuthManager
 from backend.config import get_settings
+from backend.control import aggregation
 from backend.control.objectives import SourceObjective
 from backend.control.service import decide_for_source
 from backend.database import get_db
 from backend.schemas.common import ApiResponse, PaginationMeta
 from backend.schemas.control import (
+    FallbackTrendRead,
     SourceControlStateRead,
     SuggestedActionRead,
     SystemContextRead,
@@ -271,16 +273,21 @@ async def get_source_control_state(
         dedup_seconds=settings.control_advisory_dedup_seconds,
     )
 
-    trend_read = (
-        TrendRead(
+    # Issue 06: a run-history fallback trend (pre-measurement source) carries
+    # an explicit provenance marker; a measurement-backed trend keeps the
+    # original pinned four-field shape (no provenance key).
+    trend_read = None
+    if decision.trend is not None:
+        trend_fields = dict(
             window=decision.trend.window,
             zero_accepted_streak=decision.trend.zero_accepted_streak,
             avg_error_rate=decision.trend.avg_error_rate,
             rate_limited_runs=decision.trend.rate_limited_runs,
         )
-        if decision.trend is not None
-        else None
-    )
+        if decision.trend.provenance == aggregation.TREND_PROVENANCE_RUN_HISTORY:
+            trend_read = FallbackTrendRead(provenance="run_history", **trend_fields)
+        else:
+            trend_read = TrendRead(**trend_fields)
     suggestions = [
         SuggestedActionRead(
             action_type=a.action_type, reason=a.reason, payload=a.payload

@@ -341,11 +341,16 @@ export interface SourceObjective {
 // degrade to "nothing to show" (same C0 rule: silence, not a fake positive).
 
 // Rolling-window summary from backend.control.aggregation.build_trend.
+// `provenance` (issue 06, additive): present as 'run_history' only when the
+// source has zero source_measurements rows and the trend was derived from
+// task-run history instead; absent means measurement-backed. Display-only —
+// never treat a fallback trend as full sensor coverage.
 export interface SourceControlTrend {
   window: number
   zero_accepted_streak: number
   avg_error_rate: number
   rate_limited_runs: number
+  provenance?: 'run_history'
 }
 
 // Shared-infrastructure (ODP) context the evaluator folds in alongside the

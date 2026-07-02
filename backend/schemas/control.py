@@ -9,7 +9,7 @@ authoritative JSON shape.
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, Literal, Optional, Union
 
 from pydantic import BaseModel, Field
 
@@ -22,15 +22,33 @@ from backend.control.objectives import SourceObjective
 class TrendRead(BaseModel):
     """Rolling-window summary over a source's recent source_measurements rows.
 
-    Null on the parent response when the source has no persisted
-    source_measurements row yet (nothing to trend over) — see
-    ``backend.control.aggregation.build_trend``.
+    PINNED: this exact four-field shape is what measurement-backed trends
+    serialize as — no provenance key (its absence means measurement-backed;
+    see :class:`FallbackTrendRead`). Null on the parent response only when
+    the source has never run at all (no measurement rows AND no task-run
+    history) — see ``backend.control.aggregation.build_trend_with_fallback``.
     """
 
     window: int
     zero_accepted_streak: int
     avg_error_rate: float
     rate_limited_runs: int
+
+
+class FallbackTrendRead(TrendRead):
+    """Issue 06 (additive): the trend shape for a PRE-MEASUREMENT source —
+    zero source_measurements rows, trend derived from recent
+    TaskRun/TaskRunEvent history instead (``backend.control.aggregation``'s
+    run-history fallback).
+
+    Identical four pinned fields plus a REQUIRED ``provenance`` marker, so a
+    fallback trend is always distinguishable in the response and can never
+    masquerade as measurement-backed sensor coverage. Coverage/confidence on
+    the parent response are unaffected by which trend shape appears — they
+    are derived from the measurement only.
+    """
+
+    provenance: Literal["run_history"]
 
 
 class SystemContextRead(BaseModel):
@@ -155,7 +173,10 @@ class SourceControlStateRead(BaseModel):
     missing_signals: list[str] = Field(default_factory=list)
     measurement: Optional[SourceMeasurement] = None
     objective: SourceObjective
-    trend: Optional[TrendRead] = None
+    # FallbackTrendRead FIRST: it is the stricter member (requires the
+    # provenance key), so union resolution can never silently drop a fallback
+    # trend's provenance into the plain TrendRead shape.
+    trend: Optional[Union[FallbackTrendRead, TrendRead]] = None
     system_context: SystemContextRead
     suggested_actions: list[SuggestedActionRead] = Field(default_factory=list)
     control_mode: str
