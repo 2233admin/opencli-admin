@@ -13,7 +13,6 @@ import {
   Server,
   Bot,
   Monitor,
-  Network,
   KeyRound,
   ChevronLeft,
   ChevronRight,
@@ -37,7 +36,7 @@ import { isTopologyLabEnabled } from '../labs/topology/flags'
 
 const ROUTE_LABEL_KEYS: Record<string, string> = {
   '/dashboard': 'nav.dashboard',
-  '/labs/topology': 'nav.topology',
+  '/plans': 'nav.planCanvas',
   '/plans/new': 'nav.planCanvas',
   '/sources': 'nav.sources',
   '/tasks': 'nav.tasks',
@@ -56,7 +55,10 @@ const ROUTE_LABEL_KEYS: Record<string, string> = {
 function Breadcrumb() {
   const { pathname } = useLocation()
   const { t } = useTranslation()
-  const routeLabelKey = ROUTE_LABEL_KEYS[pathname]
+  // /plans/:planId isn't in the exact-match map above (the id is dynamic), but
+  // it is still the same Collection Canvas surface as /plans and /plans/new —
+  // fall back to a prefix match so opening a saved plan still crumbs sensibly.
+  const routeLabelKey = ROUTE_LABEL_KEYS[pathname] ?? (pathname.startsWith('/plans') ? 'nav.planCanvas' : undefined)
   const label = routeLabelKey ? t(routeLabelKey) : ''
 
   return (
@@ -153,15 +155,16 @@ export default function Layout() {
   // Folded IA (new design philosophy): the canvas + agent dock are HOME; the
   // 11 CRUD admin pages are demoted into a collapsible "advanced / raw data"
   // drawer. Day-to-day = look at the graph, talk to the agent. Routes kept.
-  // Plan Canvas (Collection Canvas, issues 07/08) is the primary authoring
-  // surface per ADR-0008 — it sits alongside the topology workspace, not
-  // buried in the advanced drawer. The retired node-kit workbench
-  // (/labs/node-kit) is intentionally absent here — component-library demo
-  // only, reachable by URL, not product nav (Plan IR issue 09).
+  // ONE Collection Canvas entry per ADR-0008 — it hosts both the global
+  // topology overview (formerly its own /labs/topology nav entry) and the
+  // per-plan editor as two views/lenses of the same surface, switched inside
+  // the page (see pages/PlanCanvasPage.tsx ViewSwitch), not two nav rows.
+  // The retired node-kit workbench (/labs/node-kit) is intentionally absent
+  // here — component-library demo only, reachable by URL, not product nav
+  // (Plan IR issue 09).
   const PRIMARY_ITEMS: NavItem[] = [
-    { to: '/labs/topology', label: t('nav.workspace'), icon: Network },
-    { to: '/plans/new',     label: t('nav.planCanvas'), icon: Workflow },
-    { to: '/dashboard',     label: t('nav.dashboard'), icon: LayoutDashboard },
+    { to: '/plans',     label: t('nav.planCanvas'), icon: Workflow },
+    { to: '/dashboard', label: t('nav.dashboard'), icon: LayoutDashboard },
   ]
   const ADVANCED_GROUPS: NavGroup[] = [PIPELINE_GROUP, INFRA_GROUP]
 
@@ -171,7 +174,7 @@ export default function Layout() {
       label: null,
       items: [
         { to: '/dashboard', label: t('nav.dashboard'), icon: LayoutDashboard },
-        { to: '/plans/new', label: t('nav.planCanvas'), icon: Workflow },
+        { to: '/plans',     label: t('nav.planCanvas'), icon: Workflow },
       ],
     },
     PIPELINE_GROUP,

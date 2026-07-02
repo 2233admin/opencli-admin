@@ -30,7 +30,7 @@ export function TopologyPalette({ onCreated }: TopologyPaletteProps) {
 
   return (
     <>
-      <div className="flex w-40 shrink-0 flex-col overflow-auto border-r border-white/8 bg-black/20 py-2">
+      <div className="thin-scrollbar flex w-40 shrink-0 flex-col overflow-auto border-r border-white/8 bg-black/20 py-2">
         <p className="px-3 pb-1 font-code text-[9px] font-semibold uppercase tracking-[0.14em] text-zinc-600">
           新建采集源 · 拖入或点按
         </p>

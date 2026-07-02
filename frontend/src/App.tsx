@@ -20,7 +20,6 @@ const NodesPage = lazy(() => import('./pages/NodesPage'))
 const ActionHistoryPage = lazy(() => import('./pages/ActionHistoryPage'))
 const SourceControlRoomPage = lazy(() => import('./pages/SourceControlRoomPage'))
 const TopologyPage = lazy(() => import('./labs/topology/TopologyPage'))
-const NetworkPage = lazy(() => import('./labs/topology/NetworkPage'))
 const NodeKitPage = lazy(() => import('./labs/topology/NodeKitPage'))
 const WorkflowPage = lazy(() => import('./labs/topology/workflow/WorkflowPage'))
 const PlanCanvasPage = lazy(() => import('./pages/PlanCanvasPage'))
@@ -34,21 +33,16 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<Layout />}>
-          <Route index element={<Navigate to={isTopologyLabEnabled ? '/labs/topology' : '/dashboard'} replace />} />
+          <Route index element={<Navigate to={isTopologyLabEnabled ? '/plans' : '/dashboard'} replace />} />
           <Route path="dashboard" element={<LazyRoute><DashboardPage /></LazyRoute>} />
           <Route path="settings" element={<LazyRoute><SettingsPage /></LazyRoute>} />
-          <Route
-            path="labs/topology"
-            element={
-              isTopologyLabEnabled ? (
-                <LazyRoute>
-                  <NetworkPage />
-                </LazyRoute>
-              ) : (
-                <Navigate to="/dashboard" replace />
-              )
-            }
-          />
+          {/* Collection Canvas is ONE surface (ADR-0008): /labs/topology used to host
+           * a separate global-topology page (NetworkPage) alongside /plans/new's
+           * per-plan canvas — two canvas entries for one concept. NetworkPage's
+           * component tree now lives inside PlanCanvasPage as its "overview" view
+           * (see pages/PlanCanvasPage.tsx), so this route is just a redirect for
+           * old links/bookmarks. */}
+          <Route path="labs/topology" element={<Navigate to="/plans" replace />} />
           <Route
             path="labs/node-kit"
             element={
@@ -86,7 +80,8 @@ export default function App() {
               )
             }
           />
-          <Route path="topology" element={<Navigate to={isTopologyLabEnabled ? '/labs/topology' : '/dashboard'} replace />} />
+          <Route path="topology" element={<Navigate to={isTopologyLabEnabled ? '/plans' : '/dashboard'} replace />} />
+          <Route path="plans" element={<LazyRoute><PlanCanvasPage /></LazyRoute>} />
           <Route path="plans/new" element={<LazyRoute><PlanCanvasPage /></LazyRoute>} />
           <Route path="plans/:planId" element={<LazyRoute><PlanCanvasPage /></LazyRoute>} />
           <Route path="sources" element={<LazyRoute><SourcesPage /></LazyRoute>} />

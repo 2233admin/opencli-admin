@@ -1938,9 +1938,9 @@ function SourceConfigurationPanel({
       action={(
         <div className="flex flex-wrap gap-2">
           {isTopologyLabEnabled && (
-            <Link to="/labs/topology" className="inline-flex h-9 items-center justify-center gap-2 border border-white/14 bg-black/25 px-3 font-telemetry text-[11px] font-semibold uppercase tracking-[0.12em] text-zinc-200 hover:border-white/28 hover:bg-white/7.5">
+            <Link to="/plans" className="inline-flex h-9 items-center justify-center gap-2 border border-white/14 bg-black/25 px-3 font-telemetry text-[11px] font-semibold uppercase tracking-[0.12em] text-zinc-200 hover:border-white/28 hover:bg-white/7.5">
               <ExternalLink size={14} />
-              拓扑工作台
+              采集画布
             </Link>
           )}
           <Button type="button" size="sm" variant="outline" onClick={onToggleDiagnosticCanvas}>

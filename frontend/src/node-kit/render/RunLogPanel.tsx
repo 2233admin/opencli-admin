@@ -66,7 +66,7 @@ export function RunLogPanel({
         </span>
         <span className="font-code text-[11px] text-zinc-400">{summary.label}</span>
       </div>
-      <div className="max-h-32 overflow-auto font-code text-[11px]">
+      <div className="thin-scrollbar max-h-32 overflow-auto font-code text-[11px]">
         {rows.map((row) => (
           <RunLogRow key={row.nodeId} row={row} />
         ))}

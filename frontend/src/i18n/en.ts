@@ -622,6 +622,8 @@ const en: Translations = {
     detachConfirmDescription: 'Only detaches it from the Plan graph — the underlying data source entity is never deleted, and it can be wired back in anytime.',
     detachConfirmAction: 'Confirm remove',
     errorsBadge: '{{count}} validation error(s)',
+    viewOverview: 'Overview',
+    viewPlan: 'Current Plan',
     lensEdit: 'Edit',
     lensObserve: 'Observe',
     run: {

@@ -14,11 +14,9 @@ import {
   Search,
   Server,
   Settings,
-  Workflow,
   X,
   LayoutPanelTop,
 } from 'lucide-react'
-import { isTopologyLabEnabled } from '../labs/topology/flags'
 
 interface CommandAction {
   id: string
@@ -44,24 +42,12 @@ export default function CommandPalette() {
         to: '/dashboard',
         icon: Gauge,
       },
-      ...(isTopologyLabEnabled
-        ? [
-            {
-              id: 'topology',
-              label: t('nav.topology'),
-              hint: 'node graph data flow',
-              keywords: ['topology', 'graph', 'node', 'flow', '拓扑', '节点'],
-              to: '/labs/topology',
-              icon: Workflow,
-            },
-          ]
-        : []),
       {
         id: 'plan-canvas',
         label: t('nav.planCanvas'),
-        hint: 'plan graph draft preset',
-        keywords: ['plan', 'canvas', 'graph', 'preset', '采集画布', '计划', '图'],
-        to: '/plans/new',
+        hint: 'collection canvas overview plan graph draft preset',
+        keywords: ['plan', 'canvas', 'graph', 'preset', 'topology', '采集画布', '采集网络', '计划', '图', '拓扑'],
+        to: '/plans',
         icon: LayoutPanelTop,
       },
       {

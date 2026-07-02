@@ -264,7 +264,7 @@ export default function SettingsPage() {
           <div className="grid gap-2 sm:flex">
             {isTopologyLabEnabled && (
               <Link
-                to="/labs/topology"
+                to="/plans"
                 className="inline-flex items-center gap-2 rounded-sm border border-cyan-300/40 bg-cyan-300/10 px-3 py-2 text-sm font-medium text-cyan-200 hover:bg-cyan-300/20"
               >
                 <RefreshCw size={16} />

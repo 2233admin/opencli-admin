@@ -103,7 +103,7 @@ export function PlanCanvasPalette({ onPick }: PlanCanvasPaletteProps) {
             className="h-6 min-w-0 flex-1 bg-transparent text-[12px] text-zinc-100 outline-hidden placeholder:text-zinc-600"
           />
         </div>
-        <Command.List className="flex-1 overflow-y-auto py-1">
+        <Command.List className="thin-scrollbar flex-1 overflow-y-auto py-1">
           <Command.Empty className="px-3 py-4 text-center text-[11px] text-zinc-600">
             {t('planCanvas.paletteEmpty')}
           </Command.Empty>

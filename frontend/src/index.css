@@ -177,6 +177,34 @@
   color: rgb(212 212 216);
 }
 
+/* Scoped thin scrollbar for overflow panels inside the canvas surfaces
+ * (Collection Canvas palette/inspector/run-log, node-kit workbench rail) —
+ * the fat default browser scrollbar reads as a cosmetic bug there. Not
+ * applied globally: page-level scroll areas outside the canvas keep the
+ * platform default. */
+@utility thin-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+
+  &::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.1);
+    border-radius: 9999px;
+  }
+
+  &::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(255, 255, 255, 0.2);
+  }
+}
+
 @utility live-run-surface-grid {
   min-height: 680px;
 

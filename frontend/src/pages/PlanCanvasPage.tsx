@@ -22,7 +22,7 @@
 // with node --test coverage — this file only wires those pure functions to
 // xyflow/React Query.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -43,7 +43,7 @@ import {
   type Node,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { Eye, Pencil, Play, Save } from 'lucide-react'
+import { Eye, LayoutGrid, Pencil, Play, Save, Workflow } from 'lucide-react'
 
 import { getPlanHealth, createPlan, getPlan, runPlan, updatePlan } from '../api/endpoints'
 import type { PlanEdge, PlanNode } from '../api/types'
@@ -51,6 +51,7 @@ import ConfirmDialog from '../components/ConfirmDialog'
 import ErrorAlert from '../components/ErrorAlert'
 import { PageLoader } from '../components/LoadingSpinner'
 import PageHeader from '../components/PageHeader'
+import NetworkPage from '../labs/topology/NetworkPage'
 import { ALL_NODES, nodeTypesForXyflow, registerNodes } from '../node-kit'
 import { CONTROL_STATE_POLL_MS } from '../node-kit/render/controlState'
 import { elkLayout } from '../node-kit/render/elkLayout'
@@ -573,10 +574,74 @@ function PlanCanvasInner() {
   )
 }
 
-export default function PlanCanvasPage() {
+function PlanEditorView() {
   return (
     <ReactFlowProvider>
       <PlanCanvasInner />
     </ReactFlowProvider>
+  )
+}
+
+type CanvasView = 'overview' | 'plan'
+
+/** Header segment control switching between the two lenses this single
+ * Collection Canvas surface exposes (ADR-0008): the global topology overview
+ * (former /labs/topology NetworkPage) and the per-plan edit/observe editor
+ * (former /plans/new PlanCanvasPage). Kept tiny and route-driven so deep
+ * links (/plans, /plans/new, /plans/:planId) keep working — switching tabs
+ * just navigates, it never hides unsaved state behind a client-only toggle. */
+function ViewSwitch({ view }: { view: CanvasView }) {
+  const { t } = useTranslation()
+  const navigate = useNavigate()
+  return (
+    <div className="flex items-center rounded-md border border-white/12 bg-black/40 p-0.5 text-xs">
+      <button
+        type="button"
+        onClick={() => navigate('/plans')}
+        aria-pressed={view === 'overview'}
+        className={`inline-flex h-7 items-center gap-1.5 rounded-xs px-2.5 font-semibold transition ${
+          view === 'overview' ? 'bg-sky-500/20 text-sky-100' : 'text-zinc-400 hover:text-zinc-200'
+        }`}
+      >
+        <LayoutGrid className="h-3 w-3" />
+        {t('planCanvas.viewOverview')}
+      </button>
+      <button
+        type="button"
+        // Already on a plan route (/plans/new or /plans/:planId)? Stay put —
+        // forcing /plans/new here would discard whatever plan is loaded.
+        // Only coming FROM the overview needs somewhere to land, and "new" is
+        // the only sensible default when no plan is selected yet.
+        onClick={() => { if (view !== 'plan') navigate('/plans/new') }}
+        aria-pressed={view === 'plan'}
+        className={`inline-flex h-7 items-center gap-1.5 rounded-xs px-2.5 font-semibold transition ${
+          view === 'plan' ? 'bg-sky-500/20 text-sky-100' : 'text-zinc-400 hover:text-zinc-200'
+        }`}
+      >
+        <Workflow className="h-3 w-3" />
+        {t('planCanvas.viewPlan')}
+      </button>
+    </div>
+  )
+}
+
+// Collection Canvas host (ADR-0008): ONE canvas entry in nav/routes, two
+// views selected by this segment control — 总览 (global topology, reused
+// verbatim from labs/topology/NetworkPage) and 当前 Plan (this file's
+// edit/observe editor). /plans is the overview default; /plans/new and
+// /plans/:planId keep deep-linking straight into the plan editor.
+export default function PlanCanvasPage() {
+  const { t } = useTranslation()
+  const location = useLocation()
+  const view: CanvasView = location.pathname === '/plans' ? 'overview' : 'plan'
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between gap-3">
+        <p className="telemetry-label">{view === 'overview' ? t('planCanvas.viewOverview') : t('planCanvas.title')}</p>
+        <ViewSwitch view={view} />
+      </div>
+      {view === 'overview' ? <NetworkPage /> : <PlanEditorView />}
+    </div>
   )
 }

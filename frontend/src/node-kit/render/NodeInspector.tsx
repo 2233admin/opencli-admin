@@ -20,7 +20,7 @@ export function NodeInspector({
   const fields = spec?.config?.fields ?? []
 
   return (
-    <div className="w-64 shrink-0 overflow-auto border-l border-white/10 bg-[#0b0c0e] p-3">
+    <div className="thin-scrollbar w-64 shrink-0 overflow-auto border-l border-white/10 bg-[#0b0c0e] p-3">
       <p className="pb-2 font-telemetry text-[9px] font-semibold uppercase tracking-[0.14em] text-zinc-600">
         属性
       </p>

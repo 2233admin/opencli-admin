@@ -419,7 +419,7 @@ function NodeInspector({
           <X className="h-4 w-4" />
         </button>
       </div>
-      <div className="flex-1 space-y-4 overflow-auto px-4 py-4">
+      <div className="thin-scrollbar flex-1 space-y-4 overflow-auto px-4 py-4">
         <StageOperationPanel node={node.data} stageCode={stageCode} data={stageData} onChanged={onChanged} />
       </div>
     </Card>

@@ -620,6 +620,8 @@ const zh = {
     detachConfirmDescription: '仅从 Plan 图中断开连接，不会删除底层数据源实体，可随时重新拖入引用。',
     detachConfirmAction: '确认移除',
     errorsBadge: '{{count}} 个校验错误',
+    viewOverview: '总览',
+    viewPlan: '当前 Plan',
     lensEdit: '编辑',
     lensObserve: '观察',
     run: {

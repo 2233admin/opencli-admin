@@ -430,7 +430,7 @@ function WorkbenchInner({ seed }: { seed?: WorkbenchSeed }) {
     <DndContext sensors={sensors} onDragStart={(e: DragStartEvent) => setDragType((e.active.data.current?.type as string) ?? null)} onDragEnd={onDragEnd}>
       <div className="flex h-full overflow-hidden rounded-md border border-white/10 bg-black">
         {/* LEFT palette — ComfyUI-style, dnd-kit draggable */}
-        <div className="w-44 shrink-0 overflow-auto border-r border-white/10 bg-[#0b0c0e] py-2">
+        <div className="thin-scrollbar w-44 shrink-0 overflow-auto border-r border-white/10 bg-[#0b0c0e] py-2">
           <p className="px-3 pb-1 font-telemetry text-[9px] font-semibold uppercase tracking-[0.14em] text-zinc-600">
             节点 · 拖入或点按
           </p>

@@ -116,7 +116,7 @@ export function PlanCanvasInspector({
         </div>
       )}
 
-      <div className="flex-1 space-y-4 overflow-auto px-4 py-4">
+      <div className="thin-scrollbar flex-1 space-y-4 overflow-auto px-4 py-4">
         {node.kind !== 'source' ? (
           <p className="text-[12px] text-zinc-500">{t('planCanvas.inspectorNonSourceHint')}</p>
         ) : isDraft ? (
