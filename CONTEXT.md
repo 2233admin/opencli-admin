@@ -4,14 +4,14 @@ OpenCLI Admin is an operations console for collection work that needs browser se
 
 ## Language
 
-**Collection Operations Console**: The primary operator surface for turning collection work into captured, triaged, owned, stateful, and closed work. It is the product shape that contains Run Inbox, Data Sources, Live Collection View, and Diagnostic Canvas without making any one visualization the whole product.
-_Avoid_: Dashboard wall, canvas-first app
+**Collection Operations Console**: The primary operator surface for turning collection work into captured, triaged, owned, stateful, and closed work. It is the product shape that contains Run Inbox, Data Sources, Live Collection View, and the Collection Canvas.
+_Avoid_: Dashboard wall
 
-**Collection Operations**: The operator-facing domain for deciding what should be collected, when collection should run, what recently happened, and which actions are currently safe. It groups Data Sources, Collection Plans, Recent Runs, and Node Actions without making a canvas the primary operating surface.
-_Avoid_: Source Workflow Workbench, canvas-first operations
+**Collection Operations**: The operator-facing domain for deciding what should be collected, when collection should run, what recently happened, and which actions are currently safe. It groups Data Sources, Collection Plans, Recent Runs, and Node Actions.
+_Avoid_: Source Workflow Workbench
 
-**Diagnostic Canvas**: A secondary view for understanding relationships among collection entities when troubleshooting or explaining system state. It is not the default place to configure routine collection work.
-_Avoid_: Main workflow, primary operating surface
+**Collection Canvas**: The primary authoring surface for collection logic — the graph IS the program. Defining and editing what a source collects happens on the canvas; forms survive only as the inspector panel of a selected node. Absorbs the old Diagnostic Canvas's troubleshooting role.
+_Avoid_: Diagnostic Canvas (superseded 2026-07-02: canvas promoted from secondary diagnostic view to primary authoring surface), form-first configuration
 
 **Live Collection View**: The operator-facing view of an active collection run as it happens, including streamed progress, rendered browser or pipeline state, and run-specific artifacts. It is anchored to a Recent Run, not to the default configuration surface.
 _Avoid_: Static task log, canvas-only monitoring
@@ -44,3 +44,23 @@ _Avoid_: blocked action, action rejection
 
 **Control Cycle**: The background loop that periodically measures every source, decides, and — in Automatic Mode — acts. It runs regardless of whether any UI is open.
 _Avoid_: polling-driven control, frontend-triggered control
+
+### Plan
+
+**Plan**: A free multi-source graph on the Collection Canvas — any number of source nodes, transforms, merges, and sinks in one graph. The Plan is the program; a Data Source's legacy config is the degenerate single-node Plan.
+_Avoid_: per-source pipeline (rejected 2026-07-02 in favor of free graphs), workflow (overloaded)
+
+**Two-Tier Attribution**: The observability contract for Plans. A source node is a real Data Source and its collection segment keeps per-source measurement unchanged (the control kernel is untouched); everything downstream of a merge belongs to Plan Health, and a shared-segment failure is never written into any source's state.
+_Avoid_: blaming all upstream sources, plan-only attribution
+
+**Plan Health**: The health of a Plan's shared (post-merge) segments, measured per plan node, kept as its own dimension beside per-source measurement. A dedupe node failing does not make its upstream sources DEGRADED.
+_Avoid_: folding plan failures into source state
+
+**Preset**: A packaged, one-click node configuration (e.g. an opencli site + command + format bundled as "雪球·热帖") registered in the node library and searchable from the palette. Presets are fed from backend adapter metadata, never hardcoded in the frontend. The advanced inspector still exposes raw parameters.
+_Avoid_: raw site/command dropdowns as the default UI
+
+**Draft Source Node**: A source node placed on the Collection Canvas that does not yet reference a real Data Source. It renders visibly unmaterialized, cannot run, and does not enter the control loop until it is materialized into an entity.
+_Avoid_: fake canvas-only nodes that look real
+
+**Dry-Run Preview**: The in-browser execution of a Plan on fixture data, explicitly labeled as a preview. It never produces collection results — the backend Plan executor is the only authoritative execution.
+_Avoid_: browser-side "real" runs, split-brain execution
