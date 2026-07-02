@@ -11,6 +11,7 @@ from backend.api.v1 import (
     dashboard,
     nodes,
     notifications,
+    plan_ir,
     providers,
     records,
     schedules,
@@ -32,6 +33,7 @@ v1_router.include_router(chat.router)
 v1_router.include_router(control.router)
 v1_router.include_router(cookies.router)
 v1_router.include_router(nodes.router)
+v1_router.include_router(plan_ir.router)
 v1_router.include_router(providers.router)
 v1_router.include_router(sources.router)
 v1_router.include_router(tasks.router)
