@@ -7,6 +7,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.channels.registry import get_channel
+from backend.control.objectives import SourceObjectiveOverride
 from backend.models.source import DataSource
 from backend.models.source_credential import SourceCredential
 from backend.schemas.source import DataSourceCreate, DataSourceUpdate
@@ -66,6 +67,30 @@ async def update_source(
     updates = data.model_dump(exclude_unset=True)
     for key, value in updates.items():
         setattr(source, key, value)
+    await session.flush()
+    await session.refresh(source)
+    return source
+
+
+async def set_objective_override(
+    session: AsyncSession, source: DataSource, override: Optional[dict[str, Any]]
+) -> DataSource:
+    """Set, update, or clear (``override=None``) a source's per-source
+    SourceObjective override (issue 02).
+
+    Validates ``override`` against ``SourceObjectiveOverride`` (unknown
+    field names / wrong types raise ``pydantic.ValidationError`` — the
+    caller, ``backend.api.v1.sources.set_source_objective``, translates that
+    into a 422). Only the fields the caller actually set are persisted
+    (``exclude_none``), so a merge later via
+    ``backend.control.objectives.resolve_objective`` sees exactly the
+    overridden keys, nothing else.
+    """
+    if override is None:
+        source.objective_override = None
+    else:
+        validated = SourceObjectiveOverride.model_validate(override)
+        source.objective_override = validated.model_dump(exclude_none=True)
     await session.flush()
     await session.refresh(source)
     return source

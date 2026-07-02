@@ -248,3 +248,94 @@ async def test_settings_defaults_used_when_not_explicit(db_session, monkeypatch)
         assert counts["still_pending"] == 1
     finally:
         get_settings.cache_clear()
+
+
+@pytest.mark.asyncio
+async def test_judgment_uses_resolved_per_source_objective_override(db_session):
+    """A post-decision measurement that would classify as 'persisted' under
+    the global default max_error_rate must classify as 'recovered' once the
+    source's stored objective_override raises max_error_rate above the
+    observed rate — proving evaluate_pending_outcomes resolves the source's
+    override (backend.control.objectives.resolve_objective), not a bare
+    SourceObjective() default.
+    """
+    from backend.models.source import DataSource
+
+    source = DataSource(
+        id="src-1",
+        name="Source with override",
+        channel_type="rss",
+        channel_config={"feed_url": "https://example.com/feed.xml"},
+        objective_override={"max_error_rate": 0.5},
+    )
+    db_session.add(source)
+    await db_session.flush()
+
+    row = await _seed_ledger_row(
+        db_session, created_at=NOW - timedelta(seconds=MIN_AGE + 60), state="degraded"
+    )
+    # Post-decision error_rate = 0.3: exceeds the global default (0.05) so a
+    # bare SourceObjective() would still classify DEGRADED (-> "persisted"),
+    # but 0.3 is under the override's max_error_rate=0.5, so the override-
+    # resolved evaluation no longer trips the error-rate rule for this
+    # measurement -> the post state differs from the trigger -> "recovered".
+    await _seed_post_measurement(
+        db_session,
+        measured_at=NOW - timedelta(seconds=MIN_AGE // 2),
+        accepted=7,
+        rejected=3,
+        error_rate=0.3,
+        error_kinds={},
+    )
+
+    counts = await evaluate_pending_outcomes(
+        db_session, now=NOW, min_age_seconds=MIN_AGE, stale_after_seconds=STALE_AFTER
+    )
+
+    assert counts["recovered"] == 1
+    assert counts["persisted"] == 0
+
+    await db_session.refresh(row)
+    assert row.outcome == "recovered"
+
+
+@pytest.mark.asyncio
+async def test_judgment_without_override_still_uses_default_objective(db_session):
+    """Sanity companion to the override test above: with NO objective_override
+    stored (or no DataSource row at all), the same 0.3 error-rate post
+    measurement classifies as DEGRADED under the global default
+    (max_error_rate=0.05) -> "persisted", not "recovered" — proving the
+    override test's flip is genuinely explained by the override, not by some
+    other change in the judgment path.
+    """
+    from backend.models.source import DataSource
+
+    source = DataSource(
+        id="src-1",
+        name="Source without override",
+        channel_type="rss",
+        channel_config={"feed_url": "https://example.com/feed.xml"},
+    )
+    db_session.add(source)
+    await db_session.flush()
+
+    row = await _seed_ledger_row(
+        db_session, created_at=NOW - timedelta(seconds=MIN_AGE + 60), state="degraded"
+    )
+    await _seed_post_measurement(
+        db_session,
+        measured_at=NOW - timedelta(seconds=MIN_AGE // 2),
+        accepted=7,
+        rejected=3,
+        error_rate=0.3,
+        error_kinds={},
+    )
+
+    counts = await evaluate_pending_outcomes(
+        db_session, now=NOW, min_age_seconds=MIN_AGE, stale_after_seconds=STALE_AFTER
+    )
+
+    assert counts["persisted"] == 1
+    assert counts["recovered"] == 0
+    await db_session.refresh(row)
+    assert row.outcome == "persisted"

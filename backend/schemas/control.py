@@ -150,8 +150,12 @@ class SourceControlStateRead(BaseModel):
     ``measurement``/``control_state``/``confidence``/``sensor_coverage``/
     ``trend`` are null when the source has never run (no run evidence to
     aggregate, nothing to evaluate, nothing to trend). ``objective`` is
-    always the setpoints the measurement was (or would be) compared against
-    — per-source objective overrides are not stored yet (future work).
+    always the RESOLVED setpoints the measurement was (or would be) compared
+    against — the source's stored objective override (issue 02), if any,
+    merged over the global default ``SourceObjective()`` via
+    ``backend.control.objectives.resolve_objective``. See
+    ``PATCH /sources/{source_id}/objective`` to set/update/clear the
+    override.
 
     ``system_context`` is always present (never null) — it reflects the
     shared ODP data plane's state, which exists independent of whether this

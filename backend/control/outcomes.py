@@ -18,9 +18,11 @@ one question per row: did the triggering state clear?
 
 Re-classification reuses the EXACT live pipeline — ``aggregation.
 row_to_measurement`` + ``aggregation.trend_from_rows`` + ``evaluator.
-evaluate`` with the same default :class:`SourceObjective` the control-state
-endpoint applies — so a judgment can never disagree with the endpoint merely
-because it read the sensor differently.
+evaluate`` with the same resolved :class:`SourceObjective` the control-state
+endpoint applies — the source's stored objective override (if any), merged
+over defaults through ``backend.control.objectives.resolve_objective`` — so
+a judgment can never disagree with the endpoint merely because it read the
+sensor, or the setpoints, differently.
 
 Advisory-only, like everything in PR-Control-3.x: this module writes ONLY the
 judgment columns (evaluated_at / outcome / outcome_detail) back onto
@@ -39,8 +41,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.config import get_settings
 from backend.control import aggregation, evaluator
 from backend.control.ledger import ensure_utc
-from backend.control.objectives import SourceObjective
+from backend.control.objectives import resolve_objective
 from backend.models.control_action import ControlActionRecord
+from backend.models.source import DataSource
 from backend.models.source_measurement import SourceMeasurement as SourceMeasurementRow
 
 
@@ -141,12 +144,19 @@ async def evaluate_pending_outcomes(
         # of non-ODP states.
         measurement = aggregation.row_to_measurement(post_rows[0])
         trend = aggregation.trend_from_rows(list(post_rows))
+        # Same resolve helper the control-state endpoint applies (issue 02) —
+        # a stored per-source override merges over defaults identically on
+        # both sides, so a judgment can never disagree with the endpoint
+        # merely because it applied different setpoints. A source row that
+        # no longer exists (deleted after the suggestion was recorded)
+        # degrades to plain defaults rather than raising mid-pass.
+        source_row = await session.get(DataSource, row.source_id)
+        objective = resolve_objective(
+            source_row.objective_override if source_row is not None else None
+        )
         post_state = evaluator.evaluate(
             measurement,
-            # Same default objective the control-state endpoint applies —
-            # per-source objective overrides are not stored yet (see
-            # backend.api.v1.sources.get_source_control_state).
-            SourceObjective(),
+            objective,
             trend=(
                 {
                     "window": trend.window,

@@ -33,6 +33,13 @@ class DataSource(TimestampMixin):
     # Optional AI processing config
     ai_config: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
 
+    # Per-source SourceObjective override (issue 02: per-source objective
+    # override). Null means "no override, use the global default
+    # SourceObjective()". A partial dict is merged over defaults through
+    # backend.control.objectives.resolve_objective — never read directly by
+    # evaluator/policy code, which always take a resolved SourceObjective.
+    objective_override: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     tags: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
 

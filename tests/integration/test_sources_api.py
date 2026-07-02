@@ -716,3 +716,196 @@ async def test_control_state_never_mutates_the_data_source(
     assert ledger_rows
     assert all(row.executed is False for row in ledger_rows)
     assert all(row.mode == "advisory" for row in ledger_rows)
+
+
+# ── per-source objective override (issue 02) ────────────────────────────────
+@pytest.mark.asyncio
+async def test_set_objective_override(client, sample_source_data):
+    create_resp = await client.post("/api/v1/sources", json=sample_source_data)
+    source_id = create_resp.json()["data"]["id"]
+
+    response = await client.patch(
+        f"/api/v1/sources/{source_id}/objective",
+        json={"objective_override": {"max_error_rate": 0.2}},
+    )
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["objective_override"] == {"max_error_rate": 0.2}
+
+
+@pytest.mark.asyncio
+async def test_update_objective_override(client, sample_source_data):
+    create_resp = await client.post("/api/v1/sources", json=sample_source_data)
+    source_id = create_resp.json()["data"]["id"]
+
+    await client.patch(
+        f"/api/v1/sources/{source_id}/objective",
+        json={"objective_override": {"max_error_rate": 0.2}},
+    )
+    response = await client.patch(
+        f"/api/v1/sources/{source_id}/objective",
+        json={"objective_override": {"max_error_rate": 0.35, "max_pending": 500}},
+    )
+    assert response.status_code == 200
+    data = response.json()["data"]
+    # A subsequent PATCH replaces the stored override wholesale (not a deep
+    # merge across calls) — max_error_rate from the first call is gone.
+    assert data["objective_override"] == {"max_error_rate": 0.35, "max_pending": 500}
+
+
+@pytest.mark.asyncio
+async def test_clear_objective_override(client, sample_source_data):
+    create_resp = await client.post("/api/v1/sources", json=sample_source_data)
+    source_id = create_resp.json()["data"]["id"]
+
+    await client.patch(
+        f"/api/v1/sources/{source_id}/objective",
+        json={"objective_override": {"max_error_rate": 0.2}},
+    )
+    response = await client.patch(
+        f"/api/v1/sources/{source_id}/objective",
+        json={"objective_override": None},
+    )
+    assert response.status_code == 200
+    assert response.json()["data"]["objective_override"] is None
+
+
+@pytest.mark.asyncio
+async def test_objective_override_roundtrip_set_update_clear(client, sample_source_data):
+    """Full roundtrip in one flow: unset -> set -> update -> clear, verifying
+    the stored value via GET after each step."""
+    create_resp = await client.post("/api/v1/sources", json=sample_source_data)
+    source_id = create_resp.json()["data"]["id"]
+
+    initial = await client.get(f"/api/v1/sources/{source_id}")
+    assert initial.json()["data"]["objective_override"] is None
+
+    set_resp = await client.patch(
+        f"/api/v1/sources/{source_id}/objective",
+        json={"objective_override": {"max_pending": 42}},
+    )
+    assert set_resp.status_code == 200
+    after_set = await client.get(f"/api/v1/sources/{source_id}")
+    assert after_set.json()["data"]["objective_override"] == {"max_pending": 42}
+
+    update_resp = await client.patch(
+        f"/api/v1/sources/{source_id}/objective",
+        json={"objective_override": {"max_pending": 99}},
+    )
+    assert update_resp.status_code == 200
+    after_update = await client.get(f"/api/v1/sources/{source_id}")
+    assert after_update.json()["data"]["objective_override"] == {"max_pending": 99}
+
+    clear_resp = await client.patch(
+        f"/api/v1/sources/{source_id}/objective",
+        json={"objective_override": None},
+    )
+    assert clear_resp.status_code == 200
+    after_clear = await client.get(f"/api/v1/sources/{source_id}")
+    assert after_clear.json()["data"]["objective_override"] is None
+
+
+@pytest.mark.asyncio
+async def test_set_objective_override_unknown_field_rejected_422(client, sample_source_data):
+    create_resp = await client.post("/api/v1/sources", json=sample_source_data)
+    source_id = create_resp.json()["data"]["id"]
+
+    response = await client.patch(
+        f"/api/v1/sources/{source_id}/objective",
+        json={"objective_override": {"not_a_real_field": 1}},
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_set_objective_override_wrong_type_rejected_422(client, sample_source_data):
+    create_resp = await client.post("/api/v1/sources", json=sample_source_data)
+    source_id = create_resp.json()["data"]["id"]
+
+    response = await client.patch(
+        f"/api/v1/sources/{source_id}/objective",
+        json={"objective_override": {"max_error_rate": "not-a-float"}},
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_set_objective_override_source_not_found(client):
+    response = await client.patch(
+        "/api/v1/sources/nonexistent-id/objective",
+        json={"objective_override": {"max_error_rate": 0.2}},
+    )
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_control_state_classification_flips_with_objective_override(
+    client, db_session, sample_source_data, monkeypatch
+):
+    """A borderline error_rate (0.09) is HEALTHY-eligible under the global
+    default (max_error_rate=0.05 would make it DEGRADED... but here we prove
+    the reverse direction: an override that TIGHTENS the threshold below a
+    rate that the default would tolerate flips DEGRADED where the default
+    alone would not).
+
+    error_rate = 1/10 = 0.1. Default max_error_rate=0.05 -> already DEGRADED
+    under defaults. So to prove the override (not the default) explains the
+    flip, this test uses a rate the DEFAULT tolerates (max_error_rate=0.05,
+    rate 0.03 -> healthy-eligible) and an override that TIGHTENS
+    max_error_rate to 0.02, which the same 0.03 rate now exceeds -> DEGRADED.
+    Only the override explains the flip.
+    """
+    monkeypatch.delenv("ODP_REDIS_URL", raising=False)
+    monkeypatch.delenv("REDIS_URL", raising=False)
+    monkeypatch.delenv("ODP_DATABASE_URL", raising=False)
+    monkeypatch.delenv("ODP_INGEST_URL", raising=False)
+
+    create_resp = await client.post("/api/v1/sources", json=sample_source_data)
+    source_id = create_resp.json()["data"]["id"]
+
+    from datetime import datetime, timezone
+
+    from backend.models.source_measurement import SourceMeasurement as SourceMeasurementRow
+
+    row = SourceMeasurementRow(
+        source_id=source_id,
+        run_id="row-run-1",
+        measured_at=datetime(2026, 7, 2, tzinfo=timezone.utc),
+        accepted=97,
+        duplicates=0,
+        rejected=3,
+        error_rate=0.03,
+        duplicate_rate=0.0,
+        error_kinds={},
+        fetch_latency_ms=10,
+        cursor_advanced=True,
+        freshness_lag_seconds=3,
+        source_ts_quality="source",
+        raw={},
+    )
+    db_session.add(row)
+    await db_session.flush()
+
+    # Baseline: under the global default (max_error_rate=0.05), 0.03 does not
+    # exceed the threshold -> not DEGRADED via the error-rate rule.
+    baseline = await client.get(f"/api/v1/sources/{source_id}/control-state")
+    assert baseline.status_code == 200
+    assert baseline.json()["data"]["control_state"] != "degraded"
+    assert baseline.json()["data"]["objective"]["max_error_rate"] == 0.05
+
+    # Tighten the override so the SAME measurement now exceeds max_error_rate.
+    override_resp = await client.patch(
+        f"/api/v1/sources/{source_id}/objective",
+        json={"objective_override": {"max_error_rate": 0.02}},
+    )
+    assert override_resp.status_code == 200
+
+    flipped = await client.get(f"/api/v1/sources/{source_id}/control-state")
+    assert flipped.status_code == 200
+    flipped_data = flipped.json()["data"]
+    assert flipped_data["control_state"] == "degraded"
+    # The response's resolved objective reflects the override, not the default.
+    assert flipped_data["objective"]["max_error_rate"] == 0.02
+    # Every other field stays the default (a partial override, not a full
+    # replacement of the objective).
+    assert flipped_data["objective"]["max_pending"] == 1000

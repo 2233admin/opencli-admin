@@ -2,13 +2,13 @@ import logging
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.auth.manager import AuthManager
 from backend.config import get_settings
 from backend.control import aggregation
-from backend.control.objectives import SourceObjective
+from backend.control.objectives import SourceObjective, resolve_objective
 from backend.control.service import decide_for_source
 from backend.database import get_db
 from backend.schemas.common import ApiResponse, PaginationMeta
@@ -20,7 +20,13 @@ from backend.schemas.control import (
     TrendRead,
 )
 from backend.schemas.credential import CredentialCreate, CredentialKeyRead
-from backend.schemas.source import DataSourceCreate, DataSourceDetail, DataSourceRead, DataSourceUpdate
+from backend.schemas.source import (
+    DataSourceCreate,
+    DataSourceDetail,
+    DataSourceRead,
+    DataSourceUpdate,
+    SourceObjectiveOverridePatch,
+)
 from backend.services import source_service
 
 logger = logging.getLogger(__name__)
@@ -119,6 +125,33 @@ async def update_source(
     if not source:
         raise HTTPException(status_code=404, detail="Source not found")
     updated = await source_service.update_source(db, source, body)
+    return ApiResponse.ok(DataSourceRead.model_validate(updated))
+
+
+@router.patch("/{source_id}/objective", response_model=ApiResponse[DataSourceRead])
+async def set_source_objective(
+    source_id: str, body: SourceObjectiveOverridePatch, db: AsyncSession = Depends(get_db)
+) -> ApiResponse:
+    """Set, update, or clear (``objective_override: null``) a source's
+    per-source SourceObjective override (issue 02).
+
+    Field validation happens against ``backend.control.objectives.
+    SourceObjectiveOverride`` — unknown field names or wrong types 422
+    rather than silently being stored and never applied. The resolved
+    objective (override merged over defaults) is what
+    ``GET /{source_id}/control-state`` actually classifies against; this
+    endpoint returns the raw stored override on the source, not the resolved
+    shape (see ``SourceControlStateRead.objective`` for that).
+    """
+    source = await source_service.get_source(db, source_id)
+    if not source:
+        raise HTTPException(status_code=404, detail="Source not found")
+    try:
+        updated = await source_service.set_objective_override(
+            db, source, body.objective_override
+        )
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=exc.errors()) from exc
     return ApiResponse.ok(DataSourceRead.model_validate(updated))
 
 
@@ -258,7 +291,7 @@ async def get_source_control_state(
         raise HTTPException(status_code=404, detail="Source not found")
 
     settings = get_settings()
-    objective = SourceObjective()
+    objective = resolve_objective(source.objective_override)
     system_context = await _build_system_context(objective)
 
     decision = await decide_for_source(
