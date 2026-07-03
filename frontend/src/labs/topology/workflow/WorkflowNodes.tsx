@@ -42,7 +42,7 @@ function pole(color: string): React.CSSProperties {
     width: POLE,
     height: POLE,
     background: color,
-    border: '2px solid #08080b',
+    border: '2px solid var(--oc-line)',
     borderRadius: 999,
   }
 }
@@ -80,7 +80,7 @@ function CardNode({ data, selected }: NodeProps<Node<WfEventData>>) {
   return (
     <div
       style={{ width: 244, borderRadius: 16, borderColor: selected ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.18)' }}
-      className="overflow-hidden border-2 bg-[#0b0b0f] shadow-[0_10px_34px_rgba(0,0,0,0.6)]"
+      className="overflow-hidden border-2 bg-ops-panel shadow-panel"
     >
       <Handle id="in" type="target" position={Position.Left} style={pole(WF.blue)} />
       <Handle id="out" type="source" position={Position.Right} style={pole(WF.blue)} />
@@ -95,7 +95,7 @@ function CardNode({ data, selected }: NodeProps<Node<WfEventData>>) {
         </span>
         {data.pill && (
           <span
-            className="shrink-0 rounded-full px-2 text-[10px] font-bold leading-[18px]"
+            className="shrink-0 rounded-full px-2 text-3xs font-bold leading-[18px]"
             style={{ background: pillBg, color: pillFg }}
           >
             {data.pill}
@@ -104,7 +104,7 @@ function CardNode({ data, selected }: NodeProps<Node<WfEventData>>) {
       </div>
 
       <div className="px-3 py-2">
-        {data.subtitle && <p className="mb-1.5 text-[11px] text-zinc-500">{data.subtitle}</p>}
+        {data.subtitle && <p className="mb-1.5 text-2xs text-zinc-500">{data.subtitle}</p>}
         {data.rows && (
           <div className="grid gap-1">
             {data.rows.map((r) => (
@@ -152,7 +152,7 @@ function Glyph({
           borderColor: selected ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.2)',
           transform: shape === 'diamond' ? 'rotate(45deg) scale(0.72)' : undefined,
         }}
-        className="grid place-items-center border-2 bg-[#0b0b0f] shadow-[0_8px_26px_rgba(0,0,0,0.55)]"
+        className="grid place-items-center border-2 bg-ops-panel shadow-panel"
       >
         <span style={{ transform: shape === 'diamond' ? 'rotate(-45deg)' : undefined }}>
           <Icon size={26} />

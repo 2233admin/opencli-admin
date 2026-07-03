@@ -317,12 +317,12 @@ function OdpSystemBody(): ReactNode {
   })
 
   if (query.isLoading) {
-    return <div className="text-[10px] text-zinc-600">odp: loading…</div>
+    return <div className="text-3xs text-zinc-600">odp: loading…</div>
   }
   if (query.isError) {
     // Fetch failure must read as "unknown", not silently as "no badges shown"
     // (which would read as calm/healthy) — see odpNode.odpNodeHealth(null).
-    return <div className="text-[10px] text-red-300">odp: fetch failed</div>
+    return <div className="text-3xs text-red-300">odp: fetch failed</div>
   }
 
   const facts = odpNodeFacts(query.data ?? null)

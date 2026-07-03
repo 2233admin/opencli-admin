@@ -1,7 +1,7 @@
 // Run log strip — sequential per-node execution transcript for a runGraph()
 // call, rendered bottom-of-canvas. Control-room visual canon (see
 // src/pages/ActionHistoryPage.tsx): border-white/8 bg-black/20,
-// font-code text-[11px], zinc tiers for neutral/dim text. Purely a projection
+// font-code text-2xs, zinc tiers for neutral/dim text. Purely a projection
 // of runState (owned by NodeWorkbench) through the framework-free
 // runtime/runLog.ts helpers — no local state here.
 import { AlertCircle, CheckCircle2, CircleDashed, FlaskConical, Loader2, MinusCircle } from 'lucide-react'
@@ -64,9 +64,9 @@ export function RunLogPanel({
         <span className="inline-flex items-center gap-1 font-telemetry text-[9px] font-semibold uppercase tracking-[0.14em] text-amber-300">
           <FlaskConical size={11} /> 预演日志 · fixture 数据，非真实采集
         </span>
-        <span className="font-code text-[11px] text-zinc-400">{summary.label}</span>
+        <span className="font-code text-2xs text-zinc-400">{summary.label}</span>
       </div>
-      <div className="thin-scrollbar max-h-32 overflow-auto font-code text-[11px]">
+      <div className="thin-scrollbar max-h-32 overflow-auto font-code text-2xs">
         {rows.map((row) => (
           <RunLogRow key={row.nodeId} row={row} />
         ))}

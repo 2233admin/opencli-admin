@@ -59,16 +59,16 @@ export function TopologyPalette({ onCreated }: TopologyPaletteProps) {
               value={query}
               onValueChange={setQuery}
               placeholder={t('topology.paletteSearchPlaceholder')}
-              className="h-6 min-w-0 flex-1 bg-transparent text-[12px] text-zinc-100 outline-hidden placeholder:text-zinc-600"
+              className="h-6 min-w-0 flex-1 bg-transparent text-xs text-zinc-100 outline-hidden placeholder:text-zinc-600"
             />
           </div>
           <Command.List className="thin-scrollbar flex-1 overflow-y-auto py-1">
-            <Command.Empty className="px-3 py-4 text-center text-[11px] text-zinc-600">
+            <Command.Empty className="px-3 py-4 text-center text-2xs text-zinc-600">
               {t('topology.paletteEmpty')}
             </Command.Empty>
             <Command.Group
               heading={t('topology.paletteCategorySources')}
-              className="px-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-600"
+              className="px-1 text-3xs font-semibold uppercase tracking-wide text-zinc-600"
             >
               {filtered.map((item) => (
                 <PaletteRow key={item.type} item={item} onPick={() => setDraftType(item.type as ChannelType)} />
@@ -104,8 +104,8 @@ function PaletteRow({ item, onPick }: { item: PaletteSourceItem; onPick: () => v
         e.dataTransfer.effectAllowed = 'copy'
       }}
     >
-      <span className="truncate text-[12px] font-medium text-zinc-200">{item.label}</span>
-      <span className="truncate text-[10px] text-zinc-600">{item.hint}</span>
+      <span className="truncate text-xs font-medium text-zinc-200">{item.label}</span>
+      <span className="truncate text-3xs text-zinc-600">{item.hint}</span>
     </Command.Item>
   )
 }
@@ -200,14 +200,14 @@ function CreateSourceModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-xs">
       <div className="flex max-h-[90vh] w-full max-w-2xl flex-col border border-white/8 bg-zinc-950 shadow-2xl">
         <div className="border-b border-white/8 p-5">
-          <p className="font-code text-[10px] uppercase tracking-[0.14em] text-zinc-600">NEW NODE</p>
+          <p className="font-code text-3xs uppercase tracking-[0.14em] text-zinc-600">NEW NODE</p>
           <h2 className="mt-1 text-lg font-semibold text-zinc-50">新建 {label} 采集节点</h2>
           <p className="mt-1 text-xs text-zinc-500">从采集网络画布拖入创建 — 真实数据源，不是画布上的临时图形。</p>
         </div>
 
         <div className="flex-1 space-y-4 overflow-y-auto p-5">
           <div>
-            <label htmlFor="topology-palette-name" className="mb-1 block font-code text-[10px] uppercase tracking-widest text-zinc-500">
+            <label htmlFor="topology-palette-name" className="mb-1 block font-code text-3xs uppercase tracking-widest text-zinc-500">
               名称
             </label>
             <input
@@ -219,7 +219,7 @@ function CreateSourceModal({
             />
           </div>
           <div>
-            <p className="mb-1 block font-code text-[10px] uppercase tracking-widest text-zinc-500">配置</p>
+            <p className="mb-1 block font-code text-3xs uppercase tracking-widest text-zinc-500">配置</p>
             <div className="border border-white/10 bg-black/25 p-4">
               <ChannelConfigForm channelType={initialType} config={config} onChange={setConfig} />
             </div>

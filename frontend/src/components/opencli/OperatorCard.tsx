@@ -17,7 +17,7 @@ const TONE_STYLES: Record<OperatorTone, string> = {
   neutral: 'border-white/10 bg-white/[0.035] text-zinc-300',
   accent: 'border-primary-500/45 bg-primary-500/12 text-primary-100',
   info: 'border-signal-cyan/45 bg-signal-cyan/12 text-sky-100',
-  gold: 'border-signal-gold/45 bg-signal-gold/12 text-yellow-100',
+  gold: 'border-signal-gold/45 bg-signal-gold/12 text-amber-100',
   success: 'border-signal-green/45 bg-signal-green/12 text-emerald-100',
   warning: 'border-signal-amber/45 bg-signal-amber/12 text-amber-100',
   danger: 'border-signal-red/50 bg-signal-red/14 text-red-100',

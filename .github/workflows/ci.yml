@@ -36,6 +36,9 @@ jobs:
       - name: Test
         run: npm run test
 
+      - name: Lint (design token gate)
+        run: npm run lint
+
       - name: Build
         run: npm run build
 

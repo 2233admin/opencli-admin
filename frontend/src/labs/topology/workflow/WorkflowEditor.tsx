@@ -53,7 +53,7 @@ const PALETTE: PaletteItem[] = [
   { type: 'wfController', label: '分支', icon: Filter, color: WF.purple },
   { type: 'wfAction', label: '动作', icon: Bell, color: WF.green },
   { type: 'wfLimit', label: '限流', icon: Gauge, color: WF.cyan },
-  { type: 'wfNote', label: '注释', icon: StickyNote, color: '#fbbf24' },
+  { type: 'wfNote', label: '注释', icon: StickyNote, color: '#d99a3d' },
 ]
 
 function defaultData(type: keyof typeof workflowNodeTypes) {
@@ -139,7 +139,7 @@ function miniColor(node: Node): string {
     case 'wfAction': return WF.green
     case 'wfController': return WF.purple
     case 'wfLimit': return WF.cyan
-    case 'wfNote': return '#fbbf24'
+    case 'wfNote': return '#d99a3d'
     default: return WF.blue
   }
 }
@@ -206,11 +206,11 @@ function EditorInner() {
       nodesDraggable
       nodesConnectable
       proOptions={{ hideAttribution: true }}
-      className="bg-[#060608]"
+      className="bg-ops-black"
     >
       <Background variant={BackgroundVariant.Dots} color="#2a2a32" gap={22} size={1.6} />
       <Controls position="bottom-left" showInteractive={false} />
-      <MiniMap position="bottom-right" nodeColor={miniColor} maskColor="rgba(6,6,8,0.78)" pannable zoomable />
+      <MiniMap position="bottom-right" nodeColor={miniColor} maskColor="rgba(5,7,8,0.78)" pannable zoomable />
 
       {/* node palette — drag chips onto canvas */}
       <Panel position="top-left">
@@ -225,7 +225,7 @@ function EditorInner() {
                   event.dataTransfer.setData(DND_MIME, item.type)
                   event.dataTransfer.effectAllowed = 'move'
                 }}
-                className="flex cursor-grab items-center gap-2 border border-white/10 bg-white/3 px-2 py-1.5 text-[11px] text-zinc-300 transition hover:border-white/25 hover:bg-white/[0.07] active:cursor-grabbing"
+                className="flex cursor-grab items-center gap-2 border border-white/10 bg-white/3 px-2 py-1.5 text-2xs text-zinc-300 transition hover:border-white/25 hover:bg-white/[0.07] active:cursor-grabbing"
               >
                 <item.icon size={13} style={{ color: item.color }} />
                 <span>{item.label}</span>
@@ -237,7 +237,7 @@ function EditorInner() {
 
       {/* toolbar — selection + clear */}
       <Panel position="top-right">
-        <div className="flex items-center gap-2 border border-white/12 bg-black/85 px-2.5 py-1.5 font-mono text-[10px] text-zinc-400 backdrop-blur-sm">
+        <div className="flex items-center gap-2 border border-white/12 bg-black/85 px-2.5 py-1.5 font-mono text-3xs text-zinc-400 backdrop-blur-sm">
           <span>{nodes.length} 节点 · {edges.length} 连线</span>
           {(selected.nodes > 0 || selected.edges > 0) && (
             <span className="text-zinc-200">选中 {selected.nodes}N/{selected.edges}E · Del 删除</span>

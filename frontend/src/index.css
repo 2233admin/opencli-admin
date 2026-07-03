@@ -22,6 +22,15 @@
   --color-signal-red: #e15b64;
   --color-signal-violet: #9b7bf3;
 
+  /* role-named signal tokens — the single-track target API (DESIGN_SYSTEM.md §1.4);
+     color-named ones above are transitional until T3b migration completes */
+  --color-signal-success: #35b779;
+  --color-signal-warning: #d99a3d;
+  --color-signal-danger: #e15b64;
+  --color-signal-info: #4fb7d6;
+  --color-signal-agent: #9b7bf3;
+  --color-signal-highlight: #d6a84f;
+
   --color-ops-black: #050708;
   --color-ops-panel: #0a0d10;
   --color-ops-raised: #101418;
@@ -29,6 +38,17 @@
   --color-ops-text: #f5f7fa;
   --color-ops-muted: #9aa4af;
   --color-ops-accent: #2f7df6;
+
+  /* micro type scale for dense telemetry UI (see docs/DESIGN_SYSTEM.md §2) */
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
+  --text-3xs: 0.625rem;
+  --text-3xs--line-height: 0.875rem;
+
+  /* three-level elevation shadows (docs/DESIGN_SYSTEM.md §4) */
+  --shadow-panel: 0 8px 24px rgba(0, 0, 0, 0.45);
+  --shadow-overlay: 0 10px 34px rgba(0, 0, 0, 0.6);
+  --shadow-drag: 0 18px 48px rgba(0, 0, 0, 0.38);
 }
 
 /*
@@ -50,7 +70,7 @@
 }
 
 @utility mission-canvas {
-  background: linear-gradient(180deg, #050505 0%, #080808 42%, #000 100%);
+  background: linear-gradient(180deg, var(--oc-bg) 0%, #030405 42%, #000 100%);
 }
 
 @utility telemetry-panel {
@@ -116,8 +136,8 @@
   }
 
   &[data-active='true'] {
-    border-color: rgba(0, 110, 254, 0.75);
-    background: rgba(0, 110, 254, 0.16);
+    border-color: rgba(47, 125, 246,0.75);
+    background: rgba(47, 125, 246,0.16);
     color: #fff;
   }
 }
@@ -160,9 +180,9 @@
   }
 
   &[data-active='true'] {
-    border-color: rgba(0, 110, 254, 0.65);
-    background-color: rgba(0, 110, 254, 0.075);
-    box-shadow: inset 0 0 0 1px rgba(0, 110, 254, 0.08);
+    border-color: rgba(47, 125, 246,0.65);
+    background-color: rgba(47, 125, 246,0.075);
+    box-shadow: inset 0 0 0 1px rgba(47, 125, 246,0.08);
   }
 }
 
@@ -225,9 +245,9 @@
   }
 
   & .react-grid-placeholder {
-    border: 1px solid rgba(0, 110, 254, 0.55);
+    border: 1px solid rgba(47, 125, 246,0.55);
     border-radius: 6px;
-    background: rgba(0, 110, 254, 0.12);
+    background: rgba(47, 125, 246,0.12);
     opacity: 1;
   }
 
@@ -270,9 +290,9 @@
 
 @utility react-grid-placeholder {
   .live-run-surface-grid & {
-    border: 1px solid rgba(0, 110, 254, 0.55);
+    border: 1px solid rgba(47, 125, 246,0.55);
     border-radius: 6px;
-    background: rgba(0, 110, 254, 0.12);
+    background: rgba(47, 125, 246,0.12);
     opacity: 1;
   }
 }
@@ -491,7 +511,7 @@
   }
 
   body {
-    @apply min-h-screen bg-[#070809] text-zinc-100 antialiased;
+    @apply min-h-screen bg-ops-black text-zinc-100 antialiased;
     font-family: var(--font-ui);
     letter-spacing: 0;
   }
@@ -525,13 +545,13 @@
   }
 
   ::selection {
-    background: rgba(0, 110, 254, 0.35);
+    background: rgba(47, 125, 246,0.35);
     color: #fff;
   }
 
   :focus-visible {
     outline: none;
-    box-shadow: 0 0 0 2px #000, 0 0 0 4px #47a8ff;
+    box-shadow: 0 0 0 2px #000, 0 0 0 4px #4f9bff;
   }
 }
 
@@ -577,7 +597,7 @@
 }
 
 .react-flow .react-flow__edge-textbg {
-  fill: #050505;
+  fill: var(--oc-bg);
   fill-opacity: 0.85;
 }
 

@@ -138,7 +138,7 @@ function ProviderModal({
           <div>
             <label className={labelCls}>
               Base URL
-              <span className="ml-1 text-zinc-500 font-normal text-[11px]">（OpenAI 兼容接口地址）</span>
+              <span className="ml-1 text-zinc-500 font-normal text-2xs">（OpenAI 兼容接口地址）</span>
             </label>
             <input
               className={inputCls}

@@ -21,8 +21,8 @@ const TONE_STYLES: Record<MetricTone, { rail: string; icon: string; value: strin
   },
   gold: {
     rail: 'bg-signal-gold',
-    icon: 'border-signal-gold/40 bg-signal-gold/10 text-yellow-100',
-    value: 'text-yellow-100',
+    icon: 'border-signal-gold/40 bg-signal-gold/10 text-amber-100',
+    value: 'text-amber-100',
   },
   success: {
     rail: 'bg-signal-green',

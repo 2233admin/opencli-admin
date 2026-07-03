@@ -131,7 +131,7 @@ function miniColor(node: Node): string {
     case 'wfAction': return WF.green
     case 'wfController': return WF.purple
     case 'wfLimit': return WF.cyan
-    case 'wfNote': return '#fbbf24'
+    case 'wfNote': return '#d99a3d'
     default: return WF.blue
   }
 }
@@ -151,13 +151,13 @@ export function WorkflowCanvas() {
       nodesDraggable
       nodesConnectable={false}
       proOptions={{ hideAttribution: true }}
-      className="bg-[#060608]"
+      className="bg-ops-black"
     >
       <Background variant={BackgroundVariant.Dots} color="#2a2a32" gap={22} size={1.6} />
       <Controls position="bottom-left" showInteractive={false} />
-      <MiniMap position="bottom-right" nodeColor={miniColor} maskColor="rgba(6,6,8,0.78)" pannable zoomable />
+      <MiniMap position="bottom-right" nodeColor={miniColor} maskColor="rgba(5,7,8,0.78)" pannable zoomable />
       <Panel position="top-left">
-        <div className="border border-white/10 bg-black/80 px-3 py-1.5 font-mono text-[11px] text-zinc-400">
+        <div className="border border-white/10 bg-black/80 px-3 py-1.5 font-mono text-2xs text-zinc-400">
           workflow nodes · xyops taxonomy
         </div>
       </Panel>

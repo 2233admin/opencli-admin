@@ -249,7 +249,7 @@ export default function NetworkPage() {
         {rightPanel && (
           <div
             key={rightPanel}
-            className="m3-sheet-in absolute right-10 top-0 bottom-0 z-20 w-[380px] max-w-[calc(100%-2.5rem)] border-l border-white/10 bg-[#0a0a0a] shadow-[0_0_40px_rgba(0,0,0,0.5)]"
+            className="m3-sheet-in absolute right-10 top-0 bottom-0 z-20 w-[380px] max-w-[calc(100%-2.5rem)] border-l border-white/10 bg-ops-panel shadow-overlay"
           >
             {rightPanel === 'node' && selectedNode ? (
               <NodeInspector
@@ -271,7 +271,7 @@ export default function NetworkPage() {
         )}
 
         {/* always-on vertical tab rail (pull-out handles) */}
-        <div className="absolute right-0 top-0 bottom-0 z-30 flex w-10 flex-col items-center gap-1 border-l border-white/10 bg-[#0b0c0e] py-3">
+        <div className="absolute right-0 top-0 bottom-0 z-30 flex w-10 flex-col items-center gap-1 border-l border-white/10 bg-ops-panel py-3">
           <RailTab
             active={rightPanel === 'node'}
             disabled={!selectedNode}
@@ -331,7 +331,7 @@ function RailTab({
       )}
     >
       <Icon className="h-[18px] w-[18px] shrink-0" />
-      <span className="font-telemetry text-[10px] tracking-[0.12em] [writing-mode:vertical-rl]">{label}</span>
+      <span className="font-telemetry text-3xs tracking-[0.12em] [writing-mode:vertical-rl]">{label}</span>
     </button>
   )
 }
@@ -346,7 +346,7 @@ function Breadcrumb({
   count: number
 }) {
   return (
-    <div className="flex items-center gap-1.5 border border-white/8 bg-black/30 px-3 py-2 font-code text-[11px] text-zinc-400">
+    <div className="flex items-center gap-1.5 border border-white/8 bg-black/30 px-3 py-2 font-code text-2xs text-zinc-400">
       <button
         type="button"
         onClick={onRoot}
@@ -360,7 +360,7 @@ function Breadcrumb({
           <span className="rounded-sm px-1.5 py-0.5 text-zinc-100">{divedSourceName}</span>
         </>
       )}
-      <span className="ml-1 rounded-full border border-white/10 px-2 py-0.5 text-[10px] text-zinc-500">
+      <span className="ml-1 rounded-full border border-white/10 px-2 py-0.5 text-3xs text-zinc-500">
         {divedSourceName ? `${count} 节点` : `项目 · ${count}`}
       </span>
     </div>
@@ -391,7 +391,7 @@ function NodeInspector({
 }) {
   const stageCode = readDetailString(node.data.detail, 'stage_code', node.data.kind.slice(0, 2).toUpperCase())
   return (
-    <Card padding={false} className="flex h-full flex-col overflow-hidden border-0 bg-[#0a0a0a]">
+    <Card padding={false} className="flex h-full flex-col overflow-hidden border-0 bg-ops-panel">
       <div className="flex items-start justify-between gap-2 border-b border-white/8 px-4 py-3">
         <div className="flex min-w-0 items-start gap-3">
           <div className="grid h-10 w-10 shrink-0 place-items-center border border-white/15 bg-white/4">
@@ -402,7 +402,7 @@ function NodeInspector({
             <h2 className="mt-0.5 truncate text-sm font-semibold text-white" title={node.data.title}>
               {node.data.title}
             </h2>
-            <p className="truncate text-[11px] text-zinc-500">{node.data.subtitle}</p>
+            <p className="truncate text-2xs text-zinc-500">{node.data.subtitle}</p>
           </div>
         </div>
         <button
@@ -536,10 +536,10 @@ function toScopedFlow(graph: TopologyGraph): { nodes: TopologyFlowNode[]; edges:
 
 function edgeColor(health: TopologyHealth): string {
   const colors: Record<TopologyHealth, string> = {
-    healthy: '#00ac3a',
+    healthy: '#35b779',
     active: '#47a8ff',
-    warning: '#ffae00',
-    failed: '#ff565f',
+    warning: '#d99a3d',
+    failed: '#e15b64',
     disabled: '#71717a',
     unknown: '#a1a1aa',
   }

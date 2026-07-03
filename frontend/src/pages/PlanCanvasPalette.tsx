@@ -100,22 +100,22 @@ export function PlanCanvasPalette({ onPick }: PlanCanvasPaletteProps) {
             value={query}
             onValueChange={setQuery}
             placeholder={t('planCanvas.paletteSearchPlaceholder')}
-            className="h-6 min-w-0 flex-1 bg-transparent text-[12px] text-zinc-100 outline-hidden placeholder:text-zinc-600"
+            className="h-6 min-w-0 flex-1 bg-transparent text-xs text-zinc-100 outline-hidden placeholder:text-zinc-600"
           />
         </div>
         <Command.List className="thin-scrollbar flex-1 overflow-y-auto py-1">
-          <Command.Empty className="px-3 py-4 text-center text-[11px] text-zinc-600">
+          <Command.Empty className="px-3 py-4 text-center text-2xs text-zinc-600">
             {t('planCanvas.paletteEmpty')}
           </Command.Empty>
 
           {/* level 1: 数据源 category, level 2: channel_type (node type), level 3: Preset chips */}
           <Command.Group
             heading={t('planCanvas.paletteCategoryChannels')}
-            className="px-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-600"
+            className="px-1 text-3xs font-semibold uppercase tracking-wide text-zinc-600"
           >
             {channelTypes.map((channelType) => (
               <div key={channelType} className="mb-1">
-                <p className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-sky-300/80">
+                <p className="px-2 py-1 text-3xs font-semibold uppercase tracking-wide text-sky-300/80">
                   {channelType}
                 </p>
                 {/* bare channel type (no Preset) — story 1: drag a source TYPE, presets
@@ -144,9 +144,9 @@ export function PlanCanvasPalette({ onPick }: PlanCanvasPaletteProps) {
           {channelTypes.length === 0 && (
             <Command.Group
               heading={t('planCanvas.paletteCategoryChannels')}
-              className="px-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-600"
+              className="px-1 text-3xs font-semibold uppercase tracking-wide text-zinc-600"
             >
-              <p className="px-3 py-1.5 text-[11px] text-zinc-600">
+              <p className="px-3 py-1.5 text-2xs text-zinc-600">
                 {presetsQuery.isError ? t('common.error') : t('planCanvas.paletteEmpty')}
               </p>
             </Command.Group>
@@ -154,7 +154,7 @@ export function PlanCanvasPalette({ onPick }: PlanCanvasPaletteProps) {
 
           <Command.Group
             heading={t('planCanvas.paletteCategoryGraph')}
-            className="px-1 pt-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-600"
+            className="px-1 pt-1 text-3xs font-semibold uppercase tracking-wide text-zinc-600"
           >
             {GRAPH_NODE_KINDS.filter((g) => presetMatchesQuery(
               { id: g.nodeKind, channel_type: '', node_type: g.nodeKind, label: g.label, description: g.hint, params: {} },
@@ -200,8 +200,8 @@ function PaletteRow({
         e.dataTransfer.effectAllowed = 'copy'
       }}
     >
-      <span className="truncate text-[12px] font-medium text-zinc-200">{label}</span>
-      <span className="truncate text-[10px] text-zinc-600">{hint}</span>
+      <span className="truncate text-xs font-medium text-zinc-200">{label}</span>
+      <span className="truncate text-3xs text-zinc-600">{hint}</span>
     </Command.Item>
   )
 }

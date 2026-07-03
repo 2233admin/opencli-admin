@@ -253,7 +253,7 @@ function NodeEventTimeline({ nodeId }: { nodeId: string }) {
   }
   const eventDot = (event: EdgeNodeEvent['event']) => {
     if (event === 'registered') return 'bg-primary-500'
-    if (event === 'online') return 'bg-green-500'
+    if (event === 'online') return 'bg-emerald-500'
     return 'bg-zinc-500'
   }
 
@@ -352,7 +352,7 @@ function NodeCard({ node, wsConnectedSet, onDelete, isDeletePending }: NodeCardP
     <div className="border border-white/8 bg-black/20 p-4">
       <div className="flex items-start gap-3">
         <span
-          className={`mt-1 w-2.5 h-2.5 rounded-full shrink-0 ${isOnline ? 'bg-green-500' : 'bg-zinc-500'}`}
+          className={`mt-1 w-2.5 h-2.5 rounded-full shrink-0 ${isOnline ? 'bg-emerald-500' : 'bg-zinc-500'}`}
           title={isOnline ? '在线' : '离线'}
         />
         <div className="flex-1 min-w-0">
@@ -524,7 +524,7 @@ function StatusBadge({ containerStatus, available, isStarting }: {
   if (containerStatus === 'running') {
     return available ? (
       <span className="inline-flex items-center gap-1 text-xs">
-        <span className="w-2 h-2 rounded-full bg-green-500 shrink-0" />
+        <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
         <span className="text-emerald-400">{t('browsers.statusIdle')}</span>
       </span>
     ) : (
@@ -552,8 +552,8 @@ function StatusBadge({ containerStatus, available, isStarting }: {
   }
   return (
     <span className="inline-flex items-center gap-1 text-xs">
-      <span className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse shrink-0" />
-      <span className="text-yellow-400">{t('browsers.statusPending')}</span>
+      <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0" />
+      <span className="text-amber-400">{t('browsers.statusPending')}</span>
     </span>
   )
 }
@@ -649,8 +649,8 @@ function InstanceCard({
       <div className="flex items-center gap-2 mb-3 pb-3 border-b border-white/6">
         {isDockerEndpoint
           ? <StatusBadge containerStatus={containerStatus} available={available} isStarting={isStarting} />
-          : <span className={`inline-flex items-center gap-1 text-xs ${available ? 'text-green-500' : 'text-zinc-400'}`}>
-              <span className={`w-2 h-2 rounded-full shrink-0 ${available ? 'bg-green-500' : 'bg-zinc-500'}`} />
+          : <span className={`inline-flex items-center gap-1 text-xs ${available ? 'text-emerald-500' : 'text-zinc-400'}`}>
+              <span className={`w-2 h-2 rounded-full shrink-0 ${available ? 'bg-emerald-500' : 'bg-zinc-500'}`} />
               {available ? '在线' : '空闲'}
             </span>
         }

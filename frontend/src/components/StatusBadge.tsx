@@ -52,7 +52,7 @@ export default function StatusBadge({ status, className }: Props) {
   return (
     <span
       className={clsx(
-        'inline-flex items-center border px-2 py-0.5 font-telemetry text-[11px] font-semibold uppercase tracking-[0.08em]',
+        'inline-flex items-center border px-2 py-0.5 font-telemetry text-2xs font-semibold uppercase tracking-[0.08em]',
         style,
         className
       )}

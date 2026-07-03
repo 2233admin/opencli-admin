@@ -75,7 +75,7 @@ function StatusBadge({ containerStatus, available, isStarting }: StatusBadgeProp
     if (available) {
       return (
         <span className="inline-flex items-center gap-1 text-xs">
-          <span className="w-2 h-2 rounded-full bg-green-500 shrink-0" />
+          <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
           <span className="text-emerald-400">{t('browsers.statusIdle')}</span>
         </span>
       )
@@ -109,8 +109,8 @@ function StatusBadge({ containerStatus, available, isStarting }: StatusBadgeProp
   // unknown / undefined — pending restart
   return (
     <span className="inline-flex items-center gap-1 text-xs">
-      <span className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse shrink-0" />
-      <span className="text-yellow-400">{t('browsers.statusPending')}</span>
+      <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0" />
+      <span className="text-amber-400">{t('browsers.statusPending')}</span>
     </span>
   )
 }
@@ -226,7 +226,7 @@ function AddInstanceModal({ currentCount, onConfirm, onClose, isPending }: AddIn
                   <ul className="space-y-0.5">
                     {opt.pros.map((pro) => (
                       <li key={pro} className="text-xs text-zinc-400 flex items-start gap-1">
-                        <span className="text-green-500 shrink-0">✓</span>
+                        <span className="text-emerald-500 shrink-0">✓</span>
                         {pro}
                       </li>
                     ))}
@@ -542,8 +542,8 @@ function InstanceCard({
       <div className="flex items-center gap-2 mb-3 pb-3 border-b border-white/6">
         {isDockerEndpoint
           ? <StatusBadge containerStatus={containerStatus} available={available} isStarting={isStarting} />
-          : <span className={`inline-flex items-center gap-1 text-xs ${available ? 'text-green-500' : 'text-zinc-400'}`}>
-              <span className={`w-2 h-2 rounded-full shrink-0 ${available ? 'bg-green-500' : 'bg-zinc-500'}`} />
+          : <span className={`inline-flex items-center gap-1 text-xs ${available ? 'text-emerald-500' : 'text-zinc-400'}`}>
+              <span className={`w-2 h-2 rounded-full shrink-0 ${available ? 'bg-emerald-500' : 'bg-zinc-500'}`} />
               {available ? '在线' : '空闲'}
             </span>
         }

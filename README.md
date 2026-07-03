@@ -6,7 +6,7 @@
 
 ## v0.4 前端基线
 
-- `frontend/` 是唯一生产前端主线：React + Vite。
+- `frontend/` 是唯一生产前端主线：React + Vite。改 UI 前先读 [docs/DESIGN_SYSTEM.md](docs/DESIGN_SYSTEM.md)（锁定版设计系统, 顶部 30 秒速查表）。
 - `experiments/next-web/` 只是 Next.js 实验壳，不接入默认 Docker、CI 或导航。
 - 默认 `docker compose up --build` 会构建仓库内的 `frontend/`，不会拉取旧的上游前端镜像。
 - 拓扑画布属于实验能力；设置 `VITE_ENABLE_TOPOLOGY_LAB=true` 后才开放 `/labs/topology`。

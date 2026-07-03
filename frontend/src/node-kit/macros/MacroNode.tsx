@@ -27,7 +27,7 @@ export function MacroBody({ def }: { def: MacroDef }) {
         ))}
         {overflow > 0 && <NodeBadge tone="accent">+{overflow}</NodeBadge>}
       </div>
-      <div className="text-[10px] text-zinc-600">双击展开</div>
+      <div className="text-3xs text-zinc-600">双击展开</div>
     </div>
   )
 }

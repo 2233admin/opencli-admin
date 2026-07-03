@@ -31,10 +31,10 @@ export function SourceControlStrip({ sourceId }: { sourceId: string }) {
   if (!sourceId) return null
 
   if (query.isLoading) {
-    return <div className="mt-1 text-[10px] text-zinc-600">sensors: loading…</div>
+    return <div className="mt-1 text-3xs text-zinc-600">sensors: loading…</div>
   }
   if (query.isError) {
-    return <div className="mt-1 text-[10px] text-red-300">sensors: fetch failed</div>
+    return <div className="mt-1 text-3xs text-red-300">sensors: fetch failed</div>
   }
 
   const state = query.data

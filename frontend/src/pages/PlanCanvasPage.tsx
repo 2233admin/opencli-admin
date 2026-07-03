@@ -426,12 +426,12 @@ function PlanCanvasInner() {
               className="h-8 w-52 rounded-md border border-white/12 bg-black/40 px-2.5 text-xs text-zinc-200 outline-hidden focus:border-primary-500/60"
             />
             {planDraftFlag && (
-              <span className="rounded-xs border border-amber-400/35 bg-amber-400/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-200">
+              <span className="rounded-xs border border-amber-400/35 bg-amber-400/10 px-1.5 py-0.5 text-3xs font-semibold uppercase tracking-wide text-amber-200">
                 {t('planCanvas.draftBadge')}
               </span>
             )}
             {planRunnableFlag && (
-              <span className="rounded-xs border border-emerald-400/35 bg-emerald-400/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-200">
+              <span className="rounded-xs border border-emerald-400/35 bg-emerald-400/10 px-1.5 py-0.5 text-3xs font-semibold uppercase tracking-wide text-emerald-200">
                 {t('planCanvas.runnableBadge')}
               </span>
             )}
@@ -492,7 +492,7 @@ function PlanCanvasInner() {
       />
 
       {isObserve && !runGate.canRun && !isNew && (
-        <div className="rounded-md border border-amber-400/25 bg-amber-400/6 px-3 py-2 text-[11px] text-amber-200">
+        <div className="rounded-md border border-amber-400/25 bg-amber-400/6 px-3 py-2 text-2xs text-amber-200">
           {t(`planCanvas.run.blocked.${runGate.reason}`)}
         </div>
       )}
@@ -529,7 +529,7 @@ function PlanCanvasInner() {
             nodesDraggable
             nodesConnectable
             proOptions={{ hideAttribution: true }}
-            className="bg-[#060608]"
+            className="bg-ops-black"
           >
             <Background variant={BackgroundVariant.Dots} color="#2a2a32" gap={22} size={1.6} />
             <Controls position="bottom-left" showInteractive={false} />

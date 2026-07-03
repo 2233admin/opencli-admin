@@ -501,7 +501,7 @@ function TriggerModal({
                           <span className={`text-sm font-medium font-mono ${isConnected ? 'text-zinc-300' : 'text-zinc-500'}`}>
                             {label}
                           </span>
-                          <span className={`text-xs ${isConnected ? 'text-green-500' : 'text-red-400'}`}>
+                          <span className={`text-xs ${isConnected ? 'text-emerald-500' : 'text-red-400'}`}>
                             {isConnected ? '● 在线' : '○ 离线'}
                           </span>
                           <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${
@@ -570,7 +570,7 @@ function TriggerModal({
                           <span className={`text-sm font-medium ${ep.available ? 'text-zinc-300' : 'text-zinc-500'}`}>
                             {label}
                           </span>
-                          <span className={`text-xs ${ep.available ? 'text-green-500' : 'text-red-400'}`}>
+                          <span className={`text-xs ${ep.available ? 'text-emerald-500' : 'text-red-400'}`}>
                             {ep.available ? '● 在线' : '○ 离线'}
                           </span>
                           <span className={`px-1.5 py-0.5 rounded-sm text-xs font-medium ${ep.mode === 'bridge' ? 'border border-primary-500/40 bg-primary-500/10 text-primary-300' : 'border border-amber-500/40 bg-amber-500/10 text-amber-300'}`}>
@@ -579,7 +579,7 @@ function TriggerModal({
                         </div>
                         <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
                           {boundSites.map((site) => (
-                            <span key={site} className="px-1.5 py-0.5 rounded-sm text-xs border border-indigo-500/40 bg-indigo-500/10 text-indigo-300">
+                            <span key={site} className="px-1.5 py-0.5 rounded-sm text-xs border border-violet-500/40 bg-violet-500/10 text-violet-300">
                               {SITE_LABELS[site] ?? site}
                             </span>
                           ))}
@@ -611,7 +611,7 @@ function TriggerModal({
           </Button>
           <button
             onClick={handleTrigger}
-            className="px-4 py-2 text-sm rounded-lg bg-green-600 text-white hover:bg-green-700"
+            className="px-4 py-2 text-sm rounded-lg bg-emerald-600 text-white hover:bg-emerald-700"
           >
             {triggerLabel}
           </button>
@@ -1209,14 +1209,14 @@ function LegacySourcesPage() {
                       setPage(1)
                     }}
                     className={cn(
-                      'inline-flex h-9 items-center gap-2 border px-3 font-telemetry text-[10px] font-semibold uppercase tracking-[0.12em] transition-colors',
+                      'inline-flex h-9 items-center gap-2 border px-3 font-telemetry text-3xs font-semibold uppercase tracking-[0.12em] transition-colors',
                       channelFilter === chip.value
                         ? 'border-primary-500/70 bg-primary-500/16 text-white'
                         : 'border-white/10 bg-black/20 text-zinc-400 hover:border-white/22 hover:text-zinc-100',
                     )}
                   >
                     {chip.label}
-                    <span className="font-mono text-[10px] text-zinc-500">{chip.count}</span>
+                    <span className="font-mono text-3xs text-zinc-500">{chip.count}</span>
                   </button>
                 ))}
               </div>
@@ -1237,7 +1237,7 @@ function LegacySourcesPage() {
                       <Icon size={15} />
                     </span>
                     <span className="mt-3 text-xs font-semibold text-zinc-200">{nodeMeta.label}</span>
-                    <span className="mt-1 text-[11px] text-zinc-600">{nodeMeta.hint}</span>
+                    <span className="mt-1 text-2xs text-zinc-600">{nodeMeta.hint}</span>
                   </button>
                 )
               })}
@@ -1394,7 +1394,7 @@ function WorkflowNodeView({ data, selected }: NodeProps<WorkflowFlowNode>) {
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <span className="font-telemetry text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+            <span className="font-telemetry text-3xs font-semibold uppercase tracking-[0.14em] text-zinc-500">
               {workflowKindLabel(data.kind)}
             </span>
             <span className={cn('h-2 w-2 rounded-full', workflowHealthDotClass(data.health))} title={workflowHealthLabel(data.health)} />
@@ -1409,7 +1409,7 @@ function WorkflowNodeView({ data, selected }: NodeProps<WorkflowFlowNode>) {
       </div>
 
       {data.kind === 'source' && stats ? (
-        <div className="mt-3 grid grid-cols-3 gap-1.5 text-[11px]">
+        <div className="mt-3 grid grid-cols-3 gap-1.5 text-2xs">
           <MiniStat label="Tasks" value={stats.taskCount} />
           <MiniStat label="Plans" value={stats.scheduleCount} />
           <MiniStat label="Fail" value={stats.failedTasks} danger={stats.failedTasks > 0} />
@@ -1419,7 +1419,7 @@ function WorkflowNodeView({ data, selected }: NodeProps<WorkflowFlowNode>) {
           {[workflowHealthLabel(data.health), ...data.badges].slice(0, 4).map((badge) => (
             <span
               key={badge}
-              className="max-w-[112px] truncate rounded-sm border border-white/10 bg-white/4 px-1.5 py-0.5 text-[10px] text-zinc-300"
+              className="max-w-[112px] truncate rounded-sm border border-white/10 bg-white/4 px-1.5 py-0.5 text-3xs text-zinc-300"
               title={badge}
             >
               {badge}
@@ -1428,7 +1428,7 @@ function WorkflowNodeView({ data, selected }: NodeProps<WorkflowFlowNode>) {
         </div>
       )}
 
-      <div className="mt-3 flex items-center justify-between border-t border-white/10 pt-2 text-[10px] text-zinc-600">
+      <div className="mt-3 flex items-center justify-between border-t border-white/10 pt-2 text-3xs text-zinc-600">
         <span className="font-mono">{data.entityId.slice(0, 8)}</span>
         <span>{workflowHealthLabel(data.health)}</span>
       </div>
@@ -1659,7 +1659,7 @@ function WorkflowInspector({
           />
           <div className="grid gap-2">
             {isTopologyLabEnabled && (
-              <Link className="inline-flex items-center justify-center gap-2 rounded-md bg-cyan-500 px-3 py-2 text-sm font-semibold text-slate-950 hover:bg-cyan-400" to={`/labs/topology?source=${schedule.source_id}`}>
+              <Link className="inline-flex items-center justify-center gap-2 rounded-md bg-sky-500 px-3 py-2 text-sm font-semibold text-zinc-950 hover:bg-sky-400" to={`/labs/topology?source=${schedule.source_id}`}>
                 <ExternalLink size={14} /> 查看全局拓扑
               </Link>
             )}
@@ -1777,7 +1777,7 @@ function WorkflowInspector({
             <Activity size={14} /> 控制室
           </Link>
           {isTopologyLabEnabled && (
-            <Link className="inline-flex items-center justify-center gap-2 rounded-md bg-cyan-500 px-3 py-2 text-sm font-semibold text-slate-950 hover:bg-cyan-400" to={`/labs/topology?source=${source.id}`}>
+            <Link className="inline-flex items-center justify-center gap-2 rounded-md bg-sky-500 px-3 py-2 text-sm font-semibold text-zinc-950 hover:bg-sky-400" to={`/labs/topology?source=${source.id}`}>
               <ExternalLink size={14} /> 查看全局拓扑
             </Link>
           )}
@@ -1938,7 +1938,7 @@ function SourceConfigurationPanel({
       action={(
         <div className="flex flex-wrap gap-2">
           {isTopologyLabEnabled && (
-            <Link to="/plans" className="inline-flex h-9 items-center justify-center gap-2 border border-white/14 bg-black/25 px-3 font-telemetry text-[11px] font-semibold uppercase tracking-[0.12em] text-zinc-200 hover:border-white/28 hover:bg-white/7.5">
+            <Link to="/plans" className="inline-flex h-9 items-center justify-center gap-2 border border-white/14 bg-black/25 px-3 font-telemetry text-2xs font-semibold uppercase tracking-[0.12em] text-zinc-200 hover:border-white/28 hover:bg-white/7.5">
               <ExternalLink size={14} />
               采集画布
             </Link>
@@ -2539,14 +2539,14 @@ export default function SourcesPage() {
                     type="button"
                     onClick={() => setChannelFilter(chip.value)}
                     className={cn(
-                      'inline-flex h-9 items-center gap-2 rounded-md border px-3 font-telemetry text-[10px] font-semibold uppercase tracking-[0.12em] transition-colors',
+                      'inline-flex h-9 items-center gap-2 rounded-md border px-3 font-telemetry text-3xs font-semibold uppercase tracking-[0.12em] transition-colors',
                       channelFilter === chip.value
                         ? 'border-primary-500/70 bg-primary-500/16 text-white'
                         : 'border-white/10 bg-black/20 text-zinc-400 hover:border-white/22 hover:text-zinc-100',
                     )}
                   >
                     {chip.label}
-                    <span className="font-mono text-[10px] text-zinc-500">{chip.count}</span>
+                    <span className="font-mono text-3xs text-zinc-500">{chip.count}</span>
                   </button>
                 ))}
               </div>
@@ -2567,7 +2567,7 @@ export default function SourcesPage() {
                       <Icon size={15} />
                     </span>
                     <span className="mt-3 text-xs font-semibold text-zinc-200">{nodeMeta.label}</span>
-                    <span className="mt-1 text-[11px] text-zinc-600">{nodeMeta.hint}</span>
+                    <span className="mt-1 text-2xs text-zinc-600">{nodeMeta.hint}</span>
                   </button>
                 )
               })}
@@ -2760,7 +2760,7 @@ function toWorkflowFlowEdges(edges: ReturnType<typeof buildCollectionWorkflow>['
       fontWeight: 700,
     },
     labelBgStyle: {
-      fill: '#09090b',
+      fill: 'var(--oc-bg)',
       fillOpacity: 0.85,
     },
   }))

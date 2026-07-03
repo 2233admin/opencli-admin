@@ -411,7 +411,7 @@ function AddScheduleModal({
                           <span className={`text-sm font-medium font-mono ${isConnected ? 'text-zinc-100' : 'text-zinc-500'}`}>
                             {label}
                           </span>
-                          <span className={`text-xs ${isConnected ? 'text-green-500' : 'text-red-400'}`}>
+                          <span className={`text-xs ${isConnected ? 'text-emerald-500' : 'text-red-400'}`}>
                             {isConnected ? '● 在线' : '○ 离线'}
                           </span>
                           <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${
@@ -476,7 +476,7 @@ function AddScheduleModal({
                           <span className={`text-sm font-medium ${ep.available ? 'text-zinc-100' : 'text-zinc-500'}`}>
                             {label}
                           </span>
-                          <span className={`text-xs ${ep.available ? 'text-green-500' : 'text-red-400'}`}>
+                          <span className={`text-xs ${ep.available ? 'text-emerald-500' : 'text-red-400'}`}>
                             {ep.available ? '● 在线' : '○ 离线'}
                           </span>
                           <span className={`px-1.5 py-0.5 rounded-sm text-xs font-medium ${ep.mode === 'bridge' ? 'border border-primary-500/40 bg-primary-500/10 text-primary-300' : 'border border-amber-500/40 bg-amber-500/10 text-amber-300'}`}>
@@ -485,7 +485,7 @@ function AddScheduleModal({
                         </div>
                         <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
                           {boundSites.map((site) => (
-                            <span key={site} className="px-1.5 py-0.5 rounded-sm text-xs border border-indigo-500/40 bg-indigo-500/10 text-indigo-300">
+                            <span key={site} className="px-1.5 py-0.5 rounded-sm text-xs border border-violet-500/40 bg-violet-500/10 text-violet-300">
                               {SITE_LABELS[site] ?? site}
                             </span>
                           ))}
@@ -632,7 +632,7 @@ export default function SchedulesPage() {
               header: t('schedules.enabledCol'),
               width: '70px',
               render: (s) => (
-                <span className={`text-xs font-medium ${s.enabled ? 'text-green-600' : 'text-zinc-500'}`}>
+                <span className={`text-xs font-medium ${s.enabled ? 'text-emerald-600' : 'text-zinc-500'}`}>
                   {s.enabled ? t('common.yes') : t('common.no')}
                 </span>
               ),

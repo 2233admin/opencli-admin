@@ -200,7 +200,7 @@ export default function SourceControlRoomPage() {
                 value={
                   <span>
                     {formatFreshnessLag(measurement?.freshness_lag_seconds)}{' '}
-                    <span className="text-[10px] text-zinc-500">
+                    <span className="text-3xs text-zinc-500">
                       ({formatSourceTsQuality(measurement?.source_ts_quality)})
                     </span>
                   </span>
@@ -261,7 +261,7 @@ export default function SourceControlRoomPage() {
             {trendView ? (
               <div className="mt-3 space-y-2">
                 {trendView.isRunHistoryDerived && (
-                  <Badge variant="secondary" className="text-[10px]">
+                  <Badge variant="secondary" className="text-3xs">
                     run-history-derived — not measurement-backed
                   </Badge>
                 )}
@@ -288,7 +288,7 @@ export default function SourceControlRoomPage() {
             <div className="flex items-center justify-between gap-3">
               <h3 className="text-sm font-semibold text-zinc-100">Objective</h3>
               {source?.objective_override && (
-                <Badge variant="secondary" className="text-[10px]">
+                <Badge variant="secondary" className="text-3xs">
                   override active
                 </Badge>
               )}
@@ -299,7 +299,7 @@ export default function SourceControlRoomPage() {
             <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {OBJECTIVE_FIELDS.map((field) => (
                 <label key={field} className="grid gap-1">
-                  <span className="text-[11px] text-zinc-500">{OBJECTIVE_FIELD_LABELS[field]}</span>
+                  <span className="text-2xs text-zinc-500">{OBJECTIVE_FIELD_LABELS[field]}</span>
                   <Input
                     type="number"
                     step="any"

@@ -214,7 +214,7 @@ function ReactFlowTopologyCanvasInner({
       nodesDraggable
       nodesConnectable={false}
       proOptions={{ hideAttribution: true }}
-      className="bg-[#060608]"
+      className="bg-ops-black"
       // EDITOR BASICS (issue: node-editor basics) — multi-select via drag
       // (including partial intersection, not just full-enclosure), 8px snap
       // grid, and scroll-to-pan so the canvas behaves like a real node editor
@@ -232,12 +232,12 @@ function ReactFlowTopologyCanvasInner({
       <MiniMap
         position="bottom-right"
         nodeColor={(node) => miniColor((node.data as TopologyNodeViewData).health)}
-        maskColor="rgba(6, 6, 8, 0.78)"
+        maskColor="rgba(5, 7, 8, 0.78)"
         pannable
         zoomable
       />
       <Panel position="top-left">
-        <div className="rounded-md border border-white/10 bg-black/80 px-3 py-1.5 text-[11px] text-zinc-400 shadow-lg">
+        <div className="rounded-md border border-white/10 bg-black/80 px-3 py-1.5 text-2xs text-zinc-400 shadow-lg">
           <span className="font-code text-zinc-600">{headerLabel ?? `采集管线 · ${rfNodes.length} stages`}</span>
         </div>
       </Panel>
@@ -284,10 +284,10 @@ function healthLabel(health: TopologyHealth) {
 
 function miniColor(health: TopologyHealth) {
   const colors: Record<TopologyHealth, string> = {
-    healthy: '#34d399',
+    healthy: '#35b779',
     active: '#38bdf8',
-    warning: '#fbbf24',
-    failed: '#f87171',
+    warning: '#d99a3d',
+    failed: '#e15b64',
     disabled: '#64748b',
     unknown: '#a1a1aa',
   }

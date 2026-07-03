@@ -29,7 +29,7 @@ export function NodeSearchMenu({
     <>
       <div className="absolute inset-0 z-40" onClick={onClose} onContextMenu={(e) => e.preventDefault()} />
       <div
-        className="absolute z-50 w-64 overflow-hidden rounded-lg border border-white/15 bg-[#0c0d10] shadow-[0_12px_40px_rgba(0,0,0,0.6)]"
+        className="absolute z-50 w-64 overflow-hidden rounded-lg border border-white/15 bg-ops-raised shadow-overlay"
         style={{ left: x, top: y }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -57,7 +57,7 @@ export function NodeSearchMenu({
               >
                 <Icon className="h-4 w-4 shrink-0 text-zinc-500" />
                 <span className="flex-1 truncate">{s.title}</span>
-                <span className="font-code text-[10px] text-zinc-600">{s.type}</span>
+                <span className="font-code text-3xs text-zinc-600">{s.type}</span>
               </button>
             )
           })}

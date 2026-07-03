@@ -62,7 +62,7 @@ function Breadcrumb() {
   const label = routeLabelKey ? t(routeLabelKey) : ''
 
   return (
-    <div className="mb-4 flex items-center gap-1.5 font-telemetry text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-600">
+    <div className="mb-4 flex items-center gap-1.5 font-telemetry text-2xs font-semibold uppercase tracking-[0.16em] text-zinc-600">
       <Home size={12} className="shrink-0 text-primary-500" />
       <span>{t('nav.home')}</span>
       {routeLabelKey && (
@@ -202,7 +202,7 @@ export default function Layout() {
           <span className="flex flex-1 items-center justify-between gap-2">
             <span className="truncate">{label}</span>
             {showBadge ? (
-              <span className="flex h-[18px] min-w-[18px] items-center justify-center border border-primary-500/50 bg-primary-500/20 px-1.5 text-center text-[10px] leading-[18px] text-primary-100">
+              <span className="flex h-[18px] min-w-[18px] items-center justify-center border border-primary-500/50 bg-primary-500/20 px-1.5 text-center text-3xs leading-[18px] text-primary-100">
                 {failedCount}
               </span>
             ) : stage ? (
@@ -219,7 +219,7 @@ export default function Layout() {
   const renderNavGroup = (group: NavGroup, groupIndex: number) => (
     <div key={group.label ?? `group-${groupIndex}`} className="space-y-1">
       {group.label && !sidebarCollapsed && (
-        <p className="px-3 pb-1 pt-2 font-telemetry text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-600">
+        <p className="px-3 pb-1 pt-2 font-telemetry text-3xs font-semibold uppercase tracking-[0.16em] text-zinc-600">
           {group.label}
         </p>
       )}
@@ -231,17 +231,17 @@ export default function Layout() {
   )
 
   return (
-    <div className={clsx('flex h-screen overflow-hidden bg-[#070809] text-zinc-100', dark && 'dark')}>
+    <div className={clsx('flex h-screen overflow-hidden bg-ops-black text-zinc-100', dark && 'dark')}>
       {/* Sidebar */}
       <aside
         className={clsx(
-          'flex flex-col border-r border-white/10 bg-[#050607] text-zinc-100 transition-all duration-200',
+          'flex flex-col border-r border-white/10 bg-ops-black text-zinc-100 transition-all duration-200',
           sidebarCollapsed ? 'w-16' : 'w-56'
         )}
       >
         {/* Logo */}
         <div className="flex items-center gap-3 border-b border-white/10 px-4 py-5">
-          <span className="grid h-8 w-8 shrink-0 place-items-center border border-primary-500/60 bg-primary-500/10 font-telemetry text-[11px] font-black tracking-[-0.02em] text-primary-100">
+          <span className="grid h-8 w-8 shrink-0 place-items-center border border-primary-500/60 bg-primary-500/10 font-telemetry text-2xs font-black tracking-[-0.02em] text-primary-100">
             OC
           </span>
           {!sidebarCollapsed && (
@@ -249,7 +249,7 @@ export default function Layout() {
               <span className="block truncate font-telemetry text-sm font-semibold uppercase tracking-[0.12em]">
                 OpenCLI
               </span>
-              <span className="block font-telemetry text-[10px] uppercase tracking-[0.18em] text-zinc-500">
+              <span className="block font-telemetry text-3xs uppercase tracking-[0.18em] text-zinc-500">
                 {t('brand.subtitle')}
               </span>
             </div>
@@ -279,7 +279,7 @@ export default function Layout() {
                   <SlidersHorizontal size={18} className="shrink-0" />
                   {!sidebarCollapsed && (
                     <span className="flex flex-1 items-center justify-between gap-2">
-                      <span className="truncate font-telemetry text-[11px] font-semibold uppercase tracking-[0.14em]">
+                      <span className="truncate font-telemetry text-2xs font-semibold uppercase tracking-[0.14em]">
                         {t('nav.advanced')}
                       </span>
                       {advancedOpen ? (

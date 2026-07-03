@@ -68,7 +68,7 @@ export function KitNode<C extends ConfigValues = ConfigValues>({
       style={{ width: 248 }}
       title={runState?.state === 'error' ? runState.detail.errorMessage : undefined}
       className={[
-        'relative rounded-lg border bg-[#0a0a0c]/95 px-3 py-3 text-left shadow-xl backdrop-blur-sm transition-colors',
+        'relative rounded-lg border bg-ops-panel/95 px-3 py-3 text-left shadow-xl backdrop-blur-sm transition-colors',
         runBorder ?? (selected ? 'border-sky-500 ring-2 ring-sky-500/30' : 'border-white/12 hover:border-white/30'),
         runBorder && selected ? 'ring-2 ring-sky-500/30' : '',
       ].join(' ')}
@@ -135,7 +135,7 @@ function AutoBody<C extends ConfigValues>({
   const factRows = Object.entries(facts)
 
   if (fields.length === 0 && factRows.length === 0) {
-    return <div className="text-[11px] text-zinc-600">{spec.category}</div>
+    return <div className="text-2xs text-zinc-600">{spec.category}</div>
   }
   return (
     <div className="grid gap-1.5">

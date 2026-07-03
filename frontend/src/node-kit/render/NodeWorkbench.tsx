@@ -110,7 +110,7 @@ function PaletteChip({ spec, color, onClick }: { spec: NodeSpec; color: string; 
       onClick={onClick}
       {...listeners}
       {...attributes}
-      className={`flex w-full cursor-grab items-center gap-2 px-3 py-1.5 text-left text-[12px] text-zinc-300 transition hover:bg-white/5 hover:text-white active:cursor-grabbing ${isDragging ? 'opacity-40' : ''}`}
+      className={`flex w-full cursor-grab items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-300 transition hover:bg-white/5 hover:text-white active:cursor-grabbing ${isDragging ? 'opacity-40' : ''}`}
     >
       <Icon className="h-3.5 w-3.5 shrink-0" style={{ color }} />
       <span className="truncate">{spec.title}</span>
@@ -430,13 +430,13 @@ function WorkbenchInner({ seed }: { seed?: WorkbenchSeed }) {
     <DndContext sensors={sensors} onDragStart={(e: DragStartEvent) => setDragType((e.active.data.current?.type as string) ?? null)} onDragEnd={onDragEnd}>
       <div className="flex h-full overflow-hidden rounded-md border border-white/10 bg-black">
         {/* LEFT palette — ComfyUI-style, dnd-kit draggable */}
-        <div className="thin-scrollbar w-44 shrink-0 overflow-auto border-r border-white/10 bg-[#0b0c0e] py-2">
+        <div className="thin-scrollbar w-44 shrink-0 overflow-auto border-r border-white/10 bg-ops-panel py-2">
           <p className="px-3 pb-1 font-telemetry text-[9px] font-semibold uppercase tracking-[0.14em] text-zinc-600">
             节点 · 拖入或点按
           </p>
           {groups.map(([cat, specs]) => (
             <div key={cat} className="mt-1.5">
-              <p className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wide" style={{ color: CATEGORY_COLOR[cat] }}>
+              <p className="px-3 py-1 text-3xs font-semibold uppercase tracking-wide" style={{ color: CATEGORY_COLOR[cat] }}>
                 {CATEGORY_LABEL[cat]}
               </p>
               {specs.map((s) => (
@@ -481,7 +481,7 @@ function WorkbenchInner({ seed }: { seed?: WorkbenchSeed }) {
             nodesDraggable
             nodesConnectable
             proOptions={{ hideAttribution: true }}
-            className="bg-[#060608]"
+            className="bg-ops-black"
           >
             <Background variant={BackgroundVariant.Dots} color="#2a2a32" gap={22} size={1.6} />
             <Controls position="bottom-left" showInteractive={false} />
@@ -504,7 +504,7 @@ function WorkbenchInner({ seed }: { seed?: WorkbenchSeed }) {
           <div className="absolute right-3 top-3 z-10 flex items-center gap-2">
             <span
               title="运行按钮跑的是浏览器内 fixture 数据预演，从不调用真实采集 API，也不落库 — 与生产采集完全隔离"
-              className="inline-flex items-center gap-1 rounded-md border border-amber-400/40 bg-amber-400/10 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-amber-200"
+              className="inline-flex items-center gap-1 rounded-md border border-amber-400/40 bg-amber-400/10 px-2 py-1 text-2xs font-semibold uppercase tracking-wide text-amber-200"
             >
               <FlaskConical size={12} /> 预演 · fixture 数据，非真实采集
             </span>
@@ -513,7 +513,7 @@ function WorkbenchInner({ seed }: { seed?: WorkbenchSeed }) {
               onClick={groupIntoMacro}
               disabled={selected.length < 2}
               title="把选中的多个节点折叠成一个可复用宏（双击展开）"
-              className="inline-flex items-center gap-1 rounded-md border border-violet-500/40 bg-violet-500/10 px-2.5 py-1 text-[11px] font-semibold text-violet-100 transition hover:bg-violet-500/20 disabled:opacity-40"
+              className="inline-flex items-center gap-1 rounded-md border border-violet-500/40 bg-violet-500/10 px-2.5 py-1 text-2xs font-semibold text-violet-100 transition hover:bg-violet-500/20 disabled:opacity-40"
             >
               <Boxes size={12} /> 组成宏{selected.length >= 2 ? ` (${selected.length})` : ''}
             </button>
@@ -521,7 +521,7 @@ function WorkbenchInner({ seed }: { seed?: WorkbenchSeed }) {
               type="button"
               onClick={importAgentGraph}
               title="粘贴 AI 产出的节点图 JSON，校验后落到画布"
-              className="inline-flex items-center gap-1 rounded-md border border-fuchsia-500/40 bg-fuchsia-500/10 px-2.5 py-1 text-[11px] font-semibold text-fuchsia-100 transition hover:bg-fuchsia-500/20"
+              className="inline-flex items-center gap-1 rounded-md border border-violet-500/40 bg-violet-500/10 px-2.5 py-1 text-2xs font-semibold text-violet-100 transition hover:bg-violet-500/20"
             >
               <Sparkles size={12} /> AI 产图
             </button>
@@ -530,7 +530,7 @@ function WorkbenchInner({ seed }: { seed?: WorkbenchSeed }) {
               onClick={tidy}
               disabled={laying}
               title="按数据流自动排版 (ELK)"
-              className="inline-flex items-center gap-1 rounded-md border border-sky-500/40 bg-sky-500/10 px-2.5 py-1 text-[11px] font-semibold text-sky-100 transition hover:bg-sky-500/20 disabled:opacity-50"
+              className="inline-flex items-center gap-1 rounded-md border border-sky-500/40 bg-sky-500/10 px-2.5 py-1 text-2xs font-semibold text-sky-100 transition hover:bg-sky-500/20 disabled:opacity-50"
             >
               <Network size={12} /> {laying ? '布局中…' : '自动布局'}
             </button>
@@ -539,7 +539,7 @@ function WorkbenchInner({ seed }: { seed?: WorkbenchSeed }) {
               onClick={runNow}
               disabled={running}
               title="预演：仅在浏览器内跑 fixture 数据，不调用采集 API，不写记录"
-              className="inline-flex items-center gap-1 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-100 transition hover:bg-emerald-500/20 disabled:opacity-50"
+              className="inline-flex items-center gap-1 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1 text-2xs font-semibold text-emerald-100 transition hover:bg-emerald-500/20 disabled:opacity-50"
             >
               {running ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />} {running ? '预演中…' : '预演运行'}
             </button>
@@ -548,7 +548,7 @@ function WorkbenchInner({ seed }: { seed?: WorkbenchSeed }) {
                 type="button"
                 onClick={stopRun}
                 title="在当前节点执行完后停止后续节点"
-                className="inline-flex items-center gap-1 rounded-md border border-red-500/40 bg-red-500/10 px-2.5 py-1 text-[11px] font-semibold text-red-100 transition hover:bg-red-500/20"
+                className="inline-flex items-center gap-1 rounded-md border border-red-500/40 bg-red-500/10 px-2.5 py-1 text-2xs font-semibold text-red-100 transition hover:bg-red-500/20"
               >
                 <Square size={12} /> 停止
               </button>
@@ -559,7 +559,7 @@ function WorkbenchInner({ seed }: { seed?: WorkbenchSeed }) {
                 setNodes([])
                 setEdges([])
               }}
-              className="inline-flex items-center gap-1 rounded-md border border-white/12 bg-black/80 px-2 py-1 text-[11px] text-zinc-300 transition hover:border-red-400/40 hover:text-red-200"
+              className="inline-flex items-center gap-1 rounded-md border border-white/12 bg-black/80 px-2 py-1 text-2xs text-zinc-300 transition hover:border-red-400/40 hover:text-red-200"
             >
               <Trash2 size={12} /> 清空
             </button>
@@ -573,7 +573,7 @@ function WorkbenchInner({ seed }: { seed?: WorkbenchSeed }) {
       {/* dnd-kit drag ghost */}
       <DragOverlay dropAnimation={null}>
         {dragSpec ? (
-          <div className="flex items-center gap-2 rounded-md border border-sky-500/50 bg-[#0c0d10] px-3 py-1.5 text-[12px] text-zinc-100 shadow-xl">
+          <div className="flex items-center gap-2 rounded-md border border-sky-500/50 bg-ops-raised px-3 py-1.5 text-xs text-zinc-100 shadow-drag">
             {(() => {
               const Icon = iconByName(dragSpec.icon)
               return <Icon className="h-3.5 w-3.5 text-sky-300" />

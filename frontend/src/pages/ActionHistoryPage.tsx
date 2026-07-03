@@ -255,7 +255,7 @@ function VerdictBadge({ label, tone }: { label: string; tone: 'success' | 'dange
       : tone === 'danger'
         ? 'border-red-400/35 bg-red-400/10 text-red-100'
         : 'border-zinc-500/30 bg-zinc-500/10 text-zinc-300'
-  return <span className={`inline-flex border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${cls}`}>{label}</span>
+  return <span className={`inline-flex border px-1.5 py-0.5 text-3xs font-semibold uppercase tracking-wide ${cls}`}>{label}</span>
 }
 
 interface AdvisoryReportSectionProps {
@@ -308,7 +308,7 @@ function AdvisoryReportSection({ totals, modeBreakdown, buckets, isLoading, erro
 
           {modeBreakdown && Object.keys(modeBreakdown).length > 0 && (
             <div className="flex flex-wrap items-center gap-2">
-              <span className="font-code text-[10px] uppercase tracking-wide text-zinc-500">Mode breakdown:</span>
+              <span className="font-code text-3xs uppercase tracking-wide text-zinc-500">Mode breakdown:</span>
               {Object.entries(modeBreakdown).map(([mode, count]) => (
                 <Badge key={mode} variant={mode === 'automatic' ? 'default' : 'secondary'}>
                   {mode}: {count}
@@ -386,12 +386,12 @@ function KillSwitchPanel({ state, isLoading, error, onRetry, onRequestToggle, pe
                 : 'border border-white/8 bg-black/25 px-3 py-2 text-zinc-300'
             }
           >
-            <p className="font-code text-[10px] uppercase tracking-wide opacity-70">Effective state</p>
+            <p className="font-code text-3xs uppercase tracking-wide opacity-70">Effective state</p>
             <p className="mt-1 font-code text-lg font-semibold">{state.engaged ? 'ENGAGED' : 'DISENGAGED'}</p>
           </div>
 
-          <p className="font-code text-[11px] text-zinc-500">{killSwitchSourceLabel(state)}</p>
-          <p className="font-code text-[11px] text-zinc-500">
+          <p className="font-code text-2xs text-zinc-500">{killSwitchSourceLabel(state)}</p>
+          <p className="font-code text-2xs text-zinc-500">
             config_default: {state.config_default ? 'engaged' : 'disengaged'}
           </p>
 

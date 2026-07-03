@@ -89,12 +89,12 @@ export function PlanCanvasInspector({
   const isKnownChannel = KNOWN_CHANNEL_TYPES.includes(channelType as ChannelType)
 
   return (
-    <Card padding={false} className="flex h-full w-[380px] shrink-0 flex-col overflow-hidden border-0 border-l border-white/10 bg-[#0a0a0a]">
+    <Card padding={false} className="flex h-full w-[380px] shrink-0 flex-col overflow-hidden border-0 border-l border-white/10 bg-ops-panel">
       <div className="flex items-start justify-between gap-2 border-b border-white/8 px-4 py-3">
         <div className="min-w-0">
           <p className="telemetry-label">{t('planCanvas.inspectorTitle')}</p>
           <h2 className="mt-0.5 truncate text-sm font-semibold text-white">{node.label || node.id}</h2>
-          <p className="truncate text-[11px] text-zinc-500">{node.kind} · {node.type}</p>
+          <p className="truncate text-2xs text-zinc-500">{node.kind} · {node.type}</p>
         </div>
         <button
           type="button"
@@ -118,13 +118,13 @@ export function PlanCanvasInspector({
 
       <div className="thin-scrollbar flex-1 space-y-4 overflow-auto px-4 py-4">
         {node.kind !== 'source' ? (
-          <p className="text-[12px] text-zinc-500">{t('planCanvas.inspectorNonSourceHint')}</p>
+          <p className="text-xs text-zinc-500">{t('planCanvas.inspectorNonSourceHint')}</p>
         ) : isDraft ? (
           <>
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-300/80">
+            <p className="text-2xs font-semibold uppercase tracking-wide text-amber-300/80">
               {t('planCanvas.inspectorDraftHeading')}
             </p>
-            <p className="text-[11px] text-zinc-500">{t('planCanvas.inspectorDraftHint')}</p>
+            <p className="text-2xs text-zinc-500">{t('planCanvas.inspectorDraftHint')}</p>
 
             <div>
               <label className="mb-1 block text-xs font-medium text-zinc-300" htmlFor="plan-canvas-source-name">
@@ -178,17 +178,17 @@ export function PlanCanvasInspector({
           </>
         ) : (
           <>
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-300/80">
+            <p className="text-2xs font-semibold uppercase tracking-wide text-emerald-300/80">
               {t('planCanvas.inspectorEditSource')}
             </p>
             {node.source_id && (
-              <p className="text-[10px] text-zinc-600">
+              <p className="text-3xs text-zinc-600">
                 {t('planCanvas.inspectorSourceIdLabel')}: <span className="font-code">{node.source_id}</span>
               </p>
             )}
 
             {sourceQuery.isLoading ? (
-              <p className="text-[11px] text-zinc-600">{t('common.loading')}</p>
+              <p className="text-2xs text-zinc-600">{t('common.loading')}</p>
             ) : isKnownChannel ? (
               <div className="border border-white/10 bg-black/25 p-3">
                 <ChannelConfigForm
@@ -199,7 +199,7 @@ export function PlanCanvasInspector({
                 />
               </div>
             ) : (
-              <p className="text-[11px] text-zinc-600">{t('planCanvas.inspectorNonSourceHint')}</p>
+              <p className="text-2xs text-zinc-600">{t('planCanvas.inspectorNonSourceHint')}</p>
             )}
 
             {isKnownChannel && (
@@ -220,7 +220,7 @@ export function PlanCanvasInspector({
         <button
           type="button"
           onClick={onDetach}
-          className="inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-md border border-white/12 bg-white/2 text-[11px] font-semibold text-zinc-300 hover:border-red-400/40 hover:text-red-200"
+          className="inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-md border border-white/12 bg-white/2 text-2xs font-semibold text-zinc-300 hover:border-red-400/40 hover:text-red-200"
         >
           {t('planCanvas.detachNode')}
         </button>

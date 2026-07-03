@@ -40,8 +40,8 @@ const TRIGGER_LABELS: Record<string, string> = {
 const CHART_GRID = 'rgba(255, 255, 255, 0.1)'
 const CHART_AXIS = '#71717a'
 const CHART_TOTAL = '#fafafa'
-const CHART_SUCCESS = '#34d399'
-const CHART_FAILED = '#ff3b30'
+const CHART_SUCCESS = '#35b779'
+const CHART_FAILED = '#e15b64'
 const CHART_RECORDS = '#d4d4d8'
 
 type ToneKey = 'neutral' | 'accent' | 'success' | 'danger' | 'warning'
@@ -93,7 +93,7 @@ function TimeRangeBar({
             key={k}
             data-active={range === k}
             onClick={() => onChange(k)}
-            className="telemetry-button px-3 py-1.5 font-telemetry text-[11px] font-semibold uppercase tracking-[0.12em]"
+            className="telemetry-button px-3 py-1.5 font-telemetry text-2xs font-semibold uppercase tracking-[0.12em]"
           >
             {translateRangeLabel(RANGE_LABELS[k])}
           </button>
@@ -137,7 +137,7 @@ function TrendBadge({
 
   if (diff > 0) {
     return (
-      <span className="inline-flex items-center gap-1 font-telemetry text-[11px] font-semibold uppercase tracking-widest text-emerald-300">
+      <span className="inline-flex items-center gap-1 font-telemetry text-2xs font-semibold uppercase tracking-widest text-emerald-300">
         <TrendingUp size={12} />
         {pct !== null ? `+${pct}%` : `+${diff}`}
       </span>
@@ -145,14 +145,14 @@ function TrendBadge({
   }
   if (diff < 0) {
     return (
-      <span className="inline-flex items-center gap-1 font-telemetry text-[11px] font-semibold uppercase tracking-widest text-primary-300">
+      <span className="inline-flex items-center gap-1 font-telemetry text-2xs font-semibold uppercase tracking-widest text-primary-300">
         <TrendingDown size={12} />
         {pct !== null ? `${pct}%` : `${diff}`}
       </span>
     )
   }
   return (
-    <span className="inline-flex items-center gap-1 font-telemetry text-[11px] font-semibold uppercase tracking-widest text-zinc-500">
+    <span className="inline-flex items-center gap-1 font-telemetry text-2xs font-semibold uppercase tracking-widest text-zinc-500">
       <Minus size={12} />
       {noTrendLabel}
     </span>
@@ -413,7 +413,7 @@ export default function DashboardPage() {
             <p className="telemetry-label">EVENT LOG</p>
             <h2 className="mt-1 font-semibold text-zinc-100">{t('dashboard.recentRuns')}</h2>
           </div>
-          <span className="border border-white/10 bg-white/3 px-2 py-1 font-telemetry text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+          <span className="border border-white/10 bg-white/3 px-2 py-1 font-telemetry text-3xs font-semibold uppercase tracking-[0.14em] text-zinc-500">
             POLL 15S
           </span>
         </div>
@@ -421,12 +421,12 @@ export default function DashboardPage() {
           <table className="w-full min-w-[820px] text-sm" style={{ tableLayout: 'fixed' }}>
             <thead>
               <tr className="border-b border-white/10 bg-white/2.5">
-                <th className="px-5 py-2.5 text-left font-telemetry text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-500" style={{ width: '100px' }}>{t('common.status')}</th>
-                <th className="px-5 py-2.5 text-left font-telemetry text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-500" style={{ width: '220px' }}>{t('sources.title')}</th>
-                <th className="px-5 py-2.5 text-left font-telemetry text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-500" style={{ width: '90px' }}>{t('tasks.trigger')}</th>
-                <th className="px-5 py-2.5 text-right font-telemetry text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-500" style={{ width: '80px' }}>{t('dashboard.records')}</th>
-                <th className="px-5 py-2.5 text-right font-telemetry text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-500" style={{ width: '70px' }}>{t('dashboard.duration')}</th>
-                <th className="px-5 py-2.5 text-right font-telemetry text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-500" style={{ width: '140px' }}>{t('common.createdAt')}</th>
+                <th className="px-5 py-2.5 text-left font-telemetry text-3xs font-semibold uppercase tracking-[0.16em] text-zinc-500" style={{ width: '100px' }}>{t('common.status')}</th>
+                <th className="px-5 py-2.5 text-left font-telemetry text-3xs font-semibold uppercase tracking-[0.16em] text-zinc-500" style={{ width: '220px' }}>{t('sources.title')}</th>
+                <th className="px-5 py-2.5 text-left font-telemetry text-3xs font-semibold uppercase tracking-[0.16em] text-zinc-500" style={{ width: '90px' }}>{t('tasks.trigger')}</th>
+                <th className="px-5 py-2.5 text-right font-telemetry text-3xs font-semibold uppercase tracking-[0.16em] text-zinc-500" style={{ width: '80px' }}>{t('dashboard.records')}</th>
+                <th className="px-5 py-2.5 text-right font-telemetry text-3xs font-semibold uppercase tracking-[0.16em] text-zinc-500" style={{ width: '70px' }}>{t('dashboard.duration')}</th>
+                <th className="px-5 py-2.5 text-right font-telemetry text-3xs font-semibold uppercase tracking-[0.16em] text-zinc-500" style={{ width: '140px' }}>{t('common.createdAt')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/10">

@@ -63,7 +63,7 @@ function recordTitle(record: CollectedRecord) {
 }
 
 function tableHeaderClass(columnId: string) {
-  const base = 'px-3 py-3 text-left font-telemetry text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500'
+  const base = 'px-3 py-3 text-left font-telemetry text-3xs font-semibold uppercase tracking-[0.14em] text-zinc-500'
   if (columnId === 'expand') return 'w-8 px-2 py-3'
   if (columnId === 'select') return 'w-10 px-3 py-3'
   if (columnId === 'id') return `${base} w-20`
@@ -189,7 +189,7 @@ function RecordFocusPanel({
         )}
       </div>
 
-      <p className="mt-4 border-t border-white/10 pt-3 font-mono text-[11px] text-zinc-500">
+      <p className="mt-4 border-t border-white/10 pt-3 font-mono text-2xs text-zinc-500">
         j/k 或方向键移动焦点，Enter 展开当前记录。
       </p>
     </Card>
@@ -552,7 +552,7 @@ export default function RecordsPage() {
                 type="button"
                 onClick={() => { setStatusFilter(value); setPage(1); setSelected(new Set()) }}
                 data-active={statusFilter === value}
-                className="telemetry-button px-3 py-2 text-[10px] uppercase tracking-[0.12em]"
+                className="telemetry-button px-3 py-2 text-3xs uppercase tracking-[0.12em]"
               >
                 {label}
               </button>
@@ -599,7 +599,7 @@ export default function RecordsPage() {
                     onDoubleClick={() => toggleExpand(r.id)}
                     aria-selected={focusedId === r.id}
                     className={`cursor-pointer transition-colors hover:bg-white/4.5 ${
-                      focusedId === r.id ? 'bg-primary-500/9 shadow-[inset_2px_0_0_rgba(255,59,48,0.88)]' : ''
+                      focusedId === r.id ? 'bg-primary-500/9 shadow-[inset_2px_0_0_var(--oc-line-hot)]' : ''
                     } ${selected.has(r.id) ? 'bg-white/6' : ''}`}
                   >
                     {row.getVisibleCells().map((cell) => (

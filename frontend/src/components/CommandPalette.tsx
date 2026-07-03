@@ -198,7 +198,7 @@ export default function CommandPalette() {
             })}
           </Command.Group>
         </Command.List>
-        <div className="flex items-center justify-between border-t border-white/10 px-4 py-2 font-telemetry text-[11px] uppercase tracking-[0.14em] text-zinc-500">
+        <div className="flex items-center justify-between border-t border-white/10 px-4 py-2 font-telemetry text-2xs uppercase tracking-[0.14em] text-zinc-500">
           <span>{t('command.footer')}</span>
           <span className="font-mono">Esc</span>
         </div>

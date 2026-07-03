@@ -379,7 +379,7 @@ function AgentModal({
                 <div>
                   <label className={labelCls}>
                     {t('agents.model')}
-                    <span className="ml-1 text-zinc-500 font-normal text-[11px]">（留空使用提供商默认）</span>
+                    <span className="ml-1 text-zinc-500 font-normal text-2xs">（留空使用提供商默认）</span>
                   </label>
                   <input
                     className={inputCls}
@@ -422,7 +422,7 @@ function AgentModal({
                       <div>
                         <label className={labelCls}>
                           API Key
-                          <span className="ml-1 text-zinc-500 font-normal text-[11px]">（可选，留空读环境变量）</span>
+                          <span className="ml-1 text-zinc-500 font-normal text-2xs">（可选，留空读环境变量）</span>
                         </label>
                         <input
                           className={inputCls}
@@ -548,7 +548,7 @@ function AgentModal({
                         }`}
                       >
                         <span className={`block font-mono leading-tight ${!available ? 'line-through' : ''}`}>{`{{${f}}}`}</span>
-                        <span className="block text-[10px] leading-tight mt-0.5 font-sans opacity-70">{FIELD_LABELS[f] ?? ''}</span>
+                        <span className="block text-3xs leading-tight mt-0.5 font-sans opacity-70">{FIELD_LABELS[f] ?? ''}</span>
                       </button>
                     )
                   })}
@@ -569,7 +569,7 @@ function AgentModal({
                           className="px-2 py-1 text-xs rounded-sm bg-black/20 border border-amber-500/40 text-amber-300 hover:border-amber-400 hover:text-amber-200 transition-colors text-left"
                         >
                           <span className="block font-mono leading-tight">{`{{extra_${f}}}`}</span>
-                          <span className="block text-[10px] leading-tight mt-0.5 font-sans opacity-70">{FIELD_LABELS[f] ?? ''}</span>
+                          <span className="block text-3xs leading-tight mt-0.5 font-sans opacity-70">{FIELD_LABELS[f] ?? ''}</span>
                         </button>
                       ))}
                     </div>

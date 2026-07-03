@@ -38,8 +38,10 @@ const DENSITY_OPTIONS = [
   { value: 'spacious' as const, token: 'settings.density.spacious' },
 ] as const
 
+// Skin preview swatch hex literals (decided exception, DESIGN_SYSTEM.md T1) —
+// these are literal per-skin preview colors shown in the picker UI, not app chrome tokens.
 const SKIN_OPTIONS: Array<{ value: SkinId; label: string; desc: string; accent: string; bg: string }> = [
-  { value: 'default', label: 'OpenCLI', desc: '默认蓝 · 工程暗色', accent: '#2f7df6', bg: '#050708' },
+  { value: 'default', label: 'OpenCLI', desc: '默认蓝 · 工程暗色', accent: '#2f7df6', bg: '#050708' }, // tokens-allow: skin preview swatch
   { value: 'spacex', label: 'SpaceX', desc: '纯黑极简 · 银白直角', accent: '#e4e4e7', bg: '#000000' },
   { value: 'nvidia', label: 'NVIDIA', desc: '黑绿科技 · 信号绿', accent: '#76b900', bg: '#080b06' },
   { value: 'binance', label: 'Binance', desc: '黑金交易 · 币安金', accent: '#f0b90b', bg: '#0b0e11' },
@@ -265,7 +267,7 @@ export default function SettingsPage() {
             {isTopologyLabEnabled && (
               <Link
                 to="/plans"
-                className="inline-flex items-center gap-2 rounded-sm border border-cyan-300/40 bg-cyan-300/10 px-3 py-2 text-sm font-medium text-cyan-200 hover:bg-cyan-300/20"
+                className="inline-flex items-center gap-2 rounded-sm border border-sky-300/40 bg-sky-300/10 px-3 py-2 text-sm font-medium text-sky-200 hover:bg-sky-300/20"
               >
                 <RefreshCw size={16} />
                 {t('settings.experimental.openTopology')}
@@ -293,9 +295,9 @@ export default function SettingsPage() {
           </button>
         </Card>
 
-        <Card className="space-y-4 border border-blue-300/25 bg-blue-500/8">
-          <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-blue-200">{t('settings.conversation.title')}</h2>
-          <p className="text-sm text-blue-200/85">{t('settings.conversation.description')}</p>
+        <Card className="space-y-4 border border-primary-300/25 bg-primary-500/8">
+          <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-primary-200">{t('settings.conversation.title')}</h2>
+          <p className="text-sm text-primary-200/85">{t('settings.conversation.description')}</p>
           <textarea
             value={conversationInput}
             onChange={(event) => setConversationInput(event.target.value)}
@@ -309,13 +311,13 @@ export default function SettingsPage() {
               type="button"
               onClick={() => conversationMutation.mutate(conversationInput.trim())}
               disabled={conversationStatus === 'loading' || !conversationInput.trim()}
-              className="inline-flex items-center gap-2 rounded-sm border border-blue-300/40 bg-blue-300/15 px-3 py-2 text-sm font-medium text-blue-100 hover:bg-blue-300/20 disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex items-center gap-2 rounded-sm border border-primary-300/40 bg-primary-300/15 px-3 py-2 text-sm font-medium text-primary-100 hover:bg-primary-300/20 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {conversationStatus === 'loading' ? t('settings.conversation.running') : t('settings.conversation.run')}
             </button>
           </div>
           {conversationFeedback && (
-            <p className={`text-xs ${conversationStatus === 'err' ? 'text-rose-300' : 'text-zinc-300'}`}>
+            <p className={`text-xs ${conversationStatus === 'err' ? 'text-red-300' : 'text-zinc-300'}`}>
               {conversationFeedback}
             </p>
           )}
