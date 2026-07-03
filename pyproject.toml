@@ -130,3 +130,6 @@ select = ["E", "F", "I", "N", "W", "UP"]
 python_version = "3.11"
 strict = false
 ignore_missing_imports = true
+
+[tool.vercel]
+entrypoint = "backend.main:app"
