@@ -309,6 +309,111 @@ export function extractPlanValidationErrors(err: unknown): PlanValidationErrorIt
   )
 }
 
+// ── Function groups (Houdini-style subnets, 三层节点: 项目→功能→实现) ────────
+// A node may belong to one "function group" (功能组). Membership is stored in
+// `params.__canvas_group` exactly like `__canvas_position` — free-form params
+// ride through the backend contract untouched, so grouping is a pure canvas
+// concern. The top-level (功能层) view collapses each group into one subnet
+// node; diving in (实现层) shows only that group's atomic nodes.
+
+export interface CanvasGroup {
+  id: string
+  label: string
+}
+
+export function readCanvasGroup(node: PlanNode): CanvasGroup | null {
+  const raw = node.params.__canvas_group
+  if (
+    raw &&
+    typeof raw === 'object' &&
+    typeof (raw as CanvasGroup).id === 'string' &&
+    typeof (raw as CanvasGroup).label === 'string'
+  ) {
+    return { id: (raw as CanvasGroup).id, label: (raw as CanvasGroup).label }
+  }
+  return null
+}
+
+/** Assign (or clear, with null) a node's function group. */
+export function withCanvasGroup(node: PlanNode, group: CanvasGroup | null): PlanNode {
+  if (group === null) {
+    const { __canvas_group: _dropped, ...rest } = node.params
+    return { ...node, params: rest }
+  }
+  return { ...node, params: { ...node.params, __canvas_group: { id: group.id, label: group.label } } }
+}
+
+/** Distinct groups present in a node list, in first-appearance order. */
+export function listCanvasGroups(nodes: PlanNode[]): CanvasGroup[] {
+  const seen = new Map<string, CanvasGroup>()
+  for (const n of nodes) {
+    const g = readCanvasGroup(n)
+    if (g && !seen.has(g.id)) seen.set(g.id, g)
+  }
+  return [...seen.values()]
+}
+
+export interface SubnetView {
+  /** Atomic canvas nodes visible at this level. */
+  nodes: CanvasNode[]
+  /** Edges whose two visible endpoints both render at this level. Boundary-
+   * crossing edges are re-anchored onto the subnet node (top level) or
+   * dropped (dive level renders only intra-group wiring). */
+  edges: CanvasEdge[]
+  /** Collapsed subnet placeholders (top level only; empty when diving). */
+  subnets: Array<{ group: CanvasGroup; memberCount: number; position: CanvasPosition }>
+}
+
+/** Project the flat graph into what one hierarchy level actually shows —
+ * pure, so it's testable without xyflow. `activeGroup=null` is the 功能层
+ * (groups collapsed to subnets); a group id is the 实现层 dive. */
+export function buildSubnetView(canvas: CanvasGraph, activeGroup: string | null): SubnetView {
+  const groupOf = (nodeId: string): CanvasGroup | null => {
+    const node = canvas.nodes.find((n) => n.id === nodeId)
+    return node ? readCanvasGroup(node.planNode) : null
+  }
+
+  if (activeGroup !== null) {
+    const nodes = canvas.nodes.filter((n) => readCanvasGroup(n.planNode)?.id === activeGroup)
+    const visible = new Set(nodes.map((n) => n.id))
+    const edges = canvas.edges.filter((e) => visible.has(e.source) && visible.has(e.target))
+    return { nodes, edges, subnets: [] }
+  }
+
+  const nodes = canvas.nodes.filter((n) => readCanvasGroup(n.planNode) === null)
+  const groups = listCanvasGroups(canvas.nodes.map((n) => n.planNode))
+  const subnets = groups.map((group) => {
+    const members = canvas.nodes.filter((n) => readCanvasGroup(n.planNode)?.id === group.id)
+    const cx = members.reduce((s, m) => s + m.position.x, 0) / Math.max(members.length, 1)
+    const cy = members.reduce((s, m) => s + m.position.y, 0) / Math.max(members.length, 1)
+    return { group, memberCount: members.length, position: { x: cx, y: cy } }
+  })
+
+  // Re-anchor boundary-crossing edges onto subnet ids; dedupe collapsed pairs.
+  const subnetId = (gid: string) => `__subnet-${gid}`
+  const seen = new Set<string>()
+  const edges: CanvasEdge[] = []
+  for (const e of canvas.edges) {
+    const gs = groupOf(e.source)
+    const gt = groupOf(e.target)
+    if (gs === null && gt === null) {
+      edges.push(e)
+      continue
+    }
+    if (gs?.id === gt?.id) continue // fully inside one subnet — invisible here
+    const source = gs ? subnetId(gs.id) : e.source
+    const target = gt ? subnetId(gt.id) : e.target
+    const sourceHandle = gs ? 'out' : e.sourceHandle
+    const targetHandle = gt ? 'in' : e.targetHandle
+    const key = `${source}→${target}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    edges.push({ id: `agg-${key}`, source, target, sourceHandle, targetHandle, planEdge: e.planEdge })
+  }
+
+  return { nodes, edges, subnets }
+}
+
 // ── Detach (never delete) ────────────────────────────────────────────────────
 
 /** Remove a node (and every edge touching it) from the graph WITHOUT ever
