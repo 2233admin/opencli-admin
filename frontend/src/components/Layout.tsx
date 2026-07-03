@@ -16,10 +16,8 @@ import {
   KeyRound,
   ChevronLeft,
   ChevronRight,
-  ChevronDown,
   Home,
   Settings,
-  SlidersHorizontal,
   Workflow,
   Sparkles,
   History,
@@ -32,7 +30,6 @@ import {
   applyThemePreference,
   getThemePreference,
 } from '../lib/preferences'
-import { isTopologyLabEnabled } from '../labs/topology/flags'
 
 const ROUTE_LABEL_KEYS: Record<string, string> = {
   '/dashboard': 'nav.dashboard',
@@ -80,7 +77,6 @@ export default function Layout() {
   const location = useLocation()
   const navigate = useNavigate()
   const [collapsed, setCollapsed] = useState(false)
-  const [advancedOpen, setAdvancedOpen] = useState(false)
   const [dark, setDark] = useState(() => getThemePreference() === 'dark')
   const [isNarrow, setIsNarrow] = useState(() =>
     typeof window !== 'undefined' ? window.matchMedia('(max-width: 767px)').matches : false
@@ -159,16 +155,7 @@ export default function Layout() {
   // topology overview (formerly its own /labs/topology nav entry) and the
   // per-plan editor as two views/lenses of the same surface, switched inside
   // the page (see pages/PlanCanvasPage.tsx ViewSwitch), not two nav rows.
-  // The retired node-kit workbench (/labs/node-kit) is intentionally absent
-  // here — component-library demo only, reachable by URL, not product nav
-  // (Plan IR issue 09).
-  const PRIMARY_ITEMS: NavItem[] = [
-    { to: '/plans',     label: t('nav.planCanvas'), icon: Workflow },
-    { to: '/dashboard', label: t('nav.dashboard'), icon: LayoutDashboard },
-  ]
-  const ADVANCED_GROUPS: NavGroup[] = [PIPELINE_GROUP, INFRA_GROUP]
-
-  // Legacy IA (topology lab off): original flat 3-group nav, unchanged.
+  // Flat 3-group nav: dashboard + plan canvas, then the pipeline and infra groups.
   const NAV_GROUPS: NavGroup[] = [
     {
       label: null,
@@ -189,10 +176,10 @@ export default function Layout() {
         to={to}
         className={({ isActive }) =>
           clsx(
-            'group flex items-center gap-3 border border-transparent px-3 py-2 text-sm transition-colors',
+            'group relative flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors',
             isActive
-              ? 'border-primary-500/45 bg-primary-500/10 text-white'
-              : 'text-zinc-500 hover:border-white/10 hover:bg-white/4 hover:text-zinc-100'
+              ? 'bg-white/[0.06] text-white before:absolute before:inset-y-1.5 before:left-0 before:w-0.5 before:rounded-full before:bg-primary-500'
+              : 'text-zinc-500 hover:bg-white/[0.04] hover:text-zinc-200'
           )
         }
         title={sidebarCollapsed ? label : undefined}
@@ -241,7 +228,7 @@ export default function Layout() {
       >
         {/* Logo */}
         <div className="flex items-center gap-3 border-b border-white/10 px-4 py-5">
-          <span className="grid h-8 w-8 shrink-0 place-items-center border border-primary-500/60 bg-primary-500/10 font-telemetry text-2xs font-black tracking-[-0.02em] text-primary-100">
+          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-primary-500/50 bg-primary-500/15 font-telemetry text-2xs font-black tracking-[-0.02em] text-primary-100">
             OC
           </span>
           {!sidebarCollapsed && (
@@ -258,51 +245,14 @@ export default function Layout() {
 
         {/* Nav */}
         <nav className="flex-1 space-y-3 overflow-y-auto px-2 py-4">
-          {isTopologyLabEnabled ? (
-            <>
-              {/* Primary: canvas + dock are home */}
-              <div className="space-y-1">{PRIMARY_ITEMS.map(renderNavItem)}</div>
-
-              {/* Advanced drawer: the 11 CRUD admin pages, collapsed by default */}
-              <div className="space-y-1">
-                {!sidebarCollapsed && <div className="mx-3 my-2 border-t border-white/6" />}
-                <button
-                  onClick={() => setAdvancedOpen((o) => !o)}
-                  className={clsx(
-                    'group flex w-full items-center gap-3 border border-transparent px-3 py-2 text-sm transition-colors',
-                    advancedOpen
-                      ? 'text-zinc-300'
-                      : 'text-zinc-500 hover:border-white/10 hover:bg-white/4 hover:text-zinc-100'
-                  )}
-                  title={sidebarCollapsed ? t('nav.advanced') : undefined}
-                >
-                  <SlidersHorizontal size={18} className="shrink-0" />
-                  {!sidebarCollapsed && (
-                    <span className="flex flex-1 items-center justify-between gap-2">
-                      <span className="truncate font-telemetry text-2xs font-semibold uppercase tracking-[0.14em]">
-                        {t('nav.advanced')}
-                      </span>
-                      {advancedOpen ? (
-                        <ChevronDown size={14} className="shrink-0" />
-                      ) : (
-                        <ChevronRight size={14} className="shrink-0" />
-                      )}
-                    </span>
-                  )}
-                </button>
-                {advancedOpen && ADVANCED_GROUPS.map(renderNavGroup)}
-              </div>
-            </>
-          ) : (
-            NAV_GROUPS.map(renderNavGroup)
-          )}
+          {NAV_GROUPS.map(renderNavGroup)}
         </nav>
 
         {/* Bottom controls */}
         <div className="flex flex-col gap-2 border-t border-white/10 px-2 py-3">
           <button
             onClick={() => navigate('/settings')}
-            className="flex items-center gap-3 border border-transparent px-3 py-2 text-sm text-zinc-500 transition-colors hover:border-white/10 hover:bg-white/4 hover:text-zinc-100"
+            className="flex items-center gap-3 rounded-md px-3 py-2 text-sm text-zinc-500 transition-colors hover:bg-white/[0.04] hover:text-zinc-200"
           >
             <Settings size={18} />
             {!sidebarCollapsed && <span className="font-medium uppercase tracking-[0.08em]">{t('nav.settings')}</span>}
@@ -311,7 +261,7 @@ export default function Layout() {
           {/* Collapse toggle */}
           <button
             onClick={() => setCollapsed((c) => !c)}
-            className="flex items-center gap-3 border border-transparent px-3 py-2 text-sm text-zinc-500 transition-colors hover:border-white/10 hover:bg-white/4 hover:text-zinc-100"
+            className="flex items-center gap-3 rounded-md px-3 py-2 text-sm text-zinc-500 transition-colors hover:bg-white/[0.04] hover:text-zinc-200"
           >
             {sidebarCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
             {!sidebarCollapsed && <span>{t('nav.collapse')}</span>}

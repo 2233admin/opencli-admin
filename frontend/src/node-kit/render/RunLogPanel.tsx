@@ -27,7 +27,11 @@ const STATE_COLOR: Record<RunNodeState, string> = {
 function RunLogRow({ row }: { row: RunLogRowView }) {
   const Icon = STATE_ICON[row.state]
   return (
-    <div className="flex items-center gap-2 border-b border-white/5 px-3 py-1 last:border-b-0">
+    <div
+      className={`flex items-center gap-2 border-b border-white/5 px-3 py-1 last:border-b-0 ${
+        row.state === 'running' ? 'bg-amber-400/5' : ''
+      }`}
+    >
       <Icon size={11} className={`shrink-0 ${STATE_COLOR[row.state]} ${row.state === 'running' ? 'animate-spin' : ''}`} />
       <span className="w-24 shrink-0 truncate text-zinc-300" title={row.title}>
         {row.title}
@@ -57,6 +61,9 @@ export function RunLogPanel({
   const rows = toRunLogRows(runState, titleFor)
   if (rows.length === 0) return null
   const summary = summarizeRun(runState)
+  const runningCount = rows.filter((r) => r.state === 'running').length
+  const done = summary.successCount + summary.errorCount
+  const progress = summary.totalCount === 0 ? 0 : Math.round((done / summary.totalCount) * 100)
 
   return (
     <div className="absolute inset-x-3 bottom-3 z-10 max-h-40 overflow-hidden rounded-md border border-amber-400/25 bg-black/20 backdrop-blur-sm">
@@ -64,7 +71,19 @@ export function RunLogPanel({
         <span className="inline-flex items-center gap-1 font-telemetry text-[9px] font-semibold uppercase tracking-[0.14em] text-amber-300">
           <FlaskConical size={11} /> 预演日志 · fixture 数据，非真实采集
         </span>
-        <span className="font-code text-2xs text-zinc-400">{summary.label}</span>
+        <div className="flex items-center gap-1.5 font-code text-2xs">
+          {runningCount > 0 && <CountChip icon={Loader2} count={runningCount} className="text-amber-300" spin />}
+          <CountChip icon={CheckCircle2} count={summary.successCount} className="text-emerald-300" />
+          <CountChip icon={AlertCircle} count={summary.errorCount} className="text-red-300" />
+          <span className="ml-0.5 text-zinc-500">{summary.totalMs}ms</span>
+        </div>
+      </div>
+      {/* thin run-progress bar: green for a clean run, red once any node errors */}
+      <div className="h-0.5 w-full bg-white/5">
+        <div
+          className={`h-full transition-all duration-300 ${summary.errorCount > 0 ? 'bg-red-400/70' : 'bg-emerald-400/70'}`}
+          style={{ width: `${progress}%` }}
+        />
       </div>
       <div className="thin-scrollbar max-h-32 overflow-auto font-code text-2xs">
         {rows.map((row) => (
@@ -72,5 +91,24 @@ export function RunLogPanel({
         ))}
       </div>
     </div>
+  )
+}
+
+function CountChip({
+  icon: Icon,
+  count,
+  className,
+  spin,
+}: {
+  icon: typeof CheckCircle2
+  count: number
+  className: string
+  spin?: boolean
+}) {
+  return (
+    <span className={`inline-flex items-center gap-0.5 ${count === 0 ? 'text-zinc-600' : className}`}>
+      <Icon size={11} className={spin ? 'animate-spin' : ''} />
+      {count}
+    </span>
   )
 }

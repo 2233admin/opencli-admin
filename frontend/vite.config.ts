@@ -43,7 +43,10 @@ export default defineConfig({
     },
   },
   server: {
-    port: 8030,
+    host: true,
+    // Prefer the platform-provided DEV_PORT (e.g. v0 preview expects it) and
+    // fall back to the project's conventional 8030 for local development.
+    port: Number(process.env.DEV_PORT) || 8030,
     // Allow requests from Docker containers (host.docker.internal) and any LAN IP
     // Dev-only: production uses nginx which doesn't have this restriction
     allowedHosts: true,

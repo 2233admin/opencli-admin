@@ -29,11 +29,16 @@ import { toast } from 'sonner'
 import {
   Background,
   BackgroundVariant,
+  ConnectionLineType,
   Controls,
+  Handle,
+  MarkerType,
   MiniMap,
   Panel,
+  Position,
   ReactFlow,
   ReactFlowProvider,
+  SelectionMode,
   addEdge,
   useEdgesState,
   useNodesState,
@@ -43,7 +48,7 @@ import {
   type Node,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { Eye, LayoutGrid, Network, Pencil, Play, Save, Workflow } from 'lucide-react'
+import { Boxes, ChevronLeft, Eye, Group, LayoutGrid, Network, Pencil, Play, Save, Ungroup, Workflow } from 'lucide-react'
 
 import { getPlanHealth, createPlan, getPlan, runPlan, updatePlan } from '../api/endpoints'
 import type { PlanEdge, PlanNode } from '../api/types'
@@ -59,6 +64,7 @@ import { elkLayout } from '../node-kit/render/elkLayout'
 import type { RunStateMap } from '../node-kit/runtime/runLog'
 import {
   anchorValidationErrors,
+  buildSubnetView,
   canvasToPlanGraph,
   createDraftNodeFromPreset,
   createDraftSourceNode,
@@ -66,8 +72,11 @@ import {
   detachNode,
   extractPlanValidationErrors,
   fallbackPosition,
+  listCanvasGroups,
   materializeDraftNode,
   planGraphToCanvas,
+  readCanvasGroup,
+  withCanvasGroup,
   type CanvasEdge,
   type CanvasGraph,
   type CanvasNode,
@@ -123,6 +132,13 @@ function toFlowNode(
   }
 }
 
+const EDGE_STROKE = '#38bdf8'
+const EDGE_STYLE = {
+  type: 'smoothstep' as const,
+  markerEnd: { type: MarkerType.ArrowClosed, color: EDGE_STROKE, width: 18, height: 18 },
+  style: { stroke: EDGE_STROKE, strokeWidth: 1.75 },
+}
+
 function toFlowEdge(e: CanvasEdge): FlowEdge {
   return {
     id: e.id,
@@ -130,8 +146,46 @@ function toFlowEdge(e: CanvasEdge): FlowEdge {
     target: e.target,
     sourceHandle: e.sourceHandle,
     targetHandle: e.targetHandle,
-    type: 'default',
+    ...EDGE_STYLE,
   }
+}
+
+// ── Subnet node (Houdini-style 功能层 placeholder) ───────────────────────────
+// Collapsed representation of a function group at the top hierarchy level.
+// Double-click dives into the group (handled by the page's onNodeDoubleClick);
+// its handles are display-only anchors for aggregated boundary edges — real
+// wiring always happens between atomic nodes inside the dive view.
+
+const SUBNET_ID_PREFIX = '__subnet-'
+const subnetFlowId = (groupId: string) => `${SUBNET_ID_PREFIX}${groupId}`
+const groupIdFromSubnet = (flowId: string) =>
+  flowId.startsWith(SUBNET_ID_PREFIX) ? flowId.slice(SUBNET_ID_PREFIX.length) : null
+
+function SubnetFlowNode({ data, selected }: { data: FlowNode['data']; selected?: boolean }) {
+  const label = typeof data.config.label === 'string' ? data.config.label : '功能组'
+  const count = typeof data.config.count === 'number' ? data.config.count : 0
+  return (
+    <div
+      className={`min-w-44 rounded-lg border-2 bg-ops-raised px-4 py-3 shadow-lg transition-colors ${
+        selected ? 'border-primary-500' : 'border-dashed border-white/25 hover:border-white/45'
+      }`}
+    >
+      <Handle type="target" id="in" position={Position.Left} isConnectable={false} className="!bg-zinc-500" />
+      <div className="flex items-center gap-2.5">
+        <span className="flex h-8 w-8 items-center justify-center rounded-md bg-white/8 text-zinc-300">
+          <Boxes size={17} />
+        </span>
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold text-zinc-100">{label}</p>
+          <p className="font-telemetry text-3xs uppercase tracking-[0.14em] text-zinc-500">
+            功能组 · {count} 个节点
+          </p>
+        </div>
+      </div>
+      <p className="mt-1.5 text-3xs text-zinc-600">双击进入</p>
+      <Handle type="source" id="out" position={Position.Right} isConnectable={false} className="!bg-zinc-500" />
+    </div>
+  )
 }
 
 function PlanCanvasInner() {
@@ -214,7 +268,20 @@ function PlanCanvasInner() {
     },
   })
 
-  const nodeTypes = useMemo(() => nodeTypesForXyflow(), [])
+  const nodeTypes = useMemo(() => ({ ...nodeTypesForXyflow(), __subnet: SubnetFlowNode }), [])
+
+  // ── 三层节点层级 (项目→功能→实现, Houdini-style dive) ─────────────────────
+  // null = 功能层 (groups collapsed to subnet nodes); a group id = 实现层 dive.
+  const [activeGroup, setActiveGroup] = useState<string | null>(null)
+  const planGroups = useMemo(() => listCanvasGroups(planNodes), [planNodes])
+  const activeGroupInfo = activeGroup ? planGroups.find((g) => g.id === activeGroup) ?? null : null
+
+  // Diving into a group refits the viewport onto its members.
+  useEffect(() => {
+    const handle = setTimeout(() => fitView({ padding: 0.25, duration: 300 }), 60)
+    return () => clearTimeout(handle)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeGroup])
 
   // Load an existing Plan's graph onto the canvas (round-trip fidelity: the
   // same PlanGraph this page later saves is what a re-fetch reprojects).
@@ -236,26 +303,36 @@ function PlanCanvasInner() {
     [planNodes, planEdges],
   )
 
-  // Sync the pure-model graph -> xyflow controlled state. Positions come from
-  // whatever the operator last dragged to (preserved via rfNodes lookup),
-  // falling back to the model's projected position for a brand-new node.
+  // Sync the pure-model graph -> xyflow controlled state, filtered through the
+  // active hierarchy level (buildSubnetView). Positions come from whatever the
+  // operator last dragged to (preserved via rfNodes lookup), falling back to
+  // the model's projected position for a brand-new node.
+  const subnetView = useMemo(() => buildSubnetView(currentGraph, activeGroup), [currentGraph, activeGroup])
+
   useEffect(() => {
     setRfNodes((prev) => {
       const posById = new Map(prev.map((n) => [n.id, n.position]))
-      return currentGraph.nodes.map((n, index) => {
+      const atomic = subnetView.nodes.map((n, index) => {
         const draft = n.planNode.kind === 'source' && n.planNode.draft === true && !n.planNode.source_id
         const errors = errorsByNode.get(n.id) ?? []
         const flow = toFlowNode(n, draft, errors, { observe: isObserve, runState: runState[n.id] })
         return { ...flow, position: posById.get(n.id) ?? n.position ?? fallbackPosition(index) }
       })
+      const subnets: FlowNode[] = subnetView.subnets.map((s) => ({
+        id: subnetFlowId(s.group.id),
+        type: '__subnet',
+        position: posById.get(subnetFlowId(s.group.id)) ?? s.position,
+        data: { config: { label: s.group.label, count: s.memberCount }, facts: {} },
+      }))
+      return [...atomic, ...subnets]
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentGraph, errorsByNode, isObserve, runState])
+  }, [subnetView, errorsByNode, isObserve, runState])
 
   useEffect(() => {
-    setRfEdges(currentGraph.edges.map(toFlowEdge))
+    setRfEdges(subnetView.edges.map(toFlowEdge))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentGraph])
+  }, [subnetView])
 
   const selectedPlanNode = selectedId ? planNodes.find((n) => n.id === selectedId) ?? null : null
 
@@ -264,15 +341,18 @@ function PlanCanvasInner() {
   }, [])
 
   const dropAt = useCallback(
-    (payload: PaletteDropPayload, position: { x: number; y: number }) => {
+    (payload: PaletteDropPayload, position: { x: number; y: number }): string => {
       const id = `n-${Date.now()}-${seq.current++}`
+      // While dived into a function group, everything dropped belongs to it —
+      // the same rule Houdini applies to nodes created inside a subnet.
+      const stamp = (n: PlanNode): PlanNode => (activeGroupInfo ? withCanvasGroup(n, activeGroupInfo) : n)
       if (payload.kind === 'preset') {
-        addNode(createDraftNodeFromPreset(payload.preset, position, id), position)
+        addNode(stamp(createDraftNodeFromPreset(payload.preset, position, id)), position)
       } else if (payload.kind === 'draft-channel') {
-        addNode(createDraftSourceNode(payload.channelType, position, id), position)
+        addNode(stamp(createDraftSourceNode(payload.channelType, position, id)), position)
       } else {
         addNode(
-          {
+          stamp({
             id,
             kind: payload.nodeKind,
             type: payload.nodeKind,
@@ -283,12 +363,46 @@ function PlanCanvasInner() {
             outputs: payload.nodeKind === 'sink' ? [] : [{ name: 'out', type: 'any' }],
             source_id: undefined,
             draft: false,
-          },
+          }),
           position,
         )
       }
+      return id
     },
-    [addNode],
+    [addNode, activeGroupInfo],
+  )
+
+  // ── 功能组操作: 组合 / 解散 / 重命名 / 钻入 ────────────────────────────────
+  const selectedAtomicIds = useMemo(
+    () => rfNodes.filter((n) => n.selected && !n.id.startsWith(SUBNET_ID_PREFIX)).map((n) => n.id),
+    [rfNodes],
+  )
+
+  const groupSelection = useCallback(() => {
+    if (selectedAtomicIds.length < 2) return
+    const ids = new Set(selectedAtomicIds)
+    const gid = `g-${Date.now()}`
+    const label = `功能组 ${planGroups.length + 1}`
+    setPlanNodes((prev) => prev.map((n) => (ids.has(n.id) ? withCanvasGroup(n, { id: gid, label }) : n)))
+    toast.success(`已组合 ${ids.size} 个节点为「${label}」，双击子网节点进入`)
+  }, [selectedAtomicIds, planGroups.length])
+
+  const dissolveActiveGroup = useCallback(() => {
+    if (!activeGroup) return
+    setPlanNodes((prev) => prev.map((n) => (readCanvasGroup(n)?.id === activeGroup ? withCanvasGroup(n, null) : n)))
+    setActiveGroup(null)
+  }, [activeGroup])
+
+  const renameActiveGroup = useCallback(
+    (label: string) => {
+      if (!activeGroup || !label.trim()) return
+      setPlanNodes((prev) =>
+        prev.map((n) =>
+          readCanvasGroup(n)?.id === activeGroup ? withCanvasGroup(n, { id: activeGroup, label: label.trim() }) : n,
+        ),
+      )
+    },
+    [activeGroup],
   )
 
   const onPaletteClickPick = useCallback(
@@ -297,6 +411,24 @@ function PlanCanvasInner() {
       dropAt(payload, position)
     },
     [dropAt],
+  )
+
+  // Reject connections that can't make sense before they're ever created: no
+  // self-loops, and no duplicate wire between the exact same port pair (xyflow
+  // already prevents output→output / input→input via handle types).
+  const isValidConnection = useCallback(
+    (conn: Connection | Edge) => {
+      if (!conn.source || !conn.target) return false
+      if (conn.source === conn.target) return false
+      return !planEdges.some(
+        (e) =>
+          e.source_node === conn.source &&
+          e.target_node === conn.target &&
+          (e.source_port ?? 'out') === (conn.sourceHandle ?? 'out') &&
+          (e.target_port ?? 'in') === (conn.targetHandle ?? 'in'),
+      )
+    },
+    [planEdges],
   )
 
   const onConnect = useCallback(
@@ -312,10 +444,76 @@ function PlanCanvasInner() {
           target_port: params.targetHandle ?? 'in',
         },
       ])
-      setRfEdges((eds) => addEdge({ ...params, type: 'default' }, eds))
+      // Keep the rf edge id aligned with the plan edge id (and styled like the
+      // rest) so the two stay in sync for later selection / deletion.
+      setRfEdges((eds) => addEdge({ ...params, id, ...EDGE_STYLE }, eds))
     },
     [setRfEdges],
   )
+
+  // "Add node on edge drop" (ReactFlow official pattern): dropping a
+  // connection line on empty canvas opens an in-place picker; choosing a kind
+  // creates the node at the drop point and wires it to the dragged-from port.
+  const [edgeDropMenu, setEdgeDropMenu] = useState<{
+    client: { x: number; y: number }
+    flow: { x: number; y: number }
+    fromNodeId: string
+    fromHandle: string
+  } | null>(null)
+
+  const onConnectEnd = useCallback(
+    (event: MouseEvent | TouchEvent, connectionState: { isValid: boolean | null; fromNode: { id: string } | null; fromHandle: { id?: string | null } | null }) => {
+      if (connectionState.isValid || !connectionState.fromNode) return
+      const { clientX, clientY } = 'changedTouches' in event ? event.changedTouches[0] : event
+      setEdgeDropMenu({
+        client: { x: clientX, y: clientY },
+        flow: screenToFlowPosition({ x: clientX, y: clientY }),
+        fromNodeId: connectionState.fromNode.id,
+        fromHandle: connectionState.fromHandle?.id ?? 'out',
+      })
+    },
+    [screenToFlowPosition],
+  )
+
+  const insertNodeFromEdgeDrop = useCallback(
+    (nodeKind: 'transform' | 'merge' | 'sink') => {
+      if (!edgeDropMenu) return
+      const newId = dropAt({ kind: 'graph-node', nodeKind }, edgeDropMenu.flow)
+      const targetPort = nodeKind === 'merge' ? 'a' : 'in'
+      const edgeId = `e-${edgeDropMenu.fromNodeId}-${edgeDropMenu.fromHandle}-${newId}-${targetPort}`
+      setPlanEdges((prev) => [
+        ...prev,
+        {
+          id: edgeId,
+          source_node: edgeDropMenu.fromNodeId,
+          source_port: edgeDropMenu.fromHandle,
+          target_node: newId,
+          target_port: targetPort,
+        },
+      ])
+      setEdgeDropMenu(null)
+    },
+    [edgeDropMenu, dropAt],
+  )
+
+  // Deleting a wire on the canvas must also drop it from planEdges (the source
+  // of truth the graph re-projects from) — otherwise a deleted edge silently
+  // reappears on the next re-render and gets saved back. Match by endpoints so
+  // it works regardless of how the edge id was generated.
+  const onEdgesDelete = useCallback((deleted: Edge[]) => {
+    setPlanEdges((prev) =>
+      prev.filter(
+        (pe) =>
+          !deleted.some(
+            (d) =>
+              d.source === pe.source_node &&
+              d.target === pe.target_node &&
+              (d.sourceHandle ?? 'out') === (pe.source_port ?? 'out') &&
+              (d.targetHandle ?? 'in') === (pe.target_port ?? 'in'),
+          ),
+      ),
+    )
+  }, [])
 
   const requestDetach = useCallback((nodeId: string) => setDetachTarget(nodeId), [])
 
@@ -516,13 +714,41 @@ function PlanCanvasInner() {
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
+            onConnectEnd={onConnectEnd}
+            onEdgesDelete={onEdgesDelete}
+            isValidConnection={isValidConnection}
             nodeTypes={nodeTypes}
             onNodeClick={(_, node) => setSelectedId(node.id)}
-            onPaneClick={() => setSelectedId(null)}
+            onNodeDoubleClick={(_, node) => {
+              const gid = groupIdFromSubnet(node.id)
+              if (gid) {
+                setActiveGroup(gid)
+                setSelectedId(null)
+              }
+            }}
+            onPaneClick={() => {
+              setSelectedId(null)
+              setEdgeDropMenu(null)
+            }}
             onNodesDelete={(deleted) => {
-              for (const n of deleted) requestDetach(n.id)
+              // Subnet placeholders are virtual — deleting one must never
+              // detach its member nodes; dissolve is the explicit action.
+              for (const n of deleted) {
+                if (!groupIdFromSubnet(n.id)) requestDetach(n.id)
+              }
             }}
             deleteKeyCode={['Backspace', 'Delete']}
+            // Figma-style selection: left-drag on empty canvas draws a
+            // selection box (no modifier key needed); pan with middle/right
+            // button or the usual scroll/pinch gestures.
+            selectionOnDrag
+            panOnDrag={[1, 2]}
+            selectionMode={SelectionMode.Partial}
+            connectionLineType={ConnectionLineType.SmoothStep}
+            connectionLineStyle={{ stroke: EDGE_STROKE, strokeWidth: 2 }}
+            connectionRadius={32}
+            snapToGrid
+            snapGrid={[16, 16]}
             fitView
             minZoom={0.3}
             maxZoom={1.6}
@@ -534,6 +760,59 @@ function PlanCanvasInner() {
             <Background variant={BackgroundVariant.Dots} color="#2a2a32" gap={22} size={1.6} />
             <Controls position="bottom-left" showInteractive={false} />
             <MiniMap position="bottom-right" maskColor="rgba(6,6,8,0.78)" pannable zoomable />
+            {/* 三层层级面包屑: 项目(功能层) / 功能组(实现层) — Houdini-style dive nav */}
+            <Panel position="top-left">
+              <div className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-ops-panel/95 px-2 py-1.5 shadow-lg backdrop-blur-sm">
+                {activeGroup ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setActiveGroup(null)}
+                      className="inline-flex items-center gap-1 rounded-md px-2 py-1 font-telemetry text-2xs font-semibold uppercase tracking-[0.12em] text-zinc-400 transition-colors hover:bg-white/6 hover:text-zinc-100"
+                    >
+                      <ChevronLeft size={13} />
+                      功能层
+                    </button>
+                    <span className="text-zinc-600">/</span>
+                    <input
+                      value={activeGroupInfo?.label ?? ''}
+                      onChange={(e) => renameActiveGroup(e.target.value)}
+                      aria-label="功能组名称"
+                      className="w-32 rounded-md border border-transparent bg-transparent px-2 py-1 text-xs font-semibold text-zinc-100 outline-none transition-colors focus:border-primary-500/60 focus:bg-black/30"
+                    />
+                    <button
+                      type="button"
+                      onClick={dissolveActiveGroup}
+                      title="解散功能组（节点回到功能层）"
+                      className="inline-flex items-center gap-1 rounded-md px-2 py-1 font-telemetry text-2xs text-zinc-500 transition-colors hover:bg-red-500/10 hover:text-red-300"
+                    >
+                      <Ungroup size={13} />
+                      解散
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <span className="inline-flex items-center gap-1.5 px-2 py-1 font-telemetry text-2xs font-semibold uppercase tracking-[0.12em] text-zinc-300">
+                      <Boxes size={13} />
+                      功能层
+                    </span>
+                    {selectedAtomicIds.length >= 2 && (
+                      <button
+                        type="button"
+                        onClick={groupSelection}
+                        className="inline-flex items-center gap-1.5 rounded-md border border-primary-500/50 bg-primary-500/15 px-2.5 py-1 text-xs font-medium text-primary-300 transition-colors hover:bg-primary-500/25"
+                      >
+                        <Group size={13} />
+                        组合为功能组 ({selectedAtomicIds.length})
+                      </button>
+                    )}
+                    {planGroups.length === 0 && selectedAtomicIds.length < 2 && (
+                      <span className="px-2 py-1 text-3xs text-zinc-600">在空白处拖拽框选多个节点，可组合成功能组</span>
+                    )}
+                  </>
+                )}
+              </div>
+            </Panel>
             <Panel position="top-right">
               <CanvasToolbarButton
                 tone="accent"
@@ -546,6 +825,37 @@ function PlanCanvasInner() {
               </CanvasToolbarButton>
             </Panel>
           </ReactFlow>
+
+          {edgeDropMenu && (
+            <div
+              className="fixed z-50 w-44 overflow-hidden rounded-lg border border-white/12 bg-ops-raised shadow-2xl"
+              style={{ left: edgeDropMenu.client.x + 4, top: edgeDropMenu.client.y + 4 }}
+              role="menu"
+              aria-label="添加下游节点"
+            >
+              <p className="border-b border-white/8 px-3 py-1.5 font-telemetry text-3xs font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                添加下游节点
+              </p>
+              {(
+                [
+                  { kind: 'transform' as const, label: '变换', hint: 'dedupe / map / filter' },
+                  { kind: 'merge' as const, label: '合并', hint: '合并多个分支' },
+                  { kind: 'sink' as const, label: '汇', hint: '写入存储' },
+                ]
+              ).map((item) => (
+                <button
+                  key={item.kind}
+                  type="button"
+                  role="menuitem"
+                  onClick={() => insertNodeFromEdgeDrop(item.kind)}
+                  className="flex w-full flex-col items-start gap-0 px-3 py-2 text-left transition-colors hover:bg-white/6"
+                >
+                  <span className="text-xs font-medium text-zinc-200">{item.label}</span>
+                  <span className="text-3xs text-zinc-600">{item.hint}</span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {selectedPlanNode && (

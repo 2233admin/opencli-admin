@@ -46,32 +46,14 @@ const CHART_RECORDS = '#d4d4d8'
 
 type ToneKey = 'neutral' | 'accent' | 'success' | 'danger' | 'warning'
 
-const TONE_STYLES: Record<ToneKey, { rail: string; icon: string; dot: string }> = {
-  neutral: {
-    rail: 'bg-zinc-300',
-    icon: 'border-zinc-400/30 bg-zinc-400/10 text-zinc-200',
-    dot: 'bg-zinc-300',
-  },
-  accent: {
-    rail: 'bg-primary-500',
-    icon: 'border-primary-500/40 bg-primary-500/10 text-primary-100',
-    dot: 'bg-primary-500',
-  },
-  success: {
-    rail: 'bg-emerald-400',
-    icon: 'border-emerald-400/35 bg-emerald-400/10 text-emerald-200',
-    dot: 'bg-emerald-400',
-  },
-  danger: {
-    rail: 'bg-primary-500',
-    icon: 'border-primary-500/50 bg-primary-500/15 text-primary-100',
-    dot: 'bg-primary-500',
-  },
-  warning: {
-    rail: 'bg-amber-400',
-    icon: 'border-amber-400/35 bg-amber-400/10 text-amber-200',
-    dot: 'bg-amber-400',
-  },
+// One restrained accent per tone — used only on the icon glyph and the thin
+// top hairline. No competing rails/dots (OpenBB/Linear: let the number lead).
+const TONE_STYLES: Record<ToneKey, { icon: string; edge: string }> = {
+  neutral: { icon: 'text-zinc-400', edge: 'bg-white/15' },
+  accent: { icon: 'text-primary-400', edge: 'bg-primary-500/70' },
+  success: { icon: 'text-emerald-400', edge: 'bg-emerald-500/70' },
+  danger: { icon: 'text-red-400', edge: 'bg-red-500/70' },
+  warning: { icon: 'text-amber-400', edge: 'bg-amber-500/70' },
 }
 
 function TimeRangeBar({
@@ -174,25 +156,19 @@ function StatCard({
   const { t } = useTranslation()
   const toneStyle = TONE_STYLES[tone]
   return (
-    <Card className="min-h-[138px] p-4">
-      <div className={`absolute left-0 top-0 h-full w-[3px] ${toneStyle.rail}`} />
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <span className={`h-1.5 w-1.5 ${toneStyle.dot}`} />
-            <p className="telemetry-label truncate">{label}</p>
-          </div>
-          <p className="telemetry-value mt-4 truncate text-3xl font-semibold sm:text-4xl">
-            {value}
-          </p>
-        </div>
-        <span className={`grid h-10 w-10 shrink-0 place-items-center border ${toneStyle.icon}`}>
-          <Icon size={19} />
-        </span>
+    <Card className="telemetry-card-interactive group min-h-[146px] p-5">
+      {/* thin tone hairline along the top edge */}
+      <div className={`absolute inset-x-0 top-0 h-px ${toneStyle.edge}`} />
+      <div className="flex items-center justify-between gap-3">
+        <p className="telemetry-label truncate">{label}</p>
+        <Icon size={16} className={`shrink-0 ${toneStyle.icon} opacity-70 transition-opacity group-hover:opacity-100`} />
       </div>
-      <div className="mt-4 flex flex-wrap items-center gap-2">
-        {sub && <p className="text-xs text-zinc-500">{sub}</p>}
+      <p className="telemetry-value mt-5 truncate text-[2.6rem] font-semibold leading-none tracking-tight">
+        {value}
+      </p>
+      <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1">
         {trend && <TrendBadge current={trend.current} previous={trend.previous} noTrendLabel={t('dashboard.noChange')} />}
+        {sub && <p className="font-code text-2xs text-zinc-500">{sub}</p>}
       </div>
     </Card>
   )

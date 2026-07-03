@@ -15,10 +15,28 @@ import { createSource, getSource, updateSource } from '../api/endpoints'
 import type { PlanNode } from '../api/types'
 import Card from '../components/Card'
 import ChannelConfigForm, { type ChannelType } from '../components/ChannelConfigForm'
-import { NodeBadge } from '../node-kit'
+import { getNode, NodeBadge } from '../node-kit'
+import { CATEGORY_STYLE, iconByName } from '../node-kit/render/atoms'
+import type { NodeCategory } from '../node-kit/spec'
 import { isDraftSourceNode } from '../lib/planCanvasModel'
 
 const KNOWN_CHANNEL_TYPES: ChannelType[] = ['opencli', 'rss', 'api', 'web_scraper', 'crawl4ai', 'cli', 'skill']
+
+// Map a PlanNode's raw kind to a node-kit category when the registry has no
+// spec for its type (draft / graph nodes carry a bare kind string as type).
+const KIND_CATEGORY: Record<string, NodeCategory> = {
+  source: 'source',
+  transform: 'transform',
+  merge: 'transform',
+  sink: 'sink',
+}
+
+/** Resolve the category + icon so the inspector header mirrors the canvas card. */
+function resolveNodeVisual(node: PlanNode): { category: NodeCategory; icon?: string } {
+  const spec = getNode(String(node.type))
+  if (spec) return { category: spec.category, icon: spec.icon }
+  return { category: KIND_CATEGORY[node.kind] ?? 'custom' }
+}
 
 interface PlanCanvasInspectorProps {
   node: PlanNode
@@ -87,14 +105,25 @@ export function PlanCanvasInspector({
   })
 
   const isKnownChannel = KNOWN_CHANNEL_TYPES.includes(channelType as ChannelType)
+  const visual = resolveNodeVisual(node)
+  const cat = CATEGORY_STYLE[visual.category]
+  const HeaderIcon = iconByName(visual.icon)
 
   return (
     <Card padding={false} className="flex h-full w-[380px] shrink-0 flex-col overflow-hidden border-0 border-l border-white/10 bg-ops-panel">
-      <div className="flex items-start justify-between gap-2 border-b border-white/8 px-4 py-3">
-        <div className="min-w-0">
-          <p className="telemetry-label">{t('planCanvas.inspectorTitle')}</p>
-          <h2 className="mt-0.5 truncate text-sm font-semibold text-white">{node.label || node.id}</h2>
-          <p className="truncate text-2xs text-zinc-500">{node.kind} · {node.type}</p>
+      <div className="relative flex items-start justify-between gap-2 border-b border-white/8 px-4 py-3">
+        <div className={['absolute inset-x-0 top-0 h-0.5', cat.bar].join(' ')} aria-hidden />
+        <div className="flex min-w-0 items-start gap-2.5">
+          <span className={['mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-md border', cat.chip].join(' ')}>
+            <HeaderIcon className="h-4 w-4" />
+          </span>
+          <div className="min-w-0">
+            <p className="telemetry-label">{t('planCanvas.inspectorTitle')}</p>
+            <h2 className="mt-0.5 truncate text-sm font-semibold text-white">{node.label || node.id}</h2>
+            <p className="truncate text-2xs text-zinc-500">
+              <span className={cat.label}>{cat.name}</span> · {node.type}
+            </p>
+          </div>
         </div>
         <button
           type="button"

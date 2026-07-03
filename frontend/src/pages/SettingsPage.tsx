@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Link } from 'react-router-dom'
-import { CircleAlert, CircleHelp, CircleX, Palette, RefreshCw } from 'lucide-react'
+import { CircleAlert, CircleHelp, CircleX, Palette } from 'lucide-react'
 import Card from '../components/Card'
 import PageHeader from '../components/PageHeader'
 import { executeConversationNodeRun } from '../lib/nodeRunService'
@@ -30,7 +30,6 @@ import {
   LANGUAGE_DEFAULT,
 } from '../lib/preferences'
 import { getEnabledLocales } from '../i18n/locales'
-import { isTopologyLabEnabled } from '../labs/topology/flags'
 
 const DENSITY_OPTIONS = [
   { value: 'compact' as const, token: 'settings.density.compact' },
@@ -264,15 +263,6 @@ export default function SettingsPage() {
           <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-zinc-100">{t('settings.experimental.title')}</h2>
           <p className="text-sm text-zinc-400">{t('settings.experimental.description')}</p>
           <div className="grid gap-2 sm:flex">
-            {isTopologyLabEnabled && (
-              <Link
-                to="/plans"
-                className="inline-flex items-center gap-2 rounded-sm border border-sky-300/40 bg-sky-300/10 px-3 py-2 text-sm font-medium text-sky-200 hover:bg-sky-300/20"
-              >
-                <RefreshCw size={16} />
-                {t('settings.experimental.openTopology')}
-              </Link>
-            )}
             <Link
               to="/sources"
               className="inline-flex items-center gap-2 rounded-sm border border-white/10 px-3 py-2 text-sm font-medium text-zinc-200 hover:border-white/20 hover:bg-white/3"

@@ -4,6 +4,7 @@ import { describe, it } from 'node:test'
 import {
   _resetDraftSeq,
   anchorValidationErrors,
+  buildSubnetView,
   canvasNodeType,
   canvasToPlanGraph,
   createDraftNodeFromPreset,
@@ -14,9 +15,12 @@ import {
   fallbackPosition,
   groupPresetsByNodeType,
   isDraftSourceNode,
+  listCanvasGroups,
   materializeDraftNode,
   planGraphToCanvas,
   presetMatchesQuery,
+  readCanvasGroup,
+  withCanvasGroup,
 } from './planCanvasModel.ts'
 import type { PlanEdge, PlanGraph, PlanNode, Preset } from '../api/types.ts'
 
@@ -294,5 +298,73 @@ describe('detachNode (never deletes the entity)', () => {
     const before = JSON.stringify(canvas)
     detachNode(canvas, 'n1')
     assert.equal(JSON.stringify(canvas), before)
+  })
+})
+
+describe('功能组 (Houdini-style subnets): group helpers + buildSubnetView', () => {
+  const G = { id: 'g-1', label: '采集' }
+
+  function makeGroupedGraph() {
+    // n1(采集) → n2(采集) → n3(ungrouped sink); n1→n2 is intra-group,
+    // n2→n3 crosses the group boundary.
+    const nodes: PlanNode[] = [
+      withCanvasGroup(makeSourceNode({ id: 'n1' }), G),
+      withCanvasGroup(
+        makeSourceNode({ id: 'n2', kind: 'transform', type: 'dedupe', inputs: [{ name: 'in', type: 'any' }] }),
+        G,
+      ),
+      makeSourceNode({ id: 'n3', kind: 'sink', type: 'sink', inputs: [{ name: 'in', type: 'any' }], outputs: [] }),
+    ]
+    const edges: PlanEdge[] = [
+      { id: 'e1', source_node: 'n1', source_port: 'out', target_node: 'n2', target_port: 'in' },
+      { id: 'e2', source_node: 'n2', source_port: 'out', target_node: 'n3', target_port: 'in' },
+    ]
+    return planGraphToCanvas({ ir_version: '1.0.0', draft: false, nodes, edges })
+  }
+
+  it('withCanvasGroup stamps membership into params and readCanvasGroup round-trips it', () => {
+    const grouped = withCanvasGroup(makeSourceNode(), G)
+    assert.deepEqual(readCanvasGroup(grouped), G)
+    assert.equal(readCanvasGroup(withCanvasGroup(grouped, null)), null)
+  })
+
+  it('listCanvasGroups returns distinct groups in first-appearance order', () => {
+    const g2 = { id: 'g-2', label: '清洗' }
+    const nodes = [
+      withCanvasGroup(makeSourceNode({ id: 'a' }), G),
+      withCanvasGroup(makeSourceNode({ id: 'b' }), g2),
+      withCanvasGroup(makeSourceNode({ id: 'c' }), G),
+    ]
+    assert.deepEqual(listCanvasGroups(nodes), [G, g2])
+  })
+
+  it('top level (功能层): collapses members into one subnet and re-anchors boundary edges', () => {
+    const view = buildSubnetView(makeGroupedGraph(), null)
+    assert.deepEqual(view.nodes.map((n) => n.id), ['n3'])
+    assert.equal(view.subnets.length, 1)
+    assert.equal(view.subnets[0].memberCount, 2)
+    // Intra-group edge n1→n2 disappears; n2→n3 re-anchors onto the subnet id.
+    assert.equal(view.edges.length, 1)
+    assert.equal(view.edges[0].source, '__subnet-g-1')
+    assert.equal(view.edges[0].target, 'n3')
+  })
+
+  it('dive level (实现层): shows only members and intra-group wiring', () => {
+    const view = buildSubnetView(makeGroupedGraph(), 'g-1')
+    assert.deepEqual(view.nodes.map((n) => n.id).sort(), ['n1', 'n2'])
+    assert.equal(view.subnets.length, 0)
+    assert.deepEqual(view.edges.map((e) => e.id), ['e1'])
+  })
+
+  it('ungrouped graph passes through unchanged at the top level', () => {
+    const canvas = planGraphToCanvas({
+      ir_version: '1.0.0',
+      draft: false,
+      nodes: [makeSourceNode({ id: 'n1' })],
+      edges: [],
+    })
+    const view = buildSubnetView(canvas, null)
+    assert.equal(view.nodes.length, 1)
+    assert.equal(view.subnets.length, 0)
   })
 })

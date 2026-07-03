@@ -6,7 +6,7 @@ import { useReactFlow } from '@xyflow/react'
 
 import type { ConfigValues, NodeRenderContext, NodeSpec } from '../spec'
 import type { RunLogEntry } from '../runtime/runLog'
-import { NodeField, NodeFieldEdit, NodeHeader, NodeOpButton, NodePort } from './atoms'
+import { CATEGORY_STYLE, NodeField, NodeFieldEdit, NodeHeader, NodeOpButton, NodePort } from './atoms'
 
 export interface KitNodeData<C extends ConfigValues = ConfigValues> {
   config: C
@@ -69,26 +69,30 @@ export function KitNode<C extends ConfigValues = ConfigValues>({
   }
 
   const runBorder = runState ? RUN_STATE_BORDER[runState.state] : null
+  const cat = CATEGORY_STYLE[spec.category]
 
   return (
     <div
       style={{ width: 248 }}
       title={runState?.state === 'error' ? runState.detail.errorMessage : undefined}
       className={[
-        'relative rounded-lg border bg-ops-panel/95 px-3 py-3 text-left shadow-xl backdrop-blur-sm transition-colors',
-        runBorder ?? (selected ? 'border-sky-500 ring-2 ring-sky-500/30' : 'border-white/12 hover:border-white/30'),
+        'relative overflow-hidden rounded-lg border bg-ops-panel/95 px-3 py-3 text-left shadow-xl backdrop-blur-sm transition-colors',
+        runBorder ?? (selected ? 'border-sky-500 ring-2 ring-sky-500/30' : cat.border),
         runBorder && selected ? 'ring-2 ring-sky-500/30' : '',
       ].join(' ')}
     >
-      {spec.ports.inputs.map((p) => (
-        <NodePort key={`in-${p.id}`} port={p} side="input" />
+      {/* category accent bar — a quick, always-visible type cue at the card top */}
+      <div className={['absolute inset-x-0 top-0 h-0.5', cat.bar].join(' ')} aria-hidden />
+
+      {spec.ports.inputs.map((p, i) => (
+        <NodePort key={`in-${p.id}`} port={p} side="input" index={i} count={spec.ports.inputs.length} accent={cat.port} />
       ))}
-      {spec.ports.outputs.map((p) => (
-        <NodePort key={`out-${p.id}`} port={p} side="output" />
+      {spec.ports.outputs.map((p, i) => (
+        <NodePort key={`out-${p.id}`} port={p} side="output" index={i} count={spec.ports.outputs.length} accent={cat.port} />
       ))}
 
       <div className="flex items-start justify-between gap-1.5">
-        <NodeHeader icon={spec.icon} title={spec.title} subtitle={spec.subtitle} />
+        <NodeHeader icon={spec.icon} title={spec.title} subtitle={spec.subtitle} category={spec.category} />
         {runState?.state === 'success' && runState.detail.durationMs != null && (
           <span className="shrink-0 rounded-xs border border-emerald-500/35 bg-emerald-500/10 px-1 py-0.5 font-code text-[9px] text-emerald-200">
             {runState.detail.durationMs}ms
@@ -142,7 +146,7 @@ function AutoBody<C extends ConfigValues>({
   const factRows = Object.entries(facts)
 
   if (fields.length === 0 && factRows.length === 0) {
-    return <div className="text-2xs text-zinc-600">{spec.category}</div>
+    return <div className="text-2xs text-zinc-600">{CATEGORY_STYLE[spec.category]?.name ?? spec.category}</div>
   }
   return (
     <div className="grid gap-1.5">
