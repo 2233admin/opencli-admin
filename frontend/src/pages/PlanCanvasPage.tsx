@@ -442,7 +442,7 @@ function PlanCanvasInner() {
                 onClick={() => setLens('edit')}
                 aria-pressed={lens === 'edit'}
                 className={`inline-flex h-7 items-center gap-1.5 rounded-xs px-2.5 font-semibold transition ${
-                  lens === 'edit' ? 'bg-sky-500/20 text-sky-100' : 'text-zinc-400 hover:text-zinc-200'
+                  lens === 'edit' ? 'bg-primary-500/20 text-primary-100' : 'text-zinc-400 hover:text-zinc-200'
                 }`}
               >
                 <Pencil className="h-3 w-3" />
@@ -453,7 +453,7 @@ function PlanCanvasInner() {
                 onClick={() => setLens(toggleLens('edit'))}
                 aria-pressed={lens === 'observe'}
                 className={`inline-flex h-7 items-center gap-1.5 rounded-xs px-2.5 font-semibold transition ${
-                  lens === 'observe' ? 'bg-sky-500/20 text-sky-100' : 'text-zinc-400 hover:text-zinc-200'
+                  lens === 'observe' ? 'bg-primary-500/20 text-primary-100' : 'text-zinc-400 hover:text-zinc-200'
                 }`}
               >
                 <Eye className="h-3 w-3" />
@@ -600,7 +600,7 @@ function ViewSwitch({ view }: { view: CanvasView }) {
         onClick={() => navigate('/plans')}
         aria-pressed={view === 'overview'}
         className={`inline-flex h-7 items-center gap-1.5 rounded-xs px-2.5 font-semibold transition ${
-          view === 'overview' ? 'bg-sky-500/20 text-sky-100' : 'text-zinc-400 hover:text-zinc-200'
+          view === 'overview' ? 'bg-primary-500/20 text-primary-100' : 'text-zinc-400 hover:text-zinc-200'
         }`}
       >
         <LayoutGrid className="h-3 w-3" />
@@ -615,7 +615,7 @@ function ViewSwitch({ view }: { view: CanvasView }) {
         onClick={() => { if (view !== 'plan') navigate('/plans/new') }}
         aria-pressed={view === 'plan'}
         className={`inline-flex h-7 items-center gap-1.5 rounded-xs px-2.5 font-semibold transition ${
-          view === 'plan' ? 'bg-sky-500/20 text-sky-100' : 'text-zinc-400 hover:text-zinc-200'
+          view === 'plan' ? 'bg-primary-500/20 text-primary-100' : 'text-zinc-400 hover:text-zinc-200'
         }`}
       >
         <Workflow className="h-3 w-3" />
@@ -635,13 +635,23 @@ export default function PlanCanvasPage() {
   const location = useLocation()
   const view: CanvasView = location.pathname === '/plans' ? 'overview' : 'plan'
 
+  // D18-B #7 chrome dedup: 总览's own toolbar row (breadcrumb chip · sync)
+  // already reads as the page's one header line — stacking this file's
+  // telemetry-label + ViewSwitch row above it repeated the same "总览" label
+  // twice. Overview passes ViewSwitch into NetworkPage's row instead of
+  // rendering a second row; 当前 Plan keeps its existing standalone header
+  // (that lens still needs its own title/name-input/badges row).
+  if (view === 'overview') {
+    return <NetworkPage headerExtra={<ViewSwitch view={view} />} />
+  }
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-3">
-        <p className="telemetry-label">{view === 'overview' ? t('planCanvas.viewOverview') : t('planCanvas.title')}</p>
+        <p className="telemetry-label">{t('planCanvas.title')}</p>
         <ViewSwitch view={view} />
       </div>
-      {view === 'overview' ? <NetworkPage /> : <PlanEditorView />}
+      <PlanEditorView />
     </div>
   )
 }

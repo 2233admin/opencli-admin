@@ -33,11 +33,18 @@ export function KitNode<C extends ConfigValues = ConfigValues>({
   id,
   data,
   selected,
+  hideOps,
 }: {
   spec: NodeSpec<C>
   id: string
   data: KitNodeData<C>
   selected?: boolean
+  /** Observation-only surfaces (总览 topology overview) show status, not
+   *  mutation buttons — spec.ops (启停/测连通/采集…) render nowhere on the
+   *  card; those same actions live in the inspector drawer instead. The
+   *  editable Plan canvas (当前 Plan lens) never sets this, so its cards keep
+   *  their ops exactly as before. */
+  hideOps?: boolean
 }) {
   const { updateNodeData } = useReactFlow()
   const config = (data.config ?? {}) as C
@@ -102,7 +109,7 @@ export function KitNode<C extends ConfigValues = ConfigValues>({
         )}
       </div>
 
-      {spec.ops && spec.ops.length > 0 && (
+      {!hideOps && spec.ops && spec.ops.length > 0 && (
         <div className="mt-2.5 flex flex-wrap gap-1.5">
           {spec.ops.map((op) => (
             <NodeOpButton

@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { Edge, Node } from '@xyflow/react'
 import { MarkerType } from '@xyflow/react'
-import { ChevronRight, RefreshCw, Sparkles, SlidersHorizontal, Workflow, X } from 'lucide-react'
+import { Activity, AlertTriangle, CheckCircle2, ChevronRight, Database, MessageSquareText, RefreshCw, SlidersHorizontal, Workflow, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 
@@ -33,11 +33,12 @@ import Card from '../../components/Card'
 import { CanvasToolbarButton, canvasToolbarButtonClass } from '../../components/CanvasToolbarButton'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import ErrorAlert from '../../components/ErrorAlert'
+import { MetricTile } from '../../components/opencli'
 import { cn } from '../../lib/utils'
 import { AgentDock, type DockContextNode } from './AgentDock'
 import { ODP_NODE_ID, odpSystemGraphNode } from './odpNode'
 import { ReactFlowTopologyCanvas } from './ReactFlowTopologyCanvas'
-import { TopologyCanvasDropZone, TopologyPalette } from './TopologyPalette'
+import { TopologyCanvasDropZone } from './TopologyPalette'
 import { StageOperationPanel, type StageDataBundle } from './nodes/StageOperations'
 import {
   buildTopologyGraph,
@@ -65,7 +66,15 @@ const PROJECT_COLS = 4
 const PROJECT_COL_GAP = 300
 const PROJECT_ROW_GAP = 200
 
-export default function NetworkPage() {
+interface NetworkPageProps {
+  /** Rendered inline at the right end of the toolbar row, after 同步 (D18-B
+   * #7 chrome dedup): PlanCanvasPage passes its 总览/当前Plan ViewSwitch here
+   * instead of stacking a second header row above this page — one row: breadcrumb
+   * chip, then whatever the host wants (the view toggle), then 同步. */
+  headerExtra?: React.ReactNode
+}
+
+export default function NetworkPage({ headerExtra }: NetworkPageProps = {}) {
   const qc = useQueryClient()
   const [divePath, setDivePath] = useState<string[]>([])
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
@@ -116,6 +125,16 @@ export default function NetworkPage() {
     }),
     [input],
   )
+
+  // 总览 KPI strip (D18-B #3): "网络好不好" at a glance, computed from the
+  // same raw arrays the canvas already fetched — no new data layer. Global
+  // (unscoped by dive level) so the numbers stay stable while diving in/out.
+  const kpi = useMemo(() => {
+    const enabled = input.sources.filter((s) => s.enabled).length
+    const running = input.tasks.filter((t) => t.status === 'running').length
+    const failed = input.tasks.filter((t) => t.status === 'failed' || t.status === 'cancelled').length
+    return { total: input.sources.length, enabled, running, failed }
+  }, [input])
 
   const divedSourceId = divePath[0] ?? null
   const divedSource = divedSourceId ? input.sources.find((s) => s.id === divedSourceId) ?? null : null
@@ -192,7 +211,9 @@ export default function NetworkPage() {
 
   return (
     <div className="space-y-3">
-      {/* slim toolbar — no page-header chrome, no explanatory paragraph */}
+      {/* slim toolbar — no page-header chrome, no explanatory paragraph.
+       * D18-B #7 chrome dedup: headerExtra (PlanCanvasPage's 总览/当前Plan
+       * ViewSwitch) lands in THIS row instead of a second row above it. */}
       <div className="flex items-center justify-between gap-3">
         <Breadcrumb divedSourceName={divedSource?.name ?? null} onRoot={() => popTo(0)} count={nodes.length} />
         <div className="flex items-center gap-2">
@@ -214,20 +235,31 @@ export default function NetworkPage() {
           >
             同步
           </CanvasToolbarButton>
+          {headerExtra}
         </div>
+      </div>
+
+      {/* D18-B #3: 4-tile KPI strip — "网络好不好" at a glance, above the
+       * canvas. Global counts (not scoped to the current dive level) so they
+       * stay stable while diving in/out. Reuses MetricTile + the same raw
+       * arrays the canvas already fetched — no new data layer. */}
+      <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+        <MetricTile label="源总数" value={kpi.total} icon={Database} tone="accent" />
+        <MetricTile label="启用中" value={kpi.enabled} icon={CheckCircle2} tone={kpi.enabled > 0 ? 'success' : 'neutral'} />
+        <MetricTile label="运行任务" value={kpi.running} icon={Activity} tone={kpi.running > 0 ? 'info' : 'neutral'} />
+        <MetricTile label="失败·缺口" value={kpi.failed} icon={AlertTriangle} tone={kpi.failed > 0 ? 'danger' : 'neutral'} />
       </div>
 
       {queryError && (
         <ErrorAlert error={queryError instanceof Error ? queryError : '采集网络数据同步失败。'} onRetry={refetchAll} />
       )}
 
-      <div className="relative flex h-[74vh] min-h-[560px] overflow-hidden rounded-md border border-white/10 bg-black">
-        {/* palette only makes sense at L0 root — a project's subnet (L1) is
-         * derived read-only from that one source's real schedules/tasks/etc,
-         * there is nothing new to "create" by dropping a channel type there. */}
-        {!divedSourceId && <TopologyPalette onCreated={refetchAll} />}
-
-        <div className="relative min-w-0 flex-1 pr-10">
+      {/* D18-B #9: fill to the viewport bottom (same calc(100vh-Npx) technique
+       * as SourcesPage's topology canvas, adjusted for this page's slimmer
+       * toolbar-row-only chrome + the new KPI row above) instead of the old
+       * fixed 74vh that left a dead black band under a shorter viewport. */}
+      <div className="relative flex h-[calc(100vh-300px)] min-h-[560px] overflow-hidden rounded-md border border-white/10 bg-black">
+        <div className="relative min-w-0 flex-1">
           {nodes.length === 0 ? (
             <EmptyState dived={Boolean(divedSourceId)} />
           ) : (
@@ -240,16 +272,34 @@ export default function NetworkPage() {
                 onNodeDoubleClick={handleDoubleClick}
                 viewKey={divedSourceId ?? 'root'}
                 onRequestDeleteSource={!divedSourceId ? requestDeleteSource : undefined}
+                hideOps
+                autoLayoutOnMount
+                hideAutoLayoutButton
+                minimapMinNodes={10}
+                topRightExtra={
+                  <CanvasToolbarButton
+                    tone={rightPanel === 'agent' ? 'accent' : 'neutral'}
+                    onClick={() => setRightPanel((p) => (p === 'agent' ? null : 'agent'))}
+                    aria-pressed={rightPanel === 'agent'}
+                    className="shadow-lg"
+                    icon={<MessageSquareText className="h-3.5 w-3.5" />}
+                  >
+                    AGENT 对话坞
+                  </CanvasToolbarButton>
+                }
               />
             </TopologyCanvasDropZone>
           )}
         </div>
 
-        {/* slide-out panel, sits left of the rail */}
+        {/* slide-out inspector/agent-dock panel — D18-B #1/#4: no rail tab
+         * needed anymore, this opens directly from a node click (handleSelect
+         * sets rightPanel:'node') or from the Agent Dock canvas toolbar button
+         * above (topRightExtra). Its own header carries the close (X). */}
         {rightPanel && (
           <div
             key={rightPanel}
-            className="m3-sheet-in absolute right-10 top-0 bottom-0 z-20 w-[380px] max-w-[calc(100%-2.5rem)] border-l border-white/10 bg-ops-panel shadow-overlay"
+            className="m3-sheet-in absolute right-0 top-0 bottom-0 z-20 w-[380px] max-w-full border-l border-white/10 bg-ops-panel shadow-overlay"
           >
             {rightPanel === 'node' && selectedNode ? (
               <NodeInspector
@@ -262,31 +312,9 @@ export default function NetworkPage() {
               <div className="h-full">
                 <AgentDock contextNode={dockContext} onApplied={refetchAll} />
               </div>
-            ) : (
-              <div className="grid h-full place-items-center px-6 text-center text-xs text-zinc-600">
-                选中一个节点查看它的可操作项
-              </div>
-            )}
+            ) : null}
           </div>
         )}
-
-        {/* always-on vertical tab rail (pull-out handles) */}
-        <div className="absolute right-0 top-0 bottom-0 z-30 flex w-10 flex-col items-center gap-1 border-l border-white/10 bg-ops-panel py-3">
-          <RailTab
-            active={rightPanel === 'node'}
-            disabled={!selectedNode}
-            icon={SlidersHorizontal}
-            label="节点操作"
-            onClick={() => setRightPanel((p) => (p === 'node' ? null : 'node'))}
-          />
-          <div className="my-1 h-px w-5 bg-white/8" />
-          <RailTab
-            active={rightPanel === 'agent'}
-            icon={Sparkles}
-            label="AGENT 对话坞"
-            onClick={() => setRightPanel((p) => (p === 'agent' ? null : 'agent'))}
-          />
-        </div>
       </div>
 
       <ConfirmDialog
@@ -298,41 +326,6 @@ export default function NetworkPage() {
         onConfirm={() => { if (deleteTarget) deleteSourceMut.mutate(deleteTarget.id) }}
       />
     </div>
-  )
-}
-
-function RailTab({
-  active,
-  disabled,
-  icon: Icon,
-  label,
-  onClick,
-}: {
-  active: boolean
-  disabled?: boolean
-  icon: typeof Sparkles
-  label: string
-  onClick: () => void
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      title={label}
-      aria-label={label}
-      className={cn(
-        'flex w-full flex-col items-center gap-1.5 rounded-md py-2 transition',
-        disabled
-          ? 'cursor-not-allowed text-zinc-700'
-          : active
-            ? 'bg-sky-500/10 text-sky-200'
-            : 'text-zinc-500 hover:bg-white/4 hover:text-zinc-200',
-      )}
-    >
-      <Icon className="h-[18px] w-[18px] shrink-0" />
-      <span className="font-telemetry text-3xs tracking-[0.12em] [writing-mode:vertical-rl]">{label}</span>
-    </button>
   )
 }
 
