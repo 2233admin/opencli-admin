@@ -9,35 +9,37 @@
 
   --color-primary-50: #eef6ff;
   --color-primary-100: #d9ecff;
-  --color-primary-300: #7db7ff;
-  --color-primary-400: #4f9bff;
-  --color-primary-500: #2f7df6;
-  --color-primary-600: #1f63d6;
-  --color-primary-700: #194da8;
+  --color-primary-300: #66aaff;
+  --color-primary-400: #3291ff;
+  --color-primary-500: #0070f3;
+  --color-primary-600: #0761d1;
+  --color-primary-700: #0a4fa8;
 
-  --color-signal-gold: #d6a84f;
-  --color-signal-cyan: #4fb7d6;
-  --color-signal-green: #35b779;
-  --color-signal-amber: #d99a3d;
-  --color-signal-red: #e15b64;
+  --color-signal-gold: #f5a623;
+  --color-signal-cyan: #50b7d5;
+  --color-signal-green: #29bc7f;
+  --color-signal-amber: #f5a623;
+  --color-signal-red: #ee5a5a;
   --color-signal-violet: #9b7bf3;
 
   /* role-named signal tokens — the single-track target API (DESIGN_SYSTEM.md §1.4);
      color-named ones above are transitional until T3b migration completes */
-  --color-signal-success: #35b779;
-  --color-signal-warning: #d99a3d;
-  --color-signal-danger: #e15b64;
-  --color-signal-info: #4fb7d6;
+  --color-signal-success: #29bc7f;
+  --color-signal-warning: #f5a623;
+  --color-signal-danger: #ee5a5a;
+  --color-signal-info: #50b7d5;
   --color-signal-agent: #9b7bf3;
-  --color-signal-highlight: #d6a84f;
+  --color-signal-highlight: #f5a623;
 
-  --color-ops-black: #050708;
-  --color-ops-panel: #0a0d10;
-  --color-ops-raised: #101418;
-  --color-ops-line: #252b31;
-  --color-ops-text: #f5f7fa;
-  --color-ops-muted: #9aa4af;
-  --color-ops-accent: #2f7df6;
+  /* Vercel/Linear-style neutral dark surfaces: pure grays (no blue cast),
+     one restrained blue accent, hairline borders. */
+  --color-ops-black: #0a0a0a;
+  --color-ops-panel: #111111;
+  --color-ops-raised: #181818;
+  --color-ops-line: #262626;
+  --color-ops-text: #fafafa;
+  --color-ops-muted: #a1a1aa;
+  --color-ops-accent: #0070f3;
 
   /* micro type scale for dense telemetry UI (see docs/DESIGN_SYSTEM.md §2) */
   --text-2xs: 0.6875rem;
@@ -76,26 +78,10 @@
 @utility telemetry-panel {
   position: relative;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 6px;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0)),
-    rgba(10, 10, 10, 0.92);
-  box-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.16),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05);
-
-  &::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    background:
-      linear-gradient(90deg, rgba(255, 255, 255, 0.045) 1px, transparent 1px),
-      linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px);
-    background-size: 32px 32px;
-    opacity: 0;
-  }
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 8px;
+  background: #111111;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
 
   & > * {
     position: relative;
@@ -120,8 +106,8 @@
 
 @utility telemetry-button {
   border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.035);
+  border-radius: 7px;
+  background: transparent;
   color: rgb(212 212 216);
   font-family: var(--font-telemetry);
   transition:
@@ -130,44 +116,43 @@
     color 120ms ease;
 
   &:hover {
-    border-color: rgba(255, 255, 255, 0.22);
-    background: rgba(255, 255, 255, 0.075);
+    border-color: rgba(255, 255, 255, 0.24);
+    background: rgba(255, 255, 255, 0.06);
     color: #fff;
   }
 
   &[data-active='true'] {
-    border-color: rgba(47, 125, 246,0.75);
-    background: rgba(47, 125, 246,0.16);
+    border-color: rgba(0, 112, 243, 0.8);
+    background: rgba(0, 112, 243, 0.15);
     color: #fff;
   }
 }
 
 @utility telemetry-input {
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 6px;
-  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 7px;
+  background: #0a0a0a;
   color: #fff;
   font-family: var(--font-code);
   font-size: 0.75rem;
+
+  &:focus {
+    border-color: rgba(0, 112, 243, 0.6);
+  }
 }
 
 @utility operator-surface {
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 6px;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0)),
-    rgba(10, 10, 10, 0.92);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 8px;
+  background: #111111;
 }
 
 @utility operator-card {
   position: relative;
   min-height: 7rem;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 6px;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0)),
-    rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 8px;
+  background: #111111;
   padding: 0.75rem;
   transition:
     background-color 120ms ease,
@@ -175,14 +160,14 @@
     box-shadow 120ms ease;
 
   &:hover {
-    border-color: rgba(255, 255, 255, 0.22);
-    background-color: rgba(255, 255, 255, 0.04);
+    border-color: rgba(255, 255, 255, 0.2);
+    background-color: #161616;
   }
 
   &[data-active='true'] {
-    border-color: rgba(47, 125, 246,0.65);
-    background-color: rgba(47, 125, 246,0.075);
-    box-shadow: inset 0 0 0 1px rgba(47, 125, 246,0.08);
+    border-color: rgba(0, 112, 243, 0.65);
+    background-color: rgba(0, 112, 243, 0.06);
+    box-shadow: inset 0 0 0 1px rgba(0, 112, 243, 0.08);
   }
 }
 
@@ -397,41 +382,41 @@
 
 @layer base {
   :root {
-    --background: 210 10% 3%;
-    --foreground: 0 0% 94%;
-    --card: 210 10% 5%;
-    --card-foreground: 0 0% 94%;
-    --popover: 210 10% 5%;
-    --popover-foreground: 0 0% 94%;
-    --primary: 214 100% 50%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 9% 10%;
-    --secondary-foreground: 0 0% 88%;
-    --muted: 210 9% 10%;
-    --muted-foreground: 220 9% 61%;
-    --accent: 214 100% 50%;
-    --accent-foreground: 0 0% 98%;
-    --destructive: 3 84% 57%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 220 9% 18%;
-    --input: 220 9% 18%;
-    --ring: 214 100% 50%;
-    --radius: 0.375rem;
-    --oc-bg: #050708;
-    --oc-surface: #0a0d10;
-    --oc-surface-raised: #101418;
-    --oc-line: rgba(143, 156, 169, 0.18);
-    --oc-line-strong: rgba(143, 156, 169, 0.32);
-    --oc-line-hot: rgba(47, 125, 246, 0.5);
-    --oc-text: #f5f7fa;
-    --oc-muted: #9aa4af;
-    --oc-muted-soft: #68727d;
-    --oc-primary: #2f7df6;
-    --oc-info: #4fb7d6;
-    --oc-gold: #d6a84f;
-    --oc-success: #35b779;
-    --oc-warning: #d99a3d;
-    --oc-danger: #e15b64;
+    --background: 0 0% 4%;
+    --foreground: 0 0% 98%;
+    --card: 0 0% 7%;
+    --card-foreground: 0 0% 98%;
+    --popover: 0 0% 7%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 212 100% 48%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 0 0% 10%;
+    --secondary-foreground: 0 0% 90%;
+    --muted: 0 0% 10%;
+    --muted-foreground: 240 4% 64%;
+    --accent: 212 100% 48%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 80% 64%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 0 0% 15%;
+    --input: 0 0% 15%;
+    --ring: 212 100% 48%;
+    --radius: 0.5rem;
+    --oc-bg: #0a0a0a;
+    --oc-surface: #111111;
+    --oc-surface-raised: #181818;
+    --oc-line: rgba(255, 255, 255, 0.09);
+    --oc-line-strong: rgba(255, 255, 255, 0.18);
+    --oc-line-hot: rgba(0, 112, 243, 0.55);
+    --oc-text: #fafafa;
+    --oc-muted: #a1a1aa;
+    --oc-muted-soft: #71717a;
+    --oc-primary: #0070f3;
+    --oc-info: #50b7d5;
+    --oc-gold: #f5a623;
+    --oc-success: #29bc7f;
+    --oc-warning: #f5a623;
+    --oc-danger: #ee5a5a;
     --oc-violet: #9b7bf3;
     --oc-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
     --oc-ease-emphasized: cubic-bezier(0.16, 1, 0.3, 1);
@@ -524,19 +509,8 @@
     font-variant-numeric: tabular-nums;
   }
 
-  body::before {
-    content: '';
-    position: fixed;
-    inset: 0;
-    z-index: 0;
-    pointer-events: none;
-    background:
-      linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
-    background-size: 48px 48px;
-    opacity: 0.12;
-  }
-
+  /* Clean solid background — the old fixed grid overlay added visual noise
+     on every page; canvas surfaces draw their own dotted grid via ReactFlow. */
   #root {
     position: relative;
     z-index: 1;
