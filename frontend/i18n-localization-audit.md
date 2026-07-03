@@ -1,0 +1,655 @@
+# i18n 本地化清单（自动扫描）
+
+以下仅列出包含中文字符但未命中基础 `t(` 引用模式的代码行（用于人工复核，不代表完整清单）。
+
+
+## frontend\src\components\AgentFlightBoard.tsx
+- 99: manual: '手动',
+- 100: scheduled: '定时',
+- 159: return { kind: 'model', role: 'Model Call', title: step \|\| 'AI 处理' }
+- 162: return { kind: 'tool', role: 'Tool', title: step \|\| '工具执行' }
+- 165: return { kind: 'store', role: 'Data', title: step \|\| '数据入库' }
+- 168: return { kind: 'notify', role: 'Notify', title: step \|\| '通知分发' }
+- 171: return { kind: 'output', role: 'Output', title: step \|\| '结果' }
+- 173: return { kind: 'agent', role: 'Agent', title: step \|\| '运行阶段' }
+- 222: title: '触发任务',
+- 230: title: '采集源',
+- 238: title: '处理数据',
+- 247: title: run.status === 'failed' ? '运行失败' : '生成结果',
+- 248: message: run.status === 'failed' ? '等待事件详情' : '记录已进入控制台',
+- 459: <PanelHeader label="AGENT FLIGHT" title={<h2 className="font-semibold text-zinc-100">运行故事板</h2>} />
+- 460: <div className="p-8 text-sm text-zinc-500">暂无运行记录</div>
+- 471: <h2 className="font-semibold text-zinc-100">运行故事板</h2>
+- 504: <h3 className="mt-1 text-sm font-semibold text-zinc-100">运行链路</h3>
+- 584: <div className="mt-8 text-sm text-zinc-500">选择一次运行查看详情</div>
+
+## frontend\src\components\ChannelConfigForm.tsx
+- 57: aria-label={ariaLabel ?? placeholder ?? '配置文本'}
+- 83: aria-label={ariaLabel ?? placeholder ?? '配置数字'}
+- 108: aria-label={ariaLabel ?? '配置选项'}
+- 164: aria-label="删除参数行"
+- 534: { group: '🇨🇳 国内', label: '小红书 · 搜索', site: 'xiaohongshu', command: 'search',
+- 536: argHints: { keyword: '搜索关键词（必填）', limit: '返回条数（默认 20）' } },
+- 538: { group: '🇨🇳 国内', label: '小红书 · 用户笔记', site: 'xiaohongshu', command: 'user',
+- 540: argHints: { id: '用户 ID（从主页 URL 获取，必填）', limit: '返回条数（默认 20）' } },
+- 542: { group: '🇨🇳 国内', label: 'Bilibili · 热门视频', site: 'bilibili', command: 'hot',
+- 544: argHints: { limit: '返回条数（默认 20）' } },
+- 546: { group: '🇨🇳 国内', label: 'Bilibili · 排行榜', site: 'bilibili', command: 'ranking',
+- 548: argHints: { limit: '返回条数（默认 20）' } },
+- 550: { group: '🇨🇳 国内', label: 'Bilibili · 关注动态', site: 'bilibili', command: 'dynamic',
+- 552: argHints: { limit: '返回条数（默认 20）' } },
+- 554: { group: '🇨🇳 国内', label: 'Bilibili · 收藏夹', site: 'bilibili', command: 'favorite',
+- 556: argHints: { limit: '返回条数（默认 20）' } },
+- 558: { group: '🇨🇳 国内', label: 'Bilibili · 用户视频', site: 'bilibili', command: 'user-videos',
+- 560: argHints: { uid: 'UP 主 UID（从个人主页 URL 获取，必填）', limit: '返回条数（默认 20）' } },
+- 562: { group: '🇨🇳 国内', label: '知乎 · 热榜', site: 'zhihu', command: 'hot',
+- 564: argHints: { limit: '返回条数（默认 20）' } },
+- 566: { group: '🇨🇳 国内', label: '知乎 · 问题回答', site: 'zhihu', command: 'question',
+- 568: argHints: { id: '问题 ID（从 URL 中获取，如 /question/123456789）', limit: '返回答案数（默认 10）' } },
+- 570: { group: '🇨🇳 国内', label: '微博 · 热搜', site: 'weibo', command: 'hot',
+- 574: { group: '🇨🇳 国内', label: 'V2EX · 热门话题', site: 'v2ex', command: 'hot',
+- 576: argHints: { limit: '返回条数（默认 20）' } },
+- 578: { group: '🇨🇳 国内', label: 'V2EX · 最新话题', site: 'v2ex', command: 'latest',
+- 580: argHints: { limit: '返回条数（默认 20）' } },
+- 582: { group: '🇨🇳 国内', label: '雪球 · 动态', site: 'xueqiu', command: 'hot',
+- 584: argHints: { limit: '返回条数（默认 20）' } },
+- 586: { group: '🇨🇳 国内', label: '雪球 · 热门股票', site: 'xueqiu', command: 'hot-stock',
+- 588: argHints: { limit: '返回条数（默认 20，最大 50）' } },
+- 590: { group: '🇨🇳 国内', label: '雪球 · 股票行情', site: 'xueqiu', command: 'stock',
+- 592: argHints: { symbol: 'A 股代码（如 601318 中国平安）或港股（如 00700 腾讯）' } },
+- 594: { group: '🇨🇳 国内', label: '什么值得买 · 搜索', site: 'smzdm', command: 'search',
+- 596: argHints: { keyword: '搜索关键词（必填）', limit: '返回条数（默认 20）' } },
+- 598: { group: '🇨🇳 国内', label: 'Boss直聘 · 职位搜索', site: 'boss', command: 'search',
+- 600: argHints: { keyword: '职位名称或关键词（必填，如 "前端工程师"）', city: '城市代码（101010100=北京，101020100=上海，101280100=广州，101280600=深圳）', limit: '返回条数（默认 20）' } },
+- 602: { group: '🇨🇳 国内', label: '携程 · 目的地搜索', site: 'ctrip', command: 'search',
+- 604: argHints: { query: '目的地或景点名称（必填，如 "三亚"）', limit: '返回条数（默认 15）' } },
+- 606: { group: '🇨🇳 国内', label: '小宇宙 · 播客信息', site: 'xiaoyuzhou', command: 'podcast',
+- 608: argHints: { id: '播客 ID（从 URL 获取，如 5e280fbd418a84a0463d3e3b）' } },
+- 610: { group: '🇨🇳 国内', label: '小宇宙 · 单集列表', site: 'xiaoyuzhou', command: 'podcast-episodes',
+- 612: argHints: { id: '播客 ID（同上）', limit: '返回集数（最多 15，受 SSR 限制）' } },
+- 618: argHints: { limit: '返回条数（1–500）' } },
+- 622: argHints: { limit: '返回条数（默认 20）' } },
+- 626: argHints: { query: '搜索关键词（必填）', limit: '返回条数（默认 20）' } },
+- 636: argHints: { limit: '返回条数（默认 20）' } },
+- 640: argHints: { query: '搜索关键词，支持运算符（必填，如 "AI lang:en"）', limit: '返回条数（默认 20）' } },
+- 644: argHints: { limit: '返回条数（默认 20）' } },
+- 648: argHints: { limit: '返回条数（默认 20）' } },
+- 652: argHints: { subreddit: '子版块名称（可选，留空则为全站热门，如 "programming"）', limit: '返回条数（默认 20）' } },
+- 656: argHints: { limit: '返回条数（默认 20）' } },
+- 660: argHints: { query: '搜索关键词（必填）', limit: '返回条数（最多 10）' } },
+- 664: argHints: { query: '职位名称或关键词（必填）', limit: '返回条数（默认 20）' } },
+- 668: argHints: { symbol: '股票代码（如 AAPL、GOOGL、TSLA、SPY）' } },
+- 672: argHints: { symbol: '股票代码（如 AAPL、SPY、QQQ）' } },
+- 680: xiaohongshu: '小红书', bilibili: 'Bilibili', zhihu: '知乎',
+- 681: weibo: '微博', v2ex: 'V2EX', xueqiu: '雪球',
+- 682: smzdm: '什么值得买', boss: 'Boss直聘', ctrip: '携程', xiaoyuzhou: '小宇宙',
+- 697: { label: '🇨🇳 国内', sites: ['xiaohongshu','bilibili','zhihu','weibo','v2ex','xueqiu','smzdm','boss','ctrip','xiaoyuzhou'] },
+- 736: aria-label="参数名"
+- 741: placeholder="参数名"
+- 744: aria-label={hintText ?? '参数值'}
+- 749: placeholder={hintText ?? '参数值'}
+- 753: aria-label="删除参数"
+- 768: aria-label="添加参数"
+- 774: <option value="">＋ 添加参数</option>
+- 780: <option value="__custom__">自定义参数...</option>
+- 788: <Plus size={12} /> 添加参数
+- 852: <option value="">-- 选择平台 --</option>
+- 873: <option value="">-- 选择命令 --</option>
+- 896: { value: 'json',  label: 'JSON（推荐）' },
+
+## frontend\src\components\CommandPalette.tsx
+- 41: keywords: ['dashboard', 'overview', '仪表盘', '概览'],
+- 49: keywords: ['topology', 'graph', 'node', 'flow', '拓扑', '节点'],
+- 57: keywords: ['records', 'data', 'notes', '采集记录', '笔记', '数据'],
+- 65: keywords: ['tasks', 'runs', 'failed', '任务', '失败', '运行'],
+- 73: keywords: ['sources', 'channels', 'feeds', '数据源', '来源'],
+- 81: keywords: ['nodes', 'browser', 'agent', '采集节点', '浏览器'],
+- 89: keywords: ['agents', 'ai', 'prompt', '智能体'],
+- 97: keywords: ['providers', 'models', 'keys', '模型', '提供商'],
+- 105: keywords: ['notifications', 'webhook', 'ack', '通知', '回执'],
+- 113: keywords: ['settings', 'preferences', 'configure', '设置', '偏好'],
+- 121: keywords: ['workers', 'celery', 'chrome', '工作节点'],
+
+## frontend\src\components\ConfirmDialog.tsx
+- 29: confirmLabel = '确认删除',
+- 43: <AlertDialogCancel>取消</AlertDialogCancel>
+
+## frontend\src\components\ErrorBoundary.tsx
+- 30: <p className="text-lg font-medium text-red-500">页面渲染出错</p>
+- 36: 重试
+
+## frontend\src\components\NotifierConfigForm.tsx
+- 275: placeholder="【新采集】{{title}}"
+- 282: placeholder={'**来源**：{{source_id}}\n**标题**：{{title}}\n**链接**：{{url}}'}
+
+## frontend\src\components\Pagination.tsx
+- 45: <span className="text-gray-500">共 {total} 条</span>
+- 53: aria-label="上一页"
+- 84: aria-label="下一页"
+
+## frontend\src\components\StatusBadge.tsx
+- 21: pending:       '待执行',
+- 22: running:       '采集中',
+- 23: ai_processing: 'AI 处理中',
+- 24: completed:     '已完成',
+- 25: failed:        '失败',
+- 26: cancelled:     '已取消',
+- 27: raw:           '原始',
+- 28: normalized:    '已归一化',
+- 29: ai_processed:  '已处理',
+- 30: sent:          '已发送',
+- 31: acked:         '已回执',
+- 32: not_required:  '无需回执',
+- 33: online:        '在线',
+- 34: offline:       '离线',
+
+## frontend\src\lib\collectionWorkflowModel.ts
+- 299: label: actionId === 'task.trigger' ? '再次触发' : '触发采集',
+- 300: description: actionId === 'task.trigger' ? '再次触发一次采集任务' : '触发一次采集',
+
+## frontend\src\lib\nodeActions.ts
+- 42: label: '触发采集',
+- 43: description: '直接触发一次数据源采集任务',
+- 53: message: '采集已提交',
+- 68: label: '打开源详情',
+- 69: description: '跳转到数据源列表并聚焦该来源',
+- 79: label: '再次触发',
+- 80: description: '基于任务源 ID 触发一次采集',
+- 91: message: '任务缺少 source_id',
+- 98: message: '采集已提交',
+- 114: label: '查看详情',
+- 115: description: '跳转到任务页面',
+- 125: label: '查看智能体',
+- 126: description: '跳转到智能体配置页',
+- 170: return '未知错误'
+
+## frontend\src\lib\nodeRunService.ts
+- 15: throw new Error('请输入对话指令')
+- 21: throw new Error('未识别指令类型，示例：trigger source <id> 或 run task <id>')
+- 26: throw new Error('未识别实体 ID，示例：trigger source <source_id>')
+- 54: if (/\btask\b\|任务/.test(lowered)) return 'task'
+- 55: if (/\bagent\b\|智能体/.test(lowered)) return 'agent'
+- 56: if (/\bsource\b\|源\|数据源/.test(lowered)) return 'source'
+- 60: return /task\|任务/.test(lowered)
+- 62: : /source\|源\|数据源/.test(lowered)
+- 71: const isExecute = /(执行\|触发\|trigger\|run\|rerun\|再触发\|启动)/.test(lowered)
+
+## frontend\src\pages\AgentsPage.tsx
+- 50: { key: 'glm',       label: 'GLM (智谱)',         processor_type: 'openai',  base_url: 'https://open.bigmodel.cn/api/paas/v4/', default_model: 'glm-4-flash', needs_api_key: true },
+- 52: { key: 'ollama',    label: 'Ollama（本地）',      processor_type: 'local',   base_url: 'http://localhost:11434',         default_model: 'llama3',               needs_api_key: false, base_url_editable: true },
+- 53: { key: 'custom',    label: '自定义',              processor_type: 'openai',  base_url: '',                               default_model: '',                     needs_api_key: true,  base_url_editable: true },
+- 64: source_id:     '数据源 ID',
+- 65: title:         '标题',
+- 66: url:           '链接',
+- 67: content:       '正文',
+- 68: author:        '作者',
+- 69: published_at:  '发布时间',
+- 71: rank:          '排名',
+- 72: id:            '条目 ID',
+- 73: likes:         '点赞数',
+- 74: score:         '评分',
+- 75: comments:      '评论数',
+- 76: plays:         '播放量',
+- 77: play:          '播放量',
+- 78: views:         '浏览量',
+- 80: danmaku:       '弹幕数',
+- 82: heat:          '热度',
+- 83: answers:       '回答数',
+- 84: votes:         '投票数',
+- 86: hot_value:     '热度值',
+- 87: category:      '分类',
+- 88: label:         '标签',
+- 90: subreddit:     '子版块',
+- 91: upvotes:       '赞数',
+- 92: section:       '栏目',
+- 94: symbol:        '股票代码',
+- 95: price:         '价格',
+- 96: change:        '涨跌额',
+- 97: changePercent: '涨跌幅',
+- 98: changePct:     '涨跌幅',
+- 99: open:          '开盘价',
+- 100: high:          '最高价',
+- 101: low:           '最低价',
+- 102: volume:        '成交量',
+- 103: marketCap:     '市值',
+- 104: peRatio:       '市盈率',
+- 105: eps:           '每股收益',
+- 106: heat_value:    '热度值',
+- 108: mall:          '商城',
+- 110: salary:        '薪资',
+- 111: company:       '公司',
+- 112: area:          '地区',
+- 113: experience:    '工作经验',
+- 114: degree:        '学历要求',
+- 115: skills:        '技能',
+- 118: type:          '类型',
+- 120: subscribers:   '订阅数',
+- 121: episodes:      '期数',
+- 122: eid:           '单集 ID',
+- 123: duration:      '时长',
+- 125: tweets:        '推文数',
+- 126: retweets:      '转发数',
+- 127: replies:       '回复数',
+- 129: location:      '地点',
+- 138: label: '内容摘要',
+- 139: template: '请对以下内容生成一段简洁的中文摘要（150字以内）：\n\n标题：{{title}}\n作者：{{author}}\n来源：{{source_id}}\n\n正文：\n{{content}}\n\n链接：{{url}}',
+- 143: label: '关键标签',
+- 144: template: '请从以下内容中提取 3-5 个关键标签，用中文逗号分隔，只输出标签，不要其他内容：\n\n标题：{{title}}\n内容：{{content}}',
+- 148: label: '情感分析',
+- 149: template: '请分析以下内容的情感倾向，按如下格式输出：\n情感：正面/中性/负面\n理由：（一句话解释）\n\n标题：{{title}}\n内容：{{content}}',
+- 153: label: '热榜解读',
+- 154: template: '以下是一条热榜内容，请简要说明其热度原因和潜在影响（100字以内）：\n\n标题：{{title}}\n热度排名：{{extra_rank}}\n来源：{{source_id}}\n链接：{{url}}',
+- 158: label: '结构化提取',
+- 159: template: '请从以下内容中提取关键信息，以 JSON 格式输出，包含字段：summary（摘要）、keywords（关键词数组）、entities（实体数组）：\n\n标题：{{title}}\n内容：{{content}}\n链接：{{url}}',
+- 165: { label: '🇨🇳 国内', sites: ['xiaohongshu', 'bilibili', 'zhihu', 'weibo', 'v2ex', 'xueqiu', 'smzdm', 'boss', 'ctrip', 'xiaoyuzhou'] },
+- 304: placeholder="内容摘要助手"
+- 321: <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">模型配置</p>
+- 329: 手动配置
+- 336: 已保存提供商
+- 363: <span className="text-gray-400 w-16">类型</span>
+- 374: <span className="text-gray-600 dark:text-gray-300">{selectedSavedProvider.api_key ? '••••••••' : '未配置（读环境变量）'}</span>
+- 381: <span className="ml-1 text-gray-400 font-normal text-[11px]">（留空使用提供商默认）</span>
+- 424: <span className="ml-1 text-gray-400 font-normal text-[11px]">（可选，留空读环境变量）</span>
+- 451: 接入点：<code className="font-mono">{provider.base_url}</code>
+- 468: <span className="text-xs text-gray-400 self-center mr-1">预设：</span>
+- 487: placeholder="请分析以下内容：\n\n{{title}}\n{{content}}"
+- 499: <option value="">— 选择平台预览字段 —</option>
+- 528: 标准字段
+- 530: <span className="ml-1 font-normal text-gray-400">（划线表示该站点无此字段）</span>
+- 560: <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">扩展字段</p>
+- 576: <p className="text-xs text-gray-400">无扩展字段</p>
+- 617: onSuccess: () => { qc.invalidateQueries({ queryKey: ['agents'] }); setShowAdd(false); toast.success('Agent 已保存') },
+- 618: onError: (err) => toast.error(err instanceof Error ? err.message : '操作失败'),
+- 623: onSuccess: () => { qc.invalidateQueries({ queryKey: ['agents'] }); setEditAgent(null); toast.success('Agent 已保存') },
+- 624: onError: (err) => toast.error(err instanceof Error ? err.message : '操作失败'),
+- 634: onSuccess: () => { qc.invalidateQueries({ queryKey: ['agents'] }); toast.success('已删除') },
+- 635: onError: (err) => toast.error(err instanceof Error ? err.message : '删除失败'),
+- 734: <Pencil size={12} /> 编辑
+
+## frontend\src\pages\BrowsersPage.tsx
+- 137: label: 'Browser Bridge 模式',
+- 140: tech: 'opencli 1.0 · daemon.js + opencli Browser Bridge 扩展',
+- 141: desc: 'Chrome 内置 "opencli Browser Bridge" 扩展通过 WebSocket 连接 daemon.js 常驻进程，由 daemon 代理执行浏览器操作。Cookie、登录态由真实 Chrome 保存，容器重启不丢失。',
+- 142: pros: ['登录状态持久保留，适合需要账号的站点（B站、小红书等）', '浏览器行为接近真实用户，抗检测能力强', 'daemon 常驻保持连接，任务触发延迟低'],
+- 146: label: 'CDP 直连模式',
+- 149: tech: 'opencli 0.9 · Playwright 直连 Chrome DevTools Protocol',
+- 150: desc: 'API 容器通过 Playwright 直接连接 Chrome 的 DevTools Protocol 端口（:19222）控制浏览器，不经过扩展或 daemon 中转。',
+- 151: pros: ['无需扩展参与，链路更简单，故障点更少', '适合无需登录的公开页面抓取', '每次任务独立连接，状态隔离'],
+- 199: <p className="text-xs font-medium text-gray-600 dark:text-gray-300 mb-2">控制模式</p>
+- 242: Agent 地址 <span className="text-gray-400 font-normal">（可选，留空则为本地实例）</span>
+- 251: <p className="mt-1 text-xs text-gray-400">填写后须选择连接协议（需配合 COLLECTION_MODE=agent）</p>
+- 257: <p className="text-xs font-medium text-gray-600 dark:text-gray-300 mb-2">连接协议</p>
+- 260: { value: 'http' as const, label: 'HTTP', desc: '局域网 / 代理可达，中心主动请求 Agent' },
+- 261: { value: 'ws' as const, label: 'WS', desc: '反向 WebSocket，Agent 主动连中心，适合 NAT / 跨网场景' },
+- 494: ⚠ CDP 会启动新 Chrome，本地请用 Bridge
+- 545: {available ? '在线' : '空闲'}
+- 549: {isDockerEndpoint ? label : '本地 Chrome'}
+- 621: {p === 'http' ? 'HTTP（局域网 / 代理）' : 'WS（反向连接）'}
+- 632: 保存
+- 638: 取消
+- 646: title="点击编辑 Agent 地址"
+- 659: <span className="text-gray-400 italic group-hover:text-blue-500">未配置 — 点击设置</span>
+- 714: toast.success('采集模式已切换')
+- 716: onError: (err) => toast.error(err instanceof Error ? err.message : '切换失败'),
+- 732: onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['browser-bindings'] }); toast.success('站点绑定已添加') },
+- 733: onError: (err) => toast.error(err instanceof Error ? err.message : '绑定失败'),
+- 738: onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['browser-bindings'] }); toast.success('已解绑') },
+- 739: onError: (err) => toast.error(err instanceof Error ? err.message : '解绑失败'),
+- 744: onError: (err) => toast.error(err instanceof Error ? err.message : '添加实例失败'),
+- 771: toast.success('实例已移除')
+- 774: onError: (err) => toast.error(err instanceof Error ? err.message : '移除实例失败'),
+- 868: <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-3">本地浏览器</p>
+- 896: <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-3">Docker 实例</p>
+
+## frontend\src\pages\DashboardPage.tsx
+- 26: all: '全部',
+- 27: today: '今天',
+- 28: yesterday: '昨天',
+- 29: '7d': '7 天内',
+- 30: '30d': '30 天内',
+- 31: custom: '自定义',
+- 35: manual: '手动',
+- 36: scheduled: '定时',
+- 148: 持平
+- 284: label="今日执行"
+- 305: label="成功执行次数"
+- 312: label="失败执行次数"
+- 319: label="成功率"
+- 321: sub={runs.total > 0 ? `${runs.success} / ${runs.total}` : '暂无数据'}
+- 335: <h3 className="mt-1 text-sm font-semibold text-zinc-100">7 天任务执行趋势</h3>
+- 355: <Line type="monotone" dataKey="total_runs" name="总执行" stroke={CHART_TOTAL} strokeWidth={2} dot={false} />
+- 356: <Line type="monotone" dataKey="success_runs" name="成功" stroke={CHART_SUCCESS} strokeWidth={2} dot={false} />
+- 357: <Line type="monotone" dataKey="failed_runs" name="失败" stroke={CHART_FAILED} strokeWidth={2} dot={false} />
+- 366: <h3 className="mt-1 text-sm font-semibold text-zinc-100">7 天新增采集量</h3>
+- 385: <Bar dataKey="new_records" name="新增记录" fill={CHART_RECORDS} radius={[0, 0, 0, 0]} />
+- 410: <th className="px-5 py-2.5 text-left font-telemetry text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-500" style={{ width: '90px' }}>触发方式</th>
+- 412: <th className="px-5 py-2.5 text-right font-telemetry text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-500" style={{ width: '70px' }}>耗时</th>
+
+## frontend\src\pages\NodesPage.tsx
+- 37: if (min < 1) return '刚刚'
+- 118: ws: 'WS 反向通道：Agent 主动连接中心，适合 NAT / 跨网场景，无需开放入站端口。',
+- 119: http: 'HTTP 直连：中心主动请求 Agent，适合局域网场景，Agent 需对中心可访问。',
+- 122: bridge: 'Bridge（推荐）：opencli 通过 Daemon 连接 Chrome，速度快、稳定。',
+- 123: cdp: 'CDP：opencli 通过 CDP 协议直连 Chrome，适合兼容性场景。',
+- 157: <h2 className="text-base font-semibold dark:text-white">新增节点</h2>
+- 161: Docker 直接运行
+- 164: Shell 脚本
+- 169: <span className="text-xs text-gray-500 dark:text-gray-400 w-16 shrink-0">注册模式</span>
+- 171: <button className={btnCls(regMode === 'ws')} onClick={() => { setRegMode('ws'); reset() }}>WS 反向通道</button>
+- 172: <button className={btnCls(regMode === 'http')} onClick={() => { setRegMode('http'); reset() }}>HTTP 直连</button>
+- 176: <span className="text-xs text-gray-500 dark:text-gray-400 w-16 shrink-0">采集模式</span>
+- 184: <span className="text-xs text-gray-500 dark:text-gray-400 w-16 shrink-0">网络模式</span>
+- 186: <button className={btnCls(dockerNetwork === 'bridge')} onClick={() => { setDockerNetwork('bridge'); reset() }}>Bridge（默认）</button>
+- 195: <button className={btnCls(!installChrome)} onClick={() => { setInstallChrome(false); reset() }}>宿主机 Chrome（~100 MB）</button>
+- 196: <button className={btnCls(installChrome)} onClick={() => { setInstallChrome(true); reset() }}>内置 Chrome（~450 MB）</button>
+- 204: <p>Host 网络：容器直接使用宿主机网络，无需端口映射，适合 API 运行在宿主机（非 Docker）时使用。仅 Linux 支持。</p>
+- 207: ? <p>内置 Chrome：镜像自包含 Chromium + Xvfb，无需宿主机提供 Chrome。</p>
+- 208: : <p>宿主机 Chrome：使用轻量镜像（~100 MB），连接宿主机 Chrome（需提前启动并开启 CDP 端口 9222）。</p>
+- 211: <p>Shell 脚本：无需 Docker，脚本自动安装 Python 依赖并启动 Agent，有 systemd 时注册为服务。</p>
+- 221: {copied ? '已复制' : '复制'}
+- 230: 关闭
+- 282: today: '今天', yesterday: '昨天', '7d': '7 天', '30d': '30 天', all: '全部',
+- 312: <p className="text-xs text-gray-400">加载中…</p>
+- 316: { label: '总执行', value: data.total },
+- 317: { label: '成功', value: data.success, cls: 'text-green-600 dark:text-green-400' },
+- 318: { label: '失败', value: data.failed, cls: 'text-red-500 dark:text-red-400' },
+- 319: { label: '成功率', value: `${data.success_rate}%`, cls: 'text-blue-600 dark:text-blue-400' },
+- 329: <p className="text-xs text-gray-400">累计采集 {data.records_collected} 条记录</p>
+- 355: title={isOnline ? '在线' : '离线'}
+- 388: {isOnline ? '● 在线' : '○ 离线'}
+- 408: 统计
+- 598: ⚠ CDP 会启动新 Chrome，本地请用 Bridge
+- 653: {available ? '在线' : '空闲'}
+- 657: {isDockerEndpoint ? label : '本地 Chrome'}
+- 721: {p === 'http' ? 'HTTP（局域网 / 代理）' : 'WS（反向连接）'}
+- 731: >保存</button>
+- 735: >取消</button>
+- 750: <span className="text-gray-400 italic group-hover:text-blue-500">未配置 — 点击设置</span>
+- 784: title: '切换为本地模式',
+- 785: desc: '切换后，所有采集任务将直连本地 Chrome，不再通过 Agent 节点路由。',
+- 786: warn: '已注册的 Agent 节点不会被删除，切换回 Agent 模式后仍可继续使用。',
+- 788: btnLabel: '切换为本地模式',
+- 791: title: '切换为 Agent 模式',
+- 792: desc: '切换后，采集任务将通过已注册的 Agent 节点执行。',
+- 793: warn: '请确保至少有一个 Agent 节点在线，否则采集任务将失败。',
+- 795: btnLabel: '切换为 Agent 模式',
+- 813: {isPending ? '切换中…' : info.btnLabel}
+- 820: 取消
+- 874: onSuccess: (newConfig) => { qc.setQueryData(['system-config'], newConfig); toast.success('采集模式已切换') },
+- 875: onError: (err) => toast.error(err instanceof Error ? err.message : '切换失败'),
+- 893: onSuccess: () => { qc.invalidateQueries({ queryKey: ['nodes'] }); toast.success('节点已删除') },
+- 894: onError: (err) => toast.error(err instanceof Error ? err.message : '删除失败'),
+- 899: onSuccess: () => { qc.invalidateQueries({ queryKey: ['browser-bindings'] }); toast.success('站点绑定已添加') },
+- 900: onError: (err) => toast.error(err instanceof Error ? err.message : '绑定失败'),
+- 905: onSuccess: () => { qc.invalidateQueries({ queryKey: ['browser-bindings'] }); toast.success('已解绑') },
+- 906: onError: (err) => toast.error(err instanceof Error ? err.message : '解绑失败'),
+- 919: {/* ── 采集模式 ── */}
+- 925: <span className="ml-2 text-xs text-gray-400">切换后立即生效，影响所有任务的采集路由</span>
+- 940: label: '本地模式',
+- 941: desc: '中心直连本地 Chrome（shell 部署），不经过 Agent。适合单机开发或简单采集场景。',
+- 947: label: 'Agent 模式',
+- 948: desc: '通过 Agent 节点采集，支持本地 Docker 容器或远端多机分布式部署。',
+- 976: {/* ── 本地模式：直连本地 Chrome ── */}
+- 981: <p className="text-sm text-gray-500">未检测到本地浏览器端点</p>
+- 982: <p className="text-xs text-gray-400 mt-1">请确保 Chrome 以调试模式启动（Bridge 或 CDP）</p>
+- 1006: {/* ── Agent 模式：节点列表 ── */}
+- 1011: <h2 className="text-base font-semibold text-gray-800 dark:text-white">Agent 节点</h2>
+- 1012: <p className="text-xs text-gray-500 mt-0.5">已注册的 Agent 节点（本地或远端）</p>
+
+## frontend\src\pages\NotificationsPage.tsx
+- 130: onSuccess: () => { qc.invalidateQueries({ queryKey: ['notification-rules'] }); setShowAdd(false); toast.success('通知规则已保存') },
+- 131: onError: (err) => toast.error(err instanceof Error ? err.message : '操作失败'),
+- 136: onSuccess: () => { qc.invalidateQueries({ queryKey: ['notification-rules'] }); toast.success('已删除') },
+- 137: onError: (err) => toast.error(err instanceof Error ? err.message : '删除失败'),
+
+## frontend\src\pages\ProvidersPage.tsx
+- 20: { value: 'openai', label: 'OpenAI 兼容' },
+- 21: { value: 'local',  label: '本地模型（Ollama 等）' },
+- 25: openai:    { base_url: 'https://api.openai.com/v1',                   label: 'OpenAI 官方' },
+- 28: glm:       { base_url: 'https://open.bigmodel.cn/api/paas/v4/',       label: 'GLM (智谱)' },
+- 30: ollama:    { base_url: 'http://localhost:11434',                       label: 'Ollama 本地' },
+- 140: <span className="ml-1 text-gray-400 font-normal text-[11px]">（OpenAI 兼容接口地址）</span>
+- 227: onSuccess: () => { qc.invalidateQueries({ queryKey: ['providers'] }); setShowAdd(false); toast.success('模型服务商已保存') },
+- 228: onError: (err) => toast.error(err instanceof Error ? err.message : '操作失败'),
+- 233: onSuccess: () => { qc.invalidateQueries({ queryKey: ['providers'] }); setEditProvider(null); toast.success('模型服务商已保存') },
+- 234: onError: (err) => toast.error(err instanceof Error ? err.message : '操作失败'),
+- 244: onSuccess: () => { qc.invalidateQueries({ queryKey: ['providers'] }); toast.success('已删除') },
+- 245: onError: (err) => toast.error(err instanceof Error ? err.message : '删除失败'),
+
+## frontend\src\pages\RecordsPage.tsx
+- 62: return typeof title === 'string' && title.trim() ? title : '未命名记录'
+- 107: 选择一条记录开始整理，右侧会固定保留上下文和本地笔记。
+- 155: 操作笔记
+- 157: <Badge variant="secondary">本地保存</Badge>
+- 163: placeholder="下一步、判断、要回看的问题..."
+- 175: {expanded ? '收起 JSON' : '展开 JSON'}
+- 181: <p className="telemetry-label mb-2">标准化数据</p>
+- 186: <p className="telemetry-label mb-2">AI 分析</p>
+- 193: j/k 或方向键移动焦点，Enter 展开当前记录。
+- 307: onSuccess: () => { invalidate(); toast.success('已批量删除') },
+- 308: onError: (err) => toast.error(err instanceof Error ? err.message : '删除失败'),
+- 313: onSuccess: () => { invalidate(); setConfirmClearOpen(false); toast.success('已清空') },
+- 314: onError: (err) => toast.error(err instanceof Error ? err.message : '操作失败'),
+- 399: header: () => '来源',
+- 482: sub={focusedRecord ? focusedRecord.id.slice(0, 8) : '未选择'}
+- 489: sub={pageErrorCount > 0 ? '优先处理失败记录' : '本页无失败记录'}
+- 496: sub={pageNoteCount > 0 ? '已有本地整理上下文' : '可在右侧添加笔记'}
+- 505: title={<h2 className="text-base font-semibold text-zinc-50">搜索、筛选和批量整理</h2>}
+- 506: description="筛选只改变当前工作视图，右侧焦点会跟随键盘或点击移动。"
+- 528: 一键清空
+- 543: placeholder="搜索标题、内容..."
+- 588: title="暂无采集记录"
+- 589: description="触发一次采集任务后，数据将在此展示"
+- 616: <p className="telemetry-label mb-2">标准化数据</p>
+- 621: <p className="telemetry-label mb-2">AI 分析</p>
+- 663: title="确认清空全部记录？"
+- 664: description="此操作不可撤销，所有采集记录将被永久删除。"
+- 665: confirmLabel={clearAll.isPending ? '清空中…' : '确认清空'}
+
+## frontend\src\pages\SchedulesPage.tsx
+- 32: const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+- 35: { value: 'once',     label: '指定时间' },
+- 36: { value: 'minutely', label: '每 N 分钟' },
+- 37: { value: 'hourly',   label: '每小时' },
+- 38: { value: 'daily',    label: '每天' },
+- 39: { value: 'weekly',   label: '每周' },
+- 40: { value: 'monthly',  label: '每月' },
+- 41: { value: 'custom',   label: '自定义' },
+- 133: <p className="text-xs text-amber-600 dark:text-amber-400">执行完成后自动禁用</p>
+- 138: <span className={labelSm}>每</span>
+- 142: <span className={labelSm}>分钟执行一次</span>
+- 147: <span className={labelSm}>每小时第</span>
+- 150: <option key={m} value={m}>{String(m).padStart(2, '0')} 分</option>
+- 153: <span className={labelSm}>执行</span>
+- 160: <span className={labelSm}>每</span>
+- 168: <span className={labelSm}>每月</span>
+- 171: <option key={d} value={d}>{d} 日</option>
+- 176: <span className={labelSm}>{fields.freq === 'daily' ? '每天' : ''} </span>
+- 179: <option key={h} value={h}>{String(h).padStart(2, '0')} 时</option>
+- 184: <option key={m} value={m}>{String(m).padStart(2, '0')} 分</option>
+- 187: <span className={labelSm}>执行</span>
+- 316: 数据源 <span className="text-red-500">*</span>
+- 319: <option value="">— 选择数据源 —</option>
+- 333: placeholder="每天早上9点"
+- 340: <label className={labelCls}>执行频率</label>
+- 372: <label className={labelCls} style={{ marginBottom: 0 }}>采集节点</label>
+- 373: <span className="px-1.5 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300">Agent 模式</span>
+- 385: <span className="text-sm text-gray-600 dark:text-gray-300">自动分配</span>
+- 414: {isConnected ? '● 在线' : '○ 离线'}
+- 437: <span className="px-1.5 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">本地模式</span>
+- 479: {ep.available ? '● 在线' : '○ 离线'}
+- 492: <span className="text-xs text-gray-400">暂无绑定站点</span>
+- 557: onSuccess: () => { qc.invalidateQueries({ queryKey: ['schedules'] }); setShowAdd(false); toast.success('计划已保存') },
+- 558: onError: (err) => toast.error(err instanceof Error ? err.message : '操作失败'),
+- 568: onSuccess: () => { qc.invalidateQueries({ queryKey: ['schedules'] }); toast.success('已删除') },
+- 569: onError: (err) => toast.error(err instanceof Error ? err.message : '删除失败'),
+- 599: header: '数据源',
+- 655: <Trash2 size={12} /> 删除
+
+## frontend\src\pages\SettingsPage.tsx
+- 69: const message = err instanceof Error ? err.message : '执行失败'
+
+## frontend\src\pages\SourcesPage.tsx
+- 122: hint: '账号环境 / 浏览器采集',
+- 129: hint: '订阅流',
+- 136: hint: '结构化接口',
+- 143: hint: '网页抓取',
+- 150: hint: '本地命令',
+- 252: 先定节点身份，再补必要参数；采集动作会回到工作台触发。
+- 283: {CHANNEL_META[type].label}{type !== 'opencli' ? '（开发中）' : ''}
+- 297: placeholder="给这个节点写一个短备注，方便之后回看"
+- 457: <label className={labelCls} style={{ marginBottom: 0 }}>采集节点</label>
+- 458: <span className="px-1.5 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300">Agent 模式</span>
+- 486: {isConnected ? '● 在线' : '○ 离线'}
+- 503: ? '未选择则自动分配'
+- 513: <span className="px-1.5 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">本地模式</span>
+- 555: {ep.available ? '● 在线' : '○ 离线'}
+- 568: <span className="text-xs text-gray-400">暂无绑定站点</span>
+- 620: if (Number.isNaN(date.getTime())) return '未同步'
+- 622: if (diff >= 0 && diff < 60_000) return '刚刚更新'
+- 653: return source.description \|\| '未配置目标'
+- 730: {source.enabled ? '在线' : '暂停'}
+- 750: title={source.enabled ? '暂停节点' : '启用节点'}
+- 753: {source.enabled ? '暂停' : '启用'}
+- 761: title="立即触发"
+- 768: {triggerState === 'ok' ? '已触发' : triggerState === 'err' ? '失败' : '触发'}
+- 775: title="编辑节点"
+- 778: 编辑
+- 785: title="删除节点"
+- 824: const message = result.errors?.join(', ') \|\| '连接失败'
+- 828: const message = err instanceof Error ? err.message : '测试失败'
+- 841: <p className="mt-4 text-sm font-semibold text-zinc-300">没有选中节点</p>
+- 843: 节点详情、测试结果和触发动作会固定在这里。
+- 877: {source.enabled ? '在线' : '暂停'}
+- 903: {testStatus.state === 'ok' ? '连接可达' : testStatus.state === 'err' ? '连接失败' : '测试连通'}
+- 911: {triggerState === 'ok' ? '任务已触发' : triggerState === 'err' ? '触发失败' : '触发采集'}
+- 916: {source.enabled ? '暂停' : '启用'}
+- 920: 编辑
+- 924: 删除
+- 946: <span className="text-xs text-zinc-600">暂无标签</span>
+- 1005: { label: '全部', value: 'all' as FilterType, count: sources.length },
+- 1031: toast.success('采集节点已创建')
+- 1033: onError: (err) => toast.error(err instanceof Error ? err.message : '创建失败'),
+- 1042: toast.success('采集节点已更新')
+- 1044: onError: (err) => toast.error(err instanceof Error ? err.message : '更新失败'),
+- 1057: toast.success('已删除')
+- 1059: onError: (err) => toast.error(err instanceof Error ? err.message : '删除失败'),
+- 1072: toast.success('任务已触发')
+- 1078: toast.error(_err instanceof Error ? _err.message : '触发失败')
+- 1090: title="数据源节点"
+- 1091: description="用节点方式组织采集入口、账号环境和触发动作。"
+- 1094: <Plus size={16} /> 新增节点
+- 1106: title="数据源节点"
+- 1107: description="把采集入口当成节点管理：先选节点，再看目标、测试、触发和配置。"
+- 1110: <Plus size={16} /> 新增节点
+- 1133: sub={channelFilter === 'all' ? '全部类型' : CHANNEL_META[channelFilter].label}
+- 1140: sub={selectedSource?.name ?? '未选中'}
+- 1150: title={<h2 className="text-base font-semibold text-zinc-50">采集节点图</h2>}
+- 1151: description="每个节点都带目标、状态、触发入口和配置摘要。"
+- 1167: placeholder="搜索节点、目标、备注..."
+- 1236: {searchQuery \|\| channelFilter !== 'all' ? '没有匹配节点' : '还没有采集节点'}
+- 1240: ? '换一个筛选条件，或者直接创建新的采集节点。'
+- 1241: : '先放一个 OpenCLI、RSS 或 API 节点，后续再把调度和记录串起来。'}
+- 1244: <Plus size={15} /> 新增节点
+- 1323: description="此操作不可撤销，数据源将被永久删除。"
+- 1324: confirmLabel="确认删除"
+- 1461: {isEdit ? '编辑采集计划' : '新增采集计划'}
+- 1464: 第一版保持轻量：计划只绑定数据源、Cron、时区和启停状态。
+- 1470: <label htmlFor="schedule-source-id" className={labelCls}>数据源</label>
+- 1486: <label htmlFor="schedule-name" className={labelCls}>计划名称</label>
+- 1524: <span className="block text-sm font-medium text-zinc-100">启用计划</span>
+- 1525: <span className="mt-1 block text-xs text-zinc-500">关闭后保留配置，但不会自动触发。</span>
+- 1538: <Button type="button" variant="outline" onClick={onClose}>取消</Button>
+- 1540: {isEdit ? '保存计划' : '创建计划'}
+- 1593: setTestStatus({ state: 'err', message: result.errors?.join(', ') \|\| '连接失败' })
+- 1596: setTestStatus({ state: 'err', message: err instanceof Error ? err.message : '测试失败' })
+- 1608: <p className="mt-4 text-sm font-semibold text-zinc-300">选择一个节点</p>
+- 1610: 右侧会切换源详情、计划详情或最近任务详情。
+- 1636: <ExternalLink size={14} /> 查看全局拓扑
+- 1640: <CircleDot size={14} /> {schedule.enabled ? '停用' : '启用'}
+- 1643: <Pencil size={14} /> 编辑
+- 1646: <Trash2 size={14} /> 删除
+- 1693: {actionState === 'ok' ? '任务已触发' : actionState === 'err' ? '触发失败' : action.label}
+- 1697: <Button type="button" onClick={() => onRunAction('')} disabled>无可执行动作</Button>
+- 1700: <ExternalLink size={14} /> 查看全局拓扑
+- 1732: 下次执行：{formatDateTime(stats.nextRunAt)}
+- 1744: <ExternalLink size={14} /> 查看全局拓扑
+- 1747: <Calendar size={14} /> 新增计划
+- 1756: {testStatus.state === 'ok' ? '连接可达' : testStatus.state === 'err' ? '连接失败' : '测试'}
+- 1774: {actionState === 'ok' ? '已触发' : actionState === 'err' ? '触发失败' : action.label}
+- 1778: <Button type="button" onClick={() => onRunAction('')} disabled>无可执行动作</Button>
+- 1784: <CircleDot size={14} /> {source.enabled ? '暂停' : '启用'}
+- 1787: <Pencil size={14} /> 编辑
+- 1790: <Trash2 size={14} /> 删除
+- 1965: { label: '全部', value: 'all' as FilterType, count: sources.length },
+- 2008: toast.success('画布布局已重置')
+- 2022: toast.success('采集节点已创建')
+- 2024: onError: (err) => toast.error(err instanceof Error ? err.message : '创建失败'),
+- 2034: toast.success('采集节点已更新')
+- 2036: onError: (err) => toast.error(err instanceof Error ? err.message : '更新失败'),
+- 2045: onError: (err) => toast.error(err instanceof Error ? err.message : '更新失败'),
+- 2054: toast.success('已删除')
+- 2056: onError: (err) => toast.error(err instanceof Error ? err.message : '删除失败'),
+- 2066: toast.success('采集计划已创建')
+- 2068: onError: (err) => toast.error(err instanceof Error ? err.message : '创建计划失败'),
+- 2078: toast.success('采集计划已更新')
+- 2080: onError: (err) => toast.error(err instanceof Error ? err.message : '更新计划失败'),
+- 2089: toast.success('计划已删除')
+- 2091: onError: (err) => toast.error(err instanceof Error ? err.message : '删除计划失败'),
+- 2135: toast.error(err instanceof Error ? err.message : '执行失败')
+- 2165: toast.error('动作暂不可执行')
+- 2171: toast.error('未找到数据源')
+- 2184: toast.error('未找到任务')
+- 2217: title="数据源工作流"
+- 2218: description="用自由画布组织数据源、采集计划和最近任务。"
+- 2219: action={<Button type="button" onClick={() => openAddModal('opencli')}><Plus size={16} /> 新增数据源</Button>}
+- 2229: title="数据源工作流"
+- 2230: description="源、采集计划和最近任务在同一张画布里拖拽、聚焦、设定计划。"
+- 2235: <Calendar size={16} /> 新增计划
+- 2239: <Plus size={16} /> 新增数据源
+- 2256: sub="启用 / 全部计划"
+- 2280: title={<h2 className="text-base font-semibold text-zinc-50">采集自由画布</h2>}
+- 2281: description="拖拽节点会自动保存到本地布局；计划节点复用现有 Cron Schedule API。"
+- 2286: <RotateCcw size={14} /> 重置布局
+- 2300: placeholder="搜索源、目标、备注..."
+- 2355: {searchQuery \|\| channelFilter !== 'all' ? '没有匹配的数据源' : '还没有数据源'}
+- 2359: ? '换一个筛选条件，或者直接创建新的采集节点。'
+- 2360: : '先放一个 OpenCLI、RSS 或 API 节点，再在 Inspector 里挂采集计划。'}
+- 2363: <Plus size={15} /> 新增数据源
+- 2472: description="此操作不可撤销，数据源将被永久删除。"
+- 2473: confirmLabel="确认删除"
+- 2487: description="计划会被删除，但历史任务不会被修改。"
+- 2488: confirmLabel="删除计划"
+
+## frontend\src\pages\TasksPage.tsx
+- 19: trigger: '触发',
+- 20: collect: '采集',
+- 21: normalize: '归一化',
+- 22: store: '入库',
+- 23: ai_process: 'AI 处理',
+- 24: notify: '通知',
+- 25: complete: '完成',
+- 26: failed: '失败',
+- 62: <div className="px-6 py-3 text-xs text-gray-400 animate-pulse">加载执行跟踪…</div>
+- 68: <div className="px-6 py-3 text-xs text-gray-400">暂无执行日志</div>
+- 102: {nodeUrl && <span>节点: {nodeUrl}</span>}
+- 135: return <div className="px-6 py-3 text-xs text-gray-400 animate-pulse">加载执行记录…</div>
+- 139: return <div className="px-6 py-3 text-xs text-gray-400">暂无执行记录</div>
+- 171: {run.records_collected} 条
+- 254: title="查看执行记录"
+
+## frontend\src\pages\TopologyPage.tsx
+- 289: toast.error(_error instanceof Error ? _error.message : '动作执行失败')
+- 297: toast.error('当前节点暂无可执行动作')
+- 302: toast.error('此动作当前不可执行')
+- 330: 清除聚焦
+- 459: { id: 'skills', label: '缺技能', value: graph.summary.skills.missing + graph.summary.skills.blocked, icon: CircleAlert, tone: 'text-red-300' },
+- 492: { mode: 'flow', label: '流程', icon: SlidersHorizontal },
+- 493: { mode: 'health', label: '健康', icon: CircleAlert },
+- 494: { mode: 'skills', label: '缺能力', icon: CircleAlert },
+- 595: 补齐能力
+
+## frontend\src\pages\WorkersPage.tsx
+- 52: <p className="text-base font-medium text-gray-700 dark:text-gray-200">单机模式运行中</p>
+- 54: 当前使用本地 asyncio 执行任务，不支持查看工作节点状态。
+- 55: 如需分布式部署，请将 <code className="px-1 py-0.5 bg-gray-100 dark:bg-gray-700 rounded text-xs">TASK_EXECUTOR</code> 改为 <code className="px-1 py-0.5 bg-gray-100 dark:bg-gray-700 rounded text-xs">celery</code> 并启动分布式任务服务。

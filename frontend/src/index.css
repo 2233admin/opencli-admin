@@ -1,0 +1,613 @@
+@import 'tailwindcss';
+
+@custom-variant dark (&:is(.dark *));
+
+@theme {
+  --font-sans: var(--font-ui);
+  --font-mono: var(--font-code);
+  --font-telemetry: var(--font-telemetry);
+
+  --color-primary-50: #eef6ff;
+  --color-primary-100: #d9ecff;
+  --color-primary-300: #66aaff;
+  --color-primary-400: #3291ff;
+  --color-primary-500: #0070f3;
+  --color-primary-600: #0761d1;
+  --color-primary-700: #0a4fa8;
+
+  --color-signal-gold: #f5a623;
+  --color-signal-cyan: #50b7d5;
+  --color-signal-green: #29bc7f;
+  --color-signal-amber: #f5a623;
+  --color-signal-red: #ee5a5a;
+  --color-signal-violet: #9b7bf3;
+
+  /* role-named signal tokens — the single-track target API (DESIGN_SYSTEM.md §1.4);
+     color-named ones above are transitional until T3b migration completes */
+  --color-signal-success: #29bc7f;
+  --color-signal-warning: #f5a623;
+  --color-signal-danger: #ee5a5a;
+  --color-signal-info: #50b7d5;
+  --color-signal-agent: #9b7bf3;
+  --color-signal-highlight: #f5a623;
+
+  /* Vercel/Linear-style neutral dark surfaces: pure grays (no blue cast),
+     one restrained blue accent, hairline borders. */
+  --color-ops-black: #0a0a0a;
+  --color-ops-panel: #111111;
+  --color-ops-raised: #181818;
+  --color-ops-line: #262626;
+  --color-ops-text: #fafafa;
+  --color-ops-muted: #a1a1aa;
+  --color-ops-accent: #0070f3;
+
+  /* micro type scale for dense telemetry UI (see docs/DESIGN_SYSTEM.md §2) */
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
+  --text-3xs: 0.625rem;
+  --text-3xs--line-height: 0.875rem;
+
+  /* three-level elevation shadows (docs/DESIGN_SYSTEM.md §4) */
+  --shadow-panel: 0 8px 24px rgba(0, 0, 0, 0.45);
+  --shadow-overlay: 0 10px 34px rgba(0, 0, 0, 0.6);
+  --shadow-drag: 0 18px 48px rgba(0, 0, 0, 0.38);
+}
+
+/*
+  The default border color has changed to `currentcolor` in Tailwind CSS v4,
+  so we've added these compatibility styles to make sure everything still
+  looks the same as it did with Tailwind CSS v3.
+
+  If we ever want to remove these styles, we need to add an explicit border
+  color utility to any element that depends on these defaults.
+*/
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentcolor);
+  }
+}
+
+@utility mission-canvas {
+  background: linear-gradient(180deg, var(--oc-bg) 0%, #030405 42%, #000 100%);
+}
+
+@utility telemetry-panel {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  /* Linear-style layered surface: a faint top-edge highlight over a near-black
+     panel gives depth without the heavy gradients we had before. */
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0) 120px),
+    #0e0e0e;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.4),
+    0 2px 8px -2px rgba(0, 0, 0, 0.5);
+
+  & > * {
+    position: relative;
+  }
+}
+
+/* Opt-in interactive card: crisp hairline that brightens on hover, subtle
+   lift — the OpenBB/Linear "this row is alive" affordance. */
+@utility telemetry-card-interactive {
+  transition:
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    transform 140ms ease;
+
+  &:hover {
+    border-color: rgba(255, 255, 255, 0.16);
+    box-shadow:
+      0 0 0 1px rgba(0, 0, 0, 0.4),
+      0 8px 24px -8px rgba(0, 0, 0, 0.7);
+  }
+}
+
+@utility telemetry-label {
+  color: rgb(161 161 170);
+  font-family: var(--font-telemetry);
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+@utility telemetry-value {
+  color: rgb(250 250 250);
+  font-family: var(--font-telemetry);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+}
+
+@utility telemetry-button {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 7px;
+  background: transparent;
+  color: rgb(212 212 216);
+  font-family: var(--font-telemetry);
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
+
+  &:hover {
+    border-color: rgba(255, 255, 255, 0.24);
+    background: rgba(255, 255, 255, 0.06);
+    color: #fff;
+  }
+
+  &[data-active='true'] {
+    border-color: rgba(0, 112, 243, 0.8);
+    background: rgba(0, 112, 243, 0.15);
+    color: #fff;
+  }
+}
+
+@utility telemetry-input {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 7px;
+  background: #0a0a0a;
+  color: #fff;
+  font-family: var(--font-code);
+  font-size: 0.75rem;
+
+  &:focus {
+    border-color: rgba(0, 112, 243, 0.6);
+  }
+}
+
+@utility operator-surface {
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 8px;
+  background: #111111;
+}
+
+@utility operator-card {
+  position: relative;
+  min-height: 7rem;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 8px;
+  background: #111111;
+  padding: 0.75rem;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    box-shadow 120ms ease;
+
+  &:hover {
+    border-color: rgba(255, 255, 255, 0.2);
+    background-color: #161616;
+  }
+
+  &[data-active='true'] {
+    border-color: rgba(0, 112, 243, 0.65);
+    background-color: rgba(0, 112, 243, 0.06);
+    box-shadow: inset 0 0 0 1px rgba(0, 112, 243, 0.08);
+  }
+}
+
+@utility operator-card__glyph {
+  display: grid;
+  height: 2.25rem;
+  width: 2.25rem;
+  flex-shrink: 0;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.035);
+  color: rgb(212 212 216);
+}
+
+/* Scoped thin scrollbar for overflow panels inside the canvas surfaces
+ * (Collection Canvas palette/inspector/run-log, node-kit workbench rail) —
+ * the fat default browser scrollbar reads as a cosmetic bug there. Not
+ * applied globally: page-level scroll areas outside the canvas keep the
+ * platform default. */
+@utility thin-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+
+  &::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.1);
+    border-radius: 9999px;
+  }
+
+  &::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(255, 255, 255, 0.2);
+  }
+}
+
+@utility live-run-surface-grid {
+  min-height: 680px;
+
+  & .react-grid-item {
+    transition:
+      border-color 160ms cubic-bezier(0.2, 0.8, 0.2, 1),
+      box-shadow 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  & .react-grid-item.react-draggable-dragging {
+    z-index: 30;
+    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.38);
+  }
+
+  & .react-grid-item.resizing {
+    z-index: 30;
+    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.38);
+  }
+
+  & .react-grid-placeholder {
+    border: 1px solid rgba(47, 125, 246,0.55);
+    border-radius: 6px;
+    background: rgba(47, 125, 246,0.12);
+    opacity: 1;
+  }
+
+  & .react-resizable-handle::after {
+    border-color: rgba(161, 161, 170, 0.72);
+  }
+}
+
+@utility react-grid-item {
+  .live-run-surface-grid & {
+    transition:
+      border-color 160ms cubic-bezier(0.2, 0.8, 0.2, 1),
+      box-shadow 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  .live-run-surface-grid &.react-draggable-dragging {
+    z-index: 30;
+    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.38);
+  }
+
+  .live-run-surface-grid &.resizing {
+    z-index: 30;
+    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.38);
+  }
+}
+
+@utility react-draggable-dragging {
+  .live-run-surface-grid &.react-grid-item {
+    z-index: 30;
+    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.38);
+  }
+}
+
+@utility resizing {
+  .live-run-surface-grid &.react-grid-item {
+    z-index: 30;
+    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.38);
+  }
+}
+
+@utility react-grid-placeholder {
+  .live-run-surface-grid & {
+    border: 1px solid rgba(47, 125, 246,0.55);
+    border-radius: 6px;
+    background: rgba(47, 125, 246,0.12);
+    opacity: 1;
+  }
+}
+
+@utility react-resizable-handle {
+  .live-run-surface-grid &::after {
+    border-color: rgba(161, 161, 170, 0.72);
+  }
+}
+
+@layer utilities {
+  @font-face {
+    font-family: 'Source Han Sans Local';
+    src:
+      local('Geist'), local('Geist Sans'), local('Source Han Sans CN'),
+      local('Source Han Sans SC'), local('Source Han Sans'),
+      local('Noto Sans SC'), local('Noto Sans CJK SC');
+    font-display: swap;
+  }
+
+  @font-face {
+    font-family: 'ToaHI Local';
+    src:
+      local('Geist Mono'), local('ToaHI-Rg'), local('ToaHI Rg'),
+      local('Toa HI Rg'), local('ToaHI-Regular'), local('ToaHI');
+    font-display: swap;
+  }
+
+  @keyframes fadeSlideIn {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  .page-enter {
+    animation: fadeSlideIn 0.2s ease-out;
+  }
+
+  /* ── M3 motion: emphasized easing + standard durations ──────────────── */
+  :root {
+    --m3-ease-emphasized: cubic-bezier(0.2, 0, 0, 1);
+    --m3-ease-decel: cubic-bezier(0.05, 0.7, 0.1, 1); /* enter */
+    --m3-ease-accel: cubic-bezier(0.3, 0, 0.8, 0.15); /* exit */
+    --m3-dur-short: 200ms;
+    --m3-dur-medium: 300ms;
+    --m3-dur-long: 450ms;
+  }
+  @keyframes m3SheetIn {
+    from {
+      opacity: 0;
+      transform: translateX(28px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+  @keyframes m3LevelIn {
+    from {
+      opacity: 0;
+      transform: scale(0.985);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+  .m3-sheet-in {
+    animation: m3SheetIn var(--m3-dur-medium) var(--m3-ease-decel) both;
+  }
+  .m3-level-in {
+    animation: m3LevelIn var(--m3-dur-long) var(--m3-ease-decel) both;
+  }
+
+  /* node-kit: collision feedback (xyflow getIntersectingNodes) */
+  @keyframes kitCollide {
+    0%,
+    100% {
+      transform: translateX(0);
+    }
+    25% {
+      transform: translateX(-2px);
+    }
+    75% {
+      transform: translateX(2px);
+    }
+  }
+  .react-flow__node.kit-collide {
+    animation: kitCollide 0.16s ease-in-out infinite;
+  }
+  .react-flow__node.kit-collide > div {
+    box-shadow:
+      0 0 0 2px rgba(244, 63, 94, 0.85),
+      0 0 18px rgba(244, 63, 94, 0.35);
+    border-radius: 10px;
+  }
+}
+
+@layer base {
+  :root {
+    --background: 0 0% 4%;
+    --foreground: 0 0% 98%;
+    --card: 0 0% 7%;
+    --card-foreground: 0 0% 98%;
+    --popover: 0 0% 7%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 212 100% 48%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 0 0% 10%;
+    --secondary-foreground: 0 0% 90%;
+    --muted: 0 0% 10%;
+    --muted-foreground: 240 4% 64%;
+    --accent: 212 100% 48%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 80% 64%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 0 0% 15%;
+    --input: 0 0% 15%;
+    --ring: 212 100% 48%;
+    --radius: 0.5rem;
+    --oc-bg: #0a0a0a;
+    --oc-surface: #111111;
+    --oc-surface-raised: #181818;
+    --oc-line: rgba(255, 255, 255, 0.09);
+    --oc-line-strong: rgba(255, 255, 255, 0.18);
+    --oc-line-hot: rgba(0, 112, 243, 0.55);
+    --oc-text: #fafafa;
+    --oc-muted: #a1a1aa;
+    --oc-muted-soft: #71717a;
+    --oc-primary: #0070f3;
+    --oc-info: #50b7d5;
+    --oc-gold: #f5a623;
+    --oc-success: #29bc7f;
+    --oc-warning: #f5a623;
+    --oc-danger: #ee5a5a;
+    --oc-violet: #9b7bf3;
+    --oc-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+    --oc-ease-emphasized: cubic-bezier(0.16, 1, 0.3, 1);
+    --font-ui: 'Source Han Sans Local', 'Geist', 'Geist Sans', 'Source Han Sans CN', 'Source Han Sans SC', 'Noto Sans SC', 'Noto Sans CJK SC', 'Microsoft YaHei UI', 'Microsoft YaHei', 'PingFang SC', 'Hiragino Sans GB', system-ui, sans-serif;
+    --font-telemetry: 'ToaHI Local', 'Geist Mono', 'ToaHI-Rg', 'ToaHI Rg', 'Source Han Sans Local', 'Source Han Sans CN', 'Noto Sans SC', 'Microsoft YaHei UI', system-ui, sans-serif;
+    --font-code: 'ToaHI Local', 'Geist Mono', 'ToaHI-Rg', 'ToaHI Rg', 'Cascadia Mono', 'SFMono-Regular', 'JetBrains Mono', ui-monospace, monospace;
+  }
+
+  /* ── Design skins (data-skin on <html>) ─────────────────────────── */
+  [data-skin='spacex'] {
+    --primary: 0 0% 82%;
+    --primary-foreground: 0 0% 8%;
+    --accent: 0 0% 82%;
+    --accent-foreground: 0 0% 8%;
+    --ring: 0 0% 72%;
+    --radius: 0;
+    --oc-bg: #000000;
+    --oc-surface: #050505;
+    --oc-surface-raised: #0c0c0c;
+    --oc-line: rgba(255, 255, 255, 0.14);
+    --oc-line-strong: rgba(255, 255, 255, 0.28);
+    --oc-line-hot: rgba(255, 255, 255, 0.55);
+    --oc-primary: #e4e4e7;
+    --oc-info: #d4d4d8;
+  }
+
+  [data-skin='nvidia'] {
+    --primary: 82 100% 36%;
+    --primary-foreground: 0 0% 5%;
+    --accent: 82 100% 40%;
+    --accent-foreground: 0 0% 5%;
+    --ring: 82 100% 40%;
+    --oc-bg: #080b06;
+    --oc-surface: #0d1109;
+    --oc-surface-raised: #12170c;
+    --oc-line: rgba(118, 185, 0, 0.16);
+    --oc-line-strong: rgba(118, 185, 0, 0.32);
+    --oc-line-hot: rgba(118, 185, 0, 0.55);
+    --oc-primary: #76b900;
+    --oc-info: #8fd400;
+    --oc-success: #76b900;
+  }
+
+  [data-skin='binance'] {
+    --primary: 45 91% 49%;
+    --primary-foreground: 0 0% 6%;
+    --accent: 45 91% 52%;
+    --accent-foreground: 0 0% 6%;
+    --ring: 45 91% 50%;
+    --oc-bg: #0b0e11;
+    --oc-surface: #12161b;
+    --oc-surface-raised: #181d23;
+    --oc-line: rgba(240, 185, 11, 0.16);
+    --oc-line-strong: rgba(240, 185, 11, 0.3);
+    --oc-line-hot: rgba(240, 185, 11, 0.5);
+    --oc-primary: #f0b90b;
+    --oc-gold: #f0b90b;
+    --oc-info: #f0b90b;
+  }
+
+  [data-skin='spacex'] body {
+    background: #000000;
+  }
+  [data-skin='nvidia'] body {
+    background: #080b06;
+  }
+  [data-skin='binance'] body {
+    background: #0b0e11;
+  }
+
+  .dark {
+    color-scheme: dark;
+  }
+
+  * {
+    @apply border-zinc-800;
+  }
+
+  body {
+    @apply min-h-screen bg-ops-black text-zinc-100 antialiased;
+    font-family: var(--font-ui);
+    letter-spacing: 0;
+  }
+
+  code,
+  kbd,
+  pre,
+  .font-mono {
+    font-family: var(--font-code);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Clean solid background — the old fixed grid overlay added visual noise
+     on every page; canvas surfaces draw their own dotted grid via ReactFlow. */
+  #root {
+    position: relative;
+    z-index: 1;
+    min-height: 100vh;
+    isolation: isolate;
+  }
+
+  ::selection {
+    background: rgba(47, 125, 246,0.35);
+    color: #fff;
+  }
+
+  :focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px #000, 0 0 0 4px #4f9bff;
+  }
+}
+
+/* React Flow dark theme — UNLAYERED + specificity to beat react-flow's own style.css */
+.react-flow .react-flow__controls {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  overflow: hidden;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+
+.react-flow .react-flow__controls-button {
+  background: rgba(14, 14, 18, 0.96);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  fill: #d4d4d8;
+  color: #d4d4d8;
+  width: 26px;
+  height: 26px;
+}
+
+.react-flow .react-flow__controls-button:hover {
+  background: rgba(40, 40, 48, 0.96);
+}
+
+.react-flow .react-flow__controls-button svg {
+  fill: currentColor;
+}
+
+.react-flow .react-flow__minimap {
+  background: rgba(8, 8, 11, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+}
+
+.react-flow .react-flow__minimap-mask {
+  fill: rgba(6, 6, 8, 0.7);
+}
+
+.react-flow .react-flow__edge-text {
+  fill: #a1a1aa;
+  font-family: var(--font-code);
+  font-size: 10px;
+}
+
+.react-flow .react-flow__edge-textbg {
+  fill: var(--oc-bg);
+  fill-opacity: 0.85;
+}
+
+.react-flow .react-flow__attribution {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
