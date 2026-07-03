@@ -11,7 +11,7 @@ import * as Icons from 'lucide-react'
 
 import { useState } from 'react'
 
-import type { FieldDef, PortDef } from '../spec'
+import type { FieldDef, NodeCategory, PortDef } from '../spec'
 import type {
   SensorConfidence,
   SensorCoverage,
@@ -21,6 +21,78 @@ import type {
   SuggestedControlAction,
   ControlMode,
 } from '../../api/types'
+
+/** Per-category visual encoding. Each node kind gets one restrained accent hue
+ *  used consistently across the icon chip, idle border, top accent bar and
+ *  connection ports — so the graph reads as a legend, not a rainbow. Purple is
+ *  intentionally avoided per the design system. */
+export interface CategoryStyle {
+  name: string
+  chip: string
+  border: string
+  bar: string
+  port: string
+  label: string
+}
+
+export const CATEGORY_STYLE: Record<NodeCategory, CategoryStyle> = {
+  source: {
+    name: '数据源',
+    chip: 'border-emerald-400/30 bg-emerald-400/10 text-emerald-300',
+    border: 'border-emerald-400/25 hover:border-emerald-400/50',
+    bar: 'bg-emerald-400/70',
+    port: 'bg-emerald-400! hover:bg-emerald-300!',
+    label: 'text-emerald-300/80',
+  },
+  transform: {
+    name: '变换',
+    chip: 'border-sky-400/30 bg-sky-400/10 text-sky-300',
+    border: 'border-sky-400/25 hover:border-sky-400/50',
+    bar: 'bg-sky-400/70',
+    port: 'bg-sky-400! hover:bg-sky-300!',
+    label: 'text-sky-300/80',
+  },
+  sink: {
+    name: '输出',
+    chip: 'border-amber-400/30 bg-amber-400/10 text-amber-300',
+    border: 'border-amber-400/25 hover:border-amber-400/50',
+    bar: 'bg-amber-400/70',
+    port: 'bg-amber-400! hover:bg-amber-300!',
+    label: 'text-amber-300/80',
+  },
+  control: {
+    name: '控制',
+    chip: 'border-rose-400/30 bg-rose-400/10 text-rose-300',
+    border: 'border-rose-400/25 hover:border-rose-400/50',
+    bar: 'bg-rose-400/70',
+    port: 'bg-rose-400! hover:bg-rose-300!',
+    label: 'text-rose-300/80',
+  },
+  display: {
+    name: '展示',
+    chip: 'border-cyan-400/30 bg-cyan-400/10 text-cyan-300',
+    border: 'border-cyan-400/25 hover:border-cyan-400/50',
+    bar: 'bg-cyan-400/70',
+    port: 'bg-cyan-400! hover:bg-cyan-300!',
+    label: 'text-cyan-300/80',
+  },
+  agent: {
+    name: '智能体',
+    chip: 'border-teal-400/30 bg-teal-400/10 text-teal-300',
+    border: 'border-teal-400/25 hover:border-teal-400/50',
+    bar: 'bg-teal-400/70',
+    port: 'bg-teal-400! hover:bg-teal-300!',
+    label: 'text-teal-300/80',
+  },
+  custom: {
+    name: '自定义',
+    chip: 'border-zinc-400/30 bg-zinc-400/10 text-zinc-300',
+    border: 'border-white/12 hover:border-white/30',
+    bar: 'bg-zinc-500/60',
+    port: 'bg-zinc-300! hover:bg-white!',
+    label: 'text-zinc-400/80',
+  },
+}
 
 /** Resolve a lucide icon by name ('database' -> Database). Falls back to Box. */
 export function iconByName(name?: string): LucideIcon {
@@ -32,18 +104,38 @@ export function iconByName(name?: string): LucideIcon {
   return ((Icons as unknown as Record<string, LucideIcon>)[pascal] as LucideIcon) ?? Box
 }
 
-export function NodeHeader({ icon, title, subtitle }: { icon?: string; title: string; subtitle?: string }) {
+export function NodeHeader({
+  icon,
+  title,
+  subtitle,
+  category,
+}: {
+  icon?: string
+  title: string
+  subtitle?: string
+  category?: NodeCategory
+}) {
   const Icon = iconByName(icon)
+  const cat = category ? CATEGORY_STYLE[category] : null
   return (
     <div className="flex items-start gap-2.5">
-      <div className="grid h-8 w-8 shrink-0 place-items-center rounded-md border border-white/10 bg-white/4 text-zinc-300">
+      <div
+        className={[
+          'grid h-8 w-8 shrink-0 place-items-center rounded-md border',
+          cat?.chip ?? 'border-white/10 bg-white/4 text-zinc-300',
+        ].join(' ')}
+      >
         <Icon className="h-4 w-4" />
       </div>
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm font-semibold text-white" title={title}>
           {title}
         </div>
-        {subtitle && <div className="truncate text-2xs text-zinc-500">{subtitle}</div>}
+        {subtitle ? (
+          <div className="truncate text-2xs text-zinc-500">{subtitle}</div>
+        ) : (
+          cat && <div className={['truncate text-3xs font-medium tracking-wide uppercase', cat.label].join(' ')}>{cat.name}</div>
+        )}
       </div>
     </div>
   )
@@ -58,11 +150,14 @@ export function NodePort({
   side,
   index = 0,
   count = 1,
+  accent,
 }: {
   port: PortDef
   side: 'input' | 'output'
   index?: number
   count?: number
+  /** category port color classes (e.g. 'bg-emerald-400! hover:bg-emerald-300!') */
+  accent?: string
 }) {
   const top = count > 1 ? `${((index + 1) / (count + 1)) * 100}%` : undefined
   return (
@@ -72,7 +167,10 @@ export function NodePort({
       position={side === 'input' ? Position.Left : Position.Right}
       style={top ? { top } : undefined}
       title={port.label ?? port.id}
-      className="h-3.5! w-3.5! border-2! border-ops-panel! bg-sky-400! transition-transform hover:scale-125! hover:bg-sky-300!"
+      className={[
+        'h-3.5! w-3.5! border-2! border-ops-panel! transition-transform hover:scale-125!',
+        accent ?? 'bg-sky-400! hover:bg-sky-300!',
+      ].join(' ')}
     />
   )
 }
