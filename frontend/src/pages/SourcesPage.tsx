@@ -63,7 +63,6 @@ import {
   runNodeAction,
   type NodeActionRunRequest,
 } from '../lib/nodeActions'
-import { isTopologyLabEnabled } from '../labs/topology/flags'
 import {
   Activity,
   Braces,
@@ -73,7 +72,6 @@ import {
   CircleDot,
   Clock,
   Database,
-  ExternalLink,
   FileInput,
   Filter,
   Ghost,
@@ -1658,11 +1656,6 @@ function WorkflowInspector({
             ]}
           />
           <div className="grid gap-2">
-            {isTopologyLabEnabled && (
-              <Link className="inline-flex items-center justify-center gap-2 rounded-md bg-sky-500 px-3 py-2 text-sm font-semibold text-zinc-950 hover:bg-sky-400" to={`/labs/topology?source=${schedule.source_id}`}>
-                <ExternalLink size={14} /> 查看全局拓扑
-              </Link>
-            )}
             <div className="grid grid-cols-3 gap-2">
               <Button type="button" variant="outline" onClick={onToggleSchedule}>
                 <CircleDot size={14} /> {schedule.enabled ? '停用' : '启用'}
@@ -1724,11 +1717,6 @@ function WorkflowInspector({
             }) : (
               <Button type="button" onClick={() => onRunAction('')} disabled>无可执行动作</Button>
             )}
-            {isTopologyLabEnabled && (
-              <Link className="inline-flex items-center justify-center gap-2 rounded-md border border-white/10 px-3 py-2 text-sm font-medium text-zinc-200 hover:bg-white/4" to={`/labs/topology?source=${source.id}`}>
-                <ExternalLink size={14} /> 查看全局拓扑
-              </Link>
-            )}
           </div>
           <JsonBlock data={task.parameters ?? {}} />
         </div>
@@ -1776,11 +1764,6 @@ function WorkflowInspector({
           >
             <Activity size={14} /> 控制室
           </Link>
-          {isTopologyLabEnabled && (
-            <Link className="inline-flex items-center justify-center gap-2 rounded-md bg-sky-500 px-3 py-2 text-sm font-semibold text-zinc-950 hover:bg-sky-400" to={`/labs/topology?source=${source.id}`}>
-              <ExternalLink size={14} /> 查看全局拓扑
-            </Link>
-          )}
           <Button type="button" onClick={onAddSchedule} variant="outline">
             <Calendar size={14} /> 新增计划
           </Button>
@@ -1937,12 +1920,6 @@ function SourceConfigurationPanel({
       description="这里负责采集源身份、参数、计划和触发；节点关系和跨系统诊断移到拓扑工作台。"
       action={(
         <div className="flex flex-wrap gap-2">
-          {isTopologyLabEnabled && (
-            <Link to="/plans" className="inline-flex h-9 items-center justify-center gap-2 border border-white/14 bg-black/25 px-3 font-telemetry text-2xs font-semibold uppercase tracking-[0.12em] text-zinc-200 hover:border-white/28 hover:bg-white/7.5">
-              <ExternalLink size={14} />
-              采集画布
-            </Link>
-          )}
           <Button type="button" size="sm" variant="outline" onClick={onToggleDiagnosticCanvas}>
             {showDiagnosticCanvas ? '关闭诊断画布' : '打开诊断画布'}
           </Button>

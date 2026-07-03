@@ -2,7 +2,6 @@ import { lazy, Suspense, type ReactNode } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import Layout from './components/Layout'
 import { PageLoader } from './components/LoadingSpinner'
-import { isTopologyLabEnabled } from './labs/topology/flags'
 
 const DashboardPage = lazy(() => import('./pages/DashboardPage'))
 const SettingsPage = lazy(() => import('./pages/SettingsPage'))
@@ -19,9 +18,6 @@ const ProvidersPage = lazy(() => import('./pages/ProvidersPage'))
 const NodesPage = lazy(() => import('./pages/NodesPage'))
 const ActionHistoryPage = lazy(() => import('./pages/ActionHistoryPage'))
 const SourceControlRoomPage = lazy(() => import('./pages/SourceControlRoomPage'))
-const TopologyPage = lazy(() => import('./labs/topology/TopologyPage'))
-const NodeKitPage = lazy(() => import('./labs/topology/NodeKitPage'))
-const WorkflowPage = lazy(() => import('./labs/topology/workflow/WorkflowPage'))
 const PlanCanvasPage = lazy(() => import('./pages/PlanCanvasPage'))
 
 function LazyRoute({ children }: { children: ReactNode }) {
@@ -33,54 +29,19 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<Layout />}>
-          <Route index element={<Navigate to={isTopologyLabEnabled ? '/plans' : '/dashboard'} replace />} />
+          <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="dashboard" element={<LazyRoute><DashboardPage /></LazyRoute>} />
           <Route path="settings" element={<LazyRoute><SettingsPage /></LazyRoute>} />
-          {/* Collection Canvas is ONE surface (ADR-0008): /labs/topology used to host
-           * a separate global-topology page (NetworkPage) alongside /plans/new's
-           * per-plan canvas — two canvas entries for one concept. NetworkPage's
-           * component tree now lives inside PlanCanvasPage as its "overview" view
-           * (see pages/PlanCanvasPage.tsx), so this route is just a redirect for
-           * old links/bookmarks. */}
+          {/* Collection Canvas is ONE surface (ADR-0008): the Plan canvas at /plans
+           * is the single canvas entry. These paths are legacy redirects kept only
+           * so old links/bookmarks (global topology, node-kit / workflow labs) land
+           * somewhere sensible. */}
           <Route path="labs/topology" element={<Navigate to="/plans" replace />} />
-          <Route
-            path="labs/node-kit"
-            element={
-              isTopologyLabEnabled ? (
-                <LazyRoute>
-                  <NodeKitPage />
-                </LazyRoute>
-              ) : (
-                <Navigate to="/dashboard" replace />
-              )
-            }
-          />
-          <Route
-            path="labs/topology-editor"
-            element={
-              isTopologyLabEnabled ? (
-                <LazyRoute>
-                  <WorkflowPage />
-                </LazyRoute>
-              ) : (
-                <Navigate to="/dashboard" replace />
-              )
-            }
-          />
-          <Route path="labs/workflow" element={<Navigate to={isTopologyLabEnabled ? '/labs/topology-editor' : '/dashboard'} replace />} />
-          <Route
-            path="labs/topology-legacy"
-            element={
-              isTopologyLabEnabled ? (
-                <LazyRoute>
-                  <TopologyPage />
-                </LazyRoute>
-              ) : (
-                <Navigate to="/dashboard" replace />
-              )
-            }
-          />
-          <Route path="topology" element={<Navigate to={isTopologyLabEnabled ? '/plans' : '/dashboard'} replace />} />
+          <Route path="labs/node-kit" element={<Navigate to="/plans" replace />} />
+          <Route path="labs/topology-editor" element={<Navigate to="/plans" replace />} />
+          <Route path="labs/workflow" element={<Navigate to="/plans" replace />} />
+          <Route path="labs/topology-legacy" element={<Navigate to="/plans" replace />} />
+          <Route path="topology" element={<Navigate to="/plans" replace />} />
           <Route path="plans" element={<LazyRoute><PlanCanvasPage /></LazyRoute>} />
           <Route path="plans/new" element={<LazyRoute><PlanCanvasPage /></LazyRoute>} />
           <Route path="plans/:planId" element={<LazyRoute><PlanCanvasPage /></LazyRoute>} />
