@@ -275,15 +275,13 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<WorkflowNodeTyp
     setDraftText(demandTextValue)
   }, [demandTextValue])
   // Contextual Zoom: <0.5 = icon only, 0.5-1 = compact, >1 = full
-  const detail: "low" | "mid" | "high" = isCollectionNeed
+  const detail: "low" | "mid" | "high" = !contextualZoom
     ? "high"
-    : !contextualZoom
-      ? "high"
-      : zoom < 0.5
-        ? "low"
-        : zoom < 1
-          ? "mid"
-          : "high"
+    : zoom < 0.5
+      ? "low"
+      : zoom < 1
+        ? "mid"
+        : "high"
 
   const primitivePorts = Array.isArray(data.primitivePorts)
     ? (data.primitivePorts as Array<{ id: string; direction: string; type: string }>)
@@ -404,7 +402,7 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<WorkflowNodeTyp
       data-package-state={internalLocked ? "locked" : internalDraft ? "draft" : "canonical"}
       className={cn(
         "workflow-node-card group relative overflow-hidden bg-card text-card-foreground transition-colors",
-        isCollectionNeed ? "w-[288px]" : "w-[204px]",
+        isCollectionNeed && detail === "high" ? "w-[288px]" : "w-[204px]",
         selected ? "ring-1 ring-foreground/30" : "ring-1 ring-border hover:ring-[#3a3d42]",
         proposalFocused && "ring-2 ring-[#ff7a17]/40",
       )}
@@ -414,7 +412,7 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<WorkflowNodeTyp
         outlineOffset: "-1px",
       }}
     >
-      <NodeToolbar isVisible={selected} position={Position.Bottom} offset={8}>
+      <NodeToolbar isVisible={selected && detail === "high"} position={Position.Bottom} offset={8}>
         <button
           type="button"
           onClick={() => addChildNode(id)}
