@@ -1,5 +1,6 @@
 import type { Node, Edge, XYPosition } from "@xyflow/react"
 import type { WorkflowRuntimeCapability } from "@/lib/workflow/capabilities"
+import type { WorkflowNodeRunEvent, WorkflowRunNodeState } from "@/lib/workflow/backend-runs"
 
 export type NodeCategory = "trigger" | "action" | "logic" | "data" | "annotation" | "shape"
 
@@ -123,6 +124,8 @@ export interface WorkflowNodeData extends Record<string, unknown> {
     diagnostic?: string
   }
   runtimeCapability?: WorkflowRuntimeCapability
+  runtimeRunState?: WorkflowRunNodeState
+  runtimeLatestEvent?: WorkflowNodeRunEvent
   /** node-internal mini network preview */
   miniNetwork?: MiniNetworkPreview
   /** topic collapse as package internals */

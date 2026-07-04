@@ -4,6 +4,7 @@ import type { WorkflowSimulationRun } from "./simulation"
 import type { AdapterBinding, WorkflowProject, WorkflowProjectNode } from "./schema"
 import { buildProjectContractReport, type ContractStatus, type PortContract } from "./node-contracts"
 import type { WorkflowRuntimeCapability } from "./capabilities"
+import type { WorkflowRunNodeState } from "./backend-runs"
 
 export type ManagedNodeSummary = {
   id: string
@@ -20,6 +21,7 @@ export type ManagedNodeSummary = {
   contractStatus: ContractStatus
   ports: PortContract[]
   runtimeCapability?: WorkflowRuntimeCapability
+  runtimeRunState?: WorkflowRunNodeState
 }
 
 export type AdapterUsageSummary = AdapterBinding & {
@@ -84,6 +86,7 @@ export function summarizeNodeManagement(
       const event = lastEvents.get(node.id)
       const contract = contractsByNode.get(node.id)
       const contractStatus = findingsByNode.get(node.id) ?? (contract ? "pass" : "warn")
+      const runtimeRunState = readRuntimeRunState(node)
       return {
         id: node.id,
         kind: node.kind,
@@ -92,13 +95,14 @@ export function summarizeNodeManagement(
         paramsCount: Object.keys(node.params).length,
         incoming: incoming.get(node.id) ?? 0,
         outgoing: outgoing.get(node.id) ?? 0,
-        lastEvent: event?.event ?? "not-run",
-        lastItemCount: event?.itemCount ?? 0,
+        lastEvent: runtimeRunState?.status ?? event?.event ?? "not-run",
+        lastItemCount: runtimeRunState?.batches.reduce((sum, batch) => sum + batch.itemCount, 0) ?? event?.itemCount ?? 0,
         proposalImpacted: proposalNodes.has(node.id),
         contractId: contract?.contractId ?? "missing",
         contractStatus,
         ports: contract?.ports ?? [],
         runtimeCapability: readRuntimeCapability(node),
+        runtimeRunState,
       }
     }),
     adapters: project.adapters.map((adapter) => ({
@@ -149,6 +153,14 @@ function readRuntimeCapability(node: WorkflowProjectNode): WorkflowRuntimeCapabi
   const record = value as Record<string, unknown>
   if (typeof record.id !== "string" || typeof record.status !== "string") return undefined
   return value as WorkflowRuntimeCapability
+}
+
+function readRuntimeRunState(node: WorkflowProjectNode): WorkflowRunNodeState | undefined {
+  const value = node.ui?.runtimeRunState
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined
+  const record = value as Record<string, unknown>
+  if (typeof record.nodeId !== "string" || typeof record.status !== "string") return undefined
+  return value as WorkflowRunNodeState
 }
 
 function maxStatus(left: ContractStatus | undefined, right: ContractStatus): ContractStatus {

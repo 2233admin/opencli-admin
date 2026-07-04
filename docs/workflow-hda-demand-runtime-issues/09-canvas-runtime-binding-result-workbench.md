@@ -12,11 +12,17 @@ This slice should reuse existing WorkflowProject, React Flow, Zustand node data,
 ## Acceptance criteria
 
 - [ ] Frontend can apply/review an AI WorkflowProject patch.
-- [ ] Frontend can trigger a compiled workflow run.
-- [ ] Frontend subscribes to node run events and patches existing Canvas nodes.
-- [ ] Run trace panel shows real runtime events instead of only local simulation for this path.
+- [x] Frontend can trigger a compiled workflow run.
+- [x] Frontend subscribes to node run events and patches existing Canvas nodes.
+- [x] Run trace panel shows real runtime events instead of only local simulation for this path.
 - [ ] Result workbench shows evidence batches, clusters, partial results, missing sources, and node-linked artifacts.
 - [ ] Frontend tests cover patch reducer, event-to-node-status reducer, and result projection view model.
+
+## Implementation note
+
+- Canvas Run now uses the backend workflow run axis instead of local run artifacts.
+- Run Trace shows `WorkflowRunProjection`, latest SSE node events, blocked reasons, batch counts, and item counts.
+- Node state patching handles both top-level nodes and HDA internals by mapping backend `package::internal` runtime ids onto visible Canvas `package__internal` node ids.
 
 ## Blocked by
 

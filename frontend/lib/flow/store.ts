@@ -43,6 +43,12 @@ import {
   type WorkflowCapabilitiesResponse,
   type WorkflowRuntimeCapability,
 } from "../workflow/capabilities"
+import type {
+  WorkflowNodeRunEvent,
+  WorkflowRunNodeState,
+  WorkflowRunProjection,
+  WorkflowRunStatus,
+} from "../workflow/backend-runs"
 
 export type { GeneratedWorkflowSpec } from "./types"
 
@@ -145,6 +151,8 @@ type FlowState = {
   importFlow: (snapshot: FlowSnapshot) => void
   importWorkflowProject: (project: WorkflowProject) => void
   applyWorkflowCapabilities: (capabilities: WorkflowCapabilitiesResponse) => void
+  applyWorkflowNodeRunEvent: (event: WorkflowNodeRunEvent) => void
+  applyWorkflowRunProjection: (projection: WorkflowRunProjection) => void
   updateWorkflowProfile: (profile: WorkflowProfile) => void
   focusProposalTargets: (nodeIds: string[], edgeIds?: string[]) => void
   clearProposalFocus: () => void
@@ -174,6 +182,200 @@ function isWorkflowRuntimeCapability(value: unknown): value is WorkflowRuntimeCa
   if (!value || typeof value !== "object" || Array.isArray(value)) return false
   const record = value as Record<string, unknown>
   return typeof record.id === "string" && typeof record.status === "string"
+}
+
+function workflowNodeStatusFromRun(status: WorkflowRunStatus): WorkflowNodeData["status"] {
+  switch (status) {
+    case "queued":
+      return "idle"
+    case "running":
+    case "partial":
+      return "running"
+    case "completed":
+      return "success"
+    case "blocked":
+    case "failed":
+      return "error"
+    default:
+      return "idle"
+  }
+}
+
+function workflowNodeStatusFromEvent(eventType: WorkflowNodeRunEvent["eventType"]): WorkflowNodeData["status"] {
+  switch (eventType) {
+    case "queued":
+      return "idle"
+    case "started":
+    case "partial":
+    case "batch_ready":
+      return "running"
+    case "completed":
+      return "success"
+    case "blocked":
+    case "failed":
+      return "error"
+    default:
+      return "idle"
+  }
+}
+
+function runStateForEvent(event: WorkflowNodeRunEvent): WorkflowRunNodeState {
+  return {
+    nodeId: event.nodeId,
+    status:
+      event.eventType === "queued"
+        ? "queued"
+        : event.eventType === "completed"
+          ? "completed"
+          : event.eventType === "blocked"
+            ? "blocked"
+            : event.eventType === "failed"
+              ? "failed"
+              : event.eventType === "batch_ready" || event.eventType === "partial"
+                ? "partial"
+                : "running",
+    packageNodeId: event.packageNodeId,
+    internalNodeId: event.internalNodeId,
+    sourceGroups: event.sourceGroup ? [event.sourceGroup] : [],
+    latestEventId: event.id,
+    eventCount: 1,
+    blockReasons: event.blockReason ? [event.blockReason] : [],
+    batches: event.batch ? [event.batch] : [],
+  }
+}
+
+function runtimeNodeIdCandidates(
+  nodeId: string,
+  packageNodeId?: string | null,
+  internalNodeId?: string | null,
+): string[] {
+  const candidates = [nodeId]
+  if (packageNodeId && internalNodeId) {
+    candidates.push(scopedInternalId(packageNodeId, internalNodeId))
+  }
+  if (nodeId.includes("::")) {
+    candidates.push(nodeId.replace("::", "__"))
+  }
+  return Array.from(new Set(candidates))
+}
+
+function runtimeStateByCanvasNodeId(projection: WorkflowRunProjection): Map<string, WorkflowRunNodeState> {
+  const byCanvasNodeId = new Map<string, WorkflowRunNodeState>()
+  for (const nodeState of projection.nodeStates) {
+    for (const candidate of runtimeNodeIdCandidates(
+      nodeState.nodeId,
+      nodeState.packageNodeId,
+      nodeState.internalNodeId,
+    )) {
+      byCanvasNodeId.set(candidate, nodeState)
+    }
+  }
+  return byCanvasNodeId
+}
+
+function patchProjectNodeRunEvent(
+  node: WorkflowProjectNode,
+  event: WorkflowNodeRunEvent,
+  runtimeRunState: WorkflowRunNodeState,
+): WorkflowProjectNode {
+  const matchesPackageNode = node.id === event.nodeId
+  const matchesInternalNode = Boolean(event.packageNodeId === node.id && event.internalNodeId && node.internals)
+  if (!matchesPackageNode && !matchesInternalNode) return node
+
+  return {
+    ...node,
+    ...(matchesPackageNode
+      ? {
+          ui: {
+            ...(node.ui ?? {}),
+            runtimeRunState,
+            runtimeLatestEvent: event,
+          },
+        }
+      : {}),
+    ...(matchesInternalNode && node.internals
+      ? {
+          internals: {
+            ...node.internals,
+            nodes: node.internals.nodes.map((internalNode) =>
+              patchInternalRunEvent(internalNode, event, runtimeRunState),
+            ),
+          },
+        }
+      : {}),
+  }
+}
+
+function patchProjectNodeRunProjection(
+  node: WorkflowProjectNode,
+  stateByCanvasNodeId: Map<string, WorkflowRunNodeState>,
+): WorkflowProjectNode {
+  const runtimeRunState = stateByCanvasNodeId.get(node.id)
+  const hasInternalStates = Boolean(
+    node.internals?.nodes.some((internalNode) =>
+      stateByCanvasNodeId.has(scopedInternalId(node.id, readInternalNodeId(internalNode) ?? "")),
+    ),
+  )
+  if (!runtimeRunState && !hasInternalStates) return node
+
+  return {
+    ...node,
+    ...(runtimeRunState
+      ? {
+          ui: {
+            ...(node.ui ?? {}),
+            runtimeRunState,
+          },
+        }
+      : {}),
+    ...(node.internals
+      ? {
+          internals: {
+            ...node.internals,
+            nodes: node.internals.nodes.map((internalNode) =>
+              patchInternalRunProjection(internalNode, node.id, stateByCanvasNodeId),
+            ),
+          },
+        }
+      : {}),
+  }
+}
+
+function patchInternalRunEvent(
+  value: unknown,
+  event: WorkflowNodeRunEvent,
+  runtimeRunState: WorkflowRunNodeState,
+): unknown {
+  if (!isWorkflowProjectNode(value) || value.id !== event.internalNodeId) return value
+  return {
+    ...value,
+    ui: {
+      ...(value.ui ?? {}),
+      runtimeRunState,
+      runtimeLatestEvent: event,
+    },
+  }
+}
+
+function patchInternalRunProjection(
+  value: unknown,
+  packageNodeId: string,
+  stateByCanvasNodeId: Map<string, WorkflowRunNodeState>,
+): unknown {
+  if (!isWorkflowProjectNode(value)) return value
+  const runtimeRunState = stateByCanvasNodeId.get(scopedInternalId(packageNodeId, value.id))
+  if (!runtimeRunState) return value
+  return {
+    ...value,
+    ui: {
+      ...(value.ui ?? {}),
+      runtimeRunState,
+    },
+  }
+}
+
+function readInternalNodeId(value: unknown): string | null {
+  return isWorkflowProjectNode(value) ? value.id : null
 }
 
 function fieldsForInternalStep(stepItem: NodeInternalStep, parentNodeId?: string, parameterInterface?: ParameterInterface) {
@@ -1379,6 +1581,81 @@ export const useFlowStore = create<FlowState>((set, get) => ({
             data: {
               ...node.data,
               runtimeCapability,
+            },
+          }
+        }),
+      }
+    })
+  },
+
+  applyWorkflowNodeRunEvent: (event) => {
+    set((state) => {
+      const runtimeRunState = runStateForEvent(event)
+      const canvasNodeIds = new Set(
+        runtimeNodeIdCandidates(event.nodeId, event.packageNodeId, event.internalNodeId),
+      )
+      const nextProject = parseWorkflowProject({
+        ...state.workflowProject,
+        nodes: state.workflowProject.nodes.map((node) =>
+          patchProjectNodeRunEvent(node, event, runtimeRunState),
+        ),
+      })
+      return {
+        workflowProject: nextProject,
+        nodes: state.nodes.map((node) =>
+          canvasNodeIds.has(node.id)
+            ? {
+                ...node,
+                data: {
+                  ...node.data,
+                  status: workflowNodeStatusFromEvent(event.eventType),
+                  runtimeRunState,
+                  runtimeLatestEvent: event,
+                  runtimePreview: {
+                    ...(node.data.runtimePreview ?? {}),
+                    status: event.eventType,
+                    runId: event.workflowRunId,
+                    traceId: event.traceId,
+                    sourceGroups: event.sourceGroup ? [event.sourceGroup] : node.data.runtimePreview?.sourceGroups,
+                    diagnostic: event.message ?? event.blockReason?.message ?? node.data.runtimePreview?.diagnostic,
+                  },
+                },
+              }
+            : node,
+        ),
+      }
+    })
+  },
+
+  applyWorkflowRunProjection: (projection) => {
+    set((state) => {
+      const stateByCanvasNodeId = runtimeStateByCanvasNodeId(projection)
+      const nextProject = parseWorkflowProject({
+        ...state.workflowProject,
+        nodes: state.workflowProject.nodes.map((node) =>
+          patchProjectNodeRunProjection(node, stateByCanvasNodeId),
+        ),
+      })
+      return {
+        workflowProject: nextProject,
+        nodes: state.nodes.map((node) => {
+          const runtimeRunState = stateByCanvasNodeId.get(node.id)
+          if (!runtimeRunState) return node
+          const latestBlock = runtimeRunState.blockReasons.at(-1)
+          return {
+            ...node,
+            data: {
+              ...node.data,
+              status: workflowNodeStatusFromRun(runtimeRunState.status),
+              runtimeRunState,
+              runtimePreview: {
+                ...(node.data.runtimePreview ?? {}),
+                status: runtimeRunState.status,
+                runId: projection.runId,
+                traceId: projection.traceId,
+                sourceGroups: runtimeRunState.sourceGroups,
+                diagnostic: latestBlock?.message ?? node.data.runtimePreview?.diagnostic,
+              },
             },
           }
         }),

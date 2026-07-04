@@ -1,6 +1,4 @@
 import workflowFixture from "../../../../lib/workflow/fixtures/workflow-intelligence.json"
-import { compileWorkflowProject } from "../../../../lib/workflow/backend-compile"
-import { createWorkflowRunArtifact } from "../../../../lib/workflow/run-artifacts"
 import { parseWorkflowProject } from "../../../../lib/workflow/schema"
 
 export const dynamic = "force-dynamic"
@@ -9,34 +7,32 @@ const BACKEND_URL = process.env.BACKEND_URL ?? "http://127.0.0.1:8031"
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json().catch(() => workflowFixture)
-    const project = parseWorkflowProject(body ?? workflowFixture)
-    const compile = await compileWorkflowProject(project, {
-      baseUrl: BACKEND_URL,
-      authorization: req.headers.get("authorization"),
-    })
-
-    if (!compile.valid || !compile.plan) {
-      return Response.json(
-        {
-          error: "WORKFLOW_COMPILE_FAILED",
-          message: compile.errors[0]?.message ?? "Backend workflow compile failed",
-          errors: compile.errors,
-        },
-        { status: 422 },
-      )
-    }
-
-    const artifact = await createWorkflowRunArtifact(project, { backendCompile: compile.plan })
-
-    return Response.json(artifact, {
+    const body = await req.json().catch(() => ({ project: workflowFixture }))
+    const project = parseWorkflowProject(body?.project ?? body ?? workflowFixture)
+    const response = await fetch(`${BACKEND_URL}/api/v1/workflows/runs`, {
+      method: "POST",
       headers: {
-        "Cache-Control": "no-store",
+        "Content-Type": "application/json",
+        ...(req.headers.get("authorization")
+          ? { Authorization: req.headers.get("authorization") as string }
+          : {}),
       },
+      body: JSON.stringify({
+        project,
+        ...(typeof body?.packageNodeId === "string" ? { packageNodeId: body.packageNodeId } : {}),
+        ...(typeof body?.runId === "string" ? { runId: body.runId } : {}),
+        ...(typeof body?.traceId === "string" ? { traceId: body.traceId } : {}),
+      }),
+    })
+    const payload = await response.json().catch(() => null)
+    return Response.json(payload, {
+      status: response.status,
+      headers: { "Cache-Control": "no-store" },
     })
   } catch (error) {
     return Response.json(
       {
+        success: false,
         error: "WORKFLOW_RUN_FAILED",
         message: error instanceof Error ? error.message : "Unknown workflow run error",
       },

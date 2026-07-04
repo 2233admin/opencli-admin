@@ -17,6 +17,11 @@ This slice should expose an API stream for a workflow run and a small persisted 
 - [x] Clients can subscribe to a run event stream.
 - [x] Tests cover event shapes, node-id preservation, blocked reason, batch-ready event, and late-read projection.
 
+## Implementation note
+
+- Frontend now proxies Canvas run requests to `/api/v1/workflows/runs`, replays `/events/stream`, and patches existing Canvas nodes from `WorkflowRunProjection` / `WorkflowNodeRunEvent`.
+- Runtime internal ids use `package::internal`; visible Canvas HDA internals use `package__internal`, so the frontend reducer maps both forms before patching node status.
+
 ## Blocked by
 
 - 04 — Node Runtime Registry

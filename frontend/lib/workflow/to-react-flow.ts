@@ -1,5 +1,6 @@
 import type { WorkflowEdge, WorkflowNode, WorkflowNodeData, NodeCategory, WorkflowNodeType } from "@/lib/flow/types"
 import type { WorkflowRuntimeCapability } from "./capabilities"
+import type { WorkflowNodeRunEvent, WorkflowRunNodeState, WorkflowRunStatus } from "./backend-runs"
 import type { WorkflowProject, WorkflowProjectNode } from "./schema"
 
 const KIND_TO_NODE_TYPE: Record<WorkflowProjectNode["kind"], WorkflowNodeType> = {
@@ -61,6 +62,7 @@ export function workflowProjectToReactFlow(project: WorkflowProject): { nodes: W
 export function workflowNodeToReactFlow(node: WorkflowProjectNode, index: number): WorkflowNode {
   const ui = node.ui ?? {}
   const position = readPosition(ui) ?? { x: 520, y: 80 + index * 220 }
+  const runtimeRunState = readRuntimeRunState(ui)
   const data: WorkflowNodeData = {
     label: readString(ui, "label") ?? node.id,
     description: readString(ui, "description") ?? `${node.kind}:${node.capability}`,
@@ -68,7 +70,7 @@ export function workflowNodeToReactFlow(node: WorkflowProjectNode, index: number
     category: KIND_TO_CATEGORY[node.kind],
     icon: readString(ui, "icon") ?? KIND_TO_ICON[node.kind],
     color: readString(ui, "color") ?? "var(--chart-2)",
-    status: "idle",
+    status: runtimeRunState ? workflowNodeStatusFromRun(runtimeRunState.status) : "idle",
     fields: Object.entries(node.params).map(([id, value]) => ({ id, label: id, value: formatParamValue(value) })),
     canonical: {
       kind: node.kind,
@@ -80,6 +82,8 @@ export function workflowNodeToReactFlow(node: WorkflowProjectNode, index: number
     sourceAnchor: node.sourceAnchor,
     runArtifact: node.runArtifact,
     runtimeCapability: readRuntimeCapability(ui),
+    runtimeRunState,
+    runtimeLatestEvent: readRuntimeLatestEvent(ui),
     miniNetwork: node.miniNetwork,
     topicCollapse: node.topicCollapse,
     proposalState: node.proposalState,
@@ -92,6 +96,23 @@ export function workflowNodeToReactFlow(node: WorkflowProjectNode, index: number
     type: data.nodeType === "note" ? "note" : "workflow",
     position,
     data,
+  }
+}
+
+function workflowNodeStatusFromRun(status: WorkflowRunStatus): WorkflowNodeData["status"] {
+  switch (status) {
+    case "queued":
+      return "idle"
+    case "running":
+    case "partial":
+      return "running"
+    case "completed":
+      return "success"
+    case "blocked":
+    case "failed":
+      return "error"
+    default:
+      return "idle"
   }
 }
 
@@ -109,6 +130,36 @@ function readRuntimeCapability(ui: Record<string, unknown>): WorkflowRuntimeCapa
     return undefined
   }
   return value as WorkflowRuntimeCapability
+}
+
+function readRuntimeRunState(ui: Record<string, unknown>): WorkflowRunNodeState | undefined {
+  const value = ui.runtimeRunState
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined
+  const record = value as Record<string, unknown>
+  if (typeof record.nodeId !== "string" || typeof record.status !== "string") return undefined
+  if (!isWorkflowRunStatus(record.status)) return undefined
+  return value as WorkflowRunNodeState
+}
+
+function readRuntimeLatestEvent(ui: Record<string, unknown>): WorkflowNodeRunEvent | undefined {
+  const value = ui.runtimeLatestEvent
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined
+  const record = value as Record<string, unknown>
+  if (typeof record.id !== "string" || typeof record.nodeId !== "string" || typeof record.eventType !== "string") {
+    return undefined
+  }
+  return value as WorkflowNodeRunEvent
+}
+
+function isWorkflowRunStatus(value: string): value is WorkflowRunStatus {
+  return (
+    value === "queued" ||
+    value === "running" ||
+    value === "partial" ||
+    value === "blocked" ||
+    value === "completed" ||
+    value === "failed"
+  )
 }
 
 function readPosition(ui: Record<string, unknown>) {
