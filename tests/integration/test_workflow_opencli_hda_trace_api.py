@@ -262,3 +262,112 @@ async def test_opencli_hda_trace_reports_package_without_opencli_source_bindings
     assert data["dispatches"] == []
     assert data["errors"][0]["code"] == "missing_opencli_hda_sources"
     assert data["errors"][0]["node_id"] == "multi-source-opencli"
+
+
+@pytest.mark.asyncio
+async def test_workflow_run_events_projection_and_stream(client):
+    start = await client.post(
+        "/api/v1/workflows/runs",
+        json={
+            "project": _multi_source_opencli_hda_project(),
+            "packageNodeId": "multi-source-opencli",
+            "runId": "run-events-001",
+            "traceId": "trace-events-001",
+        },
+    )
+
+    data = start.json()["data"]
+    assert start.status_code == 202
+    assert data["status"] == "blocked"
+    states = {state["nodeId"]: state for state in data["nodeStates"]}
+    assert states["multi-source-opencli"]["status"] == "blocked"
+    assert states["multi-source-opencli::source-bilibili"]["status"] == "completed"
+    assert states["multi-source-opencli::internal-normalize"]["blockReasons"][0]["code"] == (
+        "missing_runtime_binding"
+    )
+
+    events = (await client.get("/api/v1/workflows/runs/run-events-001/events")).json()["data"]
+    source_events = [
+        event for event in events if event["nodeId"] == "multi-source-opencli::source-bilibili"
+    ]
+    assert [event["eventType"] for event in source_events] == [
+        "queued",
+        "started",
+        "batch_ready",
+        "partial",
+        "completed",
+    ]
+    assert all(event["workflowRunId"] == "run-events-001" for event in source_events)
+    assert all(event["packageNodeId"] == "multi-source-opencli" for event in source_events)
+    assert all(event["internalNodeId"] == "source-bilibili" for event in source_events)
+
+    batch_event = next(event for event in source_events if event["eventType"] == "batch_ready")
+    assert batch_event["batch"]["sourceGroup"] == "video"
+    assert batch_event["batch"]["itemCount"] == 0
+    assert batch_event["batch"]["recordCount"] == 0
+    assert batch_event["batch"]["odpRef"].startswith("odp://workflow-runs/run-events-001/")
+    assert "records" not in batch_event
+    assert "iii" not in batch_event["details"]
+
+    blocked = next(
+        event
+        for event in events
+        if event["nodeId"] == "multi-source-opencli::internal-normalize"
+        and event["eventType"] == "blocked"
+    )
+    assert blocked["blockReason"]["source"] == "runtime_registry"
+    assert blocked["blockReason"]["details"]["capability"] == "normalize"
+
+    late = await client.get("/api/v1/workflows/runs/run-events-001")
+    assert late.json()["data"]["nodeStates"] == data["nodeStates"]
+    async with client.stream(
+        "GET",
+        "/api/v1/workflows/runs/run-events-001/events/stream",
+    ) as response:
+        body = (await response.aread()).decode()
+
+    assert response.status_code == 200
+    assert "event: node_event" in body
+    assert "event: run_state" in body
+    assert '"workflowRunId":"run-events-001"' in body
+    assert '"nodeId":"multi-source-opencli::source-bilibili"' in body
+
+
+@pytest.mark.asyncio
+async def test_workflow_run_emits_node_failed_events_for_compile_errors(client):
+    project = _multi_source_opencli_hda_project()
+    del project["nodes"][0]["internals"]["nodes"][0]["adapter"]
+
+    response = await client.post(
+        "/api/v1/workflows/runs",
+        json={
+            "project": project,
+            "packageNodeId": "multi-source-opencli",
+            "runId": "run-events-004",
+            "traceId": "trace-events-004",
+        },
+    )
+
+    assert response.status_code == 202
+    data = response.json()["data"]
+    assert data["valid"] is False
+    assert data["status"] == "failed"
+    assert data["eventCount"] == 1
+    failed_state = data["nodeStates"][0]
+    assert failed_state["nodeId"] == "multi-source-opencli"
+    assert failed_state["status"] == "failed"
+    assert failed_state["latestEventId"] == "run-events-004:0001:failed:multi-source-opencli"
+    assert failed_state["blockReasons"][0]["code"] == "missing_adapter_binding"
+    assert "source-bilibili" in failed_state["blockReasons"][0]["message"]
+    assert failed_state["blockReasons"][0]["details"]["path"] == [
+        "nodes",
+        "multi-source-opencli",
+        "internals",
+        "nodes",
+        "source-bilibili",
+        "adapter",
+    ]
+
+    events = (await client.get("/api/v1/workflows/runs/run-events-004/events")).json()["data"]
+    assert events[0]["eventType"] == "failed"
+    assert events[0]["nodeId"] == "multi-source-opencli"

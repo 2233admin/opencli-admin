@@ -11,11 +11,11 @@ This slice should expose an API stream for a workflow run and a small persisted 
 
 ## Acceptance criteria
 
-- [ ] Runtime emits node lifecycle events with workflow run id and node id.
-- [ ] Blocked events include structured block reasons.
-- [ ] Batch-ready events include counts and batch/ODP references without raw record payloads.
-- [ ] Clients can subscribe to a run event stream.
-- [ ] Tests cover event shapes, node-id preservation, blocked reason, batch-ready event, and late-read projection.
+- [x] Runtime emits node lifecycle events with workflow run id and node id.
+- [x] Blocked events include structured block reasons.
+- [x] Batch-ready events include counts and batch/ODP references without raw record payloads.
+- [x] Clients can subscribe to a run event stream.
+- [x] Tests cover event shapes, node-id preservation, blocked reason, batch-ready event, and late-read projection.
 
 ## Blocked by
 

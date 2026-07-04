@@ -309,6 +309,86 @@ class WorkflowOpenCLIHDATraceResponse(BaseModel):
     dispatches: list[WorkflowOpenCLIHDATraceDispatch] = Field(default_factory=list)
 
 
+WorkflowRunStatus = Literal["queued", "running", "partial", "blocked", "completed", "failed"]
+WorkflowNodeRunEventType = Literal[
+    "queued",
+    "started",
+    "blocked",
+    "batch_ready",
+    "partial",
+    "completed",
+    "failed",
+]
+
+
+class WorkflowRunStartRequest(BaseModel):
+    project: WorkflowProject
+    packageNodeId: Optional[str] = None
+    runId: Optional[str] = None
+    traceId: Optional[str] = None
+
+
+class WorkflowRunBlockReason(BaseModel):
+    code: str = Field(..., min_length=1)
+    message: str = Field(..., min_length=1)
+    source: Optional[str] = None
+    details: dict[str, Any] = Field(default_factory=dict)
+
+
+class WorkflowRunBatchReference(BaseModel):
+    batchId: str = Field(..., min_length=1)
+    itemCount: int = Field(..., ge=0)
+    recordCount: int = Field(..., ge=0)
+    sourceGroup: Optional[str] = None
+    adapterTaskId: Optional[str] = None
+    odpRef: Optional[str] = None
+    manifestUri: Optional[str] = None
+
+
+class WorkflowNodeRunEvent(BaseModel):
+    id: str = Field(..., min_length=1)
+    sequence: int = Field(..., ge=1)
+    workflowId: str = Field(..., min_length=1)
+    workflowRunId: str = Field(..., min_length=1)
+    traceId: str = Field(..., min_length=1)
+    nodeId: str = Field(..., min_length=1)
+    eventType: WorkflowNodeRunEventType
+    createdAt: str = Field(..., min_length=1)
+    packageNodeId: Optional[str] = None
+    internalNodeId: Optional[str] = None
+    sourceGroup: Optional[str] = None
+    message: Optional[str] = None
+    blockReason: Optional[WorkflowRunBlockReason] = None
+    batch: Optional[WorkflowRunBatchReference] = None
+    details: dict[str, Any] = Field(default_factory=dict)
+
+
+class WorkflowRunNodeState(BaseModel):
+    nodeId: str = Field(..., min_length=1)
+    status: WorkflowRunStatus = "queued"
+    packageNodeId: Optional[str] = None
+    internalNodeId: Optional[str] = None
+    sourceGroups: list[str] = Field(default_factory=list)
+    latestEventId: Optional[str] = None
+    eventCount: int = Field(0, ge=0)
+    blockReasons: list[WorkflowRunBlockReason] = Field(default_factory=list)
+    batches: list[WorkflowRunBatchReference] = Field(default_factory=list)
+
+
+class WorkflowRunProjection(BaseModel):
+    workflowId: str = Field(..., min_length=1)
+    runId: str = Field(..., min_length=1)
+    traceId: str = Field(..., min_length=1)
+    valid: bool
+    status: WorkflowRunStatus
+    packageNodeId: Optional[str] = None
+    startedAt: str = Field(..., min_length=1)
+    updatedAt: str = Field(..., min_length=1)
+    eventCount: int = Field(..., ge=0)
+    nodeStates: list[WorkflowRunNodeState] = Field(default_factory=list)
+    errors: list[WorkflowCompileError] = Field(default_factory=list)
+
+
 class WorkflowMissingCapability(BaseModel):
     capability: str
     reason: Optional[str] = None
