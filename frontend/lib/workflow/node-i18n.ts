@@ -52,6 +52,10 @@ const NODE_TEXT: Record<string, Record<WorkflowLanguage, LocalizedNodeText>> = {
     "zh-CN": { label: "情报流水线", description: "封装定时抓取、标准化、摘要评分、复核和通知的情报流水线" },
     "en-US": { label: "Intelligence Pipeline", description: "Package source, normalize, summary, scoring, review, and delivery" },
   },
+  "package.opencli.multi-source-hda": {
+    "zh-CN": { label: "OpenCLI 多源 HDA", description: "封装 Bilibili/小红书 OpenCLI 采集 fanout 和内部标准化" },
+    "en-US": { label: "OpenCLI Multi-source HDA", description: "Package Bilibili/Xiaohongshu OpenCLI source fanout and internal normalization" },
+  },
   "package.ops.event": {
     "zh-CN": { label: "Ops 任务事件", description: "封装触发、队列、重试、日志和执行证据的任务事件" },
     "en-US": { label: "Ops Event", description: "Package trigger, queue, retry, log, and execution evidence" },

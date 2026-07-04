@@ -55,6 +55,7 @@ export function buildCollectionWorkflowProject(): WorkflowProject {
   const router = createWorkflowNodeFromCatalog(catalogItem("intelligence.router.importance"), "importance-router", at("decide", 2))
   const inbox = createWorkflowNodeFromCatalog(catalogItem("intelligence.output.inbox"), "inbox-review", at("decide", 4))
   const webhook = createWorkflowNodeFromCatalog(catalogItem("intelligence.output.webhook"), "webhook-notify", at("deliver", 0))
+  const opencliHda = createWorkflowNodeFromCatalog(catalogItem("package.opencli.multi-source-hda"), "multi-source-opencli", at("source", 3))
 
   // ── n8n 引入节点（目录缺失，官方翻译器导入）──────────────
   const { nodes: n8nNodes, adapters: n8nAdapters } = translateMissingNodes()
@@ -75,9 +76,11 @@ export function buildCollectionWorkflowProject(): WorkflowProject {
     edge("e-schedule-jin10", schedule.id, jin10.id),
     edge("e-schedule-rss", schedule.id, rss.id),
     edge("e-schedule-http", schedule.id, httpApi.id),
+    edge("e-schedule-opencli-hda", schedule.id, opencliHda.id),
     edge("e-jin10-normalize", jin10.id, normalize.id),
     edge("e-rss-normalize", rss.id, normalize.id),
     edge("e-http-normalize", httpApi.id, normalize.id),
+    edge("e-opencli-hda-normalize", opencliHda.id, normalize.id),
     edge("e-normalize-dedupe", normalize.id, dedupe.id),
     edge("e-dedupe-summary", dedupe.id, summary.id),
     edge("e-summary-score", summary.id, score.id),
@@ -94,6 +97,7 @@ export function buildCollectionWorkflowProject(): WorkflowProject {
   const catalogAdapters = [
     ...(catalogItem("intelligence.source.jin10").requiredAdapters ?? []),
     ...(catalogItem("intelligence.output.webhook").requiredAdapters ?? []),
+    ...(catalogItem("package.opencli.multi-source-hda").requiredAdapters ?? []),
   ]
   const adapterById = new Map([...catalogAdapters, ...n8nAdapters].map((adapter) => [adapter.id, adapter]))
 
@@ -102,7 +106,7 @@ export function buildCollectionWorkflowProject(): WorkflowProject {
     name: "采集 · 发送管线",
     profile: "intelligence",
     version: 1,
-    nodes: [schedule, jin10, rss, httpApi, normalize, dedupe, summary, score, tag, router, inbox, webhook, telegram, email, postgres],
+    nodes: [schedule, jin10, rss, httpApi, opencliHda, normalize, dedupe, summary, score, tag, router, inbox, webhook, telegram, email, postgres],
     edges,
     adapters: Array.from(adapterById.values()),
     settings: {
@@ -111,10 +115,10 @@ export function buildCollectionWorkflowProject(): WorkflowProject {
       maxItemsPerRun: 50,
     },
     agentPermissions: {
-      canFetchNetwork: false,
+      canFetchNetwork: true,
       canSendNotifications: false,
       canWriteInbox: true,
-      allowedDomains: ["jin10.com"],
+      allowedDomains: ["jin10.com", "bilibili.com", "xiaohongshu.com"],
     },
   })
 }

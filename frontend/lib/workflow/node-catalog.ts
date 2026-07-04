@@ -26,6 +26,8 @@ export type WorkflowNodeCatalogItem = {
   adapter?: string
   requiredAdapters?: AdapterBinding[]
   params: Record<string, unknown>
+  topicCollapse?: WorkflowProjectNode["topicCollapse"]
+  internals?: WorkflowProjectNode["internals"]
   keywords: string[]
 }
 
@@ -43,6 +45,22 @@ const SIMULATED_WEBHOOK_ADAPTER: AdapterBinding = {
   provider: "generic-webhook",
   mode: "mock",
   config: { target: "operator-preview" },
+}
+
+const OPENCLI_BILIBILI_ADAPTER: AdapterBinding = {
+  id: "opencli-bilibili",
+  type: "source",
+  provider: "opencli",
+  mode: "live",
+  config: { channel: "opencli" },
+}
+
+const OPENCLI_XIAOHONGSHU_ADAPTER: AdapterBinding = {
+  id: "opencli-xiaohongshu",
+  type: "source",
+  provider: "opencli",
+  mode: "live",
+  config: { channel: "opencli" },
 }
 
 export const WORKFLOW_NODE_CATALOG: WorkflowNodeCatalogItem[] = [
@@ -207,6 +225,74 @@ export const WORKFLOW_NODE_CATALOG: WorkflowNodeCatalogItem[] = [
     keywords: ["package", "collection", "source", "rss", "http", "采集", "封装"],
   },
   {
+    id: "package.opencli.multi-source-hda",
+    idPrefix: "pkg-opencli-hda",
+    label: "OpenCLI Multi-source HDA",
+    description: "封装 Bilibili/小红书 OpenCLI source fanout 和内部标准化",
+    category: "package",
+    profile: "intelligence",
+    kind: "agent",
+    capability: "normalize",
+    icon: "Network",
+    color: "var(--chart-4)",
+    requiredAdapters: [OPENCLI_BILIBILI_ADAPTER, OPENCLI_XIAOHONGSHU_ADAPTER],
+    params: { template: "opencli-multi-source", runtime: "iii", lockedInternals: true },
+    topicCollapse: {
+      groupId: "opencli-package",
+      nodeCount: 3,
+      mode: "locked",
+      packageInternal: true,
+    },
+    internals: {
+      locked: true,
+      nodes: [
+        {
+          id: "source-bilibili",
+          kind: "source",
+          capability: "fetch",
+          adapter: "opencli-bilibili",
+          params: {
+            site: "bilibili",
+            command: "search",
+            args: { keyword: "ai" },
+            sourceGroup: "video",
+          },
+        },
+        {
+          id: "source-xiaohongshu",
+          kind: "source",
+          capability: "fetch",
+          adapter: "opencli-xiaohongshu",
+          params: {
+            site: "xiaohongshu",
+            command: "search",
+            args: { keyword: "ai" },
+            sourceGroup: "social",
+          },
+        },
+        {
+          id: "internal-normalize",
+          kind: "agent",
+          capability: "normalize",
+          params: { language: "zh-CN" },
+        },
+      ],
+      edges: [
+        {
+          id: "bilibili-normalize",
+          source: "source-bilibili",
+          target: "internal-normalize",
+        },
+        {
+          id: "xiaohongshu-normalize",
+          source: "source-xiaohongshu",
+          target: "internal-normalize",
+        },
+      ],
+    },
+    keywords: ["package", "hda", "opencli", "bilibili", "xiaohongshu", "multi-source", "采集", "封装"],
+  },
+  {
     id: "package.dispatch.fanout",
     idPrefix: "pkg-dispatch",
     label: "Dispatch Fanout",
@@ -363,7 +449,9 @@ export function createWorkflowNodeFromCatalog(
     capability: item.capability,
     adapter: item.adapter,
     params: { ...item.params },
+    topicCollapse: cloneCatalogValue(item.topicCollapse),
     parameterInterface,
+    internals: cloneCatalogValue(item.internals),
     ui: {
       label: item.label,
       description: item.description,
@@ -388,4 +476,8 @@ export function addCatalogNodeToWorkflowProject(
     adapters: [...project.adapters, ...requiredAdapters],
     nodes: [...project.nodes, createWorkflowNodeFromCatalog(item, id, position)],
   })
+}
+
+function cloneCatalogValue<T>(value: T | undefined): T | undefined {
+  return value === undefined ? undefined : (JSON.parse(JSON.stringify(value)) as T)
 }

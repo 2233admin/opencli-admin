@@ -224,6 +224,27 @@ const CONTRACTS: Record<string, NodeContract> = {
     ],
     ["real sends require explicit permission", "delivery payload should be inspectable before send"],
   ),
+  "package.opencli.multi-source-hda": contract(
+    "package.opencli.multi-source-hda",
+    "OpenCLI Multi-source HDA",
+    "trigger -> items[]",
+    [port("in", "input", "trigger", true, "Consumes a workflow schedule trigger.")],
+    [port("out", "output", "items[]", true, "Emits normalized items from locked OpenCLI internal sources.")],
+    [
+      param("template", "params", "string", true, "opencli-multi-source", {
+        enum: ["opencli-multi-source"],
+        description: "Locked package template id.",
+      }),
+      param("runtime", "params", "string", true, "iii", {
+        enum: ["iii"],
+        description: "Backend runtime plane used by OpenCLI source dispatch.",
+      }),
+      param("lockedInternals", "params", "boolean", true, true, {
+        description: "Internal source graph is package-owned and not assembled by the web AI.",
+      }),
+    ],
+    ["package internals must include OpenCLI source nodes", "OpenCLI dispatch must resolve to the III collector worker"],
+  ),
 }
 
 export function getNodeContract(node: WorkflowProjectNode | undefined): NodeContract | undefined {

@@ -279,6 +279,17 @@ const NODE_INTERNALS: Record<string, NodeInternals> = {
       step("notify", "Mock notify", "send", "Records delivery evidence without live side effects.", "delivery trace", "ready"),
     ],
   },
+  "package.opencli.multi-source-hda": {
+    title: "OpenCLI Multi-source HDA",
+    summary: "A locked HDA package that fans out to existing OpenCLI source adapters and folds runtime dispatch back onto the package node.",
+    steps: [
+      step("trigger", "Schedule input", "trigger", "Receives the workflow tick from the outer canvas.", "trigger edge", "ready"),
+      step("source-bilibili", "Bilibili OpenCLI source", "fetch", "Uses the existing OpenCLI channel through the III collector worker.", "site=bilibili command=search", "ready"),
+      step("source-xiaohongshu", "Xiaohongshu OpenCLI source", "fetch", "Uses the existing OpenCLI channel through the III collector worker.", "site=xiaohongshu command=search", "ready"),
+      step("normalize", "Internal normalize", "resolve", "Normalizes internal source results before returning items[] to the outer canvas.", "items[] contract", "ready"),
+      step("trace", "Runtime trace fold", "evidence", "Backend trace dispatches are folded onto this package node in the run panel.", "opencli-hda trace", "ready"),
+    ],
+  },
   "package.ops.event": {
     title: "Ops Event Package",
     summary: "A DOP-level package for task automation events and execution evidence.",
