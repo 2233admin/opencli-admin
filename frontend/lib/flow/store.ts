@@ -38,6 +38,11 @@ import { addCatalogNodeToWorkflowProject, type WorkflowNodeCatalogItem } from ".
 import { getNodeInternals, type NodeInternalStep } from "../workflow/node-internals"
 import { getPrimitiveByStepCapability, primitiveToNodeData, type WorkflowPrimitive } from "../workflow/node-primitives"
 import { createParameterInterfaceFromInternals, setParameterInterfaceFieldValue } from "../workflow/parameter-interface"
+import {
+  catalogRuntimeCapability,
+  type WorkflowCapabilitiesResponse,
+  type WorkflowRuntimeCapability,
+} from "../workflow/capabilities"
 
 export type { GeneratedWorkflowSpec } from "./types"
 
@@ -79,7 +84,11 @@ type FlowState = {
   canRedo: () => boolean
 
   addNodeFromPalette: (item: PaletteItem, position: XYPosition) => void
-  addPrimitiveNode: (item: WorkflowPrimitive, position: XYPosition) => void
+  addPrimitiveNode: (
+    item: WorkflowPrimitive,
+    position: XYPosition,
+    runtimeCapability?: WorkflowRuntimeCapability,
+  ) => void
   addWorkflowNodeFromCatalog: (item: WorkflowNodeCatalogItem, position: XYPosition) => void
   updateWorkflowNodeParams: (
     nodeId: string,
@@ -135,6 +144,7 @@ type FlowState = {
   reset: () => void
   importFlow: (snapshot: FlowSnapshot) => void
   importWorkflowProject: (project: WorkflowProject) => void
+  applyWorkflowCapabilities: (capabilities: WorkflowCapabilitiesResponse) => void
   updateWorkflowProfile: (profile: WorkflowProfile) => void
   focusProposalTargets: (nodeIds: string[], edgeIds?: string[]) => void
   clearProposalFocus: () => void
@@ -158,6 +168,12 @@ function uniqueWorkflowNodeId(prefix: string, nodes: WorkflowProject["nodes"]): 
     i += 1
   }
   return candidate
+}
+
+function isWorkflowRuntimeCapability(value: unknown): value is WorkflowRuntimeCapability {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false
+  const record = value as Record<string, unknown>
+  return typeof record.id === "string" && typeof record.status === "string"
 }
 
 function fieldsForInternalStep(stepItem: NodeInternalStep, parentNodeId?: string, parameterInterface?: ParameterInterface) {
@@ -490,7 +506,7 @@ export const useFlowStore = create<FlowState>((set, get) => ({
     set((state) => ({ nodes: isGroup ? [newNode, ...state.nodes] : [...state.nodes, newNode] }))
   },
 
-  addPrimitiveNode: (item, position) => {
+  addPrimitiveNode: (item, position, runtimeCapability) => {
     get().takeSnapshot()
     const { nodes, networkStack } = get()
     const id = `${item.idPrefix}-${nanoid(6)}`
@@ -501,7 +517,7 @@ export const useFlowStore = create<FlowState>((set, get) => ({
       type: "workflow",
       position: freePos,
       data: {
-        ...primitiveToNodeData(item),
+        ...primitiveToNodeData(item, runtimeCapability),
         ...(parentNetwork ? { internalOf: parentNetwork.nodeId, packageDraft: true } : { packageDraft: true }),
       },
     }
@@ -1326,6 +1342,48 @@ export const useFlowStore = create<FlowState>((set, get) => ({
     const flow = workflowProjectToReactFlow(project)
     get().takeSnapshot()
     set({ workflowProject: project, nodes: flow.nodes, edges: flow.edges, drawings: [], networkStack: [] })
+  },
+
+  applyWorkflowCapabilities: (capabilities) => {
+    set((state) => {
+      const projectNodes = state.workflowProject.nodes.map((node) => {
+        const catalogId = typeof node.ui?.catalogId === "string" ? node.ui.catalogId : null
+        const runtimeCapability = catalogId ? catalogRuntimeCapability(capabilities, catalogId) : undefined
+        if (!runtimeCapability) return node
+        return {
+          ...node,
+          ui: {
+            ...(node.ui ?? {}),
+            runtimeCapability,
+          },
+        }
+      })
+      const workflowProject = parseWorkflowProject({
+        ...state.workflowProject,
+        nodes: projectNodes,
+      })
+      const runtimeByNodeId = new Map<string, WorkflowRuntimeCapability>()
+      for (const node of workflowProject.nodes) {
+        const runtimeCapability = node.ui?.runtimeCapability
+        if (isWorkflowRuntimeCapability(runtimeCapability)) {
+          runtimeByNodeId.set(node.id, runtimeCapability)
+        }
+      }
+      return {
+        workflowProject,
+        nodes: state.nodes.map((node) => {
+          const runtimeCapability = runtimeByNodeId.get(node.id)
+          if (!runtimeCapability || typeof runtimeCapability !== "object") return node
+          return {
+            ...node,
+            data: {
+              ...node.data,
+              runtimeCapability,
+            },
+          }
+        }),
+      }
+    })
   },
 
   updateWorkflowProfile: (profile) => {

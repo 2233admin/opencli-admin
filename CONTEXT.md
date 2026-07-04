@@ -47,8 +47,26 @@ _Avoid_: polling-driven control, frontend-triggered control
 
 ### Plan
 
+**Collection Need**: The operator's desired collection outcome, expressed in domain language before node design. It is translated into a Plan made of executable nodes and resource bindings; it is not itself a node strategy or adapter configuration.
+_Avoid_: treating a user request as raw node params, confusing intent with execution strategy
+
+**Runtime-Aware Plan Drafting**: The process of translating a Collection Need into a Plan using the system's known executable capabilities, adapter metadata, and resource resolvers. AI may propose the mapping, but missing capabilities or resources are represented as blocked gaps rather than runnable-looking nodes.
+_Avoid_: AI freely drawing fake capabilities, optimistic runnable projections, silent fallbacks
+
+**Node Capability Mapping**: The audit surface that maps every Canvas-visible node family to its real backend capability, runtime binding, resource dependency, and current wiring status before new nodes are added. It decides whether an existing node can serve a Collection Need, should be exposed as blocked, or should remain design/import-only.
+_Avoid_: hand-rolled replacement nodes, treating palette presence as runtime support, frontend-only capability claims
+
 **Plan**: A free multi-source graph on the Collection Canvas — any number of source nodes, transforms, merges, and sinks in one graph. The Plan is the program; a Data Source's legacy config is the degenerate single-node Plan.
 _Avoid_: per-source pipeline (rejected 2026-07-02 in favor of free graphs), workflow (overloaded)
+
+**Canvas Source Node**: A Plan node that represents a real executable collection source. It may wrap an existing Data Source or an inline source definition, but it must be resolvable into a real collection source before running.
+_Avoid_: decorative source node, abstract placeholder, UI-only source
+
+**Executable Canvas Node**: Any node on the Collection Canvas that participates in a Plan. It must either execute, route, transform, store, notify, gate, or expose package-owned executable internals; if it lacks a runtime binding, the node is explicitly blocked rather than treated as decorative.
+_Avoid_: fake node, visual-only node, silent mock execution
+
+**Execution Resource**: An implicit runtime dependency consumed by executable Plan nodes, such as browser session state, cookie state, credentials, profile binding, or worker capacity. Execution Resources are resolved from saved bindings or resource-producing nodes; operators should not paste raw cookies or secrets into source parameters.
+_Avoid_: hand-filled cookie params, credentials hidden in node params, treating session state as source strategy
 
 **Two-Tier Attribution**: The observability contract for Plans. A source node is a real Data Source and its collection segment keeps per-source measurement unchanged (the control kernel is untouched); everything downstream of a merge belongs to Plan Health, and a shared-segment failure is never written into any source's state.
 _Avoid_: blaming all upstream sources, plan-only attribution

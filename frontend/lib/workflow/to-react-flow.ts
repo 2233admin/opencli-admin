@@ -1,4 +1,5 @@
 import type { WorkflowEdge, WorkflowNode, WorkflowNodeData, NodeCategory, WorkflowNodeType } from "@/lib/flow/types"
+import type { WorkflowRuntimeCapability } from "./capabilities"
 import type { WorkflowProject, WorkflowProjectNode } from "./schema"
 
 const KIND_TO_NODE_TYPE: Record<WorkflowProjectNode["kind"], WorkflowNodeType> = {
@@ -78,6 +79,7 @@ export function workflowNodeToReactFlow(node: WorkflowProjectNode, index: number
     },
     sourceAnchor: node.sourceAnchor,
     runArtifact: node.runArtifact,
+    runtimeCapability: readRuntimeCapability(ui),
     miniNetwork: node.miniNetwork,
     topicCollapse: node.topicCollapse,
     proposalState: node.proposalState,
@@ -91,6 +93,22 @@ export function workflowNodeToReactFlow(node: WorkflowProjectNode, index: number
     position,
     data,
   }
+}
+
+function readRuntimeCapability(ui: Record<string, unknown>): WorkflowRuntimeCapability | undefined {
+  const value = ui.runtimeCapability
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined
+  const record = value as Record<string, unknown>
+  if (typeof record.id !== "string" || typeof record.status !== "string") return undefined
+  if (
+    record.status !== "runnable" &&
+    record.status !== "blocked" &&
+    record.status !== "preview_only" &&
+    record.status !== "design_only"
+  ) {
+    return undefined
+  }
+  return value as WorkflowRuntimeCapability
 }
 
 function readPosition(ui: Record<string, unknown>) {

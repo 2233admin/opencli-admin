@@ -663,3 +663,44 @@ async def test_compile_rejects_hand_rolled_node_implementation(client):
     assert data["valid"] is False
     errors = [error for error in data["errors"] if error["code"] == "forbidden_node_definition"]
     assert {error["path"][-1] for error in errors} == {"executor", "rawOpencliCommand"}
+
+
+@pytest.mark.asyncio
+async def test_workflow_capabilities_project_real_backend_surfaces(client):
+    response = await client.get("/api/v1/workflows/capabilities")
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+
+    catalog = {item["id"]: item for item in data["catalog"]}
+    assert catalog["intelligence.source.opencli-slot"]["status"] == "runnable"
+    assert catalog["intelligence.source.opencli-slot"]["backendAvailable"] is True
+    assert catalog["intelligence.source.opencli-slot"]["runtimeBinding"]
+    assert catalog["package.opencli.multi-source-hda"]["status"] == "runnable"
+    assert catalog["intelligence.output.webhook"]["status"] == "blocked"
+    assert catalog["intelligence.output.webhook"]["backendAvailable"] is True
+
+    channels = {item["channelType"]: item for item in data["channels"]}
+    assert set(channels) == {
+        "api",
+        "cli",
+        "crawl4ai",
+        "opencli",
+        "rss",
+        "skill",
+        "web_scraper",
+    }
+    assert channels["opencli"]["status"] == "runnable"
+    assert channels["opencli"]["backendAvailable"] is True
+    assert channels["rss"]["status"] == "blocked"
+    assert channels["rss"]["backendAvailable"] is True
+    assert "canvas_source_projection" in channels["rss"]["missing"]
+
+    notifiers = {item["notifierType"]: item for item in data["notifiers"]}
+    assert "webhook" in notifiers
+    assert notifiers["webhook"]["status"] == "blocked"
+    assert notifiers["webhook"]["backendAvailable"] is True
+
+    primitives = {item["id"]: item for item in data["primitives"]}
+    assert primitives["primitive.ops.trigger-webhook"]["status"] == "blocked"
+    assert primitives["primitive.ops.trigger-webhook"]["backendAvailable"] is True

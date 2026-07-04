@@ -49,6 +49,8 @@ import { getWorkflowPrimitives, type WorkflowPrimitive } from "@/lib/workflow/no
 import { groupPrimitivesForNodeMenu } from "@/lib/workflow/node-menu"
 import { localizeNodeText } from "@/lib/workflow/node-i18n"
 import { getNodeVisualSignature } from "@/lib/workflow/node-visuals"
+import { primitiveRuntimeCapability, runtimeStatusLabel, runtimeStatusTone } from "@/lib/workflow/capabilities"
+import { useWorkflowCapabilities } from "@/lib/workflow/use-workflow-capabilities"
 import { loadShareStateFromUrl } from "@/lib/flow/share-state"
 import { cn } from "@/lib/utils"
 
@@ -157,6 +159,7 @@ function EditorCanvas() {
   const save = useFlowStore((s) => s.save)
   const workflowProject = useFlowStore((s) => s.workflowProject)
   const importWorkflowProject = useFlowStore((s) => s.importWorkflowProject)
+  const applyWorkflowCapabilities = useFlowStore((s) => s.applyWorkflowCapabilities)
   const updateWorkflowProfile = useFlowStore((s) => s.updateWorkflowProfile)
   const focusProposalTargets = useFlowStore((s) => s.focusProposalTargets)
   const clearProposalFocus = useFlowStore((s) => s.clearProposalFocus)
@@ -185,10 +188,18 @@ function EditorCanvas() {
   const [zoom, setZoom] = useState(1)
   const [compactViewport, setCompactViewport] = useState(false)
   const [nodeMenu, setNodeMenu] = useState<{ nodeId: string; x: number; y: number } | null>(null)
-  const dopNodeMenuItems = useMemo(() => getWorkflowNodeCatalog(workflowProject.profile), [workflowProject.profile])
+  const { capabilities } = useWorkflowCapabilities(true)
+  const dopNodeMenuItems = useMemo(
+    () => getWorkflowNodeCatalog(workflowProject.profile, capabilities),
+    [workflowProject.profile, capabilities],
+  )
   const primitiveMenuGroups = useMemo(() => groupPrimitivesForNodeMenu(getWorkflowPrimitives()), [])
 
   const showToast = useCallback((msg: string) => setToast(msg), [])
+
+  useEffect(() => {
+    if (capabilities) applyWorkflowCapabilities(capabilities)
+  }, [applyWorkflowCapabilities, capabilities, workflowProject.id])
 
   useEffect(() => {
     if (typeof window === "undefined") return
@@ -523,11 +534,11 @@ function EditorCanvas() {
         }
       }
 
-      addPrimitiveNode(item, position)
+      addPrimitiveNode(item, position, primitiveRuntimeCapability(capabilities, item.id))
       showToast(`已添加原子节点：${text.label}`)
       setNodeMenu(null)
     },
-    [addPrimitiveNode, enterNodeNetwork, fitView, nodeMenu, screenToFlowPosition, settings.language, showToast],
+    [addPrimitiveNode, capabilities, enterNodeNetwork, fitView, nodeMenu, screenToFlowPosition, settings.language, showToast],
   )
 
   const lockInternals = useCallback(
@@ -883,7 +894,15 @@ function EditorCanvas() {
                     >
                       <span className="w-8 shrink-0 font-mono text-[9px] text-[#a8d8ff]">{visual.code}</span>
                       <span className="min-w-0 flex-1 truncate">{text.label}</span>
-                      <span className="font-mono text-[9px] uppercase text-[#a8a8a8]">{item.kind}</span>
+                      <span
+                        className={cn(
+                          "rounded-[3px] border px-1 py-0.5 font-mono text-[8px] uppercase",
+                          runtimeStatusTone(item.runtimeCapability?.status),
+                        )}
+                        title={item.runtimeCapability?.reason ?? item.kind}
+                      >
+                        {runtimeStatusLabel(item.runtimeCapability?.status)}
+                      </span>
                     </button>
                   )
                 })}
@@ -903,6 +922,7 @@ function EditorCanvas() {
                       <div className="pointer-events-none absolute left-full top-0 ml-1 hidden min-w-64 rounded-sm border border-border bg-[#383838] py-1 text-xs text-[#d8d8d8] shadow-xl group-hover/atom-category:pointer-events-auto group-hover/atom-category:block">
                         {group.items.map((item, itemIndex) => {
                           const text = localizeNodeText(item.id, { label: item.label, description: item.description }, settings.language)
+                          const runtimeCapability = primitiveRuntimeCapability(capabilities, item.id)
                           const visual = getNodeVisualSignature({
                             label: item.label,
                             description: item.description,
@@ -921,6 +941,15 @@ function EditorCanvas() {
                             >
                               <span className="w-8 shrink-0 font-mono text-[9px] text-[#a8d8ff]">{visual.code}</span>
                               <span className="min-w-0 flex-1 truncate">{text.label}</span>
+                              <span
+                                className={cn(
+                                  "rounded-[3px] border px-1 py-0.5 font-mono text-[8px] uppercase",
+                                  runtimeStatusTone(runtimeCapability?.status ?? "design_only"),
+                                )}
+                                title={runtimeCapability?.reason ?? item.category}
+                              >
+                                {runtimeStatusLabel(runtimeCapability?.status ?? "design_only")}
+                              </span>
                             </button>
                           )
                         })}

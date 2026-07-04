@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException, Response
 
 from backend.schemas import workflow as workflow_schemas
 from backend.schemas.common import ApiResponse
+from backend.workflow.capability_projection import build_workflow_capabilities
 from backend.workflow.compiler import compile_workflow_project
 from backend.workflow.opencli_hda_tracer import (
     build_opencli_hda_trace,
@@ -27,6 +28,18 @@ async def compile_workflow(
     """
 
     return ApiResponse.ok(compile_workflow_project(body.project))
+
+
+@router.get(
+    "/capabilities",
+    response_model=ApiResponse[workflow_schemas.WorkflowCapabilitiesResponse],
+)
+async def get_workflow_capabilities() -> ApiResponse[
+    workflow_schemas.WorkflowCapabilitiesResponse
+]:
+    """Return Canvas-visible workflow capabilities and their runtime status."""
+
+    return ApiResponse.ok(build_workflow_capabilities())
 
 
 @router.post(

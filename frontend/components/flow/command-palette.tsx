@@ -10,6 +10,8 @@ import { getWorkflowPrimitives, type WorkflowPrimitive } from "@/lib/workflow/no
 import { getIcon } from "@/lib/flow/icons"
 import { useFlowStore } from "@/lib/flow/store"
 import { useSettingsStore } from "@/lib/flow/settings-store"
+import { primitiveRuntimeCapability, runtimeStatusLabel, runtimeStatusTone } from "@/lib/workflow/capabilities"
+import { useWorkflowCapabilities } from "@/lib/workflow/use-workflow-capabilities"
 import { generateWorkflowLocally } from "@/lib/flow/local-generate"
 import type { LayoutDirection, LayoutEngine } from "@/lib/flow/layout"
 import { localizeNodeText } from "@/lib/workflow/node-i18n"
@@ -65,6 +67,7 @@ export function CommandPalette({
   const workflowProfile = useFlowStore((s) => s.workflowProject.profile)
   const inNodeNetwork = useFlowStore((s) => s.networkStack.length > 0)
   const language = useSettingsStore((s) => s.language)
+  const { capabilities } = useWorkflowCapabilities(open)
 
   useEffect(() => {
     if (open) {
@@ -109,7 +112,12 @@ export function CommandPalette({
         })
       addWorkflowNodeFromCatalog(item, position)
       const text = localizeNodeText(item.id, { label: item.label, description: item.description }, language)
-      onMessage?.(`已添加原子节点：${text.label}`)
+      const status = item.runtimeCapability?.status
+      onMessage?.(
+        status && status !== "runnable"
+          ? `已添加原子节点：${text.label} (${runtimeStatusLabel(status)})`
+          : `已添加原子节点：${text.label}`,
+      )
       onClose()
     },
     [getAnchor, screenToFlowPosition, addWorkflowNodeFromCatalog, language, onMessage, onClose],
@@ -123,12 +131,12 @@ export function CommandPalette({
           x: window.innerWidth / 2,
           y: window.innerHeight / 2,
         })
-      addPrimitiveNode(item, position)
+      addPrimitiveNode(item, position, primitiveRuntimeCapability(capabilities, item.id))
       const text = localizeNodeText(item.id, { label: item.label, description: item.description }, language)
       onMessage?.(`已添加底层组件：${text.label}`)
       onClose()
     },
-    [getAnchor, screenToFlowPosition, addPrimitiveNode, language, onMessage, onClose],
+    [getAnchor, screenToFlowPosition, addPrimitiveNode, capabilities, language, onMessage, onClose],
   )
 
   const generate = useCallback(
@@ -212,7 +220,7 @@ export function CommandPalette({
   )
 
   const q = query.trim().toLowerCase()
-  const catalogOperators = getWorkflowNodeCatalog(workflowProfile)
+  const catalogOperators = getWorkflowNodeCatalog(workflowProfile, capabilities)
   const filteredCatalogOperators = q
     ? catalogOperators.filter(
         (item) => {
@@ -346,8 +354,14 @@ export function CommandPalette({
                       >
                         <Icon className="size-3.5 text-[#ff7a17]" />
                         <span className="min-w-0 flex-1 truncate text-sm">{text.label}</span>
-                        <span className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground/50">
-                          {item.capability.toUpperCase()}
+                        <span
+                          className={cn(
+                            "rounded-[3px] border px-1 py-0.5 font-mono text-[8px] uppercase tracking-wider",
+                            runtimeStatusTone(item.runtimeCapability?.status),
+                          )}
+                          title={item.runtimeCapability?.reason ?? item.capability}
+                        >
+                          {runtimeStatusLabel(item.runtimeCapability?.status)}
                         </span>
                       </button>
                     )
@@ -363,6 +377,7 @@ export function CommandPalette({
                   {primitiveOperators.map((item) => {
                     const Icon = getIcon(item.icon)
                     const text = localizeNodeText(item.id, { label: item.label, description: item.description }, language)
+                    const runtimeCapability = primitiveRuntimeCapability(capabilities, item.id)
                     return (
                       <button
                         key={item.id}
@@ -372,8 +387,14 @@ export function CommandPalette({
                       >
                         <Icon className="size-3.5 text-muted-foreground" />
                         <span className="min-w-0 flex-1 truncate text-sm">{text.label}</span>
-                        <span className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground/50">
-                          {item.category.toUpperCase()}
+                        <span
+                          className={cn(
+                            "rounded-[3px] border px-1 py-0.5 font-mono text-[8px] uppercase tracking-wider",
+                            runtimeStatusTone(runtimeCapability?.status ?? "design_only"),
+                          )}
+                          title={runtimeCapability?.reason ?? item.category}
+                        >
+                          {runtimeStatusLabel(runtimeCapability?.status ?? "design_only")}
                         </span>
                       </button>
                     )

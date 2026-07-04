@@ -1,4 +1,5 @@
 import type { NodeCategory, WorkflowNodeData, WorkflowNodeType } from "@/lib/flow/types"
+import type { WorkflowRuntimeCapability } from "./capabilities"
 
 export type WorkflowPrimitiveCategory =
   | "input"
@@ -553,7 +554,10 @@ const CAPABILITY_TO_PRIMITIVE_ID: Record<string, string> = {
   semantic: "primitive.map.semantic-link",
 }
 
-export function primitiveToNodeData(primitiveItem: WorkflowPrimitive): WorkflowNodeData {
+export function primitiveToNodeData(
+  primitiveItem: WorkflowPrimitive,
+  runtimeCapability?: WorkflowRuntimeCapability,
+): WorkflowNodeData {
   return {
     label: primitiveItem.label,
     description: primitiveItem.description,
@@ -566,8 +570,22 @@ export function primitiveToNodeData(primitiveItem: WorkflowPrimitive): WorkflowN
     primitiveId: primitiveItem.id,
     primitiveCategory: primitiveItem.category,
     primitivePorts: primitiveItem.ports,
+    runtimeCapability: runtimeCapability ?? designOnlyPrimitiveCapability(primitiveItem),
     internalDraft: true,
     ...mapPrimitiveDefaults(primitiveItem.id),
+  }
+}
+
+function designOnlyPrimitiveCapability(primitiveItem: WorkflowPrimitive): WorkflowRuntimeCapability {
+  return {
+    id: primitiveItem.id,
+    label: primitiveItem.label,
+    surface: "primitive",
+    status: "design_only",
+    backendAvailable: false,
+    reason: "Primitive is visible as import/design vocabulary until a real executor binding exists.",
+    missing: ["primitive_executor_binding"],
+    tags: ["primitive", primitiveItem.category],
   }
 }
 

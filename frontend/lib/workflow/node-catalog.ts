@@ -9,6 +9,11 @@ import type {
 import { parseWorkflowProject } from "./schema"
 import { getNodeInternals } from "./node-internals"
 import { createParameterInterfaceFromInternals } from "./parameter-interface"
+import {
+  catalogRuntimeCapability,
+  type WorkflowCapabilitiesResponse,
+  type WorkflowRuntimeCapability,
+} from "./capabilities"
 
 export type WorkflowNodeCatalogCategory = "trigger" | "source" | "processing" | "decision" | "output" | "package"
 
@@ -28,6 +33,7 @@ export type WorkflowNodeCatalogItem = {
   params: Record<string, unknown>
   topicCollapse?: WorkflowProjectNode["topicCollapse"]
   internals?: WorkflowProjectNode["internals"]
+  runtimeCapability?: WorkflowRuntimeCapability
   keywords: string[]
 }
 
@@ -504,8 +510,14 @@ export const WORKFLOW_NODE_CATALOG: WorkflowNodeCatalogItem[] = [
   },
 ]
 
-export function getWorkflowNodeCatalog(profile: WorkflowProfile): WorkflowNodeCatalogItem[] {
-  return WORKFLOW_NODE_CATALOG.filter((item) => item.profile === profile)
+export function getWorkflowNodeCatalog(
+  profile: WorkflowProfile,
+  capabilities?: WorkflowCapabilitiesResponse | null,
+): WorkflowNodeCatalogItem[] {
+  return WORKFLOW_NODE_CATALOG.filter((item) => item.profile === profile).map((item) => ({
+    ...item,
+    runtimeCapability: catalogRuntimeCapability(capabilities, item.id),
+  }))
 }
 
 export function createWorkflowNodeFromCatalog(
@@ -541,6 +553,7 @@ export function createWorkflowNodeFromCatalog(
       color: item.color,
       position,
       catalogId: item.id,
+      runtimeCapability: cloneCatalogValue(item.runtimeCapability),
     },
   }
 }

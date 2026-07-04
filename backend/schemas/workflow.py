@@ -32,6 +32,15 @@ WorkflowCapability = Literal[
 ]
 AdapterBindingType = Literal["source", "notification", "storage", "agent", "utility"]
 AdapterBindingMode = Literal["fixture", "mock", "webhook", "live"]
+WorkflowCapabilitySurface = Literal[
+    "catalog",
+    "primitive",
+    "channel",
+    "notifier",
+    "trigger",
+    "resource",
+]
+WorkflowCapabilityStatus = Literal["runnable", "blocked", "preview_only", "design_only"]
 
 
 class WorkflowSourceAnchor(BaseModel):
@@ -277,6 +286,34 @@ class WorkflowCompileResponse(BaseModel):
     valid: bool
     errors: list[WorkflowCompileError] = Field(default_factory=list)
     plan: Optional[WorkflowCompiledPlanPreview] = None
+
+
+class WorkflowRuntimeCapability(BaseModel):
+    id: str = Field(..., min_length=1)
+    label: str = Field(..., min_length=1)
+    surface: WorkflowCapabilitySurface
+    status: WorkflowCapabilityStatus
+    backendAvailable: bool = False
+    kind: Optional[WorkflowNodeKind] = None
+    capability: Optional[WorkflowCapability] = None
+    provider: Optional[str] = None
+    channelType: Optional[str] = None
+    notifierType: Optional[str] = None
+    runtimeBinding: Optional[str] = None
+    reason: Optional[str] = None
+    missing: list[str] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
+    source: Optional[str] = None
+
+
+class WorkflowCapabilitiesResponse(BaseModel):
+    version: str = WORKFLOW_COMPILE_VERSION
+    catalog: list[WorkflowRuntimeCapability] = Field(default_factory=list)
+    primitives: list[WorkflowRuntimeCapability] = Field(default_factory=list)
+    channels: list[WorkflowRuntimeCapability] = Field(default_factory=list)
+    notifiers: list[WorkflowRuntimeCapability] = Field(default_factory=list)
+    triggers: list[WorkflowRuntimeCapability] = Field(default_factory=list)
+    resources: list[WorkflowRuntimeCapability] = Field(default_factory=list)
 
 
 class WorkflowOpenCLIHDATraceRequest(BaseModel):

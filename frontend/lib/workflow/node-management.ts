@@ -3,6 +3,7 @@ import { getProposalFocus } from "./proposal-focus"
 import type { WorkflowSimulationRun } from "./simulation"
 import type { AdapterBinding, WorkflowProject, WorkflowProjectNode } from "./schema"
 import { buildProjectContractReport, type ContractStatus, type PortContract } from "./node-contracts"
+import type { WorkflowRuntimeCapability } from "./capabilities"
 
 export type ManagedNodeSummary = {
   id: string
@@ -18,6 +19,7 @@ export type ManagedNodeSummary = {
   contractId: string
   contractStatus: ContractStatus
   ports: PortContract[]
+  runtimeCapability?: WorkflowRuntimeCapability
 }
 
 export type AdapterUsageSummary = AdapterBinding & {
@@ -96,6 +98,7 @@ export function summarizeNodeManagement(
         contractId: contract?.contractId ?? "missing",
         contractStatus,
         ports: contract?.ports ?? [],
+        runtimeCapability: readRuntimeCapability(node),
       }
     }),
     adapters: project.adapters.map((adapter) => ({
@@ -138,6 +141,14 @@ export function summarizeNodeManagement(
       })),
     },
   }
+}
+
+function readRuntimeCapability(node: WorkflowProjectNode): WorkflowRuntimeCapability | undefined {
+  const value = node.ui?.runtimeCapability
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined
+  const record = value as Record<string, unknown>
+  if (typeof record.id !== "string" || typeof record.status !== "string") return undefined
+  return value as WorkflowRuntimeCapability
 }
 
 function maxStatus(left: ContractStatus | undefined, right: ContractStatus): ContractStatus {

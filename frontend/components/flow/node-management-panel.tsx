@@ -7,6 +7,7 @@ import { useFlowStore } from "@/lib/flow/store"
 import { summarizeNodeManagement } from "@/lib/workflow/node-management"
 import { parseAgentProposal } from "@/lib/workflow/proposal"
 import { simulateWorkflowRun, type WorkflowSimulationRun } from "@/lib/workflow/simulation"
+import { runtimeStatusLabel, runtimeStatusTone } from "@/lib/workflow/capabilities"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
@@ -206,7 +207,15 @@ export function NodeManagementPanel({ onClose }: NodeManagementPanelProps) {
                       <p className="mt-1 truncate text-muted-foreground">{node.contractId}</p>
                     </div>
                     <div className="min-w-0 font-mono text-[10px]">
-                      <p className="truncate text-foreground">{node.lastEvent}</p>
+                      <span
+                        className={cn(
+                          "inline-flex max-w-full rounded-[3px] border px-1 py-0.5 font-mono text-[8px] uppercase tracking-[0.08em]",
+                          runtimeStatusTone(node.runtimeCapability?.status),
+                        )}
+                        title={node.runtimeCapability?.reason ?? node.lastEvent}
+                      >
+                        <span className="truncate">{runtimeStatusLabel(node.runtimeCapability?.status)}</span>
+                      </span>
                       <p className="mt-1 truncate text-muted-foreground">{node.adapter}</p>
                     </div>
                     <span className="text-right font-mono text-[10px] text-muted-foreground">

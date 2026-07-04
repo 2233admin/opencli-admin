@@ -9,6 +9,7 @@ import { useFlowStore } from "@/lib/flow/store"
 import { useSettingsStore } from "@/lib/flow/settings-store"
 import { getNodeDisplayId, localizeNodeText } from "@/lib/workflow/node-i18n"
 import { getNodeVisualSignature } from "@/lib/workflow/node-visuals"
+import { runtimeStatusLabel, runtimeStatusTone } from "@/lib/workflow/capabilities"
 import { cn } from "@/lib/utils"
 
 const statusLabels: Record<string, string> = {
@@ -122,6 +123,22 @@ function NodeStatus({ status }: { status?: string }) {
     >
       <span className={cn("size-1.5 rounded-full border", statusDotStyles[status] ?? statusDotStyles.idle)} />
       {showText ? <span>{label}</span> : null}
+    </span>
+  )
+}
+
+function RuntimeCapabilityBadge({ data }: { data: WorkflowNodeType["data"] }) {
+  const runtimeCapability = data.runtimeCapability
+  if (!runtimeCapability) return null
+  return (
+    <span
+      className={cn(
+        "inline-flex max-w-[5.25rem] shrink-0 rounded-[3px] border px-1 py-0.5 font-mono text-[8px] uppercase tracking-[0.08em]",
+        runtimeStatusTone(runtimeCapability.status),
+      )}
+      title={runtimeCapability.reason ?? runtimeCapability.label}
+    >
+      <span className="truncate">{runtimeStatusLabel(runtimeCapability.status)}</span>
     </span>
   )
 }
@@ -249,6 +266,7 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<WorkflowNodeTyp
       <div
         data-workflow-node="true"
         data-status={data.status ?? "idle"}
+        data-runtime-status={data.runtimeCapability?.status ?? "unknown"}
         data-selected={selected ? "true" : "false"}
         data-package-state={internalLocked ? "locked" : internalDraft ? "draft" : "canonical"}
         className={cn(
@@ -257,7 +275,7 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<WorkflowNodeTyp
           proposalFocused && "ring-2 ring-[#ff7a17]/45",
         )}
         style={nodeStyle}
-        title={localized.label}
+        title={`${localized.label} · ${runtimeStatusLabel(data.runtimeCapability?.status)}`}
       >
         <span className="workflow-node-mini-code">{visual.code}</span>
         <Handle type="target" id={primitiveInputs[0]?.id} position={Position.Top} className={handleCls} />
@@ -279,6 +297,7 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<WorkflowNodeTyp
     <div
       data-workflow-node="true"
       data-status={data.status ?? "idle"}
+      data-runtime-status={data.runtimeCapability?.status ?? "unknown"}
       data-selected={selected ? "true" : "false"}
       data-package-state={internalLocked ? "locked" : internalDraft ? "draft" : "canonical"}
       className={cn(
@@ -318,7 +337,10 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<WorkflowNodeTyp
             <span className="truncate font-mono text-[9px] uppercase tracking-[0.08em] text-muted-foreground/80">
               {internalLocked ? "LOCKED PACKAGE" : internalDraft ? "DRAFT INTERNAL" : typeCaption(data.category, data.nodeType)}
             </span>
-            <NodeStatus status={data.status} />
+            <span className="flex min-w-0 shrink-0 items-center gap-1">
+              <RuntimeCapabilityBadge data={data} />
+              <NodeStatus status={data.status} />
+            </span>
           </div>
 
           <p className="mt-1 truncate text-[13px] font-medium leading-tight">{localized.label}</p>
