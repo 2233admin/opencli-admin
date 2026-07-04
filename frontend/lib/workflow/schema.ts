@@ -107,6 +107,11 @@ export const workflowNodeSchema = z.object({
   topicCollapse: topicCollapseStateSchema.optional(),
   proposalState: proposalStateSchema.optional(),
   parameterInterface: parameterInterfaceSchema.optional(),
+  internals: z.object({
+    locked: z.boolean().optional(),
+    nodes: z.array(z.unknown()).default([]),
+    edges: z.array(z.unknown()).default([]),
+  }).optional(),
   ui: jsonRecordSchema.optional(),
 })
 

@@ -6,6 +6,9 @@ import { getApiAuthToken } from "@/lib/api/auth-token"
 import { useFlowStore } from "@/lib/flow/store"
 import type { WorkflowSimulationRun } from "@/lib/workflow/simulation"
 import type { WorkflowRunArtifact } from "@/lib/workflow/run-artifacts"
+import { compileWorkflowProject, type WorkflowCompileResponse } from "@/lib/workflow/backend-compile"
+import { traceOpenCLIHDAWorkflow, type WorkflowOpenCLIHDATraceResponse } from "@/lib/workflow/backend-opencli-hda-trace"
+import { applyRuntimeNodePatches, buildRuntimeNodePatches } from "@/lib/workflow/runtime-bridge"
 import { summarizeWorkflowRun } from "@/lib/workflow/run-summary"
 import { verifyWorkflowRun } from "@/lib/workflow/verification"
 import { Button } from "@/components/ui/button"
@@ -20,6 +23,13 @@ type RunState =
   | { status: "ready"; run: WorkflowSimulationRun; artifact: WorkflowRunArtifact; error: null }
   | { status: "error"; run: WorkflowSimulationRun | null; artifact: WorkflowRunArtifact | null; error: string }
 
+type BackendPreviewState =
+  | { status: "idle"; compile: null; trace: null; error: null }
+  | { status: "running"; compile: WorkflowCompileResponse | null; trace: WorkflowOpenCLIHDATraceResponse | null; error: null }
+  | { status: "ready"; compile: WorkflowCompileResponse; trace: WorkflowOpenCLIHDATraceResponse | null; error: null }
+  | { status: "blocked"; compile: WorkflowCompileResponse; trace: WorkflowOpenCLIHDATraceResponse | null; error: null }
+  | { status: "error"; compile: WorkflowCompileResponse | null; trace: WorkflowOpenCLIHDATraceResponse | null; error: string }
+
 function SectionCaption({ children }: { children: React.ReactNode }) {
   return <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-muted-foreground/70">{children}</p>
 }
@@ -28,7 +38,9 @@ export function RunTracePanel() {
   const workflowProject = useFlowStore((state) => state.workflowProject)
   const nodeCount = useFlowStore((state) => state.nodes.length)
   const edgeCount = useFlowStore((state) => state.edges.length)
+  const setNodes = useFlowStore((state) => state.setNodes)
   const [runState, setRunState] = useState<RunState>({ status: "idle", run: null, artifact: null, error: null })
+  const [backendState, setBackendState] = useState<BackendPreviewState>({ status: "idle", compile: null, trace: null, error: null })
   const [view, setView] = useState<"trace" | "waveform" | "scorecard" | "spans">("trace")
 
   const summary = useMemo(() => (runState.run ? summarizeWorkflowRun(runState.run) : null), [runState.run])
@@ -38,6 +50,7 @@ export function RunTracePanel() {
     [runState.run, workflowProject],
   )
   const isRunning = runState.status === "running"
+  const isBackendRunning = backendState.status === "running"
 
   const runSimulation = async () => {
     setRunState((current) => ({ status: "running", run: current.run, artifact: current.artifact, error: null }))
@@ -68,7 +81,35 @@ export function RunTracePanel() {
     }
   }
 
-  const resetRun = () => setRunState({ status: "idle", run: null, artifact: null, error: null })
+  const runBackendPreview = async () => {
+    setBackendState((current) => ({ status: "running", compile: current.compile, trace: current.trace, error: null }))
+    try {
+      const token = getApiAuthToken()
+      const authorization = token ? `Bearer ${token}` : null
+      const compile = await compileWorkflowProject(workflowProject, { authorization })
+      const trace = compile.valid ? await traceOpenCLIHDAWorkflow(workflowProject, { authorization }) : null
+      const patches = buildRuntimeNodePatches({ compile, trace })
+      setNodes((nodes) => applyRuntimeNodePatches(nodes, patches))
+      setBackendState({
+        status: compile.valid && (trace === null || trace.valid) ? "ready" : "blocked",
+        compile,
+        trace,
+        error: null,
+      })
+    } catch (error) {
+      setBackendState((current) => ({
+        status: "error",
+        compile: current.compile,
+        trace: current.trace,
+        error: error instanceof Error ? error.message : "Backend runtime preview failed",
+      }))
+    }
+  }
+
+  const resetRun = () => {
+    setRunState({ status: "idle", run: null, artifact: null, error: null })
+    setBackendState({ status: "idle", compile: null, trace: null, error: null })
+  }
 
   return (
     <aside
@@ -91,12 +132,21 @@ export function RunTracePanel() {
             {runState.status}
           </Badge>
         </div>
-        <div className="mt-3 flex gap-2">
-          <Button size="sm" className="flex-1" onClick={runSimulation} disabled={isRunning}>
+        <div className="mt-3 grid grid-cols-[1fr_1fr_auto] gap-2">
+          <Button size="sm" variant="outline" onClick={runSimulation} disabled={isRunning || isBackendRunning}>
             {isRunning ? <Loader2 className="size-3.5 animate-spin" /> : <Play className="size-3.5" />}
-            Run
+            Sim
           </Button>
-          <Button size="icon-sm" variant="outline" onClick={resetRun} disabled={isRunning || runState.status === "idle"}>
+          <Button size="sm" onClick={runBackendPreview} disabled={isRunning || isBackendRunning}>
+            {isBackendRunning ? <Loader2 className="size-3.5 animate-spin" /> : <Activity className="size-3.5" />}
+            Backend
+          </Button>
+          <Button
+            size="icon-sm"
+            variant="outline"
+            onClick={resetRun}
+            disabled={isRunning || isBackendRunning || (runState.status === "idle" && backendState.status === "idle")}
+          >
             <RotateCcw className="size-3.5" />
             <span className="sr-only">Reset run trace</span>
           </Button>
@@ -109,6 +159,22 @@ export function RunTracePanel() {
             <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive">
               {runState.error}
             </div>
+          ) : null}
+          {backendState.error ? (
+            <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive">
+              {backendState.error}
+            </div>
+          ) : null}
+
+          {backendState.compile || backendState.trace ? (
+            <>
+              <BackendRuntimePreview
+                status={backendState.status}
+                compile={backendState.compile}
+                trace={backendState.trace}
+              />
+              <Separator />
+            </>
           ) : null}
 
           {!summary ? (
@@ -288,6 +354,120 @@ export function RunTracePanel() {
   )
 }
 
+function BackendRuntimePreview({
+  status,
+  compile,
+  trace,
+}: {
+  status: BackendPreviewState["status"]
+  compile: WorkflowCompileResponse | null
+  trace: WorkflowOpenCLIHDATraceResponse | null
+}) {
+  const runtimeNodes = compile?.plan?.runtime.nodes ?? []
+  const boundCount = runtimeNodes.filter((node) => Boolean(readRecord(node.runtime.binding))).length
+  const missingParameterCount = runtimeNodes.filter((node) => {
+    const missingRuntime = readRecord(node.runtime.missing_runtime)
+    return missingRuntime?.code === "missing_runtime_parameter"
+  }).length
+  const dispatches = trace?.dispatches ?? []
+  const errors = [...(compile?.errors ?? []), ...(trace?.errors ?? [])]
+
+  return (
+    <div className="space-y-3">
+      <MetricGrid
+        title="Backend Runtime"
+        metrics={[
+          {
+            key: "status",
+            label: "Status",
+            value: status,
+            tone: status === "ready" ? "good" : status === "idle" ? "neutral" : "warn",
+          },
+          {
+            key: "nodes",
+            label: "Runtime Nodes",
+            value: `${runtimeNodes.length}`,
+            tone: runtimeNodes.length > 0 ? "good" : "warn",
+          },
+          {
+            key: "bound",
+            label: "Bound",
+            value: `${boundCount}`,
+            tone: boundCount > 0 ? "good" : "neutral",
+          },
+          {
+            key: "dispatches",
+            label: "Dispatches",
+            value: `${dispatches.length}`,
+            tone: dispatches.length > 0 ? "good" : "neutral",
+          },
+          {
+            key: "missing",
+            label: "Blocked",
+            value: `${errors.length + missingParameterCount}`,
+            tone: errors.length + missingParameterCount === 0 ? "good" : "warn",
+          },
+          {
+            key: "mode",
+            label: "Mode",
+            value: trace?.dispatch?.mode ?? compile?.plan?.runtime.execution_mode ?? "preview",
+            tone: "neutral",
+          },
+        ]}
+      />
+
+      {trace ? (
+        <div className="rounded-md border bg-card p-3">
+          <div className="flex items-center justify-between gap-2">
+            <SectionCaption>OpenCLI HDA Trace</SectionCaption>
+            <Badge variant={trace.valid ? "secondary" : "outline"} className="font-mono text-[9px] uppercase">
+              {trace.valid ? "ready" : "blocked"}
+            </Badge>
+          </div>
+          <div className="mt-2 grid grid-cols-2 gap-2 font-mono text-[10px] text-muted-foreground">
+            <span className="truncate">run {trace.runId}</span>
+            <span className="truncate text-right">trace {trace.traceId}</span>
+          </div>
+          {dispatches.length > 0 ? (
+            <div className="mt-3 space-y-1.5">
+              {dispatches.slice(0, 6).map((dispatch) => (
+                <div key={dispatch.taskId} className="rounded-sm border bg-background px-2 py-1.5 font-mono text-[10px]">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="min-w-0 truncate text-foreground">{dispatch.nodeId}</span>
+                    <span className="shrink-0 text-muted-foreground">{dispatch.sourceGroup}</span>
+                  </div>
+                  <p className="mt-1 truncate text-muted-foreground">
+                    {dispatch.site} · {dispatch.command} · {dispatch.iii.function_id}
+                  </p>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      {errors.length > 0 ? <RuntimeErrorList errors={errors} /> : null}
+    </div>
+  )
+}
+
+function RuntimeErrorList({ errors }: { errors: Array<{ code: string; message: string; node_id?: string | null; edge_id?: string | null }> }) {
+  return (
+    <div className="space-y-1.5">
+      <SectionCaption>Runtime Blocks</SectionCaption>
+      {errors.slice(0, 5).map((error) => (
+        <div key={`${error.code}-${error.node_id ?? error.edge_id ?? error.message}`} className="rounded-md border border-destructive/25 bg-destructive/10 p-2.5">
+          <div className="flex items-center justify-between gap-2 font-mono text-[10px]">
+            <span className="min-w-0 truncate text-destructive">{error.code}</span>
+            <span className="shrink-0 text-muted-foreground">{error.node_id ?? error.edge_id ?? "workflow"}</span>
+          </div>
+          <p className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-destructive/90">{error.message}</p>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function MetricGrid({ title, metrics }: { title: string; metrics: { key: string; label: string; value: string; tone: string }[] }) {
   return (
     <div className="space-y-2">
@@ -310,6 +490,11 @@ function MetricGrid({ title, metrics }: { title: string; metrics: { key: string;
       </div>
     </div>
   )
+}
+
+function readRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null
+  return value as Record<string, unknown>
 }
 
 function Metric({ label, value, tone }: { label: string; value: string | number; tone: string }) {

@@ -110,6 +110,17 @@ export interface WorkflowNodeData extends Record<string, unknown> {
     artifactPath: string
     apiPath?: string
   }
+  runtimePreview?: {
+    status?: string
+    runId?: string
+    traceId?: string
+    dispatchCount?: number
+    worker?: string
+    functionId?: string
+    sourceGroups?: string[]
+    internalNodeIds?: string[]
+    diagnostic?: string
+  }
   /** node-internal mini network preview */
   miniNetwork?: MiniNetworkPreview
   /** topic collapse as package internals */
