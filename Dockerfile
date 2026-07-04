@@ -61,7 +61,7 @@ USER appuser
 ENV PYTHONPATH=/app \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
-# Bake the image tag so the system config API can serve it to the frontend
+# Bake the image tag so the system config API can serve it to clients.
 ARG IMAGE_TAG=latest
 ENV IMAGE_TAG=${IMAGE_TAG}
 

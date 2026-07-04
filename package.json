@@ -3,15 +3,12 @@
   "private": true,
   "version": "0.1.0",
   "workspaces": [
-    "frontend",
     "chrome/extension-src"
   ],
   "scripts": {
-    "dev": "nx run-many --target=dev --all --parallel",
-    "dev:frontend": "nx run frontend:dev",
+    "dev": "nx run extension:dev",
     "dev:extension": "nx run extension:dev",
-    "build": "nx run-many --target=build --all --parallel",
-    "build:frontend": "nx run frontend:build",
+    "build": "nx run extension:build",
     "build:extension": "nx run extension:build",
     "test": "nx run-many --target=test --all --parallel",
     "typecheck": "nx run-many --target=typecheck --all --parallel",
@@ -21,19 +18,5 @@
   },
   "devDependencies": {
     "nx": "^20.6.0"
-  },
-  "dependencies": {
-    "@tanstack/react-query": "^5.101.2",
-    "@xyflow/react": "^12.11.1",
-    "clsx": "^2.1.1",
-    "cmdk": "^1.1.1",
-    "date-fns-tz": "^3.2.0",
-    "lucide-react": "^1.23.0",
-    "react": "^19.2.7",
-    "react-dom": "^19.2.7",
-    "react-i18next": "^17.0.8",
-    "react-router-dom": "^7.18.1",
-    "recharts": "^3.9.1",
-    "sonner": "^2.0.7"
   }
 }

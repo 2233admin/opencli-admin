@@ -4,12 +4,12 @@
 
 **现代化的数据采集系统** — 可视化管理多渠道数据采集，接入 [opencli](https://github.com/jackwener/opencli) 驱动国内外主流平台，支持 AI 处理、多节点分布式调度与实时通知推送。
 
-## v0.4 前端基线
+## 当前仓库边界
 
-- `frontend/` 是唯一生产前端主线：React + Vite。改 UI 前先读 [docs/DESIGN_SYSTEM.md](docs/DESIGN_SYSTEM.md)（锁定版设计系统, 顶部 30 秒速查表）。
-- `experiments/next-web/` 只是 Next.js 实验壳，不接入默认 Docker、CI 或导航。
-- 默认 `docker compose up --build` 会构建仓库内的 `frontend/`，不会拉取旧的上游前端镜像。
-- 拓扑画布属于实验能力；设置 `VITE_ENABLE_TOPOLOGY_LAB=true` 后才开放 `/labs/topology`。
+- 本仓库保留后端、Agent、Chrome extension、III/ODP 与编排能力。
+- 生产前端不在本仓库内维护；当前前端项目在 `C:\c\Users\Administrator\projects\open-cli-admin`。
+- Docker Compose 与 GitHub Actions 不再构建本仓库内前端，避免和独立 Canvas/HDA 前端混用。
+- 前后端对接通过 `/api/v1/*` 合同完成；Canvas/WorkflowProject 以独立前端为准。
 
 **OpenCLI WebUI** OpenCLI 可视化界面 [opencli-webui](https://github.com/xjh1994/opencli-webui)
 
@@ -105,17 +105,17 @@ docker compose up -d   # 启动中心 + agent-1
 
 ### 方式零：前端主线（推荐）
 
-生产前端只在 `frontend/` 下开发和构建：
+生产前端只在独立前端项目下开发和构建：
 
 ```bash
-cd frontend
+cd C:\c\Users\Administrator\projects\open-cli-admin
 npm ci --legacy-peer-deps
 npm run dev   # Vite dev server
 npm run test
 npm run build
 ```
 
-扩展仍在 `chrome/extension-src/` 下独立构建。GitHub Actions（`.github/workflows/ci.yml`）也按 frontend、extension、backend 三条真实流水线分别验证。
+扩展仍在 `chrome/extension-src/` 下独立构建。本仓库 GitHub Actions 只验证 extension、backend、migrations 与 ODP Rust。
 
 ### 方式一：原生 Shell
 
@@ -137,7 +137,6 @@ cp .env.example .env
 
 ```bash
 ./start.sh --no-chrome      # 跳过 Chrome（RSS/API 渠道不需要）
-./start.sh --no-frontend    # 仅启动后端 API
 ./start.sh --cdp-port 9223  # 自定义 Chrome CDP 端口
 ```
 
@@ -389,10 +388,9 @@ AI 处理（可选）— Claude · OpenAI · DeepSeek · Kimi · GLM · Ollama
 │   ├── pipeline/        # 采集流水线（collect → normalize → store → ai → notify）
 │   ├── scheduler.py     # 本地异步调度器
 │   └── worker/          # Celery 任务定义
-├── frontend/src/
-│   ├── pages/           # 页面组件
-│   ├── components/      # 公共组件
-│   └── api/             # API 客户端
+├── chrome/extension-src/ # Browser Bridge / extension
+├── iii/                  # III workers and schedules
+├── odp-rs/               # ODP Rust data plane
 ├── scripts/
 │   └── install-agent.sh # 一键安装 Agent
 ├── docker-compose.yml
@@ -423,11 +421,6 @@ docker buildx build --builder multiarch \
   --build-arg IMAGE_TAG=${TAG} \
   -t xjh1994/opencli-admin-api:${TAG} --push .
 
-# 前端
-docker buildx build --builder multiarch \
-  --platform linux/amd64,linux/arm64 \
-  -t xjh1994/opencli-admin-frontend:${TAG} --push frontend/
-
 # Agent 基础版（~100 MB，通过宿主机 Chrome 连接）
 docker buildx build --builder multiarch \
   --platform linux/amd64,linux/arm64 \
@@ -449,8 +442,6 @@ TAG=0.3.6
 docker buildx build --builder multiarch --platform linux/amd64,linux/arm64 \
   --build-arg IMAGE_TAG=${TAG} \
   -t xjh1994/opencli-admin-api:${TAG} --push . > /tmp/build-api.log 2>&1 &
-docker buildx build --builder multiarch --platform linux/amd64,linux/arm64 \
-  -t xjh1994/opencli-admin-frontend:${TAG} --push frontend/ > /tmp/build-frontend.log 2>&1 &
 docker buildx build --builder multiarch --platform linux/amd64,linux/arm64 \
   -f agent/Dockerfile \
   -t xjh1994/opencli-admin-agent:${TAG} --push . > /tmp/build-agent.log 2>&1 &

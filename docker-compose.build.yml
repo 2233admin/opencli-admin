@@ -1,5 +1,5 @@
 # Local build override: builds backend and agent images from source.
-# The default docker-compose.yml already builds the Vite frontend from ./frontend.
+# Frontend lives outside this clone; use C:\c\Users\Administrator\projects\open-cli-admin.
 #
 # Usage:
 # docker compose -f docker-compose.yml -f docker-compose.build.yml up --build

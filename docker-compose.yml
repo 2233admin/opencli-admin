@@ -203,19 +203,6 @@ services:
       - "${AGENT_PORT:-19823}:19823"
     restart: unless-stopped
 
-  # ── Frontend (nginx + built React) — production ───────────────────────────
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    image: ${FRONTEND_IMAGE:-opencli-admin-frontend:local}
-    ports:
-      - "${FRONTEND_PORT:-8030}:80"
-    depends_on:
-      api:
-        condition: service_healthy
-    restart: unless-stopped
-
   # ── ODP data plane (Rust hot path) — docker compose --profile odp up
   odp-ingest:
     profiles: ["odp", "nas"]
@@ -346,24 +333,6 @@ services:
   #     iii-engine:
   #       condition: service_started
   #   restart: unless-stopped
-
-  # ── Frontend dev server (Vite HMR) — run with: docker compose --profile dev up frontend-dev
-  frontend-dev:
-    profiles: ["dev"]
-    image: ${DOCKER_REGISTRY:-}node:22-alpine
-    working_dir: /app
-    command: sh -c "npm ci --legacy-peer-deps && npm run dev -- --host"
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-    ports:
-      - "${FRONTEND_PORT:-8030}:5173"
-    environment:
-      VITE_API_PROXY_TARGET: "http://api:8000"
-    depends_on:
-      api:
-        condition: service_healthy
-    restart: unless-stopped
 
 volumes:
   redis_data:
