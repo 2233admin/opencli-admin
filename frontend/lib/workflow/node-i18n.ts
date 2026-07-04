@@ -8,6 +8,10 @@ export type LocalizedNodeText = {
 }
 
 const NODE_TEXT: Record<string, Record<WorkflowLanguage, LocalizedNodeText>> = {
+  "intelligence.input.collection-need": {
+    "zh-CN": { label: "采集需求", description: "输入业务需求，由 demand-draft 组装真实 OpenCLI/source 节点" },
+    "en-US": { label: "Collection Need", description: "Enter a collection need and assemble real OpenCLI/source nodes" },
+  },
   "intelligence.schedule.cron": {
     "zh-CN": { label: "定时计划", description: "按 cron/interval 周期触发情报工作流" },
     "en-US": { label: "Cron Schedule", description: "Run the intelligence workflow on a cadence" },

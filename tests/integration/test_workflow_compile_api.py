@@ -666,6 +666,47 @@ async def test_compile_rejects_hand_rolled_node_implementation(client):
 
 
 @pytest.mark.asyncio
+async def test_compile_accepts_collection_need_input_node(client):
+    project = _valid_workflow_project()
+    project["nodes"].insert(
+        0,
+        {
+            "id": "collection-need",
+            "kind": "schedule",
+            "capability": "trigger",
+            "params": {
+                "text": "抓小红书热帖",
+                "locale": "zh-CN",
+                "mode": "demand-draft",
+            },
+            "ui": {"catalogId": "intelligence.input.collection-need"},
+        },
+    )
+    project["edges"].insert(
+        0,
+        {
+            "id": "e-need-source",
+            "source": "collection-need",
+            "target": "source-jin10",
+        },
+    )
+
+    response = await client.post("/api/v1/workflows/compile", json={"project": project})
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["valid"] is True
+    node = next(
+        node
+        for node in data["plan"]["runtime"]["nodes"]
+        if node["id"] == "collection-need"
+    )
+    assert node["runtime"]["origin"]["catalog_id"] == "intelligence.input.collection-need"
+    assert node["runtime"]["binding"]["binding_id"] == "workflow.demand-draft.patch"
+    assert "missing_runtime" not in node["runtime"]
+
+
+@pytest.mark.asyncio
 async def test_workflow_capabilities_project_real_backend_surfaces(client):
     response = await client.get("/api/v1/workflows/capabilities")
 
@@ -673,6 +714,9 @@ async def test_workflow_capabilities_project_real_backend_surfaces(client):
     data = response.json()["data"]
 
     catalog = {item["id"]: item for item in data["catalog"]}
+    assert catalog["intelligence.input.collection-need"]["status"] == "runnable"
+    assert catalog["intelligence.input.collection-need"]["backendAvailable"] is True
+    assert catalog["intelligence.input.collection-need"]["runtimeBinding"] == "workflow.demand-draft.patch"
     assert catalog["intelligence.source.opencli-slot"]["status"] == "runnable"
     assert catalog["intelligence.source.opencli-slot"]["backendAvailable"] is True
     assert catalog["intelligence.source.opencli-slot"]["runtimeBinding"]

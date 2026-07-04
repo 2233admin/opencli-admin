@@ -1,11 +1,10 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { Activity, Loader2, Play, RotateCcw, Wand2 } from "lucide-react"
+import { Activity, Loader2, Play, RotateCcw } from "lucide-react"
 import { getApiAuthToken } from "@/lib/api/auth-token"
 import { useFlowStore } from "@/lib/flow/store"
 import { compileWorkflowProject, type WorkflowCompileResponse } from "@/lib/workflow/backend-compile"
-import { draftWorkflowDemand } from "@/lib/workflow/backend-demand-draft"
 import { traceOpenCLIHDAWorkflow, type WorkflowOpenCLIHDATraceResponse } from "@/lib/workflow/backend-opencli-hda-trace"
 import {
   replayWorkflowRunEventStream,
@@ -13,13 +12,11 @@ import {
   type WorkflowNodeRunEvent,
   type WorkflowRunProjection,
 } from "@/lib/workflow/backend-runs"
-import type { AgentProposal } from "@/lib/workflow/proposal"
 import { applyRuntimeNodePatches, buildRuntimeNodePatches } from "@/lib/workflow/runtime-bridge"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
-import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
 
 type RealRunState =
@@ -35,17 +32,11 @@ type BackendPreviewState =
   | { status: "blocked"; compile: WorkflowCompileResponse; trace: WorkflowOpenCLIHDATraceResponse | null; error: null }
   | { status: "error"; compile: WorkflowCompileResponse | null; trace: WorkflowOpenCLIHDATraceResponse | null; error: string }
 
-type DemandDraftState =
-  | { status: "idle"; error: null }
-  | { status: "running"; error: null }
-  | { status: "ready"; error: null }
-  | { status: "error"; error: string }
-
 function SectionCaption({ children }: { children: React.ReactNode }) {
   return <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-muted-foreground/70">{children}</p>
 }
 
-export function RunTracePanel({ onAgentProposal }: { onAgentProposal?: (proposal: AgentProposal) => void }) {
+export function RunTracePanel() {
   const workflowProject = useFlowStore((state) => state.workflowProject)
   const nodeCount = useFlowStore((state) => state.nodes.length)
   const edgeCount = useFlowStore((state) => state.edges.length)
@@ -54,8 +45,6 @@ export function RunTracePanel({ onAgentProposal }: { onAgentProposal?: (proposal
   const applyWorkflowRunProjection = useFlowStore((state) => state.applyWorkflowRunProjection)
   const [runState, setRunState] = useState<RealRunState>({ status: "idle", projection: null, events: [], error: null })
   const [backendState, setBackendState] = useState<BackendPreviewState>({ status: "idle", compile: null, trace: null, error: null })
-  const [demandText, setDemandText] = useState("抓小红书热帖")
-  const [demandState, setDemandState] = useState<DemandDraftState>({ status: "idle", error: null })
 
   const projection = runState.projection
   const errors = projection?.errors ?? []
@@ -68,30 +57,6 @@ export function RunTracePanel({ onAgentProposal }: { onAgentProposal?: (proposal
   const latestEvents = useMemo(() => runState.events.slice(-8).reverse(), [runState.events])
   const isRunning = runState.status === "running"
   const isBackendRunning = backendState.status === "running"
-  const isDemandRunning = demandState.status === "running"
-
-  const assembleDemand = async () => {
-    if (!demandText.trim()) {
-      setDemandState({ status: "error", error: "Demand is required" })
-      return
-    }
-    setDemandState({ status: "running", error: null })
-    try {
-      const token = getApiAuthToken()
-      const authorization = token ? `Bearer ${token}` : null
-      const proposal = await draftWorkflowDemand(workflowProject, demandText, {
-        authorization,
-        locale: "zh-CN",
-      })
-      onAgentProposal?.(proposal)
-      setDemandState({ status: "ready", error: null })
-    } catch (error) {
-      setDemandState({
-        status: "error",
-        error: error instanceof Error ? error.message : "Demand assembly failed",
-      })
-    }
-  }
 
   const runBackendWorkflow = async () => {
     setRunState((current) => ({ status: "running", projection: current.projection, events: current.events, error: null }))
@@ -170,23 +135,6 @@ export function RunTracePanel({ onAgentProposal }: { onAgentProposal?: (proposal
             {projection?.status ?? runState.status}
           </Badge>
         </div>
-        <div className="mt-3 space-y-2">
-          <Textarea
-            value={demandText}
-            onChange={(event) => setDemandText(event.target.value)}
-            className="min-h-16 resize-none font-mono text-xs"
-          />
-          <Button
-            size="sm"
-            variant="outline"
-            className="w-full"
-            onClick={assembleDemand}
-            disabled={isDemandRunning || isRunning || isBackendRunning}
-          >
-            {isDemandRunning ? <Loader2 className="size-3.5 animate-spin" /> : <Wand2 className="size-3.5" />}
-            Assemble
-          </Button>
-        </div>
         <div className="mt-3 grid grid-cols-[1fr_1fr_auto] gap-2">
           <Button size="sm" onClick={runBackendWorkflow} disabled={isRunning || isBackendRunning}>
             {isRunning ? <Loader2 className="size-3.5 animate-spin" /> : <Play className="size-3.5" />}
@@ -220,12 +168,6 @@ export function RunTracePanel({ onAgentProposal }: { onAgentProposal?: (proposal
               {backendState.error}
             </div>
           ) : null}
-          {demandState.error ? (
-            <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive">
-              {demandState.error}
-            </div>
-          ) : null}
-
           {projection ? (
             <RealRunProjection
               projection={projection}

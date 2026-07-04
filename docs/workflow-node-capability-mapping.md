@@ -10,13 +10,14 @@ Implementation slice:
 - Frontend proxies it through `GET /api/workflow/capabilities`.
 - Canvas catalog, command palette, node cards, and Node Management can show `REAL`, `BLOCKED`, `PREVIEW`, or `DESIGN` status from the capability projection.
 - Frontend Canvas Run now proxies to backend `/api/v1/workflows/runs`, replays `/events/stream`, and patches existing Canvas nodes from backend run events.
+- Canvas now has a real `intelligence.input.collection-need` catalog node. The node owns the visible user input textarea and calls `/api/v1/workflows/demand-draft` to produce reviewable real-node patches.
 - This does not execute blocked nodes. It makes runtime truth visible and runs the narrow OpenCLI HDA proof path; full result/resource workbench wiring is still pending.
 
 ## Hard conclusion
 
 The system has three real but misaligned surfaces:
 
-1. Frontend Canvas catalog: 22 addable catalog nodes in `frontend/lib/workflow/node-catalog.ts`.
+1. Frontend Canvas catalog: 23 addable catalog nodes in `frontend/lib/workflow/node-catalog.ts`.
 2. Frontend primitive library: 107 primitive/import nodes in `frontend/lib/workflow/node-primitives.ts`.
 3. Backend collection capability: 7 real `DataSource.channel_type` runners under `backend/channels`.
 
@@ -28,7 +29,7 @@ So the next step is not more hand-made nodes. The next step is to project existi
 
 | Surface | Count | Real capability | Canvas runtime state |
 |---|---:|---|---|
-| Catalog nodes | 22 | Authoring palette and contracts | Only OpenCLI source/fetch internals have runtime metadata; others surface `missing_runtime_binding` |
+| Catalog nodes | 23 | Authoring palette and contracts | Collection Need and OpenCLI source/fetch internals have runtime metadata; others surface `missing_runtime_binding` |
 | Primitive nodes | 107 | n8n/import/design vocabulary | Accepted by backend origin guard, but no primitive executor binding |
 | DataSource channels | 7 | `opencli`, `web_scraper`, `api`, `rss`, `cli`, `skill`, `crawl4ai` | Real outside Canvas through channel runner; not projected as executable Canvas source nodes except OpenCLI-HDA path |
 | Frontend source adapters | 1 direct adapter | `jin10` fixture/live frontend adapter | Local/simulated path, not authoritative backend workflow runtime |
@@ -52,6 +53,7 @@ So the next step is not more hand-made nodes. The next step is to project existi
 
 | Catalog node | Current role | Real backend counterpart | Current state | Decision |
 |---|---|---|---|---|
+| `intelligence.input.collection-need` | User demand input | `/api/v1/workflows/demand-draft` + existing patcher/compiler | Runnable patch-draft binding; node does not ask for cookie/profile/worker | Keep as the Canvas input point for business need text |
 | `intelligence.schedule.cron` | Scheduled trigger | Existing scheduler/task concepts | Compiles/displays; no workflow runtime trigger binding | Blocked until trigger/run-input binding exists |
 | `intelligence.source.jin10` | JIN10 source | Frontend `jin10` adapter only | Not authoritative backend runtime | Keep, but mark not runnable from Canvas |
 | `intelligence.source.opencli-slot` | OpenCLI source slot | `OpenCLIChannel` + runtime registry OpenCLI source binding | Real if adapter binding exists; UI cannot yet resolve resources/args fully | Keep as real executable source slot; add materialization/resource resolver |
@@ -131,7 +133,7 @@ This means the "input point" is not a generic textbox inside a source node. Ther
 
 | Input kind | Existing basis | Canvas requirement |
 |---|---|---|
-| Manual/AI demand input | `/api/v1/workflows/demand-draft` | Draft reviewable WorkflowProject patches from Collection Need before running |
+| Manual/AI demand input | `intelligence.input.collection-need` + `/api/v1/workflows/demand-draft` | User edits a Canvas node textarea, then drafts reviewable WorkflowProject patches before running |
 | Manual run input | Workflow run request envelope | Keep run start focused on an accepted WorkflowProject; add typed run overrides later only when needed |
 | Schedule trigger | scheduler/task concepts; cron catalog node | Bind trigger nodes to real run creation |
 | Inbound webhook trigger | `/api/v1/webhooks/{source_id}` for source trigger | Add workflow-level webhook trigger mode and response/projection policy |
@@ -165,7 +167,7 @@ The broader collection surface is still not directly usable because:
 
 1. The source catalog is not generated from backend channel capability metadata.
 2. Most catalog and primitive nodes are visible but lack runtime bindings.
-3. The user's natural-language Collection Need is not yet part of `WorkflowRunStartRequest`; Canvas Run currently submits the project graph only.
+3. Collection Need is now a Canvas node for patch drafting, but `WorkflowRunStartRequest` still submits the accepted project graph only.
 4. Resource resolution for cookies/profile/credentials/worker pool is not connected to Canvas source materialization.
 5. Evidence/result projection APIs are not ready, so outputs are still references and event counts rather than inspectable collection results.
 6. Webhook/notifier sinks and inbound webhook trigger response policy are not bound to the workflow run axis.

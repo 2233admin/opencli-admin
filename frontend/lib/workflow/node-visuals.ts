@@ -11,6 +11,7 @@ export type NodeVisualSignature = {
 }
 
 const VISUALS: Record<string, NodeVisualSignature> = {
+  "intelligence.input.collection-need": sig("NEED", "?", "var(--chart-1)", "pulse"),
   "intelligence.schedule.cron": sig("CLK", "T", "var(--chart-1)", "pulse"),
   "intelligence.source.jin10": sig("J10", "S", "var(--chart-4)", "dots"),
   "intelligence.source.opencli-slot": sig("OCS", "S", "var(--chart-4)", "dots"),

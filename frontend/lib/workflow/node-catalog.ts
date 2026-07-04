@@ -37,6 +37,8 @@ export type WorkflowNodeCatalogItem = {
   keywords: string[]
 }
 
+export const COLLECTION_NEED_CATALOG_ID = "intelligence.input.collection-need"
+
 const JIN10_ADAPTER: AdapterBinding = {
   id: "jin10-kuaixun",
   type: "source",
@@ -169,6 +171,20 @@ function safeIdPart(value: string): string {
 }
 
 export const WORKFLOW_NODE_CATALOG: WorkflowNodeCatalogItem[] = [
+  {
+    id: COLLECTION_NEED_CATALOG_ID,
+    idPrefix: "collection-need",
+    label: "Collection Need",
+    description: "用户只输入采集需求，由后端 demand-draft 组装真实节点 patch",
+    category: "trigger",
+    profile: "intelligence",
+    kind: "schedule",
+    capability: "trigger",
+    icon: "MessageSquare",
+    color: "var(--chart-1)",
+    params: { text: "抓小红书热帖", locale: "zh-CN", mode: "demand-draft" },
+    keywords: ["need", "demand", "input", "manual", "需求", "输入", "采集"],
+  },
   {
     id: "intelligence.schedule.cron",
     idPrefix: "schedule",

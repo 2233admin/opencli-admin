@@ -11,6 +11,7 @@ from backend.schemas.workflow import WorkflowAdapterBinding, WorkflowProjectNode
 OPENCLI_BINDING_ID = "iii.collector-opencli.snapshot"
 OPENCLI_WORKER = "collector-opencli"
 OPENCLI_FUNCTION_ID = "odp.collect::opencli_snapshot"
+DEMAND_DRAFT_BINDING_ID = "workflow.demand-draft.patch"
 
 
 class WorkflowRuntimeBinding(BaseModel):
@@ -44,6 +45,8 @@ def resolve_runtime_metadata(
     """Return runtime binding metadata for a compiled WorkflowProject node."""
 
     resolved_node_id = node_id or node.id
+    if _is_collection_need(node):
+        return _resolve_collection_need(node, node_id=resolved_node_id)
     if _is_opencli_source(node, adapter):
         return _resolve_opencli_source(node, adapter, node_id=resolved_node_id)
 
@@ -107,6 +110,38 @@ def _resolve_opencli_source(
             input={"site": site, "command": command},
         ).model_dump()
     }
+
+
+def _resolve_collection_need(node: WorkflowProjectNode, *, node_id: str) -> dict[str, Any]:
+    text = _read_string(node.params.get("text"))
+    return {
+        "binding": {
+            "status": "bound",
+            "binding_id": DEMAND_DRAFT_BINDING_ID,
+            "runtime": "workflow",
+            "channel": "demand-draft",
+            "input": {
+                "text": text,
+                "locale": _read_string(node.params.get("locale")) or "zh-CN",
+            },
+        },
+        "demand_draft": {
+            "node_id": node_id,
+            "endpoint": "/api/v1/workflows/demand-draft",
+        },
+    }
+
+
+def _is_collection_need(node: WorkflowProjectNode) -> bool:
+    ui = node.ui or {}
+    return (
+        _read_string(ui.get("catalogId")) == "intelligence.input.collection-need"
+        or (
+            node.kind == "schedule"
+            and node.capability == "trigger"
+            and _read_string(node.params.get("mode")) == "demand-draft"
+        )
+    )
 
 
 def _is_opencli_source(

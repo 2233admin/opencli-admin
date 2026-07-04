@@ -163,6 +163,8 @@ function EditorCanvas() {
   const updateWorkflowProfile = useFlowStore((s) => s.updateWorkflowProfile)
   const focusProposalTargets = useFlowStore((s) => s.focusProposalTargets)
   const clearProposalFocus = useFlowStore((s) => s.clearProposalFocus)
+  const pendingAgentProposal = useFlowStore((s) => s.pendingAgentProposal)
+  const clearPendingAgentProposal = useFlowStore((s) => s.clearPendingAgentProposal)
   const addWorkflowNodeFromCatalog = useFlowStore((s) => s.addWorkflowNodeFromCatalog)
   const addPrimitiveNode = useFlowStore((s) => s.addPrimitiveNode)
 
@@ -687,6 +689,12 @@ function EditorCanvas() {
     [showToast],
   )
 
+  useEffect(() => {
+    if (!pendingAgentProposal) return
+    presentAgentProposal(pendingAgentProposal)
+    clearPendingAgentProposal()
+  }, [clearPendingAgentProposal, pendingAgentProposal, presentAgentProposal])
+
   const focusProposalOperation = useCallback(
     (focus: ProposalFocusTarget) => {
       focusProposalTargets(focus.nodeIds, focus.edgeIds)
@@ -829,7 +837,7 @@ function EditorCanvas() {
 
           {runTraceOpen ? (
             <div className={cn("workflow-floating-panel absolute top-3 z-40", nodeManagementOpen ? "left-[28.75rem]" : "left-3")}>
-              <RunTracePanel onAgentProposal={presentAgentProposal} />
+              <RunTracePanel />
             </div>
           ) : null}
 

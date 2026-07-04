@@ -17,6 +17,7 @@ from backend.schemas.workflow import WorkflowProjectNode
 NodeOriginKind = Literal["node_library", "primitive_library", "n8n", "legacy"]
 
 WORKFLOW_CATALOG_IDS = {
+    "intelligence.input.collection-need",
     "intelligence.schedule.cron",
     "intelligence.source.jin10",
     "intelligence.source.opencli-slot",

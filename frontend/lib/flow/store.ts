@@ -43,6 +43,7 @@ import {
   type WorkflowCapabilitiesResponse,
   type WorkflowRuntimeCapability,
 } from "../workflow/capabilities"
+import type { AgentProposal } from "../workflow/proposal"
 import type {
   WorkflowNodeRunEvent,
   WorkflowRunNodeState,
@@ -67,6 +68,7 @@ type FlowState = {
   future: FlowSnapshot[]
   clipboard: FlowSnapshot | null
   selectedIds: string[]
+  pendingAgentProposal: AgentProposal | null
 
   // freehand whiteboard
   drawings: FreehandStroke[]
@@ -154,6 +156,8 @@ type FlowState = {
   applyWorkflowNodeRunEvent: (event: WorkflowNodeRunEvent) => void
   applyWorkflowRunProjection: (projection: WorkflowRunProjection) => void
   updateWorkflowProfile: (profile: WorkflowProfile) => void
+  queueAgentProposal: (proposal: AgentProposal) => void
+  clearPendingAgentProposal: () => void
   focusProposalTargets: (nodeIds: string[], edgeIds?: string[]) => void
   clearProposalFocus: () => void
   applyGeneratedWorkflow: (spec: GeneratedWorkflowSpec) => void
@@ -590,6 +594,7 @@ export const useFlowStore = create<FlowState>((set, get) => ({
   future: [],
   clipboard: null,
   selectedIds: [],
+  pendingAgentProposal: null,
   drawings: [],
   toolMode: "select",
   penColor: "var(--chart-1)",
@@ -1667,6 +1672,9 @@ export const useFlowStore = create<FlowState>((set, get) => ({
     get().takeSnapshot()
     set((state) => ({ workflowProject: parseWorkflowProject({ ...state.workflowProject, profile }) }))
   },
+
+  queueAgentProposal: (proposal) => set({ pendingAgentProposal: proposal }),
+  clearPendingAgentProposal: () => set({ pendingAgentProposal: null }),
 
   focusProposalTargets: (nodeIds, edgeIds = []) => {
     const focusedNodes = new Set(nodeIds)

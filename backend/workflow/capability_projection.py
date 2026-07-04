@@ -18,7 +18,7 @@ from backend.schemas.workflow import (
     WorkflowRuntimeCapability,
 )
 from backend.workflow.node_registry import WORKFLOW_PRIMITIVE_IDS
-from backend.workflow.runtime_registry import OPENCLI_BINDING_ID
+from backend.workflow.runtime_registry import DEMAND_DRAFT_BINDING_ID, OPENCLI_BINDING_ID
 
 
 def build_workflow_capabilities() -> WorkflowCapabilitiesResponse:
@@ -73,6 +73,21 @@ def _capability(
 
 def _catalog_capabilities() -> list[WorkflowRuntimeCapability]:
     return [
+        _capability(
+            id="intelligence.input.collection-need",
+            label="Collection Need",
+            surface="catalog",
+            status="runnable",
+            backend_available=True,
+            kind="schedule",
+            capability="trigger",
+            provider="workflow",
+            runtime_binding=DEMAND_DRAFT_BINDING_ID,
+            reason="Canvas demand input calls the backend demand-draft endpoint "
+            "to assemble existing real source/package nodes into a reviewable patch.",
+            tags=["input", "demand", "patch"],
+            source="backend.workflow.demand_assembler",
+        ),
         _blocked_catalog(
             "intelligence.schedule.cron",
             "Cron Schedule",

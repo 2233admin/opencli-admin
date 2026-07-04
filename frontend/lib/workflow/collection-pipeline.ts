@@ -45,6 +45,7 @@ function edge(id: string, source: string, target: string, label?: string): Workf
 
 export function buildCollectionWorkflowProject(): WorkflowProject {
   // ── 目录节点（组件库自有）──────────────────────────────
+  const collectionNeed = createWorkflowNodeFromCatalog(catalogItem("intelligence.input.collection-need"), "collection-need", at("trigger", 0))
   const schedule = createWorkflowNodeFromCatalog(catalogItem("intelligence.schedule.cron"), "schedule-cron", at("trigger", 1))
   const jin10 = createWorkflowNodeFromCatalog(catalogItem("intelligence.source.jin10"), "source-jin10", at("source", 0))
   const normalize = createWorkflowNodeFromCatalog(catalogItem("intelligence.processing.normalize"), "normalize-items", at("process", 0))
@@ -76,7 +77,7 @@ export function buildCollectionWorkflowProject(): WorkflowProject {
     edge("e-schedule-jin10", schedule.id, jin10.id),
     edge("e-schedule-rss", schedule.id, rss.id),
     edge("e-schedule-http", schedule.id, httpApi.id),
-    edge("e-schedule-opencli-hda", schedule.id, opencliHda.id),
+    edge("e-need-opencli-hda", collectionNeed.id, opencliHda.id),
     edge("e-jin10-normalize", jin10.id, normalize.id),
     edge("e-rss-normalize", rss.id, normalize.id),
     edge("e-http-normalize", httpApi.id, normalize.id),
@@ -106,7 +107,7 @@ export function buildCollectionWorkflowProject(): WorkflowProject {
     name: "采集 · 发送管线",
     profile: "intelligence",
     version: 1,
-    nodes: [schedule, jin10, rss, httpApi, opencliHda, normalize, dedupe, summary, score, tag, router, inbox, webhook, telegram, email, postgres],
+    nodes: [collectionNeed, schedule, jin10, rss, httpApi, opencliHda, normalize, dedupe, summary, score, tag, router, inbox, webhook, telegram, email, postgres],
     edges,
     adapters: Array.from(adapterById.values()),
     settings: {

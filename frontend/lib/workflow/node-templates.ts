@@ -53,6 +53,31 @@ export type NodeTemplate = {
 
 const NODE_TEMPLATES: NodeTemplate[] = [
   {
+    id: "intelligence.input.collection-need",
+    title: "Collection Need",
+    summary: "Turn a user's collection need into a reviewable real-node patch.",
+    dataShape: "need -> trigger",
+    fields: [
+      {
+        id: "text",
+        source: "params",
+        type: "textarea",
+        label: "Need",
+        placeholder: "抓小红书热帖",
+      },
+      {
+        id: "locale",
+        source: "params",
+        type: "select",
+        label: "Locale",
+        options: [
+          { value: "zh-CN", label: "zh-CN" },
+          { value: "en-US", label: "en-US" },
+        ],
+      },
+    ],
+  },
+  {
     id: "intelligence.schedule.cron",
     title: "Cron Schedule",
     summary: "Start the pipeline on a fixed interval.",
@@ -206,6 +231,9 @@ export function getNodeTemplate(node: WorkflowProjectNode | undefined): NodeTemp
 
   if (!node) return undefined
   return NODE_TEMPLATES.find((template) => {
+    if (template.id === "intelligence.input.collection-need") {
+      return node.kind === "schedule" && node.capability === "trigger" && node.params.mode === "demand-draft"
+    }
     if (template.id === "intelligence.schedule.cron") return node.kind === "schedule" && node.capability === "trigger"
     if (template.id === "intelligence.source.jin10") return node.kind === "source" && node.adapter === "jin10-kuaixun"
     if (template.id === "intelligence.source.opencli-slot") return node.kind === "source" && Boolean(node.adapter?.startsWith("opencli-"))

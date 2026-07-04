@@ -75,6 +75,26 @@ export type EdgeContractResolution = {
 }
 
 const CONTRACTS: Record<string, NodeContract> = {
+  "intelligence.input.collection-need": contract(
+    "intelligence.input.collection-need",
+    "Collection Need",
+    "need -> trigger",
+    [],
+    [port("out", "output", "trigger", true, "Emits a manual demand trigger for demand-draft assembly.")],
+    [
+      param("text", "params", "string", true, "抓小红书热帖", {
+        description: "Natural-language collection need. Runtime details are resolved by existing source capabilities.",
+      }),
+      param("locale", "params", "string", false, "zh-CN", {
+        enum: ["zh-CN", "en-US"],
+        description: "Locale used for demand interpretation and proposal labels.",
+      }),
+    ],
+    [
+      "user demand text must remain business intent, not raw executor params",
+      "node assembly must call the backend demand-draft endpoint",
+    ],
+  ),
   "intelligence.schedule.cron": contract(
     "intelligence.schedule.cron",
     "Cron Schedule",
@@ -284,6 +304,9 @@ export function getNodeContract(node: WorkflowProjectNode | undefined): NodeCont
   const catalogId = typeof node.ui?.catalogId === "string" ? node.ui.catalogId : undefined
   if (catalogId && CONTRACTS[catalogId]) return CONTRACTS[catalogId]
 
+  if (node.kind === "schedule" && node.capability === "trigger" && node.params.mode === "demand-draft") {
+    return CONTRACTS["intelligence.input.collection-need"]
+  }
   if (node.kind === "schedule" && node.capability === "trigger") return CONTRACTS["intelligence.schedule.cron"]
   if (node.kind === "source" && node.adapter === "jin10-kuaixun") return CONTRACTS["intelligence.source.jin10"]
   if (node.kind === "source" && node.adapter?.startsWith("opencli-")) return CONTRACTS["intelligence.source.opencli-slot"]
