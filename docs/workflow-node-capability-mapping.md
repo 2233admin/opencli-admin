@@ -13,6 +13,7 @@ Implementation slice:
 - Canvas now has a real `intelligence.input.collection-need` catalog node. The node owns the visible user input textarea and calls `/api/v1/workflows/demand-draft` to produce reviewable real-node patches.
 - `intelligence.schedule.cron` now compiles/runs as a workflow schedule tick binding for Canvas Run; automatic scheduler-to-run creation remains a separate scheduler integration.
 - This does not execute blocked nodes. It makes runtime truth visible and runs the narrow OpenCLI HDA proof path; full result/resource workbench wiring is still pending.
+- `intelligence.output.webhook` now binds to `workflow.notifier.webhook.send`; delivery remains guarded by notification permissions and configured webhook URL at send time.
 
 ## Hard conclusion
 
@@ -22,7 +23,7 @@ The system has three real but misaligned surfaces:
 2. Frontend primitive library: 107 primitive/import nodes in `frontend/lib/workflow/node-primitives.ts`.
 3. Backend collection capability: 7 real `DataSource.channel_type` runners under `backend/channels`.
 
-Today, Canvas workflow runtime execution is wired for Collection Need patch drafting, schedule trigger ticks, and `source/fetch` with an OpenCLI adapter (`provider=opencli` or `config.channel=opencli`). Other catalog nodes may compile or display, but they do not yet have an authoritative workflow runtime binding.
+Today, Canvas workflow runtime execution is wired for Collection Need patch drafting, schedule trigger ticks, `source/fetch` with an OpenCLI adapter (`provider=opencli` or `config.channel=opencli`), and Webhook Notify sink metadata (`provider=webhook`). Other catalog nodes may compile or display, but they do not yet have an authoritative workflow runtime binding.
 
 So the next step is not more hand-made nodes. The next step is to project existing backend source/channel/runtime/notifier capabilities into the Canvas catalog, and to mark any unmapped visible node as blocked or design/import-only.
 
@@ -30,7 +31,7 @@ So the next step is not more hand-made nodes. The next step is to project existi
 
 | Surface | Count | Real capability | Canvas runtime state |
 |---|---:|---|---|
-| Catalog nodes | 23 | Authoring palette and contracts | Collection Need, Cron Schedule, and OpenCLI source/fetch internals have runtime metadata; others surface `missing_runtime_binding` |
+| Catalog nodes | 23 | Authoring palette and contracts | Collection Need, Cron Schedule, OpenCLI source/fetch internals, and Webhook Notify have runtime metadata; others surface `missing_runtime_binding` |
 | Primitive nodes | 107 | n8n/import/design vocabulary | Accepted by backend origin guard, but no primitive executor binding |
 | DataSource channels | 7 | `opencli`, `web_scraper`, `api`, `rss`, `cli`, `skill`, `crawl4ai` | Real outside Canvas through channel runner; not projected as executable Canvas source nodes except OpenCLI-HDA path |
 | Frontend source adapters | 1 direct adapter | `jin10` fixture/live frontend adapter | Local/simulated path, not authoritative backend workflow runtime |
@@ -65,10 +66,10 @@ So the next step is not more hand-made nodes. The next step is to project existi
 | `intelligence.agent.tag` | Auto tag | No workflow executor binding | Compile/display only | Blocked |
 | `intelligence.router.importance` | Route by score | Compiler can build dependency edges | No workflow router executor | Blocked |
 | `intelligence.output.inbox` | Store for review | Existing inbox/storage concepts | No workflow sink binding | Blocked |
-| `intelligence.output.webhook` | Outbound notification | Backend `WebhookNotifier`, Feishu, DingTalk, WeCom notifiers | Catalog says simulated; no workflow notifier binding | Blocked until notifier sink binding |
+| `intelligence.output.webhook` | Outbound notification | Backend `WebhookNotifier` through `workflow.notifier.webhook.send` | Runtime sink binding exists; actual delivery still needs permission and configured webhook URL | Keep as the real single-webhook output node; fanout and non-webhook notifiers stay separate |
 | `package.collection.pipeline` | Packaged collection pipeline | Real channels exist: JIN10/RSS/HTTP idea, DataSource runners | Package shell only; not generated from channel registry | Keep as design shell until backed by real channel nodes |
 | `package.opencli.multi-source-hda` | OpenCLI HDA package | HDA materializer + OpenCLI source slots + node run events | Best current executable proof; frontend can run and patch node state, result/resource workbench pending | Primary real path; do not replace with custom nodes |
-| `package.dispatch.fanout` | Notification fanout | Backend notifiers exist | Package shell only | Blocked until notifier/resource mapping |
+| `package.dispatch.fanout` | Notification fanout | Backend notifiers exist; single Webhook Notify binding exists | Package shell only | Blocked until fanout/non-webhook notifier mapping |
 | `package.intelligence.pipeline` | Intelligence pipeline | Existing primitive groups | Package shell only | Blocked |
 | `package.ops.event` | Task/run event package | Backend task/run/event concepts | Package shell only | Blocked |
 | `package.ops.monitor-guard` | Monitor/guard package | Control and ODP measurement concepts | Package shell only | Blocked |
@@ -102,7 +103,7 @@ Important existing primitives for input/output/webhook:
 |---|---|---|
 | `primitive.input.adapter-read` | DataSource/channel runner | Use as concept for generated real source nodes; not standalone executor yet |
 | `primitive.core.webhook-trigger` / `primitive.ops.trigger-webhook` | `backend/api/v1/webhooks.py` inbound source trigger | Existing backend source webhook, but not workflow-run trigger binding yet |
-| `primitive.ops.action-webhook` / `intelligence.output.webhook` | `backend/notifiers/webhook_notifier.py` and notifier registry | Real notifier capability exists; workflow sink binding missing |
+| `primitive.ops.action-webhook` / `intelligence.output.webhook` | `backend/notifiers/webhook_notifier.py` and notifier registry | Catalog Webhook Notify has `workflow.notifier.webhook.send`; primitive action remains import vocabulary until primitive executor mapping |
 | `primitive.core.respond-webhook` | Short-wait webhook response concept | Must depend on runtime input envelope and projection API; not implemented |
 | `primitive.core.http-request` / `primitive.ops.plugin-http-request` | `api` channel / HTTP client concepts | Real source capability exists through `api_channel`; no Canvas binding |
 
@@ -157,7 +158,7 @@ Current state:
 | Node run events | `/api/v1/workflows/runs/{run_id}/events` and `/events/stream` | Frontend subscribed through run trace; patches Canvas node state |
 | Evidence/result projection | Issue `07` pending | Not ready |
 | Inbox store | Existing concepts, catalog node | No workflow sink binding |
-| Outbound webhook | Backend notifier registry | No workflow sink binding |
+| Outbound webhook | Backend notifier registry and `workflow.notifier.webhook.send` | Single webhook sink metadata binding exists; fanout/non-webhook notifier mapping still pending |
 | Respond-to-webhook | Design only | Not ready |
 
 ## Can this be used directly now?
@@ -171,9 +172,19 @@ The broader collection surface is still not directly usable because:
 3. Collection Need is now a Canvas node for patch drafting, but `WorkflowRunStartRequest` still submits the accepted project graph only.
 4. Resource resolution for cookies/profile/credentials/worker pool is not connected to Canvas source materialization.
 5. Evidence/result projection APIs are not ready, so outputs are still references and event counts rather than inspectable collection results.
-6. Webhook/notifier sinks and inbound webhook trigger response policy are not bound to the workflow run axis.
+6. The single outbound webhook node has a runtime binding, but notifier fanout, inbound webhook trigger mode, and respond-to-webhook policy are not bound to the workflow run axis.
 
 So the next work remains wiring existing capabilities instead of adding new node concepts.
+
+## Agent readiness for 07/08/09
+
+The next issues are ready only within the narrowed contracts in their issue files:
+
+- `07-evidencebatch-projection-api`: ready for a read-only projection API slice with explicit routes, response shapes, pagination, and partial/failure semantics.
+- `08-browser-worker-profile-concurrency`: ready for runtime resource requirement/resolution metadata and blocked reasons. It is not a full Docker/multi-machine scheduler task, and it must not add user-facing cookie/profile/worker fields.
+- `09-canvas-runtime-binding-result-workbench`: ready for Canvas workbench wiring against the run/projection APIs, with `intelligence.input.collection-need` as the visible demand node and no fixture/demo fallback on invalid run payloads.
+
+Agents should treat cookie material, concrete profile ids, worker slots, worker pools, and raw OpenCLI commands as runtime resources or generated adapter metadata. They are never manual user inputs for this workflow path.
 
 ## Implementation order implied by the mapping
 
@@ -181,6 +192,6 @@ So the next work remains wiring existing capabilities instead of adding new node
 2. Generate/annotate Canvas source nodes from that projection, including runnable/blocked/design-only status.
 3. Add resource resolution for source nodes: saved DataSource, source credentials, cookie/session/profile, browser pool, worker policy.
 4. Finish EvidenceBatch/projection API so outputs are references and workbench-ready.
-5. Wire real webhook/notifier sinks and inbound webhook triggers to the same run axis.
+5. Wire notifier fanout, non-webhook notifier sinks, inbound webhook triggers, and respond-to-webhook behavior to the same run axis.
 
 This keeps "抓小红书热帖" as a Collection Need. The system should assemble the plan from real OpenCLI/DataSource/resource/notifier capabilities and show blocked gaps only when an existing required capability/resource is absent.
