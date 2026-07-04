@@ -250,7 +250,7 @@ const NODE_INTERNALS: Record<string, NodeInternals> = {
   },
   "intelligence.output.webhook": {
     title: "Notify Internals",
-    summary: "Prepares outbound delivery while keeping phase-one sends simulated.",
+    summary: "Binds outbound delivery to the guarded backend webhook notifier.",
     steps: [
       step("template", "Template", "format", "Formats brief/headline/full payloads.", "template param", "ready", [
         exposedParam("template", "Template", "render", "Render", "select", "brief", {
@@ -262,26 +262,25 @@ const NODE_INTERNALS: Record<string, NodeInternals> = {
           order: 1,
         }),
       ]),
-      step("target", "Target", "target", "Selects preview or webhook target.", "target param", "ready", [
-        exposedParam("target", "Target", "runtime", "Runtime", "select", "operator-preview", {
+      step("target", "Target", "target", "Selects the real webhook notifier target.", "target param", "ready", [
+        exposedParam("target", "Target", "runtime", "Runtime", "select", "webhook", {
           options: notificationTargetOptions(),
           order: 1,
           groupOrder: 2,
         }),
-        exposedParam("mode", "Adapter Mode", "runtime", "Runtime", "select", "mock", {
+        exposedParam("mode", "Adapter Mode", "runtime", "Runtime", "select", "webhook", {
           binding: { source: "adapter", fieldId: "mode" },
           options: [
-            { value: "mock", label: "mock" },
             { value: "webhook", label: "webhook" },
           ],
           order: 2,
           groupOrder: 2,
         }),
       ]),
-      step("payload", "Payload preview", "preview", "Shows exactly what would be sent.", "payload sample", "simulated"),
-      step("mock", "Mock send", "send", "Records simulated delivery without external side effects.", "mock result", "ready"),
-      step("retry", "Retry policy", "retry", "Reserves retry behavior for live webhook mode.", "retry policy", "future"),
-      step("guard", "Delivery guard", "guard", "Checks permissions before real notification sends.", "agentPermissions", "ready"),
+      step("payload", "Payload draft", "preview", "Shows exactly what the notifier sink will receive.", "payload sample", "ready"),
+      step("binding", "Notifier sink", "send", "Binds to backend WebhookNotifier guarded delivery.", "workflow.notifier.webhook.send", "ready"),
+      step("retry", "Retry policy", "retry", "Reserves retry behavior for webhook delivery.", "retry policy", "future"),
+      step("guard", "Delivery guard", "guard", "Checks permissions and URL configuration before sends.", "agentPermissions", "ready"),
     ],
   },
   "intelligence.output.inbox": {
@@ -530,8 +529,7 @@ function timezoneOptions() {
 
 function notificationTargetOptions() {
   return [
-    { value: "operator-preview", label: "Operator Preview" },
-    { value: "mock-webhook", label: "Mock Webhook" },
+    { value: "webhook", label: "Webhook" },
     { value: "ops-alerts", label: "Ops Alerts" },
     { value: "human-review", label: "Human Review" },
   ]

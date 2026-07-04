@@ -13,6 +13,7 @@ OPENCLI_WORKER = "collector-opencli"
 OPENCLI_FUNCTION_ID = "odp.collect::opencli_snapshot"
 DEMAND_DRAFT_BINDING_ID = "workflow.demand-draft.patch"
 SCHEDULE_TRIGGER_BINDING_ID = "workflow.trigger.schedule_tick"
+WEBHOOK_NOTIFY_BINDING_ID = "workflow.notifier.webhook.send"
 
 
 class WorkflowRuntimeBinding(BaseModel):
@@ -50,6 +51,8 @@ def resolve_runtime_metadata(
         return _resolve_collection_need(node, node_id=resolved_node_id)
     if _is_schedule_trigger(node):
         return _resolve_schedule_trigger(node, node_id=resolved_node_id)
+    if _is_webhook_notifier(node, adapter):
+        return _resolve_webhook_notifier(node, adapter, node_id=resolved_node_id)
     if _is_opencli_source(node, adapter):
         return _resolve_opencli_source(node, adapter, node_id=resolved_node_id)
 
@@ -156,6 +159,42 @@ def _resolve_schedule_trigger(node: WorkflowProjectNode, *, node_id: str) -> dic
     }
 
 
+def _resolve_webhook_notifier(
+    node: WorkflowProjectNode,
+    adapter: WorkflowAdapterBinding | None,
+    *,
+    node_id: str,
+) -> dict[str, Any]:
+    config = adapter.config if adapter else {}
+    target = (
+        _read_string(node.params.get("target"))
+        or _read_string(config.get("target"))
+        or "webhook"
+    )
+    return {
+        "binding": {
+            "status": "bound",
+            "binding_id": WEBHOOK_NOTIFY_BINDING_ID,
+            "runtime": "workflow",
+            "channel": "notifier",
+            "input": {
+                "notifier_type": "webhook",
+                "template": _read_string(node.params.get("template")) or "brief",
+                "target": target,
+                "adapter_mode": adapter.mode if adapter else "webhook",
+                "delivery_configured": bool(
+                    _read_string(config.get("url")) or _read_string(config.get("webhook_url"))
+                ),
+            },
+        },
+        "notifier": {
+            "node_id": node_id,
+            "type": "webhook",
+            "dispatch": "guarded_delivery",
+        },
+    }
+
+
 def _is_collection_need(node: WorkflowProjectNode) -> bool:
     ui = node.ui or {}
     return (
@@ -185,6 +224,17 @@ def _is_opencli_source(
         or _read_string(config.get("channel")) == "opencli"
         or _read_string(config.get("channel_type")) == "opencli"
     )
+
+
+def _is_webhook_notifier(
+    node: WorkflowProjectNode,
+    adapter: WorkflowAdapterBinding | None,
+) -> bool:
+    if node.kind != "notify" or node.capability != "send" or adapter is None:
+        return False
+
+    notifier_type = _read_string(adapter.config.get("notifierType"))
+    return adapter.provider == "webhook" or notifier_type == "webhook"
 
 
 def _read_string(value: Any) -> str | None:

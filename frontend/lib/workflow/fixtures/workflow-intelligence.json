@@ -19,12 +19,13 @@
       }
     },
     {
-      "id": "simulated-webhook",
+      "id": "webhook-notifier",
       "type": "notification",
-      "provider": "generic-webhook",
-      "mode": "mock",
+      "provider": "webhook",
+      "mode": "webhook",
       "config": {
-        "target": "operator-preview"
+        "notifierType": "webhook",
+        "target": "webhook"
       }
     }
   ],
@@ -113,9 +114,10 @@
       "id": "notify-preview",
       "kind": "notify",
       "capability": "send",
-      "adapter": "simulated-webhook",
+      "adapter": "webhook-notifier",
       "params": {
-        "template": "brief"
+        "template": "brief",
+        "target": "webhook"
       },
       "ui": {
         "position": {
@@ -151,7 +153,7 @@
       "id": "e-router-notify",
       "source": "router-importance",
       "target": "notify-preview",
-      "label": "mock webhook"
+      "label": "webhook"
     }
   ]
 }

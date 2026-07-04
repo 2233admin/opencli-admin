@@ -22,6 +22,7 @@ from backend.workflow.runtime_registry import (
     DEMAND_DRAFT_BINDING_ID,
     OPENCLI_BINDING_ID,
     SCHEDULE_TRIGGER_BINDING_ID,
+    WEBHOOK_NOTIFY_BINDING_ID,
 )
 
 
@@ -179,15 +180,22 @@ def _catalog_capabilities() -> list[WorkflowRuntimeCapability]:
             backend_available=True,
             missing=["workflow_storage_sink_binding"],
         ),
-        _blocked_catalog(
-            "intelligence.output.webhook",
-            "Webhook Notify",
-            "notify",
-            "send",
+        _capability(
+            id="intelligence.output.webhook",
+            label="Webhook Notify",
+            surface="catalog",
+            status="runnable",
             backend_available=True,
-            reason="Backend notifiers exist, but this Canvas node still uses a "
-            "simulated adapter and has no workflow notifier sink binding.",
-            missing=["workflow_notifier_sink_binding", "delivery_projection"],
+            kind="notify",
+            capability="send",
+            provider="webhook",
+            notifier_type="webhook",
+            runtime_binding=WEBHOOK_NOTIFY_BINDING_ID,
+            reason="Backend workflow compile resolves Webhook Notify nodes to "
+            "the guarded webhook notifier sink binding. Delivery still depends "
+            "on notification permission and configured webhook URL at send time.",
+            tags=["catalog", "notify", "webhook"],
+            source="backend.workflow.runtime_registry",
         ),
         _blocked_catalog(
             "package.collection.pipeline",
@@ -415,24 +423,48 @@ def _channel_capabilities() -> list[WorkflowRuntimeCapability]:
 
 
 def _notifier_capabilities() -> list[WorkflowRuntimeCapability]:
-    return [
-        _capability(
-            id=f"notifier.{notifier_type}",
-            label=f"{notifier_type} notifier",
-            surface="notifier",
-            status="blocked",
-            backend_available=True,
-            kind="notify",
-            capability="send",
-            provider=notifier_type,
-            notifier_type=notifier_type,
-            reason="The notifier exists, but workflow output nodes do not yet "
-            "bind to notifier dispatch.",
-            missing=["workflow_notifier_sink_binding", "delivery_projection"],
-            tags=["notifier", "output"],
+    rows: list[WorkflowRuntimeCapability] = []
+    for notifier_type in sorted(list_notifier_types()):
+        if notifier_type == "webhook":
+            rows.append(
+                _capability(
+                    id="notifier.webhook",
+                    label="webhook notifier",
+                    surface="notifier",
+                    status="runnable",
+                    backend_available=True,
+                    kind="notify",
+                    capability="send",
+                    provider="webhook",
+                    notifier_type="webhook",
+                    runtime_binding=WEBHOOK_NOTIFY_BINDING_ID,
+                    reason="Workflow notify/send nodes can bind to the guarded "
+                    "webhook notifier sink.",
+                    missing=["delivery_projection"],
+                    tags=["notifier", "output", "webhook"],
+                    source="backend.notifiers.webhook_notifier",
+                )
+            )
+            continue
+
+        rows.append(
+            _capability(
+                id=f"notifier.{notifier_type}",
+                label=f"{notifier_type} notifier",
+                surface="notifier",
+                status="blocked",
+                backend_available=True,
+                kind="notify",
+                capability="send",
+                provider=notifier_type,
+                notifier_type=notifier_type,
+                reason="The notifier exists, but Canvas output nodes do not yet "
+                "bind to this notifier type.",
+                missing=["workflow_notifier_sink_binding", "delivery_projection"],
+                tags=["notifier", "output"],
+            )
         )
-        for notifier_type in sorted(list_notifier_types())
-    ]
+    return rows
 
 
 def _trigger_capabilities() -> list[WorkflowRuntimeCapability]:

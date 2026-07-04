@@ -24,7 +24,7 @@
         "id": "notify-preview",
         "kind": "notify",
         "capability": "send",
-        "adapter": "simulated-webhook",
+        "adapter": "webhook-notifier",
         "params": {
           "template": "duplicate-push"
         },

@@ -76,7 +76,7 @@
       "event": "sent",
       "itemCount": 1,
       "details": {
-        "adapter": "simulated-webhook",
+        "adapter": "webhook-notifier",
         "template": "brief",
         "itemIds": [
           "jin10-20260704-002"
@@ -180,13 +180,13 @@
       "spanId": "span-007-notify-preview",
       "sequence": 7,
       "nodeId": "notify-preview",
-      "type": "delivery.mock",
+      "type": "delivery.webhook",
       "status": "ok",
       "durationMs": 27,
       "inputCount": 1,
       "outputCount": 1,
       "details": {
-        "adapter": "simulated-webhook",
+        "adapter": "webhook-notifier",
         "template": "brief"
       }
     }

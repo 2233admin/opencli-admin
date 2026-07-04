@@ -9,7 +9,7 @@ flowchart TB
   source-jin10 --> agent-normalize
   agent-normalize --> router-importance
   router-importance -- "review" --> inbox-review
-  router-importance -- "mock webhook" --> notify-preview
+  router-importance -- "webhook" --> notify-preview
   class schedule-5m schedule,trigger;
   class source-jin10 source,fetch;
   class agent-normalize agent,normalize;

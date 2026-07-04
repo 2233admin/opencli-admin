@@ -334,6 +334,63 @@ async def test_workflow_run_events_projection_and_stream(client):
 
 
 @pytest.mark.asyncio
+async def test_workflow_run_completes_webhook_notify_binding(client):
+    project = _multi_source_opencli_hda_project()
+    project["adapters"].append(
+        {
+            "id": "webhook-notifier",
+            "type": "notification",
+            "provider": "webhook",
+            "mode": "webhook",
+            "config": {"notifierType": "webhook", "target": "webhook"},
+        }
+    )
+    project["nodes"].append(
+        {
+            "id": "notify-webhook",
+            "kind": "notify",
+            "capability": "send",
+            "adapter": "webhook-notifier",
+            "params": {"template": "brief", "target": "webhook"},
+            "ui": {"catalogId": "intelligence.output.webhook"},
+        }
+    )
+    project["edges"].append(
+        {
+            "id": "e-hda-notify",
+            "source": "multi-source-opencli",
+            "target": "notify-webhook",
+        }
+    )
+
+    response = await client.post(
+        "/api/v1/workflows/runs",
+        json={
+            "project": project,
+            "packageNodeId": "multi-source-opencli",
+            "runId": "run-events-webhook",
+            "traceId": "trace-events-webhook",
+        },
+    )
+
+    assert response.status_code == 202
+    data = response.json()["data"]
+    states = {state["nodeId"]: state for state in data["nodeStates"]}
+    assert states["notify-webhook"]["status"] == "completed"
+    assert states["notify-webhook"]["blockReasons"] == []
+
+    events = (await client.get("/api/v1/workflows/runs/run-events-webhook/events")).json()[
+        "data"
+    ]
+    notify_events = [event for event in events if event["nodeId"] == "notify-webhook"]
+    assert [event["eventType"] for event in notify_events] == [
+        "queued",
+        "started",
+        "completed",
+    ]
+
+
+@pytest.mark.asyncio
 async def test_workflow_run_emits_node_failed_events_for_compile_errors(client):
     project = _multi_source_opencli_hda_project()
     del project["nodes"][0]["internals"]["nodes"][0]["adapter"]

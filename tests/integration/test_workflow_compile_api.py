@@ -762,6 +762,71 @@ async def test_compile_resolves_schedule_trigger_binding(client):
 
 
 @pytest.mark.asyncio
+async def test_compile_resolves_webhook_notify_binding(client):
+    project = _valid_workflow_project()
+    project["adapters"].append(
+        {
+            "id": "webhook-notifier",
+            "type": "notification",
+            "provider": "webhook",
+            "mode": "webhook",
+            "config": {
+                "notifierType": "webhook",
+                "target": "webhook",
+            },
+        }
+    )
+    project["nodes"].append(
+        {
+            "id": "notify-webhook",
+            "kind": "notify",
+            "capability": "send",
+            "adapter": "webhook-notifier",
+            "params": {"template": "brief", "target": "webhook"},
+            "ui": {"catalogId": "intelligence.output.webhook"},
+        }
+    )
+    project["edges"].append(
+        {
+            "id": "e-store-notify",
+            "source": "store-inbox",
+            "target": "notify-webhook",
+        }
+    )
+
+    response = await client.post("/api/v1/workflows/compile", json={"project": project})
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["valid"] is True
+    node = next(
+        node
+        for node in data["plan"]["runtime"]["nodes"]
+        if node["id"] == "notify-webhook"
+    )
+    assert node["runtime"]["origin"]["catalog_id"] == "intelligence.output.webhook"
+    assert node["runtime"]["binding"] == {
+        "status": "bound",
+        "binding_id": "workflow.notifier.webhook.send",
+        "runtime": "workflow",
+        "channel": "notifier",
+        "input": {
+            "notifier_type": "webhook",
+            "template": "brief",
+            "target": "webhook",
+            "adapter_mode": "webhook",
+            "delivery_configured": False,
+        },
+    }
+    assert node["runtime"]["notifier"] == {
+        "node_id": "notify-webhook",
+        "type": "webhook",
+        "dispatch": "guarded_delivery",
+    }
+    assert "missing_runtime" not in node["runtime"]
+
+
+@pytest.mark.asyncio
 async def test_workflow_capabilities_project_real_backend_surfaces(client):
     response = await client.get("/api/v1/workflows/capabilities")
 
@@ -783,8 +848,10 @@ async def test_workflow_capabilities_project_real_backend_surfaces(client):
     assert catalog["package.opencli.multi-source-hda"]["status"] == "runnable"
     assert "frontend_run_event_binding" not in catalog["package.opencli.multi-source-hda"]["missing"]
     assert "typed_demand_input_envelope" not in catalog["package.opencli.multi-source-hda"]["missing"]
-    assert catalog["intelligence.output.webhook"]["status"] == "blocked"
+    assert catalog["intelligence.output.webhook"]["status"] == "runnable"
     assert catalog["intelligence.output.webhook"]["backendAvailable"] is True
+    assert catalog["intelligence.output.webhook"]["runtimeBinding"] == "workflow.notifier.webhook.send"
+    assert "workflow_notifier_sink_binding" not in catalog["intelligence.output.webhook"]["missing"]
 
     channels = {item["channelType"]: item for item in data["channels"]}
     assert set(channels) == {
@@ -804,8 +871,9 @@ async def test_workflow_capabilities_project_real_backend_surfaces(client):
 
     notifiers = {item["notifierType"]: item for item in data["notifiers"]}
     assert "webhook" in notifiers
-    assert notifiers["webhook"]["status"] == "blocked"
+    assert notifiers["webhook"]["status"] == "runnable"
     assert notifiers["webhook"]["backendAvailable"] is True
+    assert notifiers["webhook"]["runtimeBinding"] == "workflow.notifier.webhook.send"
 
     primitives = {item["id"]: item for item in data["primitives"]}
     assert primitives["primitive.ops.trigger-webhook"]["status"] == "blocked"

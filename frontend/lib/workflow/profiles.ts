@@ -62,7 +62,7 @@ export const WORKFLOW_PROFILE_REGISTRY = {
   intelligence: {
     id: "intelligence",
     label: "Intelligence",
-    description: "News and signal monitoring workflows with review queues and mock delivery.",
+    description: "News and signal monitoring workflows with review queues and guarded webhook delivery.",
     visiblePanels: ["project", "canvas", "palette", "inspector", "simulation", "proposals"],
     defaultAdapters: [
       {
@@ -73,11 +73,11 @@ export const WORKFLOW_PROFILE_REGISTRY = {
         config: { feed: "kuaixun" },
       },
       {
-        id: "simulated-webhook",
+        id: "webhook-notifier",
         type: "notification",
-        provider: "generic-webhook",
-        mode: "mock",
-        config: { target: "operator-preview" },
+        provider: "webhook",
+        mode: "webhook",
+        config: { notifierType: "webhook", target: "webhook" },
       },
     ],
     defaultScoringProfile: {

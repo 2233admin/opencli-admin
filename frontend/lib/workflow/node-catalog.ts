@@ -47,12 +47,12 @@ const JIN10_ADAPTER: AdapterBinding = {
   config: { feed: "kuaixun" },
 }
 
-const SIMULATED_WEBHOOK_ADAPTER: AdapterBinding = {
-  id: "simulated-webhook",
+const WEBHOOK_NOTIFY_ADAPTER: AdapterBinding = {
+  id: "webhook-notifier",
   type: "notification",
-  provider: "generic-webhook",
-  mode: "mock",
-  config: { target: "operator-preview" },
+  provider: "webhook",
+  mode: "webhook",
+  config: { notifierType: "webhook", target: "webhook" },
 }
 
 export type OpenCLISourceSlot = {
@@ -317,16 +317,16 @@ export const WORKFLOW_NODE_CATALOG: WorkflowNodeCatalogItem[] = [
     id: "intelligence.output.webhook",
     idPrefix: "notify",
     label: "Webhook Notify",
-    description: "模拟 webhook 推送，真实通知后置",
+    description: "通过后端 guarded webhook notifier 发送工作流通知",
     category: "output",
     profile: "intelligence",
     kind: "notify",
     capability: "send",
     icon: "Bell",
     color: "var(--chart-1)",
-    adapter: SIMULATED_WEBHOOK_ADAPTER.id,
-    requiredAdapters: [SIMULATED_WEBHOOK_ADAPTER],
-    params: { template: "brief", target: "operator-preview" },
+    adapter: WEBHOOK_NOTIFY_ADAPTER.id,
+    requiredAdapters: [WEBHOOK_NOTIFY_ADAPTER],
+    params: { template: "brief", target: "webhook" },
     keywords: ["feishu", "wecom", "tg", "telegram", "qq", "notify", "webhook", "通知"],
   },
   {
@@ -407,8 +407,8 @@ export const WORKFLOW_NODE_CATALOG: WorkflowNodeCatalogItem[] = [
     capability: "send",
     icon: "Bell",
     color: "var(--chart-1)",
-    adapter: SIMULATED_WEBHOOK_ADAPTER.id,
-    requiredAdapters: [SIMULATED_WEBHOOK_ADAPTER],
+    adapter: WEBHOOK_NOTIFY_ADAPTER.id,
+    requiredAdapters: [WEBHOOK_NOTIFY_ADAPTER],
     params: { template: "dispatch-fanout", runtime: "mock", lockedInternals: true },
     keywords: ["package", "dispatch", "fanout", "telegram", "email", "发送", "分发", "封装"],
   },
