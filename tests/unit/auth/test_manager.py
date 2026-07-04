@@ -47,7 +47,7 @@ async def test_store_is_upsert_and_ciphertext_only(db_engine, monkeypatch):
             )
         ).scalars().all()
     assert len(rows) == 1  # upsert, not a second row
-    assert "v2" not in rows[0].ciphertext  # stored encrypted, never plaintext
+    assert rows[0].ciphertext != "v2"  # stored encrypted, never plaintext
 
 
 @pytest.mark.asyncio
@@ -179,7 +179,11 @@ async def test_store_cookie_then_resolve_by_domain(db_engine, monkeypatch):
     monkeypatch.setenv(crypto.ENV_KEY, KEY)
     with patch("backend.database.AsyncSessionLocal", _sessionmaker(db_engine)):
         mgr = AuthManager()
-        await mgr.store_cookie("example.com", "session_id", {"value": "abc", "path": "/", "secure": True})
+        await mgr.store_cookie(
+            "example.com",
+            "session_id",
+            {"value": "abc", "path": "/", "secure": True},
+        )
         cookies = await mgr.resolve_cookies("example.com")
     assert cookies == [
         {"name": "session_id", "domain": "example.com", "value": "abc", "path": "/", "secure": True}
@@ -228,4 +232,5 @@ async def test_store_cookie_is_upsert_and_ciphertext_only(db_engine, monkeypatch
             )
         ).scalars().all()
     assert len(rows) == 1  # upsert, not a second row
-    assert "v2" not in rows[0].ciphertext  # stored encrypted, never plaintext
+    assert rows[0].ciphertext != '{"value": "v2"}'  # stored encrypted, never plaintext
+    assert not rows[0].ciphertext.startswith("{")

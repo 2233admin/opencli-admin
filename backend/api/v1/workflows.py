@@ -3,8 +3,14 @@
 from fastapi import APIRouter
 
 from backend.schemas.common import ApiResponse
-from backend.schemas.workflow import WorkflowCompileRequest, WorkflowCompileResponse
+from backend.schemas.workflow import (
+    WorkflowCompileRequest,
+    WorkflowCompileResponse,
+    WorkflowPatchRequest,
+    WorkflowPatchResponse,
+)
 from backend.workflow.compiler import compile_workflow_project
+from backend.workflow.patcher import preview_workflow_patch
 
 router = APIRouter(prefix="/workflows", tags=["workflows"])
 
@@ -18,3 +24,10 @@ async def compile_workflow(body: WorkflowCompileRequest) -> ApiResponse[Workflow
     """
 
     return ApiResponse.ok(compile_workflow_project(body.project))
+
+
+@router.post("/patch", response_model=ApiResponse[WorkflowPatchResponse])
+async def patch_workflow(body: WorkflowPatchRequest) -> ApiResponse[WorkflowPatchResponse]:
+    """Preview structured AI-authored WorkflowProject patch operations."""
+
+    return ApiResponse.ok(preview_workflow_patch(body.project, body.operations))

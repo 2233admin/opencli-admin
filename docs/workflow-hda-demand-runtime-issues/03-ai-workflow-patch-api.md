@@ -11,11 +11,11 @@ The API should return a reviewable WorkflowProject patch and validation result. 
 
 ## Acceptance criteria
 
-- [ ] AI patch schema supports add existing node, connect nodes, update parameters, and package selected nodes.
-- [ ] Patch validation rejects primitive creation, executor creation, raw III payloads, raw OpenCLI commands, and unknown adapters.
-- [ ] Missing capabilities are reported as explicit missing-capability outputs.
-- [ ] A valid patch can be applied to a WorkflowProject and compiled by the compile endpoint.
-- [ ] Tests cover allowed edits, forbidden edits, missing capability reporting, and compile-after-patch.
+- [x] AI patch schema supports add existing node, connect nodes, update parameters, and package selected nodes.
+- [x] Patch validation rejects primitive creation, executor creation, raw III payloads, raw OpenCLI commands, and unknown adapters.
+- [x] Missing capabilities are reported as explicit missing-capability outputs.
+- [x] A valid patch can be applied to a WorkflowProject and compiled by the compile endpoint.
+- [x] Tests cover allowed edits, forbidden edits, missing capability reporting, and compile-after-patch.
 
 ## Blocked by
 

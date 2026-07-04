@@ -184,6 +184,29 @@ class WorkflowCompileRequest(BaseModel):
     project: WorkflowProject
 
 
+class WorkflowPatchOperation(BaseModel):
+    op: Literal[
+        "add_node",
+        "connect_nodes",
+        "update_parameters",
+        "package_nodes",
+        "request_missing_capability",
+    ]
+    node: Optional[WorkflowProjectNode] = None
+    edge: Optional[WorkflowProjectEdge] = None
+    nodeId: Optional[str] = None
+    params: dict[str, Any] = Field(default_factory=dict)
+    packageNode: Optional[WorkflowProjectNode] = None
+    internalNodeIds: list[str] = Field(default_factory=list)
+    capability: Optional[str] = None
+    reason: Optional[str] = None
+
+
+class WorkflowPatchRequest(BaseModel):
+    project: WorkflowProject
+    operations: list[WorkflowPatchOperation] = Field(..., min_length=1)
+
+
 class WorkflowCompileError(BaseModel):
     code: str
     message: str
@@ -254,3 +277,22 @@ class WorkflowCompileResponse(BaseModel):
     valid: bool
     errors: list[WorkflowCompileError] = Field(default_factory=list)
     plan: Optional[WorkflowCompiledPlanPreview] = None
+
+
+class WorkflowMissingCapability(BaseModel):
+    capability: str
+    reason: Optional[str] = None
+    n8n_search_hint: Optional[str] = None
+
+
+class WorkflowPatchPreview(BaseModel):
+    operations: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class WorkflowPatchResponse(BaseModel):
+    valid: bool
+    errors: list[WorkflowCompileError] = Field(default_factory=list)
+    missing_capabilities: list[WorkflowMissingCapability] = Field(default_factory=list)
+    patch: WorkflowPatchPreview
+    project: Optional[WorkflowProject] = None
+    compile: Optional[WorkflowCompileResponse] = None

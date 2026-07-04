@@ -130,6 +130,10 @@ async def _create_plan(client, graph: dict, name="P1") -> str:
     return resp.json()["data"]["id"]
 
 
+async def _no_background_dispatch(self, task_id: str, parameters: dict) -> dict:
+    return {"task_id": task_id}
+
+
 @pytest.mark.asyncio
 async def test_source_collection_over_http_triggers_shared_segment_and_plan_health(
     client, db_session, db_engine
@@ -158,10 +162,14 @@ async def test_source_collection_over_http_triggers_shared_segment_and_plan_heal
         [{"title": "hello from S1", "url": "https://example.com/1"}]
     )
 
-    trigger_resp = await client.post(
-        "/api/v1/tasks/trigger",
-        json={"source_id": source_id_1, "parameters": {}},
-    )
+    with patch(
+        "backend.executor.local.LocalExecutor.dispatch_collection",
+        new=_no_background_dispatch,
+    ):
+        trigger_resp = await client.post(
+            "/api/v1/tasks/trigger",
+            json={"source_id": source_id_1, "parameters": {}},
+        )
     assert trigger_resp.status_code == 202
     task_id = trigger_resp.json()["data"]["task_id"]
 
@@ -227,9 +235,13 @@ async def test_source_not_in_any_plan_triggers_no_shared_segment(client, db_sess
         [{"title": "solo item", "url": "https://example.com/x"}]
     )
 
-    trigger_resp = await client.post(
-        "/api/v1/tasks/trigger", json={"source_id": source_id, "parameters": {}}
-    )
+    with patch(
+        "backend.executor.local.LocalExecutor.dispatch_collection",
+        new=_no_background_dispatch,
+    ):
+        trigger_resp = await client.post(
+            "/api/v1/tasks/trigger", json={"source_id": source_id, "parameters": {}}
+        )
     task_id = trigger_resp.json()["data"]["task_id"]
 
     with patch("backend.database.AsyncSessionLocal", test_session_factory), patch(
