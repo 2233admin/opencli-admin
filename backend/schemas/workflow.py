@@ -6,6 +6,8 @@ TypeScript WorkflowProject shape closely enough for the backend compiler to
 validate and preview execution without persisting or dispatching work.
 """
 
+from __future__ import annotations
+
 from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
@@ -106,6 +108,7 @@ class WorkflowProjectNode(BaseModel):
     topicCollapse: Optional[WorkflowTopicCollapse] = None
     proposalState: Optional[Literal["draft", "proposed", "accepted"]] = None
     parameterInterface: Optional[WorkflowParameterInterface] = None
+    internals: Optional[WorkflowPackageInternals] = None
     ui: Optional[dict[str, Any]] = None
 
 
@@ -128,6 +131,12 @@ class WorkflowProjectEdge(BaseModel):
     contractId: Optional[str] = None
     proposalState: Optional[Literal["draft", "proposed", "accepted"]] = None
     ui: Optional[dict[str, Any]] = None
+
+
+class WorkflowPackageInternals(BaseModel):
+    locked: Optional[bool] = None
+    nodes: list[WorkflowProjectNode] = Field(default_factory=list)
+    edges: list[WorkflowProjectEdge] = Field(default_factory=list)
 
 
 class WorkflowSettings(BaseModel):

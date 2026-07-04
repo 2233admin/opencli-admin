@@ -11,11 +11,11 @@ This slice should support the Houdini-style model: package internals can be insp
 
 ## Acceptance criteria
 
-- [ ] A package/HDA node can declare public parameters mapped into internal node parameters.
-- [ ] The compiler expands package internals into executable internal nodes while preserving the outer package node id.
-- [ ] Locked internals remain compileable but are marked as non-editable metadata for AI/frontend consumers.
-- [ ] Invalid parameter bindings fail with node-anchored errors.
-- [ ] Tests cover package expansion, public parameter binding, locked internals, and invalid binding rejection.
+- [x] A package/HDA node can declare public parameters mapped into internal node parameters.
+- [x] The compiler expands package internals into executable internal nodes while preserving the outer package node id.
+- [x] Locked internals remain compileable but are marked as non-editable metadata for AI/frontend consumers.
+- [x] Invalid parameter bindings fail with node-anchored errors.
+- [x] Tests cover package expansion, public parameter binding, locked internals, and invalid binding rejection.
 
 ## Blocked by
 

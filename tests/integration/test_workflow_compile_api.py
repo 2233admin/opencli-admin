@@ -142,3 +142,186 @@ async def test_compile_preserves_node_ids_in_runtime_and_plan_ir(client):
     assert runtime["node_ids"] == expected_ids
     assert [node["id"] for node in runtime["nodes"]] == expected_ids
     assert [node["id"] for node in runtime["plan_ir"]["nodes"]] == expected_ids
+
+
+@pytest.mark.asyncio
+async def test_compile_expands_package_internals_and_binds_public_params(client):
+    project = _valid_workflow_project()
+    project["nodes"] = [
+        {
+            "id": "multi-source-hda",
+            "kind": "agent",
+            "capability": "normalize",
+            "params": {"limit": 50},
+            "topicCollapse": {
+                "groupId": "opencli-package",
+                "nodeCount": 2,
+                "mode": "draft",
+                "packageInternal": True,
+            },
+            "parameterInterface": {
+                "groups": [{"id": "public", "label": "Public"}],
+                "fields": [
+                    {
+                        "id": "limit",
+                        "label": "Limit",
+                        "groupId": "public",
+                        "type": "number",
+                        "binding": {
+                            "nodeId": "internal-fetch",
+                            "source": "params",
+                            "fieldId": "limit",
+                        },
+                        "value": 20,
+                    }
+                ],
+            },
+            "internals": {
+                "nodes": [
+                    {
+                        "id": "internal-fetch",
+                        "kind": "source",
+                        "capability": "fetch",
+                        "adapter": "jin10-kuaixun",
+                        "params": {"limit": 10},
+                    },
+                    {
+                        "id": "internal-normalize",
+                        "kind": "agent",
+                        "capability": "normalize",
+                        "params": {"language": "zh-CN"},
+                    },
+                ],
+                "edges": [
+                    {
+                        "id": "internal-fetch-normalize",
+                        "source": "internal-fetch",
+                        "target": "internal-normalize",
+                    }
+                ],
+            },
+        }
+    ]
+    project["edges"] = []
+
+    response = await client.post("/api/v1/workflows/compile", json={"project": project})
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["valid"] is True
+    runtime = data["plan"]["runtime"]
+    assert runtime["node_ids"] == [
+        "multi-source-hda",
+        "multi-source-hda::internal-fetch",
+        "multi-source-hda::internal-normalize",
+    ]
+    package_node = runtime["nodes"][0]
+    assert package_node["id"] == "multi-source-hda"
+    assert package_node["package"]["internal_node_ids"] == [
+        "multi-source-hda::internal-fetch",
+        "multi-source-hda::internal-normalize",
+    ]
+    internal_fetch = runtime["nodes"][1]
+    assert internal_fetch["params"]["limit"] == 50
+    assert internal_fetch["runtime"]["package_parent_id"] == "multi-source-hda"
+    assert internal_fetch["depends_on"] == ["multi-source-hda"]
+    assert runtime["edges"][0]["id"] == "multi-source-hda::internal-fetch-normalize"
+    assert [node["id"] for node in runtime["plan_ir"]["nodes"]] == runtime["node_ids"]
+
+
+@pytest.mark.asyncio
+async def test_compile_marks_locked_package_internals_non_editable(client):
+    project = _valid_workflow_project()
+    project["nodes"] = [
+        {
+            "id": "locked-hda",
+            "kind": "agent",
+            "capability": "normalize",
+            "topicCollapse": {
+                "groupId": "locked-package",
+                "nodeCount": 1,
+                "mode": "locked",
+                "packageInternal": True,
+            },
+            "internals": {
+                "locked": True,
+                "nodes": [
+                    {
+                        "id": "internal-normalize",
+                        "kind": "agent",
+                        "capability": "normalize",
+                        "params": {"language": "zh-CN"},
+                    }
+                ],
+                "edges": [],
+            },
+        }
+    ]
+    project["edges"] = []
+
+    response = await client.post("/api/v1/workflows/compile", json={"project": project})
+
+    assert response.status_code == 200
+    runtime = response.json()["data"]["plan"]["runtime"]
+    assert runtime["nodes"][0]["package"]["locked"] is True
+    assert runtime["nodes"][0]["package"]["editable"] is False
+    assert runtime["nodes"][1]["runtime"]["editable"] is False
+
+
+@pytest.mark.asyncio
+async def test_compile_rejects_invalid_package_parameter_binding(client):
+    project = _valid_workflow_project()
+    project["nodes"] = [
+        {
+            "id": "broken-hda",
+            "kind": "agent",
+            "capability": "normalize",
+            "parameterInterface": {
+                "groups": [{"id": "public", "label": "Public"}],
+                "fields": [
+                    {
+                        "id": "limit",
+                        "label": "Limit",
+                        "groupId": "public",
+                        "type": "number",
+                        "binding": {
+                            "nodeId": "missing-internal",
+                            "source": "params",
+                            "fieldId": "limit",
+                        },
+                        "value": 20,
+                    }
+                ],
+            },
+            "internals": {
+                "nodes": [
+                    {
+                        "id": "internal-fetch",
+                        "kind": "source",
+                        "capability": "fetch",
+                        "adapter": "jin10-kuaixun",
+                        "params": {"limit": 10},
+                    }
+                ],
+                "edges": [],
+            },
+        }
+    ]
+    project["edges"] = []
+
+    response = await client.post("/api/v1/workflows/compile", json={"project": project})
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["valid"] is False
+    errors = [error for error in data["errors"] if error["code"] == "invalid_parameter_binding"]
+    assert errors
+    assert errors[0]["node_id"] == "broken-hda"
+    assert errors[0]["path"] == [
+        "nodes",
+        "broken-hda",
+        "parameterInterface",
+        "fields",
+        "limit",
+        "binding",
+    ]
