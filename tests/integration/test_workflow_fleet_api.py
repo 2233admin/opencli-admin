@@ -98,6 +98,7 @@ async def test_workflow_fleet_inventory_projects_existing_agent_state(
 
     assert response.status_code == 200
     data = response.json()["data"]
+    assert data["version"] == "1.1.0"
     assert data["summary"]["clusterModel"] == "private-agent-pod"
     assert data["summary"]["routingPolicy"] == "site_binding_agent_first"
     assert data["summary"]["agents"] == 2

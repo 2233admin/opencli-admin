@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 
 from backend.schemas.plan_ir import PlanGraph
 
-WORKFLOW_COMPILE_VERSION = "1.0.0"
+WORKFLOW_COMPILE_VERSION = "1.1.0"
 
 WorkflowProfile = Literal["intelligence", "agent-debug", "sdk-dev"]
 WorkflowNodeKind = Literal[

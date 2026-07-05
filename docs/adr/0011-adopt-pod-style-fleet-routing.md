@@ -34,7 +34,8 @@ Treat the OpenCLI Admin collection fleet as a private agent pod:
 
 ## Now
 
-`WorkflowFleetInventoryResponse.summary` exposes:
+`WorkflowFleetInventoryResponse` exposes top-level `version: 1.1.0`.
+Its `summary` exposes:
 
 - `clusterModel: private-agent-pod`
 - `routingPolicy: site_binding_agent_first`
