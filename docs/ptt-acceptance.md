@@ -6,6 +6,7 @@ its runtime capabilities to Fleet, dispatch a workflow to the matched node, and
 leave a durable run trace.
 
 Product compass: `openspec/changes/internet-situation-awareness-loop`.
+Deployment compass: `openspec/changes/durable-deployment-compass`.
 
 ## Scope
 
