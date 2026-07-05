@@ -26,6 +26,56 @@ _help_cache: dict[tuple[str, str, str], frozenset[str]] = {}
 _browser_requirement_cache: dict[tuple[str, str, str], bool] = {}
 
 
+async def _site_bound_agent_endpoint(pool: Any, site: str) -> str | None:
+    if not site:
+        return None
+
+    from backend.database import AsyncSessionLocal
+    from backend.services import browser_service
+
+    async with AsyncSessionLocal() as session:
+        binding = await browser_service.get_binding_by_site(session, site)
+    if not binding:
+        return None
+
+    endpoint = binding.browser_endpoint
+    if endpoint not in pool.endpoints:
+        logger.warning(
+            "agent mode: site binding for %s points at endpoint %s outside the pool",
+            site,
+            endpoint,
+        )
+        return None
+    if not pool.get_agent_protocol(endpoint):
+        logger.warning(
+            "agent mode: site binding for %s points at endpoint %s without an agent protocol",
+            site,
+            endpoint,
+        )
+        return None
+    return endpoint
+
+
+async def _select_agent_endpoint(pool: Any, site: str) -> str | None:
+    bound_endpoint = await _site_bound_agent_endpoint(pool, site)
+    if bound_endpoint:
+        logger.debug(
+            "agent mode: selected site-bound endpoint %s for site=%s",
+            bound_endpoint,
+            site,
+        )
+        return bound_endpoint
+
+    agent_eps = [ep for ep in pool.endpoints if pool.get_agent_protocol(ep)]
+    if agent_eps:
+        logger.debug(
+            "agent mode: selected endpoint %s (has agent_protocol)",
+            agent_eps[0],
+        )
+        return agent_eps[0]
+    return None
+
+
 async def _get_named_options(bin_path: str, site: str, command: str) -> frozenset[str]:
     """Return the set of --option names accepted by `opencli <site> <command>`.
 
@@ -497,14 +547,8 @@ class OpenCLIChannel(AbstractChannel):
             and not chrome_endpoint
             and isinstance(pool, LocalBrowserPool)
         ):
-            agent_eps = [ep for ep in pool.endpoints if pool.get_agent_protocol(ep)]
-            if agent_eps:
-                _acquire_endpoint = agent_eps[0]
-                logger.debug(
-                    "agent mode: selected endpoint %s (has agent_protocol)",
-                    _acquire_endpoint,
-                )
-            else:
+            _acquire_endpoint = await _select_agent_endpoint(pool, site)
+            if not _acquire_endpoint:
                 return ChannelResult.fail(
                     "No registered agent nodes available. Please add an agent node first."
                 )

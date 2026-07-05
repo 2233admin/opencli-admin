@@ -227,3 +227,105 @@ async def test_collect_agent_mode_passes_positional_args_to_dispatch(
     assert len(captured) == 1
     assert captured[0]["positional_args"] == ["AI agent"]
     assert captured[0]["args"].get("type") == "video"
+
+
+@pytest.mark.asyncio
+async def test_collect_agent_mode_prefers_site_bound_agent(
+    client,
+    db_session,
+    opencli_source_payload,
+):
+    """Agent-mode routing should honor the same site binding used by fleet match."""
+    from backend.browser_pool import LocalBrowserPool
+    from backend.channels.base import ChannelResult
+    from backend.channels.opencli_channel import OpenCLIChannel
+    from backend.services import browser_service
+
+    create_resp = await client.post("/api/v1/sources", json=opencli_source_payload)
+    cfg = create_resp.json()["data"]["channel_config"]
+    await browser_service.create_binding(
+        db_session,
+        browser_endpoint="http://agent-b:19823",
+        site="bilibili",
+        notes="site-bound cluster route",
+    )
+    await db_session.commit()
+
+    selected: list[str | None] = []
+    dispatched: list[dict] = []
+
+    class BoundSessionContext:
+        async def __aenter__(self):
+            return db_session
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    async def fake_collect_via_ws_agent(
+        agent_url,
+        site,
+        command,
+        args,
+        positional_args,
+        fmt,
+        mode,
+    ):
+        dispatched.append(
+            {
+                "agent_url": agent_url,
+                "site": site,
+                "command": command,
+                "positional_args": positional_args,
+                "mode": mode,
+            }
+        )
+        return ChannelResult.ok([{"title": "ok"}], site=site, command=command)
+
+    def fake_acquire(endpoint=None):
+        selected.append(endpoint)
+        ctx = AsyncMock()
+        ctx.__aenter__ = AsyncMock(return_value=endpoint)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        return ctx
+
+    agent_pool = MagicMock(spec=LocalBrowserPool)
+    agent_pool.endpoints = ["http://agent-a:19823", "http://agent-b:19823"]
+    agent_pool.get_agent_protocol.side_effect = lambda endpoint: {
+        "http://agent-a:19823": "http",
+        "http://agent-b:19823": "ws",
+    }[endpoint]
+    agent_pool.get_agent_url.side_effect = lambda endpoint: endpoint
+    agent_pool.get_mode.return_value = "bridge"
+    agent_pool.acquire.side_effect = fake_acquire
+
+    with (
+        patch(
+            "backend.channels.opencli_channel._collect_via_ws_agent",
+            side_effect=fake_collect_via_ws_agent,
+        ),
+        patch(
+            "backend.channels.opencli_channel._command_requires_browser",
+            new=AsyncMock(return_value=True),
+        ),
+        patch(
+            "backend.channels.opencli_channel._get_named_options",
+            new=AsyncMock(return_value=frozenset({"type", "limit"})),
+        ),
+        patch("backend.database.AsyncSessionLocal", return_value=BoundSessionContext()),
+        patch("backend.browser_pool.get_pool", return_value=agent_pool),
+        patch("backend.config.get_settings", return_value=_settings_mock("agent")),
+    ):
+        channel = OpenCLIChannel()
+        result = await channel.collect(cfg, {})
+
+    assert result.success, f"collect failed: {result.error}"
+    assert selected == ["http://agent-b:19823"]
+    assert dispatched == [
+        {
+            "agent_url": "http://agent-b:19823",
+            "site": "bilibili",
+            "command": "search",
+            "positional_args": ["AI agent"],
+            "mode": "bridge",
+        }
+    ]

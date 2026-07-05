@@ -117,6 +117,9 @@ async def build_workflow_fleet_inventory(
     ]
     return WorkflowFleetInventoryResponse(
         summary={
+            "clusterModel": "private-agent-pod",
+            "routingPolicy": "site_binding_agent_first",
+            "capabilityNamespaces": ["agent", "browser", "runtime", "site"],
             "agents": len(agents),
             "connected": sum(1 for agent in agents if agent.connected),
             "available": sum(1 for agent in agents if agent.available),
