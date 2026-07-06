@@ -83,9 +83,11 @@ class Settings(BaseSettings):
     public_url: str = ""
 
     # Fleet network bootstrap used by the generated edge-agent installer.
-    # NetBird is the supported overlay for fleet LAN deployments, but remains
-    # orthogonal to API auth: API_AUTH_TOKEN still gates every /api route.
-    fleet_network_provider: Literal["lan", "netbird"] = "lan"
+    # The collection layer only needs reachability between CENTRAL_API_URL and
+    # AGENT_ADVERTISE_URL. Providers are bootstrap hints for that reachability,
+    # not part of collection routing semantics. API_AUTH_TOKEN still gates
+    # every /api route regardless of the network provider.
+    fleet_network_provider: Literal["lan", "netbird", "wireguard", "ssh", "custom"] = "lan"
     netbird_mode: Literal["off", "host", "docker"] = "off"
     netbird_setup_key: str = ""
     netbird_management_url: str = ""

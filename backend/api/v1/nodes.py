@@ -470,7 +470,12 @@ die()  {{ printf "\\e[31m[ERROR]\\e[0m %s\\n" "$*" >&2; exit 1; }}
 
 [[ -z "$CENTRAL_API_URL" ]] && die "CENTRAL_API_URL is required"
 info "Center: $CENTRAL_API_URL | Register: $AGENT_REGISTER | Mode: $INSTALL_MODE"
-info "NetBird: $NETBIRD_MODE"
+info "Fleet Network: $FLEET_NETWORK_PROVIDER | NetBird: $NETBIRD_MODE"
+
+case "$FLEET_NETWORK_PROVIDER" in
+  lan|netbird|wireguard|ssh|custom) ;;
+  *) die "Unknown FLEET_NETWORK_PROVIDER '$FLEET_NETWORK_PROVIDER'. Use lan, netbird, wireguard, ssh, or custom." ;;
+esac
 
 run_netbird() {{
   if netbird "$@"; then
@@ -529,6 +534,28 @@ install_netbird() {{
   esac
 }}
 
+install_fleet_network() {{
+  case "$FLEET_NETWORK_PROVIDER" in
+    netbird)
+      install_netbird
+      ;;
+    lan)
+      ;;
+    wireguard)
+      info "WireGuard provider selected; assuming the WireGuard interface is already up."
+      [[ -n "$AGENT_ADVERTISE_URL" ]] || warn "Set AGENT_ADVERTISE_URL to the WireGuard-reachable agent URL when center HTTP callbacks are required."
+      ;;
+    ssh)
+      info "SSH provider selected; assuming the SSH tunnel is already established."
+      [[ -n "$AGENT_ADVERTISE_URL" ]] || warn "Set AGENT_ADVERTISE_URL to the forwarded agent URL when center HTTP callbacks are required."
+      ;;
+    custom)
+      info "Custom network provider selected; assuming reachability is managed outside this installer."
+      [[ -n "$AGENT_ADVERTISE_URL" ]] || warn "Set AGENT_ADVERTISE_URL to the center-reachable agent URL when center HTTP callbacks are required."
+      ;;
+  esac
+}}
+
 install_docker() {{
   command -v docker >/dev/null 2>&1 || die "Docker not found"
   CONTAINER_NAME="opencli-agent"
@@ -583,7 +610,7 @@ install_python() {{
   info "Agent started (PID=$!). Logs: /tmp/opencli-agent.log"
 }}
 
-install_netbird
+install_fleet_network
 
 case "$INSTALL_MODE" in
   docker) install_docker ;;

@@ -313,6 +313,8 @@ curl -fsSL http://<center>:8030/api/v1/nodes/install/agent.sh | \
 | `AGENT_REGISTER` | 注册模式：`ws` \| `http` | `ws` |
 | `AGENT_MODE` | Chrome 连接模式：`bridge` \| `cdp` | `bridge` |
 | `AGENT_PORT` | Agent 监听端口 | `19823` |
+| `AGENT_ADVERTISE_URL` | 中心回连 Agent 的可达 URL；LAN/NetBird/WireGuard/SSH/custom 都只需要保证它可达 | 自动 |
+| `FLEET_NETWORK_PROVIDER` | 采集层 reachability provider：`lan` \| `netbird` \| `wireguard` \| `ssh` \| `custom` | `lan` |
 | `AGENT_LABEL` | 可读标签 | 主机名 |
 
 ### 采集模式

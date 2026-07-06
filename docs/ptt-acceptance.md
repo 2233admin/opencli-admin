@@ -76,6 +76,18 @@ curl -fsSL -H "Authorization: Bearer $API_AUTH_TOKEN" \
   FLEET_NETWORK_PROVIDER=netbird AGENT_REGISTER=ws AGENT_MODE=bridge bash -s -- docker
 ```
 
+For WireGuard, SSH tunnel, or a custom network, the provider only declares the
+reachability path. Bring that path up outside the installer, then pass the
+center-reachable agent URL explicitly:
+
+```bash
+export API_AUTH_TOKEN=<center-token>
+export AGENT_ADVERTISE_URL=http://<agent-wireguard-ip-or-forwarded-host>:19823
+curl -fsSL -H "Authorization: Bearer $API_AUTH_TOKEN" \
+  http://<center-reachable-host>:8031/api/v1/nodes/install/agent.sh | \
+  FLEET_NETWORK_PROVIDER=wireguard AGENT_REGISTER=ws AGENT_MODE=bridge bash -s -- docker
+```
+
 Pass condition:
 
 ```bash

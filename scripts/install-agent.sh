@@ -14,7 +14,7 @@
 #   AGENT_API_TOKEN    Bearer token for center /api auth (optional unless center enforces it)
 #   AGENT_REGISTER     Registration mode: http | ws (default: ws)
 #   AGENT_PORT         Agent HTTP port (default: 19823)
-#   AGENT_ADVERTISE_URL Canonical agent URL registered at center (optional; useful for NetBird IP/DNS)
+#   AGENT_ADVERTISE_URL Canonical agent URL registered at center (optional; useful for overlay/tunnel IP/DNS)
 #   AGENT_LABEL        Human-readable label (default: hostname)
 #   AGENT_MODE         Chrome connection mode: cdp | bridge (default: cdp)
 #   INSTALL_CHROME     Embed Chromium in Docker image: true | false (default: false)
@@ -23,7 +23,7 @@
 #   HTTP_PROXY         HTTP proxy for agent → center (optional)
 #   HTTPS_PROXY        HTTPS proxy for agent → center (optional)
 #   IMAGE_TAG          Docker image tag (default: injected by center API)
-#   FLEET_NETWORK_PROVIDER lan | netbird (default: injected by center API)
+#   FLEET_NETWORK_PROVIDER lan | netbird | wireguard | ssh | custom (default: injected by center API)
 #   NETBIRD_MODE       off | host | docker (default: injected by center API)
 #   NETBIRD_SETUP_KEY  Setup key used to enroll this node into NetBird
 #   NETBIRD_MANAGEMENT_URL Self-hosted NetBird management URL (optional)
@@ -103,7 +103,12 @@ info "  Fleet Network:  $FLEET_NETWORK_PROVIDER"
 info "  NetBird Mode:   $NETBIRD_MODE"
 echo
 
-# ── NetBird fleet overlay ─────────────────────────────────────────────────────
+# ── Fleet network reachability ────────────────────────────────────────────────
+case "$FLEET_NETWORK_PROVIDER" in
+  lan|netbird|wireguard|ssh|custom) ;;
+  *) die "Unknown FLEET_NETWORK_PROVIDER '$FLEET_NETWORK_PROVIDER'. Use lan, netbird, wireguard, ssh, or custom." ;;
+esac
+
 run_netbird() {
   if netbird "$@"; then
     return 0
@@ -172,6 +177,28 @@ install_netbird() {
     host) install_netbird_host ;;
     docker) install_netbird_docker ;;
     *) die "Unknown NETBIRD_MODE '$NETBIRD_MODE'. Use off, host, or docker." ;;
+  esac
+}
+
+install_fleet_network() {
+  case "$FLEET_NETWORK_PROVIDER" in
+    netbird)
+      install_netbird
+      ;;
+    lan)
+      ;;
+    wireguard)
+      info "WireGuard provider selected; assuming the WireGuard interface is already up."
+      [[ -n "$AGENT_ADVERTISE_URL" ]] || warn "Set AGENT_ADVERTISE_URL to the WireGuard-reachable agent URL when center HTTP callbacks are required."
+      ;;
+    ssh)
+      info "SSH provider selected; assuming the SSH tunnel is already established."
+      [[ -n "$AGENT_ADVERTISE_URL" ]] || warn "Set AGENT_ADVERTISE_URL to the forwarded agent URL when center HTTP callbacks are required."
+      ;;
+    custom)
+      info "Custom network provider selected; assuming reachability is managed outside this installer."
+      [[ -n "$AGENT_ADVERTISE_URL" ]] || warn "Set AGENT_ADVERTISE_URL to the center-reachable agent URL when center HTTP callbacks are required."
+      ;;
   esac
 }
 
@@ -400,7 +427,7 @@ EOF
 }
 
 # ── Dispatch ───────────────────────────────────────────────────────────────────
-install_netbird
+install_fleet_network
 
 case "$INSTALL_MODE" in
   docker) install_docker ;;
