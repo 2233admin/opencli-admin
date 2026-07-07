@@ -6,9 +6,6 @@ const BACKEND_URL = process.env.BACKEND_URL ?? "http://127.0.0.1:8031"
 
 const nextConfig = {
   allowedDevOrigins: ['127.0.0.1'],
-  typescript: {
-    ignoreBuildErrors: true,
-  },
   images: {
     unoptimized: true,
   },
