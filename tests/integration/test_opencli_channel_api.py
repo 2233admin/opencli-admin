@@ -186,7 +186,7 @@ async def test_collect_without_positional_args_backward_compat(
 
 @pytest.mark.asyncio
 async def test_collect_agent_mode_passes_positional_args_to_dispatch(
-    client, opencli_source_payload
+    client, db_session, opencli_source_payload
 ):
     """In HTTP agent mode, positional_args is forwarded to _collect_via_agent."""
     from backend.browser_pool import LocalBrowserPool
@@ -212,6 +212,19 @@ async def test_collect_agent_mode_passes_positional_args_to_dispatch(
     ctx.__aexit__ = AsyncMock(return_value=False)
     agent_pool.acquire.return_value = ctx
 
+    # Agent-mode collect() now looks up a site's browser binding (SELECT
+    # browser_bindings) before dispatch. Route AsyncSessionLocal() at the
+    # module the adapter imports it from to the app's own migrated
+    # db_session, mirroring test_collect_agent_mode_prefers_site_bound_agent
+    # below — otherwise the lookup hits the real (unmigrated) engine and
+    # raises "no such table: browser_bindings".
+    class BoundSessionContext:
+        async def __aenter__(self):
+            return db_session
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
     with (
         patch(
             "backend.channels.opencli_channel._collect_via_agent",
@@ -219,6 +232,7 @@ async def test_collect_agent_mode_passes_positional_args_to_dispatch(
         ),
         patch("backend.browser_pool.get_pool", return_value=agent_pool),
         patch("backend.config.get_settings", return_value=_settings_mock("agent")),
+        patch("backend.database.AsyncSessionLocal", return_value=BoundSessionContext()),
     ):
         channel = OpenCLIChannel()
         result = await channel.collect(cfg, {})

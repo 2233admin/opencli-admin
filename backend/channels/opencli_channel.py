@@ -11,6 +11,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 import yaml
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.channels.base import AbstractChannel, Capabilities, ChannelResult
 from backend.channels.registry import register_channel
@@ -26,15 +27,13 @@ _help_cache: dict[tuple[str, str, str], frozenset[str]] = {}
 _browser_requirement_cache: dict[tuple[str, str, str], bool] = {}
 
 
-async def _site_bound_agent_endpoint(pool: Any, site: str) -> str | None:
+async def _site_bound_agent_endpoint(pool: Any, site: str, session: AsyncSession) -> str | None:
     if not site:
         return None
 
-    from backend.database import AsyncSessionLocal
     from backend.services import browser_service
 
-    async with AsyncSessionLocal() as session:
-        binding = await browser_service.get_binding_by_site(session, site)
+    binding = await browser_service.get_binding_by_site(session, site)
     if not binding:
         return None
 
@@ -56,8 +55,8 @@ async def _site_bound_agent_endpoint(pool: Any, site: str) -> str | None:
     return endpoint
 
 
-async def _select_agent_endpoint(pool: Any, site: str) -> str | None:
-    bound_endpoint = await _site_bound_agent_endpoint(pool, site)
+async def _select_agent_endpoint(pool: Any, site: str, session: AsyncSession) -> str | None:
+    bound_endpoint = await _site_bound_agent_endpoint(pool, site, session)
     if bound_endpoint:
         logger.debug(
             "agent mode: selected site-bound endpoint %s for site=%s",
@@ -547,7 +546,14 @@ class OpenCLIChannel(AbstractChannel):
             and not chrome_endpoint
             and isinstance(pool, LocalBrowserPool)
         ):
-            _acquire_endpoint = await _select_agent_endpoint(pool, site)
+            # No request-scoped AsyncSession is available at this entry point (collect()'s
+            # interface is config/parameters only), so — same as health_check() below —
+            # we open one directly here and thread it explicitly into the helpers instead
+            # of letting them each reach for their own AsyncSessionLocal() independently.
+            from backend.database import AsyncSessionLocal
+
+            async with AsyncSessionLocal() as session:
+                _acquire_endpoint = await _select_agent_endpoint(pool, site, session)
             if not _acquire_endpoint:
                 return ChannelResult.fail(
                     "No registered agent nodes available. Please add an agent node first."
