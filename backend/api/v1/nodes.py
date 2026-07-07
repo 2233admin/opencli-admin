@@ -6,6 +6,8 @@ reverse channel) register here and have their online/offline history tracked.
 """
 
 import logging
+import re
+import shlex
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -394,7 +396,7 @@ async def get_install_script(request: Request) -> PlainTextResponse:
         Path("/app/scripts/install-agent.sh"),
     ]:
         if candidate.exists():
-            content = candidate.read_text()
+            content = candidate.read_text(encoding="utf-8")
             content = _render_install_script(content, base_url, settings)
             return PlainTextResponse(content, media_type="text/plain")
 
@@ -412,6 +414,42 @@ async def get_install_script(request: Request) -> PlainTextResponse:
     return PlainTextResponse(content, media_type="text/plain")
 
 
+def _shell_default_sub(content: str, placeholder: str, value: str | None) -> str:
+    """Substitute a `${VAR:-__PLACEHOLDER__}` default with a shell-safe value.
+
+    install-agent.sh wraps each placeholder in an outer pair of double quotes,
+    e.g. ``VAR="${VAR:-__PLACEHOLDER__}"``. This script is fetched and run via
+    `curl | bash`, so naively substituting an operator-controlled value there
+    (NetBird setup key, API token, ...) would let a '"', backtick, or
+    '$(...)' in the value break out of the double quotes into arbitrary
+    shell. shlex.quote() wraps the value in its own single quotes; we strip
+    the now-redundant outer double quotes so that single-quoted word is the
+    only quoting in play (leaving the outer quotes would let a literal '"'
+    or backtick in the value escape them, since neither is neutralized
+    inside an already-open double-quoted string).
+    """
+    quoted = shlex.quote(value or "")
+    pattern = re.compile(
+        r'"(\$\{[A-Za-z_][A-Za-z0-9_]*:-(?:\$\{[A-Za-z_][A-Za-z0-9_]*:-)?)'
+        + re.escape(placeholder)
+        + r'(\}\}?)"'
+    )
+    new_content, count = pattern.subn(lambda m: m.group(1) + quoted + m.group(2), content)
+    if count:
+        return new_content
+    # Placeholder wasn't in the expected quoted-default form (template
+    # changed) -- fall back to escaping for a bare double-quoted context so
+    # '"', '`', and '$' in the value still can't break out.
+    escaped = (
+        (value or "")
+        .replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("$", "\\$")
+        .replace("`", "\\`")
+    )
+    return content.replace(placeholder, escaped)
+
+
 def _render_install_script(content: str, base_url: str, settings) -> str:
     replacements = {
         "__CENTRAL_API_URL__": base_url,
@@ -424,7 +462,7 @@ def _render_install_script(content: str, base_url: str, settings) -> str:
         "__NETBIRD_IMAGE_TAG__": settings.netbird_image_tag,
     }
     for placeholder, value in replacements.items():
-        content = content.replace(placeholder, value or "")
+        content = _shell_default_sub(content, placeholder, value)
     return content
 
 
@@ -438,6 +476,20 @@ def _install_script_template(
     netbird_management_url: str = "",
     netbird_image_tag: str = "latest",
 ) -> str:
+    # These become bash `VAR="${VAR:-default}"` fallbacks below. This script
+    # is fetched and run via `curl | bash`, so shlex.quote() each
+    # operator-controlled value and drop the surrounding literal quotes in
+    # the template: the single-quoted word shlex.quote produces must be the
+    # *only* quoting in play, since embedding it inside an existing `"..."`
+    # would let a '"', backtick, or '$(...)' in the value break back out.
+    central_url_q = shlex.quote(central_url)
+    image_tag_q = shlex.quote(image_tag)
+    agent_api_token_q = shlex.quote(agent_api_token)
+    fleet_network_provider_q = shlex.quote(fleet_network_provider)
+    netbird_mode_q = shlex.quote(netbird_mode)
+    netbird_setup_key_q = shlex.quote(netbird_setup_key)
+    netbird_management_url_q = shlex.quote(netbird_management_url)
+    netbird_image_tag_q = shlex.quote(netbird_image_tag)
     return f"""#!/usr/bin/env bash
 # OpenCLI Agent — one-line install
 # Usage: curl -fsSL {central_url}/api/v1/nodes/install/agent.sh | bash
@@ -446,18 +498,18 @@ def _install_script_template(
 #     {central_url}/api/v1/nodes/install/agent.sh | bash
 
 set -euo pipefail
-CENTRAL_API_URL="${{CENTRAL_API_URL:-{central_url}}}"
-AGENT_API_TOKEN="${{AGENT_API_TOKEN:-{agent_api_token}}}"
+CENTRAL_API_URL=${{CENTRAL_API_URL:-{central_url_q}}}
+AGENT_API_TOKEN=${{AGENT_API_TOKEN:-{agent_api_token_q}}}
 AGENT_REGISTER="${{AGENT_REGISTER:-ws}}"
 AGENT_PORT="${{AGENT_PORT:-19823}}"
 AGENT_ADVERTISE_URL="${{AGENT_ADVERTISE_URL:-}}"
 AGENT_LABEL="${{AGENT_LABEL:-$(hostname)}}"
-IMAGE_TAG="${{IMAGE_TAG:-{image_tag}}}"
-FLEET_NETWORK_PROVIDER="${{FLEET_NETWORK_PROVIDER:-{fleet_network_provider}}}"
-NETBIRD_MODE="${{NETBIRD_MODE:-{netbird_mode}}}"
-NETBIRD_SETUP_KEY="${{NETBIRD_SETUP_KEY:-{netbird_setup_key}}}"
-NETBIRD_MANAGEMENT_URL="${{NETBIRD_MANAGEMENT_URL:-{netbird_management_url}}}"
-NETBIRD_IMAGE_TAG="${{NETBIRD_IMAGE_TAG:-{netbird_image_tag}}}"
+IMAGE_TAG=${{IMAGE_TAG:-{image_tag_q}}}
+FLEET_NETWORK_PROVIDER=${{FLEET_NETWORK_PROVIDER:-{fleet_network_provider_q}}}
+NETBIRD_MODE=${{NETBIRD_MODE:-{netbird_mode_q}}}
+NETBIRD_SETUP_KEY=${{NETBIRD_SETUP_KEY:-{netbird_setup_key_q}}}
+NETBIRD_MANAGEMENT_URL=${{NETBIRD_MANAGEMENT_URL:-{netbird_management_url_q}}}
+NETBIRD_IMAGE_TAG=${{NETBIRD_IMAGE_TAG:-{netbird_image_tag_q}}}
 INSTALL_MODE="${{1:-docker}}"
 
 if [[ "$NETBIRD_MODE" == "off" && -n "$NETBIRD_SETUP_KEY" ]]; then
