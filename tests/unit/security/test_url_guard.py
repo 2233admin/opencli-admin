@@ -11,9 +11,14 @@ from backend.security import url_guard
 from backend.security.url_guard import (
     PinnedAsyncHTTPTransport,
     SSRFValidationError,
+    avalidate_provider_url_and_ip,
     avalidate_public_url,
     guarded_async_client,
+    guarded_provider_client,
     is_ip_blocked,
+    is_provider_allowlisted,
+    validate_provider_url,
+    validate_provider_url_and_ip,
     validate_public_url,
     validate_public_url_and_ip,
 )
@@ -263,7 +268,6 @@ async def test_pinned_backend_dials_validated_ip_not_hostname_dns(monkeypatch):
     server, port = _run_local_http_server()
     try:
         getaddrinfo_calls: list[str] = []
-        original_getaddrinfo = __import__("socket").getaddrinfo
 
         def _tracking_getaddrinfo(host, *args, **kwargs):
             getaddrinfo_calls.append(host)
@@ -370,3 +374,183 @@ async def test_guarded_async_client_full_request_over_real_https():
     async with client:
         resp = await client.get(url)
     assert resp.status_code == 200
+
+
+# ── Provider allowlist (opt-in, PROVIDER_URL_ALLOWLIST) ─────────────────────
+#
+# Provider-call-sites-only entry points — see the module docstring's
+# "Provider allowlist" section. These must NEVER change behaviour for
+# validate_public_url / guarded_async_client (proven above, unchanged) or for
+# api_channel's own SSRF checks (api_channel imports validate_public_url /
+# guarded_async_client / avalidate_public_url directly — it never touches
+# this allowlist machinery at all, so its existing tests in
+# tests/unit/channels/test_api_channel.py exercising those same unchanged
+# functions are the regression proof that this feature is fully inert on
+# that path).
+
+
+# -- is_provider_allowlisted: exact host:port matching --------------------
+
+def test_is_provider_allowlisted_exact_match():
+    assert is_provider_allowlisted("http://127.0.0.1:11434/v1", "127.0.0.1:11434") is True
+
+
+def test_is_provider_allowlisted_port_mismatch_rejected():
+    assert is_provider_allowlisted("http://127.0.0.1:11434/v1", "127.0.0.1:9999") is False
+
+
+def test_is_provider_allowlisted_host_mismatch_rejected():
+    assert is_provider_allowlisted("http://127.0.0.1:11434/v1", "10.0.0.5:11434") is False
+
+
+def test_is_provider_allowlisted_empty_allowlist_rejected():
+    """Empty allowlist (the out-of-the-box default) never matches anything —
+    this is what makes the flag off-by-default."""
+    assert is_provider_allowlisted("http://127.0.0.1:11434/v1", "") is False
+
+
+def test_is_provider_allowlisted_case_insensitive_host():
+    assert is_provider_allowlisted("http://LOCALHOST:11434/v1", "localhost:11434") is True
+
+
+def test_is_provider_allowlisted_multi_entry_and_whitespace_tolerant():
+    allowlist = " 127.0.0.1:11434 , localhost:11434 "
+    assert is_provider_allowlisted("http://127.0.0.1:11434/v1", allowlist) is True
+    assert is_provider_allowlisted("http://localhost:11434/v1", allowlist) is True
+    assert is_provider_allowlisted("http://127.0.0.1:9999/v1", allowlist) is False
+
+
+def test_is_provider_allowlisted_default_port_inference_http():
+    """No explicit port in the URL -> defaults to 80 for http, matched against
+    an allowlist entry that names port 80 explicitly."""
+    assert is_provider_allowlisted("http://127.0.0.1/v1", "127.0.0.1:80") is True
+
+
+def test_is_provider_allowlisted_default_port_inference_https():
+    assert is_provider_allowlisted("https://127.0.0.1/v1", "127.0.0.1:443") is True
+
+
+def test_is_provider_allowlisted_no_wildcard_subdomain_support():
+    """Deliberately dumb: a broader allowlist entry does not implicitly cover
+    a more specific or different host — exact host:port only."""
+    assert is_provider_allowlisted("http://evil.127.0.0.1:11434/v1", "127.0.0.1:11434") is False
+
+
+# -- validate_provider_url / validate_provider_url_and_ip ------------------
+
+def test_validate_provider_url_allowlisted_loopback_passes():
+    """The core behavior change: a loopback base_url that would normally be
+    rejected by validate_public_url passes when it exactly matches the
+    allowlist, and no IPs are returned (signal: do not pin)."""
+    url, ips = validate_provider_url_and_ip(
+        "http://127.0.0.1:11434/v1", allowlist="127.0.0.1:11434"
+    )
+    assert url == "http://127.0.0.1:11434/v1"
+    assert ips == []
+
+
+def test_validate_provider_url_returns_bare_url():
+    assert (
+        validate_provider_url("http://127.0.0.1:11434/v1", allowlist="127.0.0.1:11434")
+        == "http://127.0.0.1:11434/v1"
+    )
+
+
+def test_validate_provider_url_non_matching_loopback_still_rejected():
+    """An allowlist is configured, but this URL isn't on it -> falls through
+    to the full public check and is still rejected."""
+    with pytest.raises(SSRFValidationError, match="non-public"):
+        validate_provider_url("http://127.0.0.1:9999/v1", allowlist="127.0.0.1:11434")
+
+
+def test_validate_provider_url_empty_allowlist_matches_current_behavior():
+    """Empty allowlist (default): behaves byte-for-byte like
+    validate_public_url — the regression guarantee for the opt-in default."""
+    with pytest.raises(SSRFValidationError, match="non-public"):
+        validate_provider_url("http://127.0.0.1:11434/v1", allowlist="")
+    # and with the parameter omitted entirely (its default):
+    with pytest.raises(SSRFValidationError, match="non-public"):
+        validate_provider_url("http://127.0.0.1:11434/v1")
+
+
+def test_validate_provider_url_allowlist_set_but_host_is_public_still_validated():
+    """Allowlist configured for a *different* host must not weaken the check
+    for a public host — it just goes through the normal public-host path."""
+    with patch("socket.getaddrinfo", return_value=_fake_getaddrinfo("93.184.216.34")):
+        url, ips = validate_provider_url_and_ip(
+            "https://example.com/v1", allowlist="127.0.0.1:11434"
+        )
+    assert url == "https://example.com/v1"
+    assert ips == ["93.184.216.34"]
+
+
+def test_validate_provider_url_rejects_non_http_scheme_even_if_allowlisted_host():
+    """Scheme check still applies — allowlist is not a blanket exemption."""
+    with pytest.raises(SSRFValidationError, match="scheme"):
+        validate_provider_url("file:///etc/passwd", allowlist="127.0.0.1:11434")
+
+
+# -- avalidate_provider_url_and_ip (async wrapper) -------------------------
+
+@pytest.mark.asyncio
+async def test_avalidate_provider_url_and_ip_allowlisted_passes():
+    url, ips = await avalidate_provider_url_and_ip(
+        "http://127.0.0.1:11434/v1", allowlist="127.0.0.1:11434"
+    )
+    assert url == "http://127.0.0.1:11434/v1"
+    assert ips == []
+
+
+@pytest.mark.asyncio
+async def test_avalidate_provider_url_and_ip_rejects_non_allowlisted_loopback():
+    with pytest.raises(SSRFValidationError, match="non-public"):
+        await avalidate_provider_url_and_ip("http://127.0.0.1:11434/v1", allowlist="")
+
+
+# -- guarded_provider_client ------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_guarded_provider_client_allowlisted_returns_plain_unpinned_client():
+    """An allowlisted URL gets a plain httpx.AsyncClient — deliberately NOT
+    pinned (no IPs were resolved; see the module docstring's rationale that a
+    named local endpoint has no meaningful DNS-rebinding surface)."""
+    client, url = await guarded_provider_client(
+        "http://127.0.0.1:11434/v1", allowlist="127.0.0.1:11434"
+    )
+    try:
+        assert url == "http://127.0.0.1:11434/v1"
+        assert not isinstance(client._transport, PinnedAsyncHTTPTransport)
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_guarded_provider_client_non_allowlisted_public_host_is_pinned():
+    """Falls through to guarded_async_client's normal pin-on-validate
+    behaviour when not allowlisted."""
+    with patch("socket.getaddrinfo", return_value=_fake_getaddrinfo("93.184.216.34")):
+        client, url = await guarded_provider_client(
+            "http://pin-provider.example/", allowlist="127.0.0.1:11434"
+        )
+    try:
+        assert url == "http://pin-provider.example/"
+        assert isinstance(client._transport, PinnedAsyncHTTPTransport)
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_guarded_provider_client_rejects_private_host_when_not_allowlisted():
+    with pytest.raises(SSRFValidationError):
+        await guarded_provider_client("http://10.0.0.1/x", allowlist="127.0.0.1:11434")
+
+
+@pytest.mark.asyncio
+async def test_guarded_provider_client_rejects_transport_kwarg_even_when_allowlisted():
+    """Same anti-footgun as guarded_async_client: a caller-supplied transport
+    is rejected outright, regardless of allowlist match, so pinning/the
+    plain-client contract this function owns can't be silently discarded."""
+    with pytest.raises(TypeError):
+        await guarded_provider_client(
+            "http://127.0.0.1:11434/v1", allowlist="127.0.0.1:11434", transport=object()
+        )

@@ -74,6 +74,50 @@ vendor SDK's own connection handling. Those sites keep call-time
 ``validate_public_url``/``avalidate_public_url`` validation only (the
 pre-existing mitigation) and retain a residual DNS-rebinding TOCTOU window —
 documented at each such call site rather than silently left unmentioned.
+
+Provider allowlist — local-dev LLM endpoints (opt-in, default off)
+--------------------------------------------------------------------------
+LLM-provider call sites (``backend.skills.distill.call_llm``,
+``backend.channels.skill_channel._build_model_call``,
+``backend.processors.openai_processor.OpenAIProcessor``) attach a —
+potentially DB/request-supplied — API key to whatever ``base_url`` they're
+given, so that URL has to run through an SSRF check exactly like any other
+outbound fetch (see the "Key-exfil guard" note at each call site). But the
+common legitimate case in a single-operator/dev/LAN deployment is pointing a
+provider at a **local** inference server — e.g. Ollama on
+``127.0.0.1:11434`` — which :func:`validate_public_url` correctly rejects as
+a loopback address, and *rightly so* for a data-fetch URL
+(:mod:`backend.channels.api_channel` and friends fetch attacker-influenced
+URLs from source config — that path must NEVER get this exemption).
+
+:func:`validate_provider_url`, :func:`validate_provider_url_and_ip`,
+:func:`avalidate_provider_url_and_ip`, and :func:`guarded_provider_client`
+are the provider-only entry points that resolve this tension. An operator
+opts a specific local endpoint in via the ``PROVIDER_URL_ALLOWLIST`` setting
+(``backend.config.Settings.provider_url_allowlist``, env
+``PROVIDER_URL_ALLOWLIST``) — a comma-separated list of exact ``host:port``
+pairs, e.g. ``"127.0.0.1:11434,localhost:11434"``. When (and only when) a
+URL's ``host:port`` exactly matches an allowlist entry
+(:func:`is_provider_allowlisted`), the request is let through *without* the
+public-reachability check and *without* DNS-rebinding IP pinning — a
+loopback/LAN address an operator explicitly named has no meaningful
+rebinding surface to pin against, the same rationale already backing the
+pre-existing hardcoded ``localhost:11434`` default exemption in
+``backend.skills.distill`` (which predates this flag and is untouched by it).
+
+This is **not** a general SSRF bypass:
+
+  * narrow — exact ``host:port`` match only, no wildcards/CIDR/subdomains,
+  * provider-call-sites-only — never wired into :func:`validate_public_url`
+    itself, so every channel/notifier/processor data-fetch URL (including
+    ``api_channel``'s) is entirely unaffected, checked exactly as before,
+  * operator opt-in — the setting defaults to empty, so out of the box this
+    module's behaviour is byte-for-byte identical to before the flag existed,
+  * still scheme-checked — http/https only, same as the public path.
+
+Anything not on the allowlist — including *everything*, when the allowlist
+is empty — falls through unchanged to the same full check
+:func:`validate_public_url` performs.
 """
 
 from __future__ import annotations
@@ -94,6 +138,12 @@ __all__ = [
     "resolve_hostname",
     "PinnedAsyncHTTPTransport",
     "guarded_async_client",
+    # Provider allowlist (see module docstring) — provider-call-sites-only.
+    "is_provider_allowlisted",
+    "validate_provider_url",
+    "validate_provider_url_and_ip",
+    "avalidate_provider_url_and_ip",
+    "guarded_provider_client",
 ]
 
 _ALLOWED_SCHEMES = {"http", "https"}
@@ -336,7 +386,7 @@ class PinnedAsyncHTTPTransport(httpx.AsyncHTTPTransport):
         hostname: str,
         ips: list[str],
         *,
-        verify: "bool | str" = True,
+        verify: bool | str = True,
         http1: bool = True,
         http2: bool = False,
         **kwargs: typing.Any,
@@ -395,3 +445,119 @@ async def guarded_async_client(
     transport = PinnedAsyncHTTPTransport(hostname, ips)
     client = httpx.AsyncClient(transport=transport, **client_kwargs)
     return client, validated_url
+
+
+# ── Provider allowlist — local-dev LLM endpoints ─────────────────────────────
+#
+# See the module docstring's "Provider allowlist" section for the full
+# rationale and security boundary. These entry points are for LLM-provider
+# call sites ONLY (backend.skills.distill, backend.channels.skill_channel,
+# backend.processors.openai_processor) — every other outbound-fetch call site
+# (channels, notifiers, non-provider processors) must keep using
+# validate_public_url / validate_public_url_and_ip / guarded_async_client
+# unchanged, api_channel above all: its URLs come from arbitrary source
+# config, not an operator's own provider setup, so it must never see this
+# exemption.
+
+
+def _parse_provider_allowlist(allowlist: str) -> frozenset[str]:
+    """Parse a comma-separated ``host:port`` allowlist string into a set of
+    lowercased ``host:port`` entries. Blank string / whitespace-only entries
+    are dropped. No wildcard, CIDR, or subdomain support by design — see
+    :func:`is_provider_allowlisted`."""
+    return frozenset(entry.strip().lower() for entry in allowlist.split(",") if entry.strip())
+
+
+def is_provider_allowlisted(url: str, allowlist: str) -> bool:
+    """True if ``url``'s ``host:port`` exactly matches an entry in
+    ``allowlist`` (comma-separated ``host:port`` strings, e.g.
+    ``"127.0.0.1:11434,localhost:11434"``).
+
+    Exact match only: the URL's explicit port, or the scheme's default port
+    (443/80) when none is given, is compared verbatim against each allowlist
+    entry — no wildcards, no CIDR ranges, no implicit subdomain matching.
+    ``allowlist`` empty/blank always returns ``False`` (no entries to match —
+    the out-of-the-box, opt-in-not-taken state).
+    """
+    entries = _parse_provider_allowlist(allowlist)
+    if not entries:
+        return False
+    parsed = urlparse(url)
+    hostname = parsed.hostname
+    if not hostname:
+        return False
+    port = parsed.port
+    if port is None:
+        port = 443 if (parsed.scheme or "").lower() == "https" else 80
+    return f"{hostname.lower()}:{port}" in entries
+
+
+def validate_provider_url_and_ip(url: str, *, allowlist: str = "") -> tuple[str, list[str]]:
+    """Validate ``url`` is safe to use as an LLM-provider ``base_url``.
+
+    The provider-specific sibling of :func:`validate_public_url_and_ip` — see
+    the module docstring's "Provider allowlist" section for the full
+    rationale. ``url``'s ``host:port`` is checked against ``allowlist``
+    first (operator-configured, empty by default): an exact match
+    (:func:`is_provider_allowlisted`) short-circuits straight to "allowed",
+    returning ``(url, [])`` — the empty IP list is a deliberate signal to
+    callers to build a **plain, unpinned** client (mirrors the pre-existing
+    hardcoded-default-Ollama exemption in ``backend.skills.distill``: a
+    local address an operator explicitly named has no meaningful
+    DNS-rebinding surface worth pinning against).
+
+    Anything not on the allowlist — including everything, when ``allowlist``
+    is empty — falls through unchanged to :func:`validate_public_url_and_ip`:
+    the same reject-loopback/private/link-local/CGNAT/etc check every other
+    outbound fetch goes through, returning the resolved IPs for pinning.
+
+    This function must NEVER be used for non-provider (e.g. data-source/
+    channel-fetch) URLs — see :func:`validate_public_url` for those.
+    """
+    if allowlist and is_provider_allowlisted(url, allowlist):
+        return url, []
+    return validate_public_url_and_ip(url)
+
+
+def validate_provider_url(url: str, *, allowlist: str = "") -> str:
+    """Sync convenience wrapper returning just the (normalized) URL — see
+    :func:`validate_provider_url_and_ip`."""
+    return validate_provider_url_and_ip(url, allowlist=allowlist)[0]
+
+
+async def avalidate_provider_url_and_ip(
+    url: str, *, allowlist: str = ""
+) -> tuple[str, list[str]]:
+    """Async wrapper around :func:`validate_provider_url_and_ip`.
+
+    The allowlist check itself is pure/non-blocking, so only the fallback
+    :func:`validate_public_url_and_ip` path (blocking DNS) is pushed off-thread
+    via ``asyncio.to_thread`` — same pattern as :func:`avalidate_public_url_and_ip`.
+    """
+    if allowlist and is_provider_allowlisted(url, allowlist):
+        return url, []
+    return await avalidate_public_url_and_ip(url)
+
+
+async def guarded_provider_client(
+    url: str, *, allowlist: str = "", **client_kwargs: typing.Any
+) -> tuple[httpx.AsyncClient, str]:
+    """Provider-specific sibling of :func:`guarded_async_client`, for
+    plain-httpx provider call sites (e.g. ``backend.skills.distill.call_llm``).
+
+    An allowlisted ``url`` returns a **plain, unpinned** ``httpx.AsyncClient``
+    — no IPs were resolved to pin to (see :func:`validate_provider_url_and_ip`)
+    — deliberately the same "trusted local endpoint, no rebinding pinning
+    needed" posture already used for the hardcoded default-Ollama exemption
+    elsewhere in this codebase. Anything else goes through the full
+    :func:`guarded_async_client` (validate + DNS-rebind-safe pinning).
+
+    Same ``transport=`` guard as :func:`guarded_async_client`: passing one
+    raises ``TypeError`` rather than silently dropping pinning/the plain
+    client this function builds.
+    """
+    if "transport" in client_kwargs:
+        raise TypeError("guarded_provider_client() sets 'transport' itself — do not pass one")
+    if allowlist and is_provider_allowlisted(url, allowlist):
+        return httpx.AsyncClient(**client_kwargs), url
+    return await guarded_async_client(url, **client_kwargs)

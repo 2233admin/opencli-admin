@@ -5,12 +5,13 @@ import logging
 import re
 from typing import TYPE_CHECKING, Any
 
+from backend.config import get_settings
 from backend.processors.base import AbstractProcessor, ProcessingResult
 from backend.processors.registry import register_processor
 from backend.security.url_guard import (
     PinnedAsyncHTTPTransport,
     SSRFValidationError,
-    avalidate_public_url_and_ip,
+    avalidate_provider_url_and_ip,
 )
 
 if TYPE_CHECKING:
@@ -48,6 +49,14 @@ class OpenAIProcessor(AbstractProcessor):
         # the SSRF/public-host check, don't attach api_key to a client pointed
         # at it. None (OpenAI's own default endpoint) is left unvalidated.
         #
+        # Provider allowlist (opt-in, PROVIDER_URL_ALLOWLIST — see
+        # backend.security.url_guard module docstring "Provider allowlist"
+        # section): validated via avalidate_provider_url_and_ip rather than
+        # the plain public-only check, so an operator can name a specific
+        # local inference endpoint (e.g. Ollama on 127.0.0.1:11434) that would
+        # otherwise be rejected as a loopback address. Empty allowlist
+        # (default) behaves identically to the plain public check.
+        #
         # Full DNS-rebinding closure (AUDIT B3 follow-up): AsyncOpenAI accepts
         # an `http_client` (any httpx.AsyncClient), so — unlike a vendor SDK
         # that hides its own connection handling — we CAN pin this one: build
@@ -55,25 +64,30 @@ class OpenAIProcessor(AbstractProcessor):
         # resolved and hand it in as http_client, same mechanism as
         # backend.security.url_guard.guarded_async_client uses for plain
         # httpx call sites. When base_url is None (SDK default endpoint,
-        # never validated — unchanged from before) there is nothing to pin,
-        # so http_client is left unset and AsyncOpenAI builds its own default
-        # client exactly as before.
+        # never validated — unchanged from before), or the base_url is
+        # allowlisted (empty IP list — no rebinding surface worth pinning,
+        # see avalidate_provider_url_and_ip's docstring), there is nothing to
+        # pin, so http_client is left unset and AsyncOpenAI builds its own
+        # default client exactly as before.
         pinned_http_client = None
         if base_url:
             try:
-                base_url, ips = await avalidate_public_url_and_ip(base_url)
+                base_url, ips = await avalidate_provider_url_and_ip(
+                    base_url, allowlist=get_settings().provider_url_allowlist
+                )
             except SSRFValidationError as exc:
                 return ProcessingResult(
                     success=False, error=f"openai processor: base_url rejected: {exc}"
                 )
-            from urllib.parse import urlparse as _urlparse
+            if ips:
+                from urllib.parse import urlparse as _urlparse
 
-            import httpx
+                import httpx
 
-            hostname = _urlparse(base_url).hostname or ""
-            pinned_http_client = httpx.AsyncClient(
-                transport=PinnedAsyncHTTPTransport(hostname, ips)
-            )
+                hostname = _urlparse(base_url).hostname or ""
+                pinned_http_client = httpx.AsyncClient(
+                    transport=PinnedAsyncHTTPTransport(hostname, ips)
+                )
         model = config.get("model", "gpt-4o-mini")
         max_tokens = config.get("max_tokens", 1024)
         use_json_mode = config.get("json_mode", base_url is None)
@@ -100,11 +114,12 @@ class OpenAIProcessor(AbstractProcessor):
                     response = await client.chat.completions.create(**kwargs)
                     text = response.choices[0].message.content or "{}"
                     usage = response.usage
-                    logger.info("openai resp [%d/%d] | prompt_tokens=%d completion_tokens=%d preview=%s",
-                                i + 1, len(records),
-                                usage.prompt_tokens if usage else -1,
-                                usage.completion_tokens if usage else -1,
-                                text[:200])
+                    logger.info(
+                        "openai resp [%d/%d] | prompt_tokens=%d completion_tokens=%d preview=%s",
+                        i + 1, len(records),
+                        usage.prompt_tokens if usage else -1,
+                        usage.completion_tokens if usage else -1,
+                        text[:200])
                     try:
                         enrichment = json.loads(text)
                     except json.JSONDecodeError:

@@ -58,6 +58,23 @@ class Settings(BaseSettings):
     def cli_allowed_binaries(self) -> list[str]:
         return [b.strip() for b in self.cli_channel_allowed_binaries.split(",") if b.strip()]
 
+    # LLM-provider SSRF allowlist (opt-in, default empty = no behaviour
+    # change). backend/security/url_guard.py's SSRF guard normally rejects
+    # any outbound fetch — including an LLM provider's base_url — that
+    # resolves to a loopback/private/link-local address. Correct for
+    # data-fetch URLs (backend/channels/api_channel.py and friends — NEVER
+    # exempted here), but it blocks the common single-operator/dev setup of
+    # pointing a skill-execution or enrichment provider at a local inference
+    # server (e.g. Ollama on 127.0.0.1:11434). Comma-separated exact
+    # "host:port" pairs (no wildcards/CIDR/subdomains), e.g.
+    # "127.0.0.1:11434,localhost:11434" — matched by
+    # backend.security.url_guard.is_provider_allowlisted and consulted only
+    # by the provider-specific validate_provider_url*/guarded_provider_client
+    # entry points (never by validate_public_url itself). See url_guard's
+    # module docstring "Provider allowlist" section for the full security
+    # boundary. Env: PROVIDER_URL_ALLOWLIST.
+    provider_url_allowlist: str = ""
+
     # Email
     smtp_host: str = ""
     smtp_port: int = 587

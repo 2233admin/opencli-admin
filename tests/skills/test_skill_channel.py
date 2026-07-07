@@ -22,6 +22,7 @@ Runs under the default ``pytest -m "not live"``; ``asyncio_mode = "auto"``.
 import json
 from types import SimpleNamespace
 
+import pytest
 import pytest_asyncio
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -576,3 +577,105 @@ async def test_skill_bridge_invoke_maps_envelope(monkeypatch):
     bad = await skill_invoke({"capability": "nope", "params": {}, "inputs": {}})
     assert bad["ok"] is False
     assert "unknown capability" in (bad["error"] or "")
+
+
+# ── _build_model_call: provider-allowlist SSRF wiring ───────────────────────
+#
+# Every test above stubs _build_model_call itself (no real LLM/network), so
+# none of them exercise its own body — including the SSRF guard call this
+# function makes on provider["base_url"]. These tests call the real function
+# directly, with openai.AsyncOpenAI swapped for a kwargs-capturing stand-in
+# so no network is touched, to prove the PROVIDER_URL_ALLOWLIST wiring
+# (backend.security.url_guard's "Provider allowlist" entry points) actually
+# reaches this call site, matching the real deployment path exercised by
+# backend/api/v1/skill_bridge.py's params.provider.
+
+
+class _CapturingAsyncOpenAI:
+    """Stand-in for openai.AsyncOpenAI: records constructor kwargs instead of
+    building a real client, so the guard/pinning wiring can be asserted on
+    without any network access."""
+
+    last_kwargs: dict | None = None
+
+    def __init__(self, **kwargs):
+        _CapturingAsyncOpenAI.last_kwargs = kwargs
+        self.chat = SimpleNamespace(completions=SimpleNamespace(create=None))
+
+
+@pytest.fixture
+def provider_allowlist_env(monkeypatch):
+    """Set PROVIDER_URL_ALLOWLIST for one test and clear the settings cache
+    both before use and on teardown (get_settings() is @lru_cache'd, so a
+    stale Settings instance would otherwise leak into later tests)."""
+    from backend.config import get_settings
+
+    def _set(value: str) -> None:
+        monkeypatch.setenv("PROVIDER_URL_ALLOWLIST", value)
+        get_settings.cache_clear()
+
+    yield _set
+    get_settings.cache_clear()
+
+
+async def test_build_model_call_allowlisted_loopback_skips_pinning(
+    monkeypatch, provider_allowlist_env
+):
+    """An operator-allowlisted 127.0.0.1:11434 (Ollama) is no longer rejected
+    by the SSRF guard, and — per the module docstring's rationale — gets a
+    plain, unpinned client (http_client=None), same as the no-base_url and
+    hardcoded-default-Ollama cases."""
+    import openai
+
+    from backend.channels.skill_channel import _build_model_call
+
+    provider_allowlist_env("127.0.0.1:11434")
+    monkeypatch.setattr(openai, "AsyncOpenAI", _CapturingAsyncOpenAI)
+
+    model_call = await _build_model_call(
+        {"base_url": "http://127.0.0.1:11434/v1", "api_key": "x", "model": "qwen3:4b"}
+    )
+
+    assert callable(model_call)
+    assert _CapturingAsyncOpenAI.last_kwargs["base_url"] == "http://127.0.0.1:11434/v1"
+    assert _CapturingAsyncOpenAI.last_kwargs["http_client"] is None
+
+
+async def test_build_model_call_non_allowlisted_loopback_still_rejected(
+    provider_allowlist_env,
+):
+    """Regression guarantee: with an empty allowlist (the shipped default),
+    a loopback provider base_url is rejected exactly as before this feature
+    existed — the flag changes nothing unless explicitly opted into."""
+    from backend.channels.skill_channel import _build_model_call
+
+    provider_allowlist_env("")  # explicit default, independent of ambient env
+    with pytest.raises(ValueError, match="provider base_url rejected"):
+        await _build_model_call(
+            {"base_url": "http://127.0.0.1:11434/v1", "api_key": "x", "model": "qwen3:4b"}
+        )
+
+
+async def test_build_model_call_public_ip_still_pinned_when_not_allowlisted(
+    monkeypatch, provider_allowlist_env
+):
+    """A non-allowlisted, non-loopback provider base_url takes the normal
+    public-host path and keeps its DNS-rebinding IP pin — the allowlist only
+    ever *adds* an exemption, it never weakens the existing pinned path."""
+    import openai
+
+    from backend.channels.skill_channel import _build_model_call
+    from backend.security.url_guard import PinnedAsyncHTTPTransport
+
+    provider_allowlist_env("127.0.0.1:11434")  # configured, but for a different host
+    monkeypatch.setattr(openai, "AsyncOpenAI", _CapturingAsyncOpenAI)
+
+    model_call = await _build_model_call(
+        {"base_url": "http://8.8.8.8:1234/v1", "api_key": "x", "model": "m"}
+    )
+
+    assert callable(model_call)
+    http_client = _CapturingAsyncOpenAI.last_kwargs["http_client"]
+    assert http_client is not None
+    assert isinstance(http_client._transport, PinnedAsyncHTTPTransport)
+    await http_client.aclose()

@@ -47,11 +47,12 @@ from typing import TYPE_CHECKING, Any
 
 from backend.channels.base import AbstractChannel, Capabilities, ChannelResult
 from backend.channels.registry import register_channel
+from backend.config import get_settings
 from backend.pipeline import events
 from backend.security.url_guard import (
     PinnedAsyncHTTPTransport,
     SSRFValidationError,
-    avalidate_public_url_and_ip,
+    avalidate_provider_url_and_ip,
 )
 
 # risk / perception import only stdlib — safe at registry-load time. The loop is
@@ -220,13 +221,24 @@ async def _build_model_call(provider: dict[str, Any]) -> Any:
     attacker-controlled public endpoint. No base_url configured (provider's
     own default) is left unvalidated.
 
+    Provider allowlist (opt-in, ``PROVIDER_URL_ALLOWLIST`` — see
+    ``backend.security.url_guard`` module docstring "Provider allowlist"
+    section): validation goes through
+    :func:`~backend.security.url_guard.avalidate_provider_url_and_ip` rather
+    than the plain public-only check, so an operator can name a specific
+    local inference endpoint (e.g. Ollama on ``127.0.0.1:11434``) that would
+    otherwise be rejected as a loopback address. Empty allowlist (default)
+    behaves identically to the plain public check.
+
     DNS-rebinding closure (AUDIT B3 follow-up): ``AsyncOpenAI`` accepts an
-    ``http_client`` (any ``httpx.AsyncClient``), so when ``base_url`` is
-    validated we also pin the connection to the resolved IP(s) via a
+    ``http_client`` (any ``httpx.AsyncClient``), so when ``base_url``
+    resolves to real IPs to pin to, we pin the connection to them via a
     :class:`~backend.security.url_guard.PinnedAsyncHTTPTransport` — the same
-    mechanism ``guarded_async_client`` uses for plain-httpx call sites. No
-    base_url configured leaves ``http_client`` unset (AsyncOpenAI's own
-    default client), unchanged from before.
+    mechanism ``guarded_async_client`` uses for plain-httpx call sites. An
+    allowlisted local URL comes back with an empty IP list (see
+    ``avalidate_provider_url_and_ip``'s docstring) — no rebinding surface
+    worth pinning against — so ``http_client`` is left unset just like the
+    no-base_url-configured case, using ``AsyncOpenAI``'s own default client.
     """
     from openai import AsyncOpenAI
 
@@ -235,15 +247,20 @@ async def _build_model_call(provider: dict[str, Any]) -> Any:
     pinned_http_client = None
     if base_url:
         try:
-            base_url, ips = await avalidate_public_url_and_ip(base_url)
+            base_url, ips = await avalidate_provider_url_and_ip(
+                base_url, allowlist=get_settings().provider_url_allowlist
+            )
         except SSRFValidationError as exc:
             raise ValueError(f"skill channel: provider base_url rejected: {exc}") from exc
-        from urllib.parse import urlparse as _urlparse
+        if ips:
+            from urllib.parse import urlparse as _urlparse
 
-        import httpx
+            import httpx
 
-        hostname = _urlparse(base_url).hostname or ""
-        pinned_http_client = httpx.AsyncClient(transport=PinnedAsyncHTTPTransport(hostname, ips))
+            hostname = _urlparse(base_url).hostname or ""
+            pinned_http_client = httpx.AsyncClient(
+                transport=PinnedAsyncHTTPTransport(hostname, ips)
+            )
     client = AsyncOpenAI(api_key=api_key, base_url=base_url, http_client=pinned_http_client)
 
     async def model_call(

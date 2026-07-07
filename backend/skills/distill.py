@@ -24,7 +24,8 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 
-from backend.security.url_guard import SSRFValidationError, guarded_async_client
+from backend.config import get_settings
+from backend.security.url_guard import SSRFValidationError, guarded_provider_client
 
 if TYPE_CHECKING:
     from backend.models.provider import ModelProvider
@@ -99,13 +100,24 @@ async def call_llm(system: str, user: str, provider: dict[str, Any]) -> str:
     sees a clear rejection instead of a confusing downstream connection
     failure.
 
+    Provider allowlist (opt-in, ``PROVIDER_URL_ALLOWLIST`` — see
+    ``backend.security.url_guard`` module docstring "Provider allowlist"
+    section): an explicitly-supplied ``base_url`` that exact-matches the
+    operator's configured allowlist is let through the same way the
+    hardcoded default above is — this is how a *DB-configured* (not just the
+    hardcoded fallback) local Ollama/vLLM/etc endpoint can be used without
+    disabling the SSRF guard globally. Empty allowlist (default) = identical
+    behaviour to before this flag existed.
+
     DNS-rebinding closure (AUDIT B3 follow-up): this is a plain-httpx call
     site (not a vendor SDK), so when ``base_url`` goes through the guard it
     also gets a connection pinned to the validated IP(s) via
-    :func:`~backend.security.url_guard.guarded_async_client` — same mechanism
-    every other httpx call site in this codebase uses. The hardcoded local
-    Ollama default is never pinned either (nothing was validated to pin to;
-    a plain client is used exactly as before).
+    :func:`~backend.security.url_guard.guarded_provider_client` — same
+    mechanism every other httpx call site in this codebase uses (an
+    allowlisted URL is deliberately left unpinned — see that function's
+    docstring). The hardcoded local Ollama default is never pinned either
+    (nothing was validated to pin to; a plain client is used exactly as
+    before).
     """
     base_url = provider.get("base_url") or _DEFAULT_PROVIDER["base_url"]
     model = provider.get("model", _DEFAULT_PROVIDER["model"])
@@ -123,7 +135,9 @@ async def call_llm(system: str, user: str, provider: dict[str, Any]) -> str:
 
     if base_url != _DEFAULT_PROVIDER["base_url"]:
         try:
-            client, base_url = await guarded_async_client(base_url, timeout=timeout)
+            client, base_url = await guarded_provider_client(
+                base_url, allowlist=get_settings().provider_url_allowlist, timeout=timeout
+            )
         except SSRFValidationError:
             raise
     else:
