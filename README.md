@@ -145,6 +145,23 @@ cp .env.example .env
 
 ---
 
+### 方式一点五：只起「技能子系统」（Windows，裸机）
+
+只想跑技能子系统（record → distill → execute → correct，ADR-0003）的人用面 —— 不需要
+完整采集看板/前端，也不想碰生产 `.env` / 数据库，用独立脚本单独起停：
+
+```powershell
+.\scripts\skill-dev-up.ps1                    # headed CDP Chrome + 后端（独立 dev SQLite，不碰生产库）
+.\scripts\skill-dev-up.ps1 -WithFrontend       # 额外起前端 dock（默认不起）
+.\scripts\skill-dev-up.ps1 -AllowLocalProvider # 技能执行腿允许调本地 Ollama（PROVIDER_URL_ALLOWLIST，见 commit f02a8b6）
+.\scripts\skill-dev-up.ps1 -Down               # 放倒 —— 按记录的 PID 精确识别，不误杀其它 Chrome/进程
+```
+
+前置检查（uv / Ollama / 模型 / Chrome）、参数说明、幂等行为见脚本头部注释：
+`Get-Help .\scripts\skill-dev-up.ps1 -Full`。
+
+---
+
 ### 方式二：Docker
 
 **前置要求**：Docker & Docker Compose
@@ -394,7 +411,8 @@ AI 处理（可选）— Claude · OpenAI · DeepSeek · Kimi · GLM · Ollama
 │   ├── components/      # 公共组件
 │   └── api/             # API 客户端
 ├── scripts/
-│   └── install-agent.sh # 一键安装 Agent
+│   ├── install-agent.sh   # 一键安装 Agent
+│   └── skill-dev-up.ps1   # 技能子系统开发环境一键起停（Windows）
 ├── docker-compose.yml
 ├── start.sh             # 原生 Shell 启动脚本
 └── .env.example
