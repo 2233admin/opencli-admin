@@ -90,6 +90,15 @@ def test_resolve_ref_missing_returns_none():
     assert resolve_ref([], "1") is None
 
 
+def test_resolve_ref_accepts_rendered_hash_prefix():
+    # prompt._render_snapshot shows refs as "#<ref>"; a model echoing that
+    # token verbatim must still resolve (regression: every click died as
+    # stale/unknown ref '#0').
+    assert resolve_ref(SNAP, "#1")["role"] == "button"
+    assert resolve_ref(SNAP, "#99") is None  # normalized but still unknown
+    assert resolve_ref(SNAP, "##1") is None  # only one display prefix stripped
+
+
 # ── Happy path per verb (acceptance #5) ────────────────────────────────────────
 
 async def test_navigate_happy():
@@ -106,6 +115,17 @@ async def test_click_happy():
     assert result.ok is True
     assert result.verb == "click"
     page.click.assert_awaited_once_with("1")
+
+
+async def test_click_hash_prefixed_ref_normalized_to_bare_ref():
+    # The page lookup is by bare data-skill-ref — "#1" must reach the page as
+    # "1", and the caller's action dict must not be mutated.
+    page = _fake_page()
+    action = {"verb": "click", "ref": "#1"}
+    result = await execute_action(page, SNAP, action)
+    assert result.ok is True
+    page.click.assert_awaited_once_with("1")
+    assert action["ref"] == "#1"
 
 
 async def test_type_with_submit_passes_submit_true():

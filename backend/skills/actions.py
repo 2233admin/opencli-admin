@@ -119,6 +119,21 @@ def validate_action(action: dict[str, Any]) -> str | None:
     return None
 
 
+def _normalize_ref(ref: Any) -> Any:
+    """Strip the ``#`` display prefix a model may echo back as part of a ref.
+
+    ``prompt._render_snapshot`` shows each element to the model as
+    ``#<ref> <role> "<name>"`` while the snapshot's own refs (and the
+    ``data-skill-ref`` DOM attributes) are bare ints/digit strings — a model
+    that faithfully copies the rendered token sends ``"#0"`` and every click
+    dies as ``stale/unknown ref`` before touching the page. Accept that echo
+    at the action boundary instead of failing it.
+    """
+    if isinstance(ref, str) and ref.startswith("#"):
+        return ref[1:]
+    return ref
+
+
 def resolve_ref(
     snapshot: list[dict[str, Any]], ref: Any
 ) -> dict[str, Any] | None:
@@ -126,15 +141,16 @@ def resolve_ref(
 
     Pure helper. Compares as strings to tolerate int/str refs (the snapshot's
     ``ref`` is an int from ``perception.project_snapshot``; the model may emit it
-    as a string). "Resolution" is membership/validity in the *current* snapshot;
-    the actual element lookup on the page is done by ``SkillPage`` by ref (it set
-    ``data-skill-ref`` during perception). A ``None`` return means the ref is
-    stale/unknown — the caller turns that into a structured failure *before*
-    touching the page.
+    as a string, with or without the rendered ``#`` prefix — see
+    :func:`_normalize_ref`). "Resolution" is membership/validity in the *current*
+    snapshot; the actual element lookup on the page is done by ``SkillPage`` by
+    ref (it set ``data-skill-ref`` during perception). A ``None`` return means
+    the ref is stale/unknown — the caller turns that into a structured failure
+    *before* touching the page.
     """
     if not snapshot:
         return None
-    target = str(ref)
+    target = str(_normalize_ref(ref))
     for entry in snapshot:
         if isinstance(entry, dict) and str(entry.get("ref")) == target:
             return entry
@@ -160,6 +176,12 @@ async def execute_action(
     err = validate_action(action)
     if err is not None:
         return ActionResult.failure(action.get("verb"), err)
+
+    # Normalize a model-echoed "#N" ref once, up front, so both the snapshot
+    # membership check below and the SkillPage data-skill-ref lookup see the
+    # bare ref. Copy — never mutate the caller's action dict (it is traced).
+    if "ref" in action:
+        action = {**action, "ref": _normalize_ref(action["ref"])}
 
     verb = action["verb"]
 
