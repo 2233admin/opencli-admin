@@ -35,11 +35,6 @@ from dataclasses import asdict, dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
 from backend.skills import actions
-from backend.skills.toolcall import (
-    _is_xml_tool_model,
-    _parse_tool_use,
-    _safe_json,
-)
 from backend.skills.prompt import (
     SKILL_TOOLS,
     SKILL_TOOLS_TEXT,
@@ -50,6 +45,11 @@ from backend.skills.risk import (
     classify_action,
     should_run,
 )
+from backend.skills.toolcall import (
+    _is_xml_tool_model,
+    _parse_tool_use,
+    _safe_json,
+)
 
 # Max steps before the loop gives up without a `done` (ADR-0003 D6: "~20").
 MAX_STEPS = 20
@@ -58,6 +58,15 @@ MAX_STEPS = 20
 # cheap model has ~32k ctx and each step re-sends the full snapshot, so the
 # running history is bounded to the most recent turns to avoid blow-up.
 _TRANSCRIPT_WINDOW = 12
+
+# Provider compatibility: the first step has only the system message (the page
+# snapshot lives inside it), and an assistant turn that carried only a tool call
+# has empty content. OpenAI / Ollama accept both; some providers (MiniMax) reject
+# a request with no non-empty user turn or an empty-content message as
+# "chat content is empty". These neutral placeholders are no-ops for the tolerant
+# providers and unblock the strict ones without changing what the model is asked.
+_FIRST_TURN_PROMPT = "Perceive the page above and issue exactly one tool call for this step."
+_ASSISTANT_ACTED = "(issued the tool call above)"
 
 
 @runtime_checkable
@@ -275,6 +284,11 @@ async def run_skill_loop(
         if xml:
             system += SKILL_TOOLS_TEXT
         messages = [{"role": "system", "content": system}, *transcript]
+        if not transcript:
+            # First step: only the system message exists. Guarantee a non-empty
+            # user turn so strict providers (MiniMax) don't 400 "chat content is
+            # empty"; harmless to tolerant ones.
+            messages.append({"role": "user", "content": _FIRST_TURN_PROMPT})
 
         # 3. ask the model for one action
         started = time.monotonic()
@@ -450,7 +464,7 @@ async def run_skill_loop(
 # ── transcript / summary helpers ───────────────────────────────────────────────
 def _push(transcript: list[dict[str, Any]], assistant: str, user: str) -> None:
     """Append an assistant turn + its tool-result user turn; keep it bounded."""
-    transcript.append({"role": "assistant", "content": assistant or ""})
+    transcript.append({"role": "assistant", "content": assistant or _ASSISTANT_ACTED})
     transcript.append({"role": "user", "content": user})
     # Bound the running history (window counts assistant+user pairs).
     if len(transcript) > _TRANSCRIPT_WINDOW * 2:
