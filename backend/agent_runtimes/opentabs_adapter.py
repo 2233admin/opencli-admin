@@ -35,6 +35,7 @@ from backend.agent_runtimes.base import (
     event_tool_result,
 )
 from backend.agent_runtimes.registry import register_runtime
+from backend.security.url_guard import guarded_async_client
 
 _DEFAULT_BASE_URL = "http://127.0.0.1:9515"
 _DEFAULT_TIMEOUT_SECONDS = 60.0
@@ -76,7 +77,8 @@ class OpenTabsRuntimeAdapter(RuntimeAdapter):
     async def health(self) -> bool:
         config: dict[str, Any] = {}
         try:
-            async with self._client(config) as client:
+            client, _validated_base_url = await self._client(config)
+            async with client:
                 response = await client.get("/health", headers=self._headers(config))
             return response.status_code == 200 and _read_json(response).get("status") == "ok"
         except Exception:
@@ -128,7 +130,8 @@ class OpenTabsRuntimeAdapter(RuntimeAdapter):
             args["plugin"] = plugin
 
         yield event_tool_call(task.task_id, "opentabs_list_tools", args=args)
-        async with self._client(task.config) as client:
+        client, _validated_base_url = await self._client(task.config)
+        async with client:
             response = await client.get(
                 "/tools",
                 params=({"plugin": plugin} if plugin else None),
@@ -144,7 +147,8 @@ class OpenTabsRuntimeAdapter(RuntimeAdapter):
 
     async def _invoke_health(self, task: AgentTask) -> AsyncIterator[dict[str, Any]]:
         yield event_tool_call(task.task_id, "opentabs_health", args={})
-        async with self._client(task.config) as client:
+        client, _validated_base_url = await self._client(task.config)
+        async with client:
             response = await client.get("/health", headers=self._headers(task.config))
         payload = _checked_json_response(response, "/health")
         if not isinstance(payload, dict):
@@ -163,7 +167,8 @@ class OpenTabsRuntimeAdapter(RuntimeAdapter):
             return
 
         yield event_tool_call(task.task_id, tool_name, args=arguments)
-        async with self._client(task.config) as client:
+        client, _validated_base_url = await self._client(task.config)
+        async with client:
             response = await client.post(
                 f"/tools/{tool_name}/call",
                 json={"arguments": arguments},
@@ -187,16 +192,28 @@ class OpenTabsRuntimeAdapter(RuntimeAdapter):
             return
         yield event_done(task.task_id, result={"tool": tool_name, "result": result})
 
-    def _client(self, config: dict[str, Any]) -> httpx.AsyncClient:
-        kwargs: dict[str, Any] = {
-            "base_url": _base_url(config),
-            "timeout": _timeout_seconds(config),
-            "trust_env": False,
-        }
-        transport = config.get("_transport")
-        if transport is not None:
-            kwargs["transport"] = transport
-        return httpx.AsyncClient(**kwargs)
+    async def _client(self, config: dict[str, Any]) -> tuple[httpx.AsyncClient, str]:
+        """Build an SSRF-guarded client pinned to OpenTabs' ``base_url``.
+
+        ``base_url`` may come from user/DB-supplied ``config`` (see
+        :func:`_base_url`) — a plain ``httpx.AsyncClient(base_url=...)`` here
+        would let a hostile ``base_url`` make this adapter attach the
+        ``OPENTABS_SECRET``/``config["secret"]`` Bearer header (see
+        :meth:`_headers`) to a request against an internal/metadata host.
+        ``guarded_async_client`` validates the URL (rejecting private/
+        loopback/link-local/metadata targets) and pins the connection to the
+        validated IP(s) (closing the DNS-rebinding TOCTOU window) before any
+        caller can build headers or send a request — so the secret is never
+        sent to an unvalidated host.
+        """
+        base_url = _base_url(config)
+        client, validated_base_url = await guarded_async_client(
+            base_url,
+            base_url=base_url,
+            timeout=_timeout_seconds(config),
+            trust_env=False,
+        )
+        return client, validated_base_url
 
     def _headers(self, config: dict[str, Any]) -> dict[str, str]:
         secret = _read_optional_string(config.get("secret")) or os.environ.get("OPENTABS_SECRET", "")

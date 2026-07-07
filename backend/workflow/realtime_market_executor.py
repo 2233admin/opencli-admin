@@ -10,6 +10,8 @@ import urllib.request
 from datetime import UTC, datetime
 from typing import Any
 
+from backend.security.url_guard import SSRFValidationError, validate_public_url
+
 OKX_MARKET_TICKER_SNAPSHOT_EXECUTOR = "okx_market_ticker_snapshot"
 OKX_MARKET_TICKER_URL = "https://www.okx.com/api/v5/market/ticker"
 
@@ -23,9 +25,23 @@ def execute_okx_market_ticker_snapshot(params: dict[str, Any]) -> dict[str, Any]
 
     inst_id = _read_string(params.get("instId")) or _read_string(params.get("inst_id"))
     inst_id = inst_id or "ETH-USDT-SWAP"
+    # proxyUrl/proxy_url is caller-supplied (untrusted) — urllib's ProxyHandler
+    # is a separate connection stack from httpx/url_guard's own SSRF pinning,
+    # so without an explicit check here a hostile proxy_url could make this
+    # process's first TCP hop land on an internal/loopback/metadata host
+    # (e.g. 127.0.0.1:6379, an internal fleet peer) regardless of the fixed,
+    # trusted OKX destination URL below. Validate (and reject) it before it
+    # ever reaches _build_opener. OKX_HTTP_PROXY/HTTPS_PROXY/https_proxy are
+    # operator-set env vars (not attacker input) and legitimately point at
+    # private-range corporate proxies, so they intentionally skip this check.
+    user_proxy_url = _read_string(params.get("proxyUrl")) or _read_string(params.get("proxy_url"))
+    if user_proxy_url:
+        try:
+            validate_public_url(user_proxy_url)
+        except SSRFValidationError as exc:
+            raise RealtimeMarketExecutionError(f"proxyUrl rejected: {exc}") from exc
     proxy_url = (
-        _read_string(params.get("proxyUrl"))
-        or _read_string(params.get("proxy_url"))
+        user_proxy_url
         or _read_string(os.environ.get("OKX_HTTP_PROXY"))
         or _read_string(os.environ.get("HTTPS_PROXY"))
         or _read_string(os.environ.get("https_proxy"))

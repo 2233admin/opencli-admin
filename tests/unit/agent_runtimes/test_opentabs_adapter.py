@@ -21,6 +21,32 @@ def _json_response(status_code: int, payload) -> httpx.Response:
     return httpx.Response(status_code, json=payload)
 
 
+def _patch_guarded_client(monkeypatch, handler):
+    """Replace the SSRF-guarded client factory with one wired to a MockTransport.
+
+    ``OpenTabsRuntimeAdapter._client`` now routes every request through
+    ``backend.security.url_guard.guarded_async_client``, which performs real
+    DNS/SSRF validation and no longer accepts a caller-injected transport (the
+    old ``config["_transport"]`` seam). Tests don't want to hit real DNS for a
+    fake host like ``opentabs.local``, so patch the imported
+    ``guarded_async_client`` name in the adapter module directly: it keeps the
+    same ``(client, validated_url)`` return shape ``_client`` unpacks, but
+    swaps in the test's ``MockTransport`` instead of the pinned SSRF-safe one.
+    """
+
+    async def fake_guarded_async_client(url, **client_kwargs):
+        client_kwargs.pop("timeout", None)
+        client_kwargs.pop("trust_env", None)
+        base_url = client_kwargs.pop("base_url", url)
+        client = httpx.AsyncClient(transport=_transport(handler), base_url=base_url)
+        return client, url
+
+    monkeypatch.setattr(
+        "backend.agent_runtimes.opentabs_adapter.guarded_async_client",
+        fake_guarded_async_client,
+    )
+
+
 async def test_opentabs_runtime_registered_by_default():
     assert "opentabs" in list_runtime_types()
     assert get_runtime("opentabs").runtime_type == "opentabs"
@@ -36,7 +62,7 @@ def test_validate_config_rejects_bad_values():
     assert "'timeout_seconds' must be a positive number when provided" in errors
 
 
-async def test_list_tools_calls_opentabs_tools_endpoint():
+async def test_list_tools_calls_opentabs_tools_endpoint(monkeypatch):
     seen: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -56,6 +82,7 @@ async def test_list_tools_calls_opentabs_tools_endpoint():
             ],
         )
 
+    _patch_guarded_client(monkeypatch, handler)
     adapter = OpenTabsRuntimeAdapter()
     task = AgentTask(
         task_id="t-list",
@@ -64,7 +91,6 @@ async def test_list_tools_calls_opentabs_tools_endpoint():
         config={
             "base_url": "http://opentabs.local",
             "secret": "secret-1",
-            "_transport": _transport(handler),
         },
     )
 
@@ -76,7 +102,7 @@ async def test_list_tools_calls_opentabs_tools_endpoint():
     assert events[-1]["result"]["tools"][0]["name"] == "slack__send_message"
 
 
-async def test_call_tool_posts_open_tabs_arguments():
+async def test_call_tool_posts_open_tabs_arguments(monkeypatch):
     seen: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -91,12 +117,13 @@ async def test_call_tool_posts_open_tabs_arguments():
             },
         )
 
+    _patch_guarded_client(monkeypatch, handler)
     adapter = OpenTabsRuntimeAdapter()
     task = AgentTask(
         task_id="t-call",
         workflow="tool.call",
         input={"tool": "slack__send_message", "arguments": {"channel": "C1", "text": "hello"}},
-        config={"base_url": "http://opentabs.local", "_transport": _transport(handler)},
+        config={"base_url": "http://opentabs.local"},
     )
 
     events = [event async for event in adapter.invoke(task)]
@@ -107,18 +134,19 @@ async def test_call_tool_posts_open_tabs_arguments():
     assert events[-1]["result"]["tool"] == "slack__send_message"
 
 
-async def test_workflow_can_be_tool_name_for_direct_calls():
+async def test_workflow_can_be_tool_name_for_direct_calls(monkeypatch):
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/tools/browser_list_tabs/call"
         assert request.read() == b'{"arguments":{"windowId":7}}'
         return _json_response(200, {"content": [{"type": "text", "text": "[]"}]})
 
+    _patch_guarded_client(monkeypatch, handler)
     adapter = OpenTabsRuntimeAdapter()
     task = AgentTask(
         task_id="t-direct",
         workflow="browser_list_tabs",
         input={"windowId": 7},
-        config={"base_url": "http://opentabs.local", "_transport": _transport(handler)},
+        config={"base_url": "http://opentabs.local"},
     )
 
     events = [event async for event in adapter.invoke(task)]
@@ -127,7 +155,7 @@ async def test_workflow_can_be_tool_name_for_direct_calls():
     assert events[-1]["result"]["tool"] == "browser_list_tabs"
 
 
-async def test_tool_is_error_becomes_terminal_runtime_error():
+async def test_tool_is_error_becomes_terminal_runtime_error(monkeypatch):
     def handler(request: httpx.Request) -> httpx.Response:
         return _json_response(
             422,
@@ -137,12 +165,13 @@ async def test_tool_is_error_becomes_terminal_runtime_error():
             },
         )
 
+    _patch_guarded_client(monkeypatch, handler)
     adapter = OpenTabsRuntimeAdapter()
     task = AgentTask(
         task_id="t-error",
         workflow="tool.call",
         input={"tool": "slack__send_message", "arguments": {}},
-        config={"base_url": "http://opentabs.local", "_transport": _transport(handler)},
+        config={"base_url": "http://opentabs.local"},
     )
 
     events = [event async for event in adapter.invoke(task)]
@@ -158,14 +187,7 @@ async def test_health_uses_open_tabs_health_endpoint(monkeypatch):
         assert request.url.path == "/health"
         return _json_response(200, {"status": "ok", "extensionConnected": True})
 
+    _patch_guarded_client(monkeypatch, handler)
     adapter = OpenTabsRuntimeAdapter()
-    monkeypatch.setattr(
-        adapter,
-        "_client",
-        lambda config: httpx.AsyncClient(
-            base_url="http://opentabs.local",
-            transport=_transport(handler),
-        ),
-    )
 
     assert await adapter.health() is True
