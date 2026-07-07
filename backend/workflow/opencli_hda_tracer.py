@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -84,6 +85,25 @@ class _StoredWorkflowRun:
 
 
 _RUNS: dict[str, _StoredWorkflowRun] = {}
+
+# Per-run_id locks so concurrent requests against the same workflow run
+# serialize their read-modify-write of stored run state/event rows instead
+# of racing (see continue_workflow_run_with_source_outputs). The registry
+# itself is guarded by _RUN_LOCKS_GUARD to avoid a create-or-get race on the
+# dict. Note: this registry is never pruned, so long-lived processes that
+# see many distinct run_ids will accumulate Lock objects (minor memory
+# growth, not a correctness issue).
+_RUN_LOCKS: dict[str, asyncio.Lock] = {}
+_RUN_LOCKS_GUARD = asyncio.Lock()
+
+
+async def _get_run_lock(run_id: str) -> asyncio.Lock:
+    async with _RUN_LOCKS_GUARD:
+        lock = _RUN_LOCKS.get(run_id)
+        if lock is None:
+            lock = asyncio.Lock()
+            _RUN_LOCKS[run_id] = lock
+        return lock
 
 
 def build_opencli_hda_trace(
@@ -379,7 +399,11 @@ async def start_workflow_run(
             binding_input = _read_dict(binding.get("input"))
             emitter.emit(node, "started", message="TurboPush publish binding started")
             try:
-                result = execute_turbopush_publish(binding_input)
+                # execute_turbopush_publish uses a synchronous httpx.Client
+                # with a 600s timeout; run it off the event loop thread so a
+                # slow/hung TurboPush endpoint can't freeze the single-worker
+                # server for the whole timeout.
+                result = await asyncio.to_thread(execute_turbopush_publish, binding_input)
             except TurboPushPublishError as exc:
                 reason = WorkflowRunBlockReason(
                     code=exc.code,
@@ -680,27 +704,35 @@ async def continue_workflow_run_with_source_outputs(
     *,
     session: AsyncSession | None = None,
 ) -> WorkflowRunProjection | None:
-    stored = _RUNS.get(run_id) or await _load_workflow_run(run_id, session=session)
-    if stored is None:
-        return None
+    # Hold the per-run_id lock across the read of prior stored state through
+    # the write in _store_workflow_run (invoked inside start_workflow_run).
+    # Without this, two concurrent continuation requests for the same run_id
+    # both read the same prior event list, then each does a delete+reinsert
+    # of WorkflowRunEventRows — last writer wins and the other request's
+    # events are silently dropped.
+    lock = await _get_run_lock(run_id)
+    async with lock:
+        stored = _RUNS.get(run_id) or await _load_workflow_run(run_id, session=session)
+        if stored is None:
+            return None
 
-    merged_outputs = _merge_source_outputs(
-        stored.request.sourceOutputs,
-        body.sourceOutputs,
-    )
-    request = stored.request.model_copy(
-        update={
-            "runId": run_id,
-            "traceId": stored.projection.traceId,
-            "sourceOutputs": merged_outputs,
-        },
-        deep=True,
-    )
-    return await start_workflow_run(
-        request,
-        session=session,
-        existing_events=stored.events,
-    )
+        merged_outputs = _merge_source_outputs(
+            stored.request.sourceOutputs,
+            body.sourceOutputs,
+        )
+        request = stored.request.model_copy(
+            update={
+                "runId": run_id,
+                "traceId": stored.projection.traceId,
+                "sourceOutputs": merged_outputs,
+            },
+            deep=True,
+        )
+        return await start_workflow_run(
+            request,
+            session=session,
+            existing_events=stored.events,
+        )
 
 
 async def _store_workflow_run(
@@ -1498,7 +1530,7 @@ async def _execute_native_node(
     if binding_id == EXTERNAL_TOOL_BINDING_ID:
         binding = _read_dict(node.runtime.get("binding"))
         binding_input = _read_dict(binding.get("input"))
-        output_items = _execute_external_tool_capability(
+        output_items = await _execute_external_tool_capability(
             node,
             input_items,
             run_id=run_id,
@@ -1521,7 +1553,7 @@ async def _execute_native_node(
     return ({"bindingId": binding_id or "", "lineage": _lineage_pointer(node)}, [])
 
 
-def _execute_external_tool_capability(
+async def _execute_external_tool_capability(
     node: CompiledWorkflowNode,
     input_items: list[dict[str, Any]],
     *,
@@ -1532,7 +1564,7 @@ def _execute_external_tool_capability(
         binding_input.get("executorMode") == OKX_MARKET_TICKER_SNAPSHOT_EXECUTOR
         and binding_input.get("toolCapabilityId") == "tool.realtime.stream.subscribe"
     ):
-        output = _execute_okx_market_tool(binding_input)
+        output = await _execute_okx_market_tool(binding_input)
         return [_external_tool_output(node, output, input_items, run_id, 0, binding_input)]
 
     fixture_outputs = _read_dict_list(binding_input.get("fixtureOutputs"))
@@ -1548,13 +1580,16 @@ def _execute_external_tool_capability(
     ]
 
 
-def _execute_okx_market_tool(binding_input: dict[str, Any]) -> dict[str, Any]:
+async def _execute_okx_market_tool(binding_input: dict[str, Any]) -> dict[str, Any]:
     params = {
         **_read_dict(binding_input.get("executorParams")),
         **_read_dict(binding_input.get("toolParams")),
     }
     try:
-        return execute_okx_market_ticker_snapshot(params)
+        # execute_okx_market_ticker_snapshot is a blocking urllib call; run
+        # it off the event loop thread so it can't stall the single-worker
+        # server for other in-flight requests.
+        return await asyncio.to_thread(execute_okx_market_ticker_snapshot, params)
     except RealtimeMarketExecutionError as exc:
         return {
             "schema": "event.market.ticker.error.v1",
