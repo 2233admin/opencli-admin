@@ -58,6 +58,13 @@ class Settings(BaseSettings):
     def cli_allowed_binaries(self) -> list[str]:
         return [b.strip() for b in self.cli_channel_allowed_binaries.split(",") if b.strip()]
 
+    # MiniFlow runtime confinement. MiniFlow workflow files are imported and
+    # executed (spec.loader.exec_module) on the edge host, so a stolen fleet
+    # token must not be able to run arbitrary Python by pointing the runtime at
+    # any path. Only workflow/cwd/audit paths under this root are loadable.
+    # Empty (default) = deny all (fail closed), mirroring cli_channel_allowed_binaries.
+    miniflow_workflow_root: str = ""
+
     # Email
     smtp_host: str = ""
     smtp_port: int = 587

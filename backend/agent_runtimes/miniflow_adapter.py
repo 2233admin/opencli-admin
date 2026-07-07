@@ -22,7 +22,7 @@ from backend.agent_runtimes.base import (
 )
 from backend.agent_runtimes.registry import register_runtime
 from backend.miniflow.audit import AuditLog
-from backend.miniflow.loader import load_workflow_file
+from backend.miniflow.loader import confine_to_workflow_root, load_workflow_file
 from backend.miniflow.model import Outcome
 from backend.miniflow.runner import RunResult, run_workflow
 
@@ -187,9 +187,21 @@ def _build_run_request(task: AgentTask) -> _RunRequest:
     audit_ref = _string(payload.get("audit_log")) or _string(config.get("audit_log"))
     clock = config.get("_clock") if callable(config.get("_clock")) else time.monotonic
     sleep = config.get("_sleep") if callable(config.get("_sleep")) else time.sleep
+    # Confine both to the MiniFlow allowlist root: workflow_path is executed
+    # by loader.load_workflow_file (RCE surface) and audit_log is opened for
+    # append with parents auto-created (arbitrary-file-write surface). Both
+    # are attacker-influenced via task.input/task.config.
+    workflow_path = confine_to_workflow_root(
+        _resolve_path(workflow_ref, cwd), label="workflow_path"
+    )
+    audit_log = (
+        confine_to_workflow_root(_resolve_path(audit_ref, cwd), label="audit_log")
+        if audit_ref
+        else None
+    )
     return _RunRequest(
-        workflow_path=_resolve_path(workflow_ref, cwd),
-        audit_log=_resolve_path(audit_ref, cwd) if audit_ref else None,
+        workflow_path=workflow_path,
+        audit_log=audit_log,
         max_attempts=_positive_int(payload, config, "max_attempts", _DEFAULT_MAX_ATTEMPTS),
         breaker_threshold=_positive_int(
             payload, config, "breaker_threshold", _DEFAULT_BREAKER_THRESHOLD
@@ -202,7 +214,13 @@ def _build_run_request(task: AgentTask) -> _RunRequest:
 
 def _resolve_cwd(raw: object) -> Path:
     cwd = _string(raw)
-    return Path(cwd).resolve() if cwd else Path.cwd()
+    if not cwd:
+        return Path.cwd()
+    # An explicit cwd is attacker-influenced (task.config["cwd"]) and is used
+    # as the base for resolving relative workflow_path/audit_log values, so it
+    # must be confined too — otherwise a rooted-looking relative path could
+    # still land outside the root via a malicious cwd.
+    return confine_to_workflow_root(cwd, label="cwd")
 
 
 def _resolve_path(raw: str, cwd: Path) -> Path:

@@ -144,7 +144,8 @@ def test_audit_log_is_append_only(tmp_path):
     assert json.loads(lines[1])["step"] == "step"
 
 
-def test_loader_accepts_upstream_miniflow_import_convention(tmp_path):
+def test_loader_accepts_upstream_miniflow_import_convention(tmp_path, monkeypatch):
+    monkeypatch.setenv("MINIFLOW_WORKFLOW_ROOT", str(tmp_path))
     path = tmp_path / "wf.py"
     path.write_text(
         """
