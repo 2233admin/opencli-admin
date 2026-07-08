@@ -7,6 +7,7 @@ from backend.models.provider import ModelProvider
 from backend.models.record import CollectedRecord
 from backend.models.schedule import CronSchedule
 from backend.models.source import DataSource
+from backend.models.tag import Tag, TagBinding
 from backend.models.task import CollectionTask, TaskRun, TaskRunEvent
 from backend.models.worker import WorkerNode
 
@@ -27,4 +28,6 @@ __all__ = [
     "NotificationRule",
     "NotificationLog",
     "WorkerNode",
+    "Tag",
+    "TagBinding",
 ]

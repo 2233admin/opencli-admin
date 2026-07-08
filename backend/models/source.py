@@ -28,6 +28,13 @@ class DataSource(TimestampMixin):
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     tags: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
 
+    # Public exposure switch: only sources with public=True may surface content
+    # via the public REST/RSS endpoints (backend/services/public_content_service.py).
+    public: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Fallback taxonomy category (see backend/taxonomy.py) applied to records
+    # from this source when AI enrichment doesn't produce/override one.
+    default_category: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+
     # Relationships
     tasks: Mapped[list["CollectionTask"]] = relationship(
         "CollectionTask", back_populates="source", cascade="all, delete-orphan"
