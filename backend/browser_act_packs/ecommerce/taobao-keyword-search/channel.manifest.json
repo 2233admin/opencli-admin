@@ -1,0 +1,15 @@
+{
+  "domain": "ecommerce",
+  "capability": "taobao-keyword-search",
+  "param_schema": [
+    {"name": "keyword", "required": true},
+    {"name": "sort", "required": false, "default": ""}
+  ],
+  "steps": [
+    {"op": "navigate", "url_template": "https://s.taobao.com/search?q={keyword}&page={page}&ie=utf8"},
+    {"op": "wait", "wait_mode": "stable"},
+    {"op": "eval_script", "script": "scripts/search-products.py", "args": ["{keyword}", "--page", "{page}", "--sort", "{sort}"]}
+  ],
+  "pagination": {"mode": "url_page", "url_template": "https://s.taobao.com/search?q={keyword}&page={page}&ie=utf8", "page_param": "page", "stop_when": "result_count < 10"},
+  "success": {"min_count": 1, "required_field": "itemId"}
+}

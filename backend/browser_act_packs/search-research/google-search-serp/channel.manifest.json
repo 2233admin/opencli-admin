@@ -1,0 +1,17 @@
+{
+  "domain": "search-research",
+  "capability": "google-search-serp",
+  "param_schema": [
+    {"name": "query", "required": true},
+    {"name": "num", "required": false, "default": "10"},
+    {"name": "lang", "required": false, "default": ""},
+    {"name": "country", "required": false, "default": ""}
+  ],
+  "steps": [
+    {"op": "navigate", "url_template": "https://www.google.com/search?q={query}&num={num}&hl={lang}&gl={country}"},
+    {"op": "wait", "wait_mode": "stable"},
+    {"op": "eval_script", "script": "scripts/serp-extract.py", "args": []}
+  ],
+  "pagination": {"mode": "none"},
+  "success": {"min_count": 1, "required_field": "organicResults"}
+}
