@@ -37,7 +37,7 @@ async def run_pipeline(
     """Execute the full collection pipeline. Each write step uses its own
     short-lived session so no write lock is held during long-running I/O."""
     from backend.database import AsyncSessionLocal
-    from backend.pipeline import ai_processor, collector, notifier_dispatch, normalizer, storer
+    from backend.pipeline import ai_processor, classification, collector, notifier_dispatch, normalizer, storer
 
     started = datetime.now(timezone.utc)
     params = parameters or {}
@@ -208,6 +208,19 @@ async def run_pipeline(
         logger.debug("[task:%s] step4/ai skipped | no ai_config", task_id)
         if run_id:
             await events.emit(run_id, "ai_process", "跳过 AI 处理（未配置）")
+
+    # Step 4b: Classification (category + subtags) — always runs when there are
+    # new_records, regardless of whether AI enrichment ran, succeeded, failed, or
+    # was skipped/disabled. Non-fatal: never raises, never changes record.status,
+    # never blocks the rest of the pipeline (GOAL-5.md 架构决策 #5 / PR-C).
+    if new_records:
+        try:
+            async with AsyncSessionLocal() as session:
+                await classification.classify_records(session, new_records, source)
+                await session.commit()
+            logger.info("[task:%s] step4b/classify done | records=%d", task_id, len(new_records))
+        except Exception as exc:
+            logger.warning("[task:%s] step4b/classify failed | %s", task_id, exc)
 
     # Step 5: Notify
     if enable_notifications and new_records:
