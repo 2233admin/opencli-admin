@@ -11,7 +11,13 @@ from urllib.parse import urlparse
 
 import httpx
 
-from backend.llm.base import ConnectionTestResult, LlmAdapterError, ProviderAdapter, redact_secret
+from backend.llm.base import (
+    ConnectionTestResult,
+    LlmAdapterError,
+    ProviderAdapter,
+    classify_retryable,
+    redact_secret,
+)
 from backend.security.url_guard import (
     PinnedAsyncHTTPTransport,
     SSRFValidationError,
@@ -120,7 +126,10 @@ class OpenAICompatAdapter(ProviderAdapter):
         except LlmAdapterError:
             raise
         except Exception as exc:
-            raise LlmAdapterError(self._sanitize(f"chat completion failed: {exc}")) from exc
+            raise LlmAdapterError(
+                self._sanitize(f"chat completion failed: {exc}"),
+                retryable=classify_retryable(exc),
+            ) from exc
         return response.choices[0].message.content or ""
 
     async def list_models(self) -> list[str]:
@@ -130,7 +139,10 @@ class OpenAICompatAdapter(ProviderAdapter):
         except LlmAdapterError:
             raise
         except Exception as exc:
-            raise LlmAdapterError(self._sanitize(f"model discovery failed: {exc}")) from exc
+            raise LlmAdapterError(
+                self._sanitize(f"model discovery failed: {exc}"),
+                retryable=classify_retryable(exc),
+            ) from exc
         return [model.id for model in (page.data or [])]
 
     async def test_connection(self) -> ConnectionTestResult:

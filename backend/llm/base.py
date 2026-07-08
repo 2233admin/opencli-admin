@@ -17,8 +17,13 @@ with no extra marshalling step.
 
 from __future__ import annotations
 
+import asyncio
 from abc import ABC, abstractmethod
 from typing import Any, TypedDict
+
+import anthropic
+import httpx
+import openai
 
 
 def redact_secret(message: str, secret: str | None) -> str:
@@ -49,7 +54,84 @@ class LlmAdapterError(Exception):
     ``_sanitize_error`` helper). Treat a message containing a raw key as a
     bug in the adapter that raised it, not something this class can enforce
     on its own.
+
+    ``retryable`` (GOAL-6 PR-D, decision #7) tells
+    :class:`~backend.llm.resolver.ProviderResolver` whether this failure is
+    connection-level (connect error / timeout / 5xx — the provider is
+    unreachable or broken right now, worth failing over to the next
+    candidate) or a business error (4xx — bad key, malformed request; a
+    *configuration* problem no other candidate would fix, so failing over
+    would just mask it). Defaults to ``False`` — an adapter that raises this
+    directly (e.g. :func:`~backend.llm.factory.get_adapter`'s unknown
+    ``provider_type``) is a config error, not a transient one. Concrete
+    adapters set it explicitly via :func:`classify_retryable` when wrapping a
+    caught SDK exception.
     """
+
+    def __init__(self, message: str, *, retryable: bool = False) -> None:
+        super().__init__(message)
+        self.retryable = retryable
+
+
+def classify_retryable(exc: BaseException) -> bool:
+    """Classify a caught SDK/transport exception as connection-level
+    (``True``) vs business-level (``False``) for GOAL-6 decision #7.
+
+    Connection-level (worth a failover): stdlib/httpx transport timeouts and
+    connection failures, and each SDK's own connection/timeout/5xx exception
+    types (``openai.APIConnectionError``/``APITimeoutError``/
+    ``InternalServerError``, the ``anthropic`` equivalents).
+
+    Business-level (never fails over — decision #7: a 4xx is a config
+    error, not a liveness problem): auth/permission/bad-request/not-found/
+    rate-limit/conflict — checked explicitly, and, as a catch-all for any
+    other ``APIStatusError`` subclass this list doesn't name, any exception
+    carrying a ``status_code`` is classified by that code (``>= 500`` ->
+    retryable, else not) before falling back to ``False`` for anything
+    unrecognized.
+    """
+    if isinstance(
+        exc,
+        (
+            asyncio.TimeoutError,
+            httpx.TimeoutException,
+            httpx.NetworkError,
+            openai.APIConnectionError,
+            openai.APITimeoutError,
+            openai.InternalServerError,
+            anthropic.APIConnectionError,
+            anthropic.APITimeoutError,
+            anthropic.InternalServerError,
+        ),
+    ):
+        return True
+
+    if isinstance(
+        exc,
+        (
+            openai.AuthenticationError,
+            openai.PermissionDeniedError,
+            openai.BadRequestError,
+            openai.NotFoundError,
+            openai.UnprocessableEntityError,
+            openai.RateLimitError,
+            openai.ConflictError,
+            anthropic.AuthenticationError,
+            anthropic.PermissionDeniedError,
+            anthropic.BadRequestError,
+            anthropic.NotFoundError,
+            anthropic.UnprocessableEntityError,
+            anthropic.RateLimitError,
+            anthropic.ConflictError,
+        ),
+    ):
+        return False
+
+    status_code = getattr(exc, "status_code", None)
+    if isinstance(status_code, int):
+        return status_code >= 500
+
+    return False
 
 
 class ConnectionTestResult(TypedDict, total=False):

@@ -9,7 +9,13 @@ from urllib.parse import urlparse
 
 import httpx
 
-from backend.llm.base import ConnectionTestResult, LlmAdapterError, ProviderAdapter, redact_secret
+from backend.llm.base import (
+    ConnectionTestResult,
+    LlmAdapterError,
+    ProviderAdapter,
+    classify_retryable,
+    redact_secret,
+)
 from backend.llm.catalog import anthropic_catalog
 from backend.security.url_guard import (
     PinnedAsyncHTTPTransport,
@@ -105,7 +111,10 @@ class AnthropicAdapter(ProviderAdapter):
         except LlmAdapterError:
             raise
         except Exception as exc:
-            raise LlmAdapterError(self._sanitize(f"chat completion failed: {exc}")) from exc
+            raise LlmAdapterError(
+                self._sanitize(f"chat completion failed: {exc}"),
+                retryable=classify_retryable(exc),
+            ) from exc
         return response.content[0].text if response.content else ""
 
     async def list_models(self) -> list[str]:

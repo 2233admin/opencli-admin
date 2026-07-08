@@ -5,13 +5,16 @@ chat/list_models/test_connection dispatch across ``model_providers`` rows.
 PR-A shipped the closed-set vocabulary shared by the data layer
 (``backend.models.provider_model``, ``backend.models.model_default``) and
 their Pydantic schemas, plus the Anthropic model catalog
-(``backend.llm.catalog``). PR-B (this state) adds the runtime itself:
-``ProviderAdapter`` (``backend.llm.base``), ``OpenAICompatAdapter``
-(``backend.llm.openai_compat``, ``provider_type in {"openai", "local"}``),
-``AnthropicAdapter`` (``backend.llm.anthropic``, ``provider_type ==
-"claude"``), and ``factory.get_adapter()`` (``backend.llm.factory``) to
-dispatch a :class:`~backend.models.provider.ModelProvider` row to the right
-one. The failover resolver lands in PR-D.
+(``backend.llm.catalog``). PR-B added the runtime itself: ``ProviderAdapter`` (``backend.llm.base``),
+``OpenAICompatAdapter`` (``backend.llm.openai_compat``, ``provider_type in
+{"openai", "local"}``), ``AnthropicAdapter`` (``backend.llm.anthropic``,
+``provider_type == "claude"``), and ``factory.get_adapter()``
+(``backend.llm.factory``) to dispatch a
+:class:`~backend.models.provider.ModelProvider` row to the right one. PR-D
+(this state) adds the failover resolver: ``ProviderResolver``/
+``ResolverError``/the module-level ``resolver`` singleton
+(``backend.llm.resolver``) — pure logic only, not yet wired into any
+consumption point (that is PR-E's job).
 """
 
 from typing import Any
@@ -20,6 +23,7 @@ from backend.llm.anthropic import AnthropicAdapter
 from backend.llm.base import ConnectionTestResult, LlmAdapterError, ProviderAdapter
 from backend.llm.factory import get_adapter
 from backend.llm.openai_compat import OpenAICompatAdapter
+from backend.llm.resolver import ProviderResolver, ResolverError, resolver
 
 #: provider_models.model_type — v1 ships only "llm"; the column itself stays
 #: a plain string so future embedding/rerank rows don't need a migration.
@@ -61,4 +65,7 @@ __all__ = [
     "OpenAICompatAdapter",
     "AnthropicAdapter",
     "get_adapter",
+    "ProviderResolver",
+    "ResolverError",
+    "resolver",
 ]
