@@ -7,6 +7,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from backend.api.public import public_router
 from backend.api.v1 import v1_router
 from backend.config import get_settings
 from backend.database import run_migrations
@@ -178,6 +179,7 @@ def create_app() -> FastAPI:
 
     # Routes
     app.include_router(v1_router)
+    app.include_router(public_router)
 
     @app.get("/health")
     async def health() -> dict:
