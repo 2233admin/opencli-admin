@@ -30,6 +30,7 @@ def _load_all_channels() -> None:
     """Import all channel modules to trigger registration."""
     from backend.channels import (  # noqa: F401
         api_channel,
+        browser_act_channel,
         cli_channel,
         crawl4ai_channel,
         opencli_channel,

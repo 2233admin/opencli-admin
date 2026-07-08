@@ -283,6 +283,7 @@ async def test_workflow_capabilities_project_real_backend_surfaces(client, monke
     channels = {item["channelType"]: item for item in data["channels"]}
     assert set(channels) == {
         "api",
+        "browser_act",
         "cli",
         "crawl4ai",
         "opencli",
