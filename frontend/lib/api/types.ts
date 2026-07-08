@@ -43,7 +43,7 @@ export interface DataSource {
   id: string
   name: string
   description?: string
-  channel_type: 'opencli' | 'web_scraper' | 'api' | 'rss' | 'cli' | 'skill' | 'crawl4ai'
+  channel_type: 'opencli' | 'web_scraper' | 'api' | 'rss' | 'cli' | 'skill' | 'crawl4ai' | 'browser_act'
   channel_config: Record<string, unknown>
   ai_config?: Record<string, unknown>
   enabled: boolean
@@ -731,4 +731,25 @@ export interface PlanHealthRead {
   error_message?: string | null
   detail: Record<string, unknown>
   recorded_at: string
+}
+
+// ── BrowserAct packs (GOAL-7 PR-E, decision #9) ──────────────────────────────
+// Mirrors backend.api.v1.browser_act.BrowserActPackRead. Read-only vendored
+// pack catalog for the 'browser_act' channel's config preset — never carries
+// any credential/api_key (the BrowserAct API key is a SourceCredential,
+// configured through the existing credential UI, not through pack config).
+export interface BrowserActPack {
+  name: string
+  description: string
+  category: string
+  domain: string
+  capability: string
+  path: string
+  has_manifest: boolean
+  param_schema: Array<{
+    name: string
+    required: boolean
+    default?: string | null
+    enum?: string[] | null
+  }>
 }

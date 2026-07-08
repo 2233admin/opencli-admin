@@ -1,4 +1,4 @@
-"""Unit tests for BrowserActChannel (GOAL-7 PR-C).
+"""Unit tests for BrowserActChannel (GOAL-7 PR-C/PR-E).
 
 Builds a SYNTHETIC pack under tmp_path so these tests never depend on a real
 PR-D manifest or a real browser: the browser-act CLI hop is mocked at
@@ -6,6 +6,11 @@ PR-D manifest or a real browser: the browser-act CLI hop is mocked at
 one layer up), while the SECOND subprocess hop (``run_pack_script``) runs
 for real via ``sys.executable`` -- proving the actual script-execution
 machinery works, not just a mock of it.
+
+The credential tests (PR-E, decision #7) additionally route
+``backend.database.AsyncSessionLocal`` at a per-test in-memory engine (same
+pattern as ``tests/unit/auth/test_manager.py``) so ``AuthManager.store`` /
+``.resolve`` exercise the REAL encrypted round-trip, not a mock.
 """
 
 import json
@@ -13,7 +18,11 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from cryptography.fernet import Fernet
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from backend.auth import crypto
+from backend.auth.manager import AuthManager
 from backend.browser_act import cli as browser_act_cli
 from backend.browser_act.cli import BrowserActResult
 from backend.browser_act.scripts import run_pack_script
@@ -345,3 +354,202 @@ async def test_run_pack_script_injection_safety(tmp_path):
 
     spawn_shell.assert_not_called()
     assert output.strip() == dangerous
+
+
+# ── credentials (GOAL-7 PR-E, decision #7) ────────────────────────────────
+#
+# AuthManager.store()/.resolve() open their own session via
+# backend.database.AsyncSessionLocal -- these tests point that at a per-test
+# in-memory engine (identical pattern to tests/unit/auth/test_manager.py) so
+# the credential round-trip is REAL encryption/decryption, not a mock.
+
+
+def _sessionmaker(db_engine):
+    return async_sessionmaker(db_engine, class_=AsyncSession, expire_on_commit=False)
+
+
+@pytest.mark.asyncio
+async def test_stealth_resolves_stored_key_and_injects_session_env(
+    channel, db_engine, monkeypatch
+):
+    """store() an encrypted key, then collect(mode=stealth, source_id=...)
+    must resolve it and pass it to the browser-act CLI hop's subprocess env
+    under BROWSER_ACT_API_KEY_ENV -- proven by capturing the ``env`` kwarg
+    every ``backend.browser_act.cli._run`` call receives (the CLI wrapper
+    PR-B/PR-C already drive), not by inspecting BrowserActChannel internals."""
+    monkeypatch.setenv(crypto.ENV_KEY, Fernet.generate_key().decode())
+    sm = _sessionmaker(db_engine)
+
+    eval_json = json.dumps([{"id": 1, "title": "Alpha"}])
+    captured_envs: list[dict | None] = []
+
+    async def _run_capture(args, *, timeout=None, env=None):
+        captured_envs.append(env)
+        subcommand = args[2] if len(args) > 2 else None
+        if subcommand == "eval":
+            return BrowserActResult(returncode=0, stdout=eval_json, stderr="")
+        return BrowserActResult(returncode=0, stdout="", stderr="")
+
+    with patch("backend.database.AsyncSessionLocal", sm):
+        await AuthManager().store("src-stealth-1", "browser_act_api_key", "real-secret-key")
+
+        # Prove the round-trip is real: the DB row holds ciphertext, not the
+        # plaintext key, and decrypting it independently recovers the value
+        # AuthManager.resolve() is about to hand the channel.
+        from sqlalchemy import select
+
+        from backend.models.source_credential import SourceCredential
+
+        async with sm() as session:
+            row = (
+                await session.execute(
+                    select(SourceCredential).where(
+                        SourceCredential.source_id == "src-stealth-1"
+                    )
+                )
+            ).scalar_one()
+        assert row.ciphertext != "real-secret-key"
+        assert crypto.decrypt(row.ciphertext) == "real-secret-key"
+
+        with patch("backend.browser_act.cli._run", side_effect=_run_capture):
+            result = await channel.collect(
+                {"pack": PACK_SELECTOR, "params": {"keyword": "shoes"}, "mode": "stealth"},
+                {},
+                source_id="src-stealth-1",
+            )
+
+    assert result.success is True
+    assert any(
+        env and env.get("BROWSER_ACT_API_KEY") == "real-secret-key" for env in captured_envs
+    )
+
+
+@pytest.mark.asyncio
+async def test_stealth_missing_key_errors_and_never_runs_keyless(channel, db_engine, monkeypatch):
+    """mode=stealth with NO stored key (source_id given, but nothing was ever
+    stored for it) must fail loudly with the documented message and must
+    NEVER call the browser-act CLI hop at all -- no keyless fallback."""
+    monkeypatch.setenv(crypto.ENV_KEY, Fernet.generate_key().decode())
+    sm = _sessionmaker(db_engine)
+
+    called = False
+
+    async def _run_should_not_be_called(args, *, timeout=None, env=None):
+        nonlocal called
+        called = True
+        return BrowserActResult(returncode=0, stdout="[]", stderr="")
+
+    with patch("backend.database.AsyncSessionLocal", sm):
+        with patch("backend.browser_act.cli._run", side_effect=_run_should_not_be_called):
+            result = await channel.collect(
+                {"pack": PACK_SELECTOR, "params": {"keyword": "shoes"}, "mode": "stealth"},
+                {},
+                source_id="src-no-key",
+            )
+
+    assert result.success is False
+    assert result.error_type == "error"
+    assert "stealth mode requires a BrowserAct API key" in result.error
+    assert "browser_act_api_key" in result.error
+    assert called is False
+
+
+@pytest.mark.asyncio
+async def test_stealth_missing_key_without_source_id_also_errors(channel):
+    """No source_id at all (collect() called directly, bypassing the
+    runner) must be treated identically to "no key stored" for stealth --
+    best-effort resolution, never a fabricated source id."""
+    result = await channel.collect(
+        {"pack": PACK_SELECTOR, "params": {"keyword": "shoes"}, "mode": "stealth"}, {}
+    )
+    assert result.success is False
+    assert "stealth mode requires a BrowserAct API key" in result.error
+
+
+@pytest.mark.asyncio
+async def test_chrome_direct_no_key_runs_fine(channel, db_engine, monkeypatch):
+    """mode=chrome-direct (default) needs no key at all: a source_id with
+    nothing stored for it still collects successfully."""
+    monkeypatch.setenv(crypto.ENV_KEY, Fernet.generate_key().decode())
+    sm = _sessionmaker(db_engine)
+    eval_json = json.dumps([{"id": 1, "title": "Alpha"}])
+
+    with patch("backend.database.AsyncSessionLocal", sm):
+        with patch(
+            "backend.browser_act.cli._run", side_effect=_run_side_effect([eval_json])
+        ):
+            result = await channel.collect(
+                {"pack": PACK_SELECTOR, "params": {"keyword": "shoes"}, "mode": "chrome-direct"},
+                {},
+                source_id="src-chrome-direct-no-key",
+            )
+
+    assert result.success is True
+    assert result.metadata["mode"] == "chrome-direct"
+
+
+@pytest.mark.asyncio
+async def test_no_leak_when_key_stored_and_a_later_error_occurs(channel, db_engine, monkeypatch):
+    """A key IS stored (stealth mode resolves + injects it), but the pack
+    script itself then reports a generic (non-auth) error -- the resolved
+    key string must never appear in result.error or result.metadata."""
+    monkeypatch.setenv(crypto.ENV_KEY, Fernet.generate_key().decode())
+    sm = _sessionmaker(db_engine)
+    secret = "sk-leak-canary-9f3a"
+
+    error_json = json.dumps({"error": True, "message": "selector not found"})
+
+    with patch("backend.database.AsyncSessionLocal", sm):
+        await AuthManager().store("src-leak-check", "browser_act_api_key", secret)
+
+        with patch(
+            "backend.browser_act.cli._run", side_effect=_run_side_effect([error_json])
+        ):
+            result = await channel.collect(
+                {"pack": PACK_SELECTOR, "params": {"keyword": "shoes"}, "mode": "stealth"},
+                {},
+                source_id="src-leak-check",
+            )
+
+    assert result.success is False
+    assert result.error_type == "error"
+    assert secret not in (result.error or "")
+    assert secret not in json.dumps(result.metadata)
+
+
+@pytest.mark.asyncio
+async def test_fetch_threads_ctx_source_id_into_collect_for_credential_resolution(
+    channel, db_engine, monkeypatch
+):
+    """The thick-contract fetch() (what run_channel() actually calls in
+    production) must pass ctx.source_id through so credential resolution
+    works on the only path that ever has a real DataSource id."""
+    from backend.channels.base import FetchContext
+
+    monkeypatch.setenv(crypto.ENV_KEY, Fernet.generate_key().decode())
+    sm = _sessionmaker(db_engine)
+    eval_json = json.dumps([{"id": 1, "title": "Alpha"}])
+    captured_envs: list[dict | None] = []
+
+    async def _run_capture(args, *, timeout=None, env=None):
+        captured_envs.append(env)
+        subcommand = args[2] if len(args) > 2 else None
+        if subcommand == "eval":
+            return BrowserActResult(returncode=0, stdout=eval_json, stderr="")
+        return BrowserActResult(returncode=0, stdout="", stderr="")
+
+    with patch("backend.database.AsyncSessionLocal", sm):
+        await AuthManager().store("src-fetch-1", "browser_act_api_key", "fetch-path-key")
+
+        with patch("backend.browser_act.cli._run", side_effect=_run_capture):
+            ctx = FetchContext(
+                config={"pack": PACK_SELECTOR, "params": {"keyword": "shoes"}, "mode": "stealth"},
+                params={},
+                source_id="src-fetch-1",
+            )
+            result = await channel.fetch(ctx)
+
+    assert result.items == [{"id": 1, "title": "Alpha"}]
+    assert any(
+        env and env.get("BROWSER_ACT_API_KEY") == "fetch-path-key" for env in captured_envs
+    )

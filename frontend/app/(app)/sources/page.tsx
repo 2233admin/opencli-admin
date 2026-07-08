@@ -34,6 +34,7 @@ const CHANNEL_LABEL: Record<DataSource['channel_type'], string> = {
   cli: 'CLI',
   skill: '技能',
   crawl4ai: 'Crawl4AI',
+  browser_act: 'BrowserAct 采集',
 }
 
 export default function SourcesPage() {

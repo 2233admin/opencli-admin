@@ -4,6 +4,7 @@ import type {
   AdvisoryReport,
   ApiResponse,
   ModelProvider,
+  BrowserActPack,
   BrowserBinding,
   ChromeEndpoint,
   CollectedRecord,
@@ -379,6 +380,12 @@ export const updateChromeEndpointMode = (endpoint: string, mode: 'bridge' | 'cdp
 // Read-only, grouped by channel_type — palette (issue 07) source of truth.
 export const listPresets = () =>
   apiClient.get<ApiResponse<PresetsGrouped>>('/presets').then((r) => r.data.data)
+
+// ── BrowserAct packs (GOAL-7 PR-E, decision #9) ─────────────────────────────────
+// Read-only vendored-pack catalog for the 'browser_act' channel's one-click
+// config preset (pack picker) — never carries a credential/api_key.
+export const listBrowserActPacks = () =>
+  apiClient.get<ApiResponse<BrowserActPack[]>>('/browser-act/packs').then((r) => r.data.data)
 
 // ── Plans (Plan IR issue 02) — Collection Canvas persistence ────────────────────
 // Save (create/update) validates server-side and 422s with a node-anchored

@@ -1,5 +1,6 @@
 """BrowserActChannel — the generic browser-act pack manifest interpreter
-(GOAL-7 PR-C; see GOAL-7.md architecture decisions #1, #4, #5, #6, #8, #10).
+(GOAL-7 PR-C/PR-E; see GOAL-7.md architecture decisions #1, #4, #5, #6, #7,
+#8, #10).
 
 Drives a vendored pack (backend/browser_act_packs/<category>/<pack>/,
 PR-A) through its channel.manifest.json (PR-A schema, backend/
@@ -29,6 +30,16 @@ channel understands ``pagination.mode == "url_page"`` (navigate to
 (``"result_count < N"`` / ``"<="``). Anything else falls back to a fixed
 ``max_pages`` cap and an "a page returned 0 items" stop signal -- documented
 limitation, not silently pretended to be complete (see ``_stop_when_triggered``).
+
+Credentials (PR-E, decision #7): ``mode == "stealth"`` requires a BrowserAct
+API key, stored encrypted as a ``SourceCredential`` (key_name
+``CREDENTIAL_KEY_NAME``) and resolved via the existing ``AuthManager``
+(same encrypted store every other channel's credentials go through --
+``_resolve_session_env``). It is injected into the browser-act CLI
+subprocess env (never argv, never logged) under ``BROWSER_ACT_API_KEY_ENV``.
+``collect()`` takes an additive optional ``source_id`` param for this; only
+``fetch()`` (the thick-contract entry point ``run_channel`` calls) ever
+passes a real one in production -- see both methods' docstrings.
 """
 
 import json
@@ -43,7 +54,14 @@ from backend.browser_act import cli as browser_act_cli
 from backend.browser_act.scripts import ScriptError, run_pack_script
 from backend.browser_act_packs.catalog import PackCatalog, PackInfo
 from backend.browser_act_packs.manifest import PackManifest, load_manifest
-from backend.channels.base import AbstractChannel, Capabilities, ChannelResult
+from backend.channels.base import (
+    AbstractChannel,
+    Capabilities,
+    ChannelFetchError,
+    ChannelResult,
+    FetchContext,
+    FetchResult,
+)
 from backend.channels.registry import register_channel
 
 logger = logging.getLogger(__name__)
@@ -79,6 +97,26 @@ _AUTH_KEYWORDS = (
 #: (the one every vendored SKILL.md pagination note seen so far uses, e.g.
 #: taobao-keyword-search's "result count < 10") is understood.
 _STOP_WHEN_RE = re.compile(r"result_count\s*(<=|<)\s*(\d+)")
+
+#: SourceCredential key_name the BrowserAct API key is stored under (decision
+#: #7). Resolved via the existing AuthManager.resolve(source_id) pattern --
+#: same encrypted store api_channel.py / crawl4ai_channel.py already use, no
+#: new credential path.
+CREDENTIAL_KEY_NAME = "browser_act_api_key"
+
+#: Env var the resolved key is injected under for the browser-act CLI
+#: subprocess (BrowserActSession's ``env``, see backend.browser_act.cli).
+#: The upstream CLI's own docs (browser-act-skills/docs/installation.md)
+#: only document a persistent local auth store -- ``browser-act auth set
+#: <key>`` / ``auth login`` / ``auth poll`` -- and never mention an env var
+#: for feeding a key non-interactively; there is no live browser-act binary
+#: in this environment to confirm one against. This name is this PR's
+#: documented assumption (most likely candidate), chosen to match the
+#: existing BROWSER_ACT_BIN / browser_act_timeout naming convention already
+#: in this codebase -- and PR-C's own test (test_secret_not_leaked_in_error)
+#: and BrowserActError's docstring ("PR-C injects secrets ... via env")
+#: already anticipated exactly this name.
+BROWSER_ACT_API_KEY_ENV = "BROWSER_ACT_API_KEY"
 
 
 def _classify_error(message: str) -> str:
@@ -192,6 +230,49 @@ class BrowserActChannel(AbstractChannel):
             )
         return pack_dir, manifest, None
 
+    @staticmethod
+    async def _resolve_session_env(
+        source_id: str | None, mode: str
+    ) -> tuple[dict[str, str] | None, str | None]:
+        """Resolve the stored BrowserAct API key (decision #7,
+        ``CREDENTIAL_KEY_NAME``) into subprocess env for the browser-act CLI
+        hop, via ``AuthManager.resolve(source_id)`` -- the same encrypted-
+        store pattern ``ApiChannel._resolve_auth_headers`` /
+        ``Crawl4AIChannel._resolve_cookies`` already use; no new credential
+        path.
+
+        Returns ``(session_env, error)``:
+
+        - ``error`` is set only when ``mode == "stealth"`` and no key could
+          be resolved -- stealth REQUIRES a key and must never silently fall
+          back to chrome-direct or run keyless (decision #7 DoD).
+        - ``chrome-direct`` never errors here: a resolved key, if any, is
+          still injected (harmless -- browser-act simply doesn't need it),
+          but its absence is fine.
+
+        ``source_id`` is ``None`` when ``collect()`` is called directly
+        (bypassing the runner). That is treated identically to "no key
+        stored" -- best-effort resolution, not a fabricated source id (see
+        ``collect()``'s docstring and ``fetch()`` below, the only path that
+        ever has a real one in production).
+        """
+        key: str | None = None
+        if source_id:
+            from backend.auth.manager import AuthManager
+
+            creds = await AuthManager().resolve(source_id)
+            key = creds.get(CREDENTIAL_KEY_NAME)
+
+        if mode == "stealth" and not key:
+            return None, (
+                "stealth mode requires a BrowserAct API key "
+                f"(store it as {CREDENTIAL_KEY_NAME})"
+            )
+
+        if key:
+            return {BROWSER_ACT_API_KEY_ENV: key}, None
+        return None, None
+
     async def validate_config(self, config: dict[str, Any]) -> list[str]:
         """Validate channel_config; only checks what config alone can prove:
         pack resolvability, mode legality, and required params NOT
@@ -226,8 +307,20 @@ class BrowserActChannel(AbstractChannel):
     # ── collect() ────────────────────────────────────────────────────────
 
     async def collect(
-        self, config: dict[str, Any], parameters: dict[str, Any]
+        self,
+        config: dict[str, Any],
+        parameters: dict[str, Any],
+        source_id: str | None = None,
     ) -> ChannelResult:
+        """``source_id`` is an additive optional param beyond the
+        ``AbstractChannel.collect(config, parameters)`` contract (legal --
+        ABC only requires the method exist, not an exact signature): a
+        direct call (tests, or any future non-source-scoped caller) omits it
+        and gets best-effort credential resolution (chrome-direct works
+        keyless; stealth still requires a key, see ``_resolve_session_env``).
+        ``fetch()`` below is this channel's only production path that ever
+        has a real value to pass -- ``run_channel`` populates
+        ``FetchContext.source_id`` from the real ``DataSource.id``."""
         pack_info, pack_error = self._resolve_pack_info(config)
         if pack_error:
             return ChannelResult(success=False, error_type="error", error=pack_error)
@@ -264,10 +357,14 @@ class BrowserActChannel(AbstractChannel):
 
         max_pages = config.get("max_pages") or _DEFAULT_MAX_PAGES
 
-        # Credential injection is PR-E's job (decision #7: SourceCredential /
-        # AuthManager, key_name="browser_act_api_key"). This hook exists so
-        # PR-E only has to fill session_env -- the loop below doesn't change.
-        session_env: dict[str, str] | None = None
+        # Credential injection (decision #7): resolve the stored BrowserAct
+        # API key via the existing AuthManager.resolve(source_id) pattern and
+        # inject it into the browser-act subprocess env. stealth mode without
+        # a resolvable key is a hard, loud error here -- it never silently
+        # falls back to chrome-direct and never runs keyless.
+        session_env, cred_error = await self._resolve_session_env(source_id, mode)
+        if cred_error:
+            return ChannelResult(success=False, error_type="error", error=cred_error)
         session_name = f"browser-act-{pack_info.domain}-{pack_info.capability}"
 
         items: list[dict[str, Any]] = []
@@ -353,6 +450,37 @@ class BrowserActChannel(AbstractChannel):
             items=items,
             metadata={"pack": pack_info.path, "pages_fetched": pages_fetched, "mode": mode},
         )
+
+    async def fetch(self, ctx: FetchContext) -> FetchResult:
+        """Thick-contract entry point, overridden narrowly (decision #7):
+        ``AbstractChannel``'s default ``fetch()`` bridges straight to
+        ``collect(ctx.config, ctx.params)`` and drops ``ctx.source_id`` on
+        the floor -- every other collect()-only channel (including this
+        one before PR-E) is fine with that. Credential resolution needs the
+        real ``DataSource.id`` though, and ``run_channel`` (backend.pipeline.
+        channel_runner) is the only place that ever has one -- so this
+        override exists solely to thread ``ctx.source_id`` through to
+        ``collect()``. A direct ``collect()`` call (tests, or any future
+        caller outside the runner) still works, just chrome-direct-only /
+        best-effort on stealth (see ``_resolve_session_env``).
+
+        Documented trade-off: overriding ``fetch()`` flips
+        ``channel_runner.run_channel``'s ``channel_migrated`` check, so the
+        runner builds a ``RateLimitedClient``/``httpx.AsyncClient`` for this
+        channel's run and tears it down afterward even though this channel
+        never reads ``ctx.http`` (browser-act drives its own subprocess, not
+        HTTP). Accepted deliberately: ``httpx.AsyncClient()`` never opens a
+        real connection until first used, so the unused cost here is one
+        Python object for the run's duration, not an open socket -- real
+        credential resolution matters more than avoiding that.
+        """
+        result = await self.collect(ctx.config, ctx.params, source_id=ctx.source_id)
+        if not result.success:
+            raise ChannelFetchError(
+                result.error or f"{self.channel_type} collect failed",
+                error_type=result.error_type,
+            )
+        return FetchResult(items=result.items, metadata=result.metadata)
 
     async def _run_page(
         self,

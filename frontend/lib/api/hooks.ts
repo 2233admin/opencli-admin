@@ -62,6 +62,14 @@ export function usePresets() {
   })
 }
 
+export function useBrowserActPacks() {
+  return useQuery({
+    queryKey: ['browser-act-packs'],
+    queryFn: () => api.listBrowserActPacks(),
+    staleTime: 5 * 60_000,
+  })
+}
+
 export function usePlans(params?: { draft?: boolean; page?: number; limit?: number }) {
   return useQuery({
     queryKey: ['plans', params],

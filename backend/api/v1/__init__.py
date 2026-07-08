@@ -4,6 +4,7 @@ from fastapi import APIRouter
 
 from backend.api.v1 import (
     agents,
+    browser_act,
     browsers,
     chat,
     control,
@@ -31,6 +32,7 @@ from backend.api.v1 import (
 v1_router = APIRouter(prefix="/api/v1")
 
 v1_router.include_router(agents.router)
+v1_router.include_router(browser_act.router)
 v1_router.include_router(browsers.router)
 v1_router.include_router(chat.router)
 v1_router.include_router(control.router)
