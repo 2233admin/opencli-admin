@@ -105,6 +105,22 @@ class OpenAICompatAdapter(ProviderAdapter):
             await self._pinned_http_client.aclose()
             self._pinned_http_client = None
 
+    async def get_client(self) -> Any:
+        """Public accessor for the guarded ``AsyncOpenAI`` client (GOAL-6
+        PR-E).
+
+        ``chat.py``'s agent-dock tool-calling loop and ``skill_channel``'s
+        cheap-executor loop both need the *raw* SDK client (not
+        :meth:`chat`'s plain-text return) because they drive their own
+        multi-step ``tools=``/``tool_choice=`` loop that this adapter's thin
+        ``chat()`` doesn't support. This just exposes the same
+        SSRF-validated + DNS-rebind-pinned construction :meth:`chat`/
+        :meth:`list_models` already use internally, so those two call sites
+        stop duplicating the ``AsyncOpenAI`` + ``PinnedAsyncHTTPTransport``
+        wiring themselves.
+        """
+        return await self._get_client()
+
     def _resolve_model(self, model: str | None) -> str:
         return model or self.provider.default_model or "gpt-4o-mini"
 

@@ -86,6 +86,15 @@ class AnthropicAdapter(ProviderAdapter):
             await self._pinned_http_client.aclose()
             self._pinned_http_client = None
 
+    async def get_client(self) -> Any:
+        """Public accessor for the guarded ``AsyncAnthropic`` client (GOAL-6
+        PR-E) — mirrors :meth:`OpenAICompatAdapter.get_client`. Used by
+        ``claude_processor`` to consolidate client construction while keeping
+        its own per-record loop + usage-token logging (which needs the raw
+        SDK response object, not ``chat()``'s plain-text return).
+        """
+        return await self._get_client()
+
     def _resolve_model(self, model: str | None) -> str:
         return model or self.provider.default_model or _DEFAULT_MODEL
 

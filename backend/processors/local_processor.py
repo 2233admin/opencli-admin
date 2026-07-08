@@ -1,4 +1,28 @@
-"""Local model processor via Ollama/vLLM compatible API."""
+"""Local model processor via Ollama/vLLM compatible API.
+
+GOAL-6 PR-E note: deliberately NOT routed through
+``backend.llm.factory``/``OpenAICompatAdapter`` like the openai/claude
+processors. Two real incompatibilities, not just "not bothered yet":
+
+  * ``api_style="ollama"`` (the default) speaks Ollama's *native*
+    ``POST /api/generate`` protocol (``{"model", "prompt", "stream"}`` in,
+    ``{"response": ...}`` out) — a different wire protocol entirely from
+    ``OpenAICompatAdapter``'s ``AsyncOpenAI`` client, which only knows the
+    OpenAI ``/v1/chat/completions`` shape. There is no adapter call that
+    reaches ``/api/generate`` without changing what gets sent over the wire.
+  * even the ``api_style="openai"`` branch has a per-call configurable
+    ``timeout`` (``config.get("timeout", 120)``) threaded straight into the
+    raw ``httpx.AsyncClient`` — ``OpenAICompatAdapter`` (frozen behavior,
+    PR-B, 1599-test baseline) has no parameter to accept a caller-supplied
+    timeout, so swapping in the adapter here would silently drop that
+    config knob for anyone using it.
+
+Also has no SSRF guard today for either branch (raw ``httpx.AsyncClient``,
+no ``url_guard`` call) — unlike ``openai_processor``/``skill_channel``. This
+is pre-existing behavior, left as-is; closing it would need its own change
+(not a client-construction consolidation) and is out of PR-E's "zero
+regression" scope.
+"""
 
 import json
 import re

@@ -35,6 +35,7 @@ from backend.channels.base import (
     FetchResult,
 )
 from backend.channels.registry import register_channel
+from backend.llm.factory import litellm_prefix_for
 from backend.security.url_guard import SSRFValidationError, avalidate_public_url
 
 logger = logging.getLogger(__name__)
@@ -172,7 +173,25 @@ class Crawl4AIChannel(AbstractChannel):
     @staticmethod
     async def _resolve_llm_config(provider_id: str | None) -> Any:
         """Same autonomous-default convention as backend.pipeline.runner: an
-        explicit provider_id wins, otherwise the first enabled ModelProvider."""
+        explicit provider_id wins, otherwise the first enabled ModelProvider.
+
+        GOAL-6 PR-E exception (decision #8): crawl4ai's LLM calls go through
+        its own ``litellm``-backed ``LLMExtractionStrategy`` /
+        ``AsyncWebCrawler`` — an internal client this module has no clean
+        seam to route through ``backend.llm``'s adapters/resolver, so that
+        call stays exactly as it was. What DOES move here is the
+        provider-selection *resolution*: which litellm provider-name prefix
+        (``"openai"`` / ``"anthropic"``) a given ``provider.provider_type``
+        maps to now comes from :func:`backend.llm.factory.litellm_prefix_for`
+        — the same place :func:`backend.llm.factory.get_adapter` dispatches
+        adapters from — instead of an independently hand-maintained dict
+        here that could silently drift out of sync with it. The provider
+        *selection* itself (explicit ``provider_id`` vs. first-enabled) is
+        untouched: it is not role/``model_defaults``-based like PR-D's
+        resolver, so wiring ``ProviderResolver`` in here would change WHICH
+        provider gets picked, not just how the prefix is computed — out of
+        scope for a client-construction consolidation.
+        """
         from crawl4ai import LLMConfig
         from sqlalchemy import select
 
@@ -222,9 +241,7 @@ class Crawl4AIChannel(AbstractChannel):
                     error_type="SSRFValidationError",
                 ) from exc
 
-        litellm_prefix = {"claude": "anthropic", "openai": "openai", "local": "openai"}.get(
-            provider.provider_type, "openai"
-        )
+        litellm_prefix = litellm_prefix_for(provider.provider_type)
         default_model = (
             "claude-haiku-4-5-20251001" if litellm_prefix == "anthropic" else "gpt-4o-mini"
         )
