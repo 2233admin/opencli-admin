@@ -1,6 +1,6 @@
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import JSON, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.models.base import TimestampMixin
@@ -34,6 +34,11 @@ class CollectedRecord(TimestampMixin):
     # raw | normalized | ai_processed | notified | error
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="raw")
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Manual "精选" flag (架构决策 #6): v1 is human-curated only via the existing
+    # admin PATCH endpoint. When mode="selected", PublicContentService requires
+    # this to be True in addition to the source-level public switch.
+    curated: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # Relationship
     task: Mapped["CollectionTask"] = relationship("CollectionTask", back_populates="records")
