@@ -11,7 +11,7 @@ no token, matching AIHOT's model). Do not add one.
 
 from fastapi import APIRouter, Depends
 
-from backend.api.public import items
+from backend.api.public import items, rss
 from backend.api.public.throttle import rate_limit_dependency
 
 public_router = APIRouter(
@@ -28,3 +28,4 @@ public_router = APIRouter(
 )
 
 public_router.include_router(items.router)
+public_router.include_router(rss.router)

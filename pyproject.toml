@@ -50,6 +50,7 @@ dependencies = [
     "jsonschema>=4.21.0",
     # Docker SDK (for chrome pool management via API)
     "docker>=7.0.0",
+    "feedgen>=1.0.0",
 ]
 
 [project.optional-dependencies]
