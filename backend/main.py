@@ -2,15 +2,24 @@
 
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from backend.api.public import public_router
 from backend.api.v1 import v1_router
 from backend.config import get_settings
 from backend.database import run_migrations
+
+# backend/skills/agent_access/SKILL.md (PR-H, GOAL-5.md 架构决策 #9) is a
+# generated, committed static file — served as-is, not through a DB-backed
+# route. Mounting the whole backend/skills/ directory (not just
+# agent_access/) so any future sibling skill package under backend/skills/
+# is served the same way without another main.py change.
+_SKILLS_DIR = Path(__file__).resolve().parent / "skills"
 
 def _configure_logging() -> None:
     """Restore backend.* logging after uvicorn's dictConfig disables pre-existing loggers.
@@ -180,6 +189,12 @@ def create_app() -> FastAPI:
     # Routes
     app.include_router(v1_router)
     app.include_router(public_router)
+
+    # Static skill packages (PR-H): GET /skills/agent_access/SKILL.md serves
+    # the generated file byte-for-byte — no auth, matching the other
+    # /api/public/* surfaces, so any agent platform can fetch it directly.
+    if _SKILLS_DIR.is_dir():
+        app.mount("/skills", StaticFiles(directory=str(_SKILLS_DIR)), name="skills")
 
     @app.get("/health")
     async def health() -> dict:

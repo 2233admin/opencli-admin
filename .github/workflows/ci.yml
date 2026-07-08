@@ -104,6 +104,22 @@ jobs:
       - run: pip install .[dev]
       - run: pytest --cov=backend --cov-fail-under=80
 
+      # PR-H (GOAL-5.md 架构决策 #9): backend/skills/agent_access/SKILL.md is
+      # generated from backend/taxonomy.py + the live backend/api/public/*
+      # route definitions by backend/scripts/generate_skill_md.py. This step
+      # re-runs that generator in --check mode and fails the job if the
+      # regenerated content differs from the committed file — i.e. someone
+      # changed a category or a public-route param and forgot to re-run the
+      # generator + commit the result. Runs from repo root (overriding this
+      # job's `backend` default working-directory) since the script resolves
+      # its own paths relative to itself, not the shell's cwd — see that
+      # script's module docstring for the exact "when does this go red"
+      # conditions, and tests/skills/test_skill_md_drift.py for the pytest
+      # equivalent of this same check.
+      - name: Check SKILL.md generator drift
+        working-directory: .
+        run: python backend/scripts/generate_skill_md.py --check
+
   backend-lint:
     name: Backend Lint
     runs-on: ubuntu-latest
