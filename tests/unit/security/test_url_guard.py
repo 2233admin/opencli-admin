@@ -272,7 +272,7 @@ async def test_pinned_backend_dials_validated_ip_not_hostname_dns(monkeypatch):
             return _fake_getaddrinfo("10.6.6.6")
 
         monkeypatch.setattr("socket.getaddrinfo", _tracking_getaddrinfo)
-        monkeypatch.setattr(url_guard, "is_ip_blocked", lambda ip: False)
+        monkeypatch.setattr(url_guard, "is_ip_blocked", lambda ip, **kwargs: False)
 
         transport = PinnedAsyncHTTPTransport("rebind-test.invalid", ["127.0.0.1"])
         async with httpx.AsyncClient(transport=transport, follow_redirects=False) as client:

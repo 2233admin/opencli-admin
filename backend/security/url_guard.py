@@ -116,7 +116,9 @@ class SSRFValidationError(ValueError):
     """
 
 
-def is_ip_blocked(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+def is_ip_blocked(
+    ip: ipaddress.IPv4Address | ipaddress.IPv6Address, *, allow_private: bool = False
+) -> bool:
     """True if ``ip`` must not be reached by an outbound fetch.
 
     Blocks loopback (127.0.0.0/8, ::1), RFC1918 private ranges, link-local
@@ -125,17 +127,31 @@ def is_ip_blocked(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
     unspecified (0.0.0.0, ::), reserved, and multicast addresses. Anything not
     covered by one of those categories is treated as globally reachable and
     allowed.
+
+    ``allow_private`` (default ``False`` — every existing call site keeps
+    today's behaviour unchanged): when ``True``, loopback / RFC1918-private /
+    link-local / IPv6-unique-local / the NetBird CGNAT shared space
+    (100.64.0.0/10) are treated as reachable. ``unspecified``/``multicast``/
+    ``reserved`` are still always blocked — no legitimate provider endpoint
+    lives there, so there is no reason to ever allow them.
+
+    This is a narrow, explicit opt-in (GOAL-6 PR-B, decision #6). It exists
+    because ``url_guard`` had **no** existing localhost/private-IP exemption
+    mechanism, yet self-hosted LLM providers (``ModelProvider.provider_type
+    == "local"`` — ollama on loopback, model-hotel on the NetBird fleet mesh)
+    legitimately live at exactly the addresses this guard otherwise blocks.
+    ``backend.llm.openai_compat.OpenAICompatAdapter`` is the only caller that
+    ever passes ``allow_private=True``, and only for ``provider_type ==
+    "local"`` — ``openai``/``claude`` providers are always validated with
+    ``allow_private=False`` (the full, unmodified guard).
     """
+    if ip.is_unspecified or ip.is_multicast or ip.is_reserved:
+        return True
+    if allow_private:
+        return False
     if isinstance(ip, ipaddress.IPv4Address) and ip in _CGNAT_SHARED_SPACE:
         return True
-    return (
-        ip.is_loopback
-        or ip.is_private
-        or ip.is_link_local
-        or ip.is_unspecified
-        or ip.is_multicast
-        or ip.is_reserved
-    )
+    return ip.is_loopback or ip.is_private or ip.is_link_local
 
 
 def resolve_hostname(hostname: str) -> list[str]:
@@ -155,13 +171,13 @@ def resolve_hostname(hostname: str) -> list[str]:
     return sorted(addrs)
 
 
-def _check_host_and_ips(hostname: str, ips: list[str]) -> None:
+def _check_host_and_ips(hostname: str, ips: list[str], *, allow_private: bool = False) -> None:
     for raw_ip in ips:
         try:
             ip = ipaddress.ip_address(raw_ip)
         except ValueError:
             continue
-        if is_ip_blocked(ip):
+        if is_ip_blocked(ip, allow_private=allow_private):
             raise SSRFValidationError(
                 f"URL host {hostname!r} resolves to a non-public address "
                 f"({raw_ip}) — blocked to prevent SSRF against internal "
@@ -169,7 +185,7 @@ def _check_host_and_ips(hostname: str, ips: list[str]) -> None:
             )
 
 
-def validate_public_url(url: str) -> str:
+def validate_public_url(url: str, *, allow_private: bool = False) -> str:
     """Validate ``url`` is safe to fetch from the server; return it normalized.
 
     Synchronous — performs a blocking DNS lookup. Call
@@ -181,16 +197,22 @@ def validate_public_url(url: str) -> str:
       * missing/invalid URL, or a scheme other than http/https,
       * missing hostname,
       * hostname/raw-IP resolves to a loopback/private/link-local/
-        unique-local/unspecified/multicast address.
+        unique-local/unspecified/multicast address (unless ``allow_private``
+        — see :func:`is_ip_blocked`).
     """
-    return validate_public_url_and_ip(url)[0]
+    return validate_public_url_and_ip(url, allow_private=allow_private)[0]
 
 
-def validate_public_url_and_ip(url: str) -> tuple[str, list[str]]:
+def validate_public_url_and_ip(
+    url: str, *, allow_private: bool = False
+) -> tuple[str, list[str]]:
     """Like :func:`validate_public_url`, but also returns the resolved IP(s)
     (sorted) so a caller can pin a redirect-safe connection to them — see the
     module docstring's DNS-rebinding note for why that pinning isn't wired
     through httpx in this pass.
+
+    ``allow_private``: see :func:`is_ip_blocked` — default ``False`` keeps
+    every existing caller's behaviour unchanged.
     """
     if not url or not isinstance(url, str):
         raise SSRFValidationError("URL is required")
@@ -214,27 +236,31 @@ def validate_public_url_and_ip(url: str) -> tuple[str, list[str]]:
         literal_ip = None
 
     if literal_ip is not None:
-        _check_host_and_ips(hostname, [str(literal_ip)])
+        _check_host_and_ips(hostname, [str(literal_ip)], allow_private=allow_private)
         return url, [str(literal_ip)]
 
     ips = resolve_hostname(hostname)
-    _check_host_and_ips(hostname, ips)
+    _check_host_and_ips(hostname, ips, allow_private=allow_private)
     return url, ips
 
 
-async def avalidate_public_url(url: str) -> str:
+async def avalidate_public_url(url: str, *, allow_private: bool = False) -> str:
     """Async-friendly wrapper: runs the (blocking DNS) validation off-thread
     via ``asyncio.to_thread`` so it never stalls the event loop. Prefer this
     from ``async def`` call sites; :func:`validate_public_url` remains for
     sync call sites (e.g. module-level helpers called before an event loop
     exists)."""
-    return await asyncio.to_thread(validate_public_url, url)
+    return await asyncio.to_thread(validate_public_url, url, allow_private=allow_private)
 
 
-async def avalidate_public_url_and_ip(url: str) -> tuple[str, list[str]]:
+async def avalidate_public_url_and_ip(
+    url: str, *, allow_private: bool = False
+) -> tuple[str, list[str]]:
     """Async ``asyncio.to_thread`` wrapper around
     :func:`validate_public_url_and_ip`."""
-    return await asyncio.to_thread(validate_public_url_and_ip, url)
+    return await asyncio.to_thread(
+        validate_public_url_and_ip, url, allow_private=allow_private
+    )
 
 
 # ── DNS-rebinding-safe connection pinning ────────────────────────────────────
@@ -264,9 +290,12 @@ class _PinnedNetworkBackend:
     blocked address through this seam.
     """
 
-    def __init__(self, hostname: str, ips: list[str]) -> None:
+    def __init__(
+        self, hostname: str, ips: list[str], *, allow_private: bool = False
+    ) -> None:
         self._hostname = hostname
         self._ips = ips
+        self._allow_private = allow_private
         self._next_ip_index = 0
         from httpcore._backends.auto import AutoBackend
 
@@ -294,7 +323,7 @@ class _PinnedNetworkBackend:
                 ip_obj = ipaddress.ip_address(dial_host)
             except ValueError:
                 ip_obj = None
-            if ip_obj is not None and is_ip_blocked(ip_obj):
+            if ip_obj is not None and is_ip_blocked(ip_obj, allow_private=self._allow_private):
                 raise SSRFValidationError(
                     f"pinned connect target {dial_host!r} for host {host!r} is a "
                     "non-public address — refused at connect time (SSRF guard "
@@ -336,6 +365,7 @@ class PinnedAsyncHTTPTransport(httpx.AsyncHTTPTransport):
         hostname: str,
         ips: list[str],
         *,
+        allow_private: bool = False,
         verify: "bool | str" = True,
         http1: bool = True,
         http2: bool = False,
@@ -365,12 +395,12 @@ class PinnedAsyncHTTPTransport(httpx.AsyncHTTPTransport):
             local_address=built_pool._local_address,
             uds=built_pool._uds,
             socket_options=built_pool._socket_options,
-            network_backend=_PinnedNetworkBackend(hostname, ips),
+            network_backend=_PinnedNetworkBackend(hostname, ips, allow_private=allow_private),
         )
 
 
 async def guarded_async_client(
-    url: str, **client_kwargs: typing.Any
+    url: str, *, allow_private: bool = False, **client_kwargs: typing.Any
 ) -> tuple[httpx.AsyncClient, str]:
     """Validate ``url`` (SSRF guard) and return ``(client, validated_url)``
     where ``client`` is an ``httpx.AsyncClient`` whose transport is pinned to
@@ -382,6 +412,11 @@ async def guarded_async_client(
     :class:`PinnedAsyncHTTPTransport` for consistency and the connect-time
     ``is_ip_blocked`` defense-in-depth re-check, pinned to that single IP.
 
+    ``allow_private`` (default ``False``): see :func:`is_ip_blocked` — passed
+    through to both the initial validation and the pinned transport's
+    connect-time re-check. Only ``backend.llm.openai_compat`` passes ``True``,
+    and only for ``ModelProvider.provider_type == "local"``.
+
     ``client_kwargs`` are forwarded to ``httpx.AsyncClient`` verbatim (timeout,
     headers, follow_redirects, etc) except ``transport``, which this function
     owns — passing it raises ``TypeError`` (same as httpx would for a
@@ -390,8 +425,8 @@ async def guarded_async_client(
     if "transport" in client_kwargs:
         raise TypeError("guarded_async_client() sets 'transport' itself — do not pass one")
 
-    validated_url, ips = await avalidate_public_url_and_ip(url)
+    validated_url, ips = await avalidate_public_url_and_ip(url, allow_private=allow_private)
     hostname = urlparse(validated_url).hostname or ""
-    transport = PinnedAsyncHTTPTransport(hostname, ips)
+    transport = PinnedAsyncHTTPTransport(hostname, ips, allow_private=allow_private)
     client = httpx.AsyncClient(transport=transport, **client_kwargs)
     return client, validated_url
