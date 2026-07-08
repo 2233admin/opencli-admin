@@ -113,6 +113,10 @@ class Settings(BaseSettings):
     # Collect timeouts (seconds)
     # opencli subprocess execution timeout (local mode and agent-side)
     opencli_timeout: int = 120
+    # browser-act CLI subprocess execution timeout, per call (GOAL-7 PR-B).
+    # Binary path is BROWSER_ACT_BIN env var (mirrors OPENCLI_BIN), not a
+    # Settings field — this is only the per-call timeout default.
+    browser_act_timeout: int = 120
     # HTTP dispatch timeout when center POSTs to a LAN agent (should be > opencli_timeout)
     agent_http_timeout: int = 130
     # WS dispatch timeout when center sends a task over a reverse WS channel
