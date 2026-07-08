@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, type DragEvent, type MouseEvent as ReactMouseEvent, type RefObject } from "react"
+import { useMemo, type DragEvent, type MouseEvent as ReactMouseEvent, type RefObject } from "react"
 import {
   Background,
   BackgroundVariant,
@@ -8,7 +8,6 @@ import {
   MiniMap,
   ReactFlow,
   SelectionMode,
-  useStore,
   type IsValidConnection,
   type NodeMouseHandler,
   type OnBeforeDelete,
@@ -63,6 +62,9 @@ const edgeTypes = {
   editable: EditableEdge,
   routed: RoutedEdge,
 }
+
+const defaultEdgeOptions = { type: "workflow", animated: true }
+const proOptions = { hideAttribution: true }
 
 type PrimitiveMenuGroup = {
   category: string
@@ -127,18 +129,10 @@ type WorkflowCanvasSurfaceProps = {
   unlockInternals: (nodeId: string) => void
   workflowProfile: FlowState["workflowProject"]["profile"]
   wrapperRef: RefObject<HTMLDivElement | null>
-  zoom: number
-  setZoom: (zoom: number) => void
 }
 
 function minimapNodeColor(node: { selected?: boolean }) {
   return node.selected ? "#e8e8e6" : "#3a3d42"
-}
-
-function zoomBucket(zoom: number) {
-  if (zoom < 0.5) return "low"
-  if (zoom > 1.4) return "high"
-  return "mid"
 }
 
 function panOnDragValue(settings: CanvasSettings, interactionLocked: boolean) {
@@ -154,15 +148,6 @@ function flowInteractionProps(settings: CanvasSettings, interactionLocked: boole
     panOnScroll: settings.panOnScroll && !interactionLocked,
     selectionOnDrag: settings.selectionOnDrag && !interactionLocked,
   }
-}
-
-/** Live zoom bridge so nodes can render at different detail levels. */
-function ZoomProvider({ onZoom }: { onZoom: (z: number) => void }) {
-  const zoom = useStore((s) => s.transform[2])
-  useEffect(() => {
-    onZoom(zoom)
-  }, [zoom, onZoom])
-  return null
 }
 
 function OptionalBackground({ visible }: { visible: boolean }) {
@@ -243,15 +228,12 @@ function NodeMenuOverlay({
 function CanvasLayers({
   helperLines,
   settings,
-  setZoom,
 }: {
   helperLines: FlowState["helperLines"]
   settings: CanvasSettings
-  setZoom: (zoom: number) => void
 }) {
   return (
     <>
-      <ZoomProvider onZoom={setZoom} />
       <OptionalBackground visible={settings.showBackground} />
       <OptionalControls visible={settings.showControls} />
       <OptionalMiniMap visible={settings.showMiniMap} />
@@ -265,7 +247,23 @@ function CanvasLayers({
 
 export function WorkflowCanvasSurface(props: WorkflowCanvasSurfaceProps) {
   const interactionLocked = props.isDraw || props.isScissors
-  const flowInteraction = flowInteractionProps(props.settings, interactionLocked)
+  const flowInteraction = useMemo(
+    () => flowInteractionProps(props.settings, interactionLocked),
+    [
+      interactionLocked,
+      props.settings.panOnDrag,
+      props.settings.panOnScroll,
+      props.settings.selectionOnDrag,
+      props.settings.touchMode,
+    ],
+  )
+  const fitViewOptions = useMemo(
+    () => ({
+      padding: props.compactViewport ? 0.24 : 0.15,
+      minZoom: props.compactViewport ? 0.62 : 0.2,
+    }),
+    [props.compactViewport],
+  )
   return (
     <div
       ref={props.wrapperRef}
@@ -274,7 +272,6 @@ export function WorkflowCanvasSurface(props: WorkflowCanvasSurfaceProps) {
       onMouseMoveCapture={props.onCanvasMouseMoveCapture}
       onMouseUpCapture={props.onCanvasMouseUpCapture}
       onMouseMove={props.onMouseMove}
-      data-zoom-bucket={zoomBucket(props.zoom)}
     >
       <ReactFlow
         nodes={props.nodes}
@@ -291,9 +288,9 @@ export function WorkflowCanvasSurface(props: WorkflowCanvasSurfaceProps) {
         onDragOver={props.onDragOver}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
-        defaultEdgeOptions={{ type: "workflow", animated: true }}
+        defaultEdgeOptions={defaultEdgeOptions}
         fitView
-        fitViewOptions={{ padding: props.compactViewport ? 0.24 : 0.15, minZoom: props.compactViewport ? 0.62 : 0.2 }}
+        fitViewOptions={fitViewOptions}
         isValidConnection={props.isValidConnection}
         onBeforeDelete={props.onBeforeDelete}
         nodesDraggable={props.settings.nodesDraggable && !interactionLocked}
@@ -306,13 +303,13 @@ export function WorkflowCanvasSurface(props: WorkflowCanvasSurfaceProps) {
         panOnDrag={flowInteraction.panOnDrag}
         selectionOnDrag={flowInteraction.selectionOnDrag}
         selectionMode={SelectionMode.Partial}
-        proOptions={{ hideAttribution: true }}
+        proOptions={proOptions}
         minZoom={0.2}
         maxZoom={2}
         className={cn("bg-background", props.isScissors && "cursor-crosshair")}
         data-tool-mode={props.toolMode}
       >
-        <CanvasLayers helperLines={props.helperLines} settings={props.settings} setZoom={props.setZoom} />
+        <CanvasLayers helperLines={props.helperLines} settings={props.settings} />
       </ReactFlow>
 
       <ScissorTrailOverlay active={props.isScissors} points={props.scissorTrail} />

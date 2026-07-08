@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react"
 import { ReactFlowProvider, useReactFlow, type NodeMouseHandler } from "@xyflow/react"
+import { useShallow } from "zustand/react/shallow"
 import "@xyflow/react/dist/style.css"
 
 import { useFlowStore } from "@/lib/flow/store"
@@ -86,7 +87,7 @@ function EditorCanvas() {
     unlockNodeInternals,
     updateWorkflowProfile,
     workflowProject,
-  } = useFlowStore(selectEditorCanvasState)
+  } = useFlowStore(useShallow(selectEditorCanvasState))
 
   const settings = useSettingsStore()
 
@@ -106,7 +107,6 @@ function EditorCanvas() {
   const [runTraceOpen, setRunTraceOpen] = useState(false)
   const [agentDrawerOpen, setAgentDrawerOpen] = useState(false)
   const [nodeManagementOpen, setNodeManagementOpen] = useState(false)
-  const [zoom, setZoom] = useState(1)
   const [compactViewport, setCompactViewport] = useState(false)
   const [nodeMenu, setNodeMenu] = useState<NodeMenuState | null>(null)
   const { capabilities } = useWorkflowCapabilities(true)
@@ -318,8 +318,6 @@ function EditorCanvas() {
           unlockInternals={unlockInternals}
           workflowProfile={workflowProject.profile}
           wrapperRef={wrapperRef}
-          zoom={zoom}
-          setZoom={setZoom}
         />
       </div>
 

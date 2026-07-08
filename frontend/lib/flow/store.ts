@@ -182,6 +182,15 @@ function isWorkflowRuntimeCapability(value: unknown): value is WorkflowRuntimeCa
   return typeof record.id === "string" && typeof record.status === "string"
 }
 
+function runtimeCapabilitiesEqual(
+  left: WorkflowRuntimeCapability | undefined,
+  right: WorkflowRuntimeCapability | undefined,
+): boolean {
+  if (left === right) return true
+  if (!left || !right) return false
+  return JSON.stringify(left) === JSON.stringify(right)
+}
+
 function workflowNodeStatusFromRun(status: WorkflowRunStatus): WorkflowNodeData["status"] {
   switch (status) {
     case "queued":
@@ -1023,10 +1032,16 @@ export const useFlowStore = create<FlowState>((set, get) => ({
 
   applyWorkflowCapabilities: (capabilities) => {
     set((state) => {
+      let projectChanged = false
       const projectNodes = state.workflowProject.nodes.map((node) => {
         const catalogId = typeof node.ui?.catalogId === "string" ? node.ui.catalogId : null
         const runtimeCapability = catalogId ? catalogRuntimeCapability(capabilities, catalogId) : undefined
         if (!runtimeCapability) return node
+        const currentRuntimeCapability = isWorkflowRuntimeCapability(node.ui?.runtimeCapability)
+          ? node.ui.runtimeCapability
+          : undefined
+        if (runtimeCapabilitiesEqual(currentRuntimeCapability, runtimeCapability)) return node
+        projectChanged = true
         return {
           ...node,
           ui: {
@@ -1035,10 +1050,12 @@ export const useFlowStore = create<FlowState>((set, get) => ({
           },
         }
       })
-      const workflowProject = parseWorkflowProject({
-        ...state.workflowProject,
-        nodes: projectNodes,
-      })
+      const workflowProject = projectChanged
+        ? parseWorkflowProject({
+            ...state.workflowProject,
+            nodes: projectNodes,
+          })
+        : state.workflowProject
       const runtimeByNodeId = new Map<string, WorkflowRuntimeCapability>()
       for (const node of workflowProject.nodes) {
         const runtimeCapability = node.ui?.runtimeCapability
@@ -1046,19 +1063,24 @@ export const useFlowStore = create<FlowState>((set, get) => ({
           runtimeByNodeId.set(node.id, runtimeCapability)
         }
       }
+      let nodesChanged = false
+      const nodes = state.nodes.map((node) => {
+        const runtimeCapability = runtimeByNodeId.get(node.id)
+        if (!runtimeCapability || typeof runtimeCapability !== "object") return node
+        if (runtimeCapabilitiesEqual(node.data.runtimeCapability, runtimeCapability)) return node
+        nodesChanged = true
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            runtimeCapability,
+          },
+        }
+      })
+      if (!projectChanged && !nodesChanged) return state
       return {
         workflowProject,
-        nodes: state.nodes.map((node) => {
-          const runtimeCapability = runtimeByNodeId.get(node.id)
-          if (!runtimeCapability || typeof runtimeCapability !== "object") return node
-          return {
-            ...node,
-            data: {
-              ...node.data,
-              runtimeCapability,
-            },
-          }
-        }),
+        nodes,
       }
     })
   },
