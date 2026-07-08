@@ -30,6 +30,19 @@ class ModelDefaultPut(BaseModel):
         return v
 
 
+class ModelDefaultCandidatesBody(BaseModel):
+    """Body for ``PUT /model-defaults/{role}`` (decision #10).
+
+    ``role`` comes from the URL path, not repeated in the body — the router
+    wraps this into a role-validated :class:`ModelDefaultPut` before handing
+    off to :func:`backend.services.provider_model_service.put_default`, so
+    the same closed-set check that schema already enforces gets reused
+    end-to-end instead of duplicated.
+    """
+
+    candidates: list[ModelDefaultCandidate] = Field(default_factory=list)
+
+
 class ModelDefaultRead(UTCModel):
     id: str
     role: str
