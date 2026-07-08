@@ -48,6 +48,7 @@ async def query_public_records(
     mode: str = "selected",
     category: Optional[str] = None,
     since: Optional[datetime] = None,
+    until: Optional[datetime] = None,
     q: Optional[str] = None,
     take: Optional[int] = None,
 ) -> list[CollectedRecord]:
@@ -70,6 +71,12 @@ async def query_public_records(
             (see ``backend.pipeline.normalizer``'s multi-key fallback list),
             so it cannot be safely compared as a datetime. ``created_at`` is
             a real, always-populated ``DateTime`` column.
+        until: optional ISO-8601 datetime upper bound (exclusive), same
+            ``created_at`` column as ``since``. Added for
+            ``backend.services.digest_service`` (PR-G), which needs a closed
+            ``[start, end)`` window for "this calendar date" rather than an
+            open-ended lower bound — every existing caller omits it, so this
+            is purely additive and changes no prior behavior.
         q: optional keyword search. Matched with a case-insensitive
             substring test against ``normalized_data`` cast to text (same
             approach as ``record_service.list_records``) — a plain
@@ -113,6 +120,9 @@ async def query_public_records(
 
     if since is not None:
         query = query.where(CollectedRecord.created_at >= since)
+
+    if until is not None:
+        query = query.where(CollectedRecord.created_at < until)
 
     if q:
         term = q.strip().lower()

@@ -282,3 +282,78 @@ async def test_take_limits_result_count(db_session):
 )
 def test_normalize_take_defaults_and_clamps(take_in, expected):
     assert svc._normalize_take(take_in) == expected
+
+
+# ── `until` upper bound (added for PR-G's digest_service day-window query) ──
+
+
+@pytest.mark.asyncio
+async def test_until_excludes_records_at_or_after_boundary(db_session):
+    public_source = await _make_source(db_session, public=True, name="Public")
+    public_task = await _make_task(db_session, public_source)
+    boundary = datetime(2026, 7, 5, tzinfo=timezone.utc)
+    before = await _make_record(
+        db_session, public_source, public_task, curated=True,
+        created_at=boundary - timedelta(minutes=1),
+    )
+    at_boundary = await _make_record(
+        db_session, public_source, public_task, curated=True, created_at=boundary,
+    )
+    after = await _make_record(
+        db_session, public_source, public_task, curated=True,
+        created_at=boundary + timedelta(minutes=1),
+    )
+
+    results = await svc.query_public_records(db_session, mode="all", until=boundary, take=200)
+    result_ids = {r.id for r in results}
+
+    assert before.id in result_ids
+    assert at_boundary.id not in result_ids
+    assert after.id not in result_ids
+
+
+@pytest.mark.asyncio
+async def test_since_and_until_together_form_a_closed_window(db_session):
+    public_source = await _make_source(db_session, public=True, name="Public")
+    public_task = await _make_task(db_session, public_source)
+    day_start = datetime(2026, 7, 5, tzinfo=timezone.utc)
+    day_end = day_start + timedelta(days=1)
+
+    in_window = await _make_record(
+        db_session, public_source, public_task, curated=True,
+        created_at=day_start + timedelta(hours=12),
+    )
+    before_window = await _make_record(
+        db_session, public_source, public_task, curated=True,
+        created_at=day_start - timedelta(minutes=1),
+    )
+    after_window = await _make_record(
+        db_session, public_source, public_task, curated=True, created_at=day_end,
+    )
+
+    results = await svc.query_public_records(
+        db_session, mode="all", since=day_start, until=day_end, take=200
+    )
+    result_ids = {r.id for r in results}
+
+    assert result_ids == {in_window.id}
+    assert before_window.id not in result_ids
+    assert after_window.id not in result_ids
+
+
+@pytest.mark.asyncio
+async def test_private_source_never_leaks_with_until_param(db_session):
+    """Adversarial coverage extended to the new `until` param, matching the
+    existing "give me everything" adversarial suite above."""
+    private_source = await _make_source(db_session, public=False, name="Private")
+    private_task = await _make_task(db_session, private_source)
+    private_record = await _make_record(
+        db_session, private_source, private_task, curated=True,
+        created_at=datetime.now(timezone.utc),
+    )
+
+    results = await svc.query_public_records(
+        db_session, mode="all", until=datetime.now(timezone.utc) + timedelta(days=365), take=200
+    )
+
+    assert private_record.id not in {r.id for r in results}

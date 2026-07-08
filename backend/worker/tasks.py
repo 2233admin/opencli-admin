@@ -39,6 +39,28 @@ def run_scheduled_collection(schedule_id: str, source_id: str, parameters: dict 
     return _run_async(run_scheduled_pipeline(schedule_id, source_id, parameters or {}))
 
 
+@celery_app.task(name="run_daily_digest")
+def run_daily_digest(target_date: str | None = None) -> dict:
+    """Build/rebuild the daily digest snapshot (PR-G, GOAL-5.md 架构决策 #10).
+
+    Fired by the static `daily-digest-snapshot` entry in
+    backend.worker.celery_app's beat_schedule when TASK_EXECUTOR=celery. For
+    TASK_EXECUTOR=local (no Celery Beat process running), see
+    backend/worker/digest_job.py's standalone entrypoint instead — both call
+    the same backend.services.digest_service.build_digest_for_date.
+
+    `target_date`: optional ISO date string (YYYY-MM-DD). Defaults to
+    "today" in UTC.
+    """
+    from backend.worker.digest_job import run_once
+
+    date_obj = None
+    if target_date:
+        from datetime import date as date_type
+        date_obj = date_type.fromisoformat(target_date)
+    return _run_async(run_once(date_obj))
+
+
 @celery_app.task(name="send_notification")
 def send_notification(rule_id: str, record_id: str) -> dict:
     """Send a single notification for a rule/record pair."""
