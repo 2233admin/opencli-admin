@@ -1,7 +1,8 @@
 """Tests for messaging platform notifiers (Feishu, DingTalk, WeCom)."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from backend.notifiers.base import NotificationPayload
 from backend.notifiers.registry import list_notifier_types
@@ -37,7 +38,9 @@ async def test_feishu_send_success():
     mock_resp = MagicMock()
     mock_resp.json.return_value = {"code": 0}
 
-    with patch("httpx.AsyncClient") as mock_cls:
+    with patch("httpx.AsyncClient") as mock_cls, patch(
+        "socket.getaddrinfo", return_value=[(None, None, None, "", ("93.184.216.34", 0))]
+    ):
         mock_client = AsyncMock()
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
@@ -62,7 +65,9 @@ async def test_feishu_send_failure():
     mock_resp = MagicMock()
     mock_resp.json.return_value = {"StatusCode": 400, "StatusMessage": "forbidden"}
 
-    with patch("httpx.AsyncClient") as mock_cls:
+    with patch("httpx.AsyncClient") as mock_cls, patch(
+        "socket.getaddrinfo", return_value=[(None, None, None, "", ("93.184.216.34", 0))]
+    ):
         mock_client = AsyncMock()
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
@@ -89,7 +94,9 @@ async def test_feishu_template_rendering():
         resp.json.return_value = {"StatusCode": 0}
         return resp
 
-    with patch("httpx.AsyncClient") as mock_cls:
+    with patch("httpx.AsyncClient") as mock_cls, patch(
+        "socket.getaddrinfo", return_value=[(None, None, None, "", ("93.184.216.34", 0))]
+    ):
         mock_client = AsyncMock()
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
@@ -102,6 +109,51 @@ async def test_feishu_template_rendering():
         )
 
     assert "Alert: Test Article" in captured["body"]["content"]["post"]["zh_cn"]["title"]
+
+
+@pytest.mark.asyncio
+async def test_feishu_template_can_render_ai_enrichment():
+    from backend.notifiers.feishu_notifier import FeishuNotifier
+
+    notifier = FeishuNotifier()
+    payload = _payload(
+        ai_enrichment={
+            "summary": "热度上升",
+            "tags": ["AI", "融资"],
+            "sentiment": "positive",
+        }
+    )
+
+    captured = {}
+
+    async def fake_post(url, json):
+        captured["body"] = json
+        resp = MagicMock()
+        resp.json.return_value = {"code": 0}
+        return resp
+
+    with patch("httpx.AsyncClient") as mock_cls, patch(
+        "socket.getaddrinfo", return_value=[(None, None, None, "", ("93.184.216.34", 0))]
+    ):
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.post = fake_post
+        mock_cls.return_value = mock_client
+
+        result = await notifier.send(
+            {
+                "webhook_url": "https://feishu.ex.com",
+                "content": "摘要={{summary}} 标签={{tags}} 情绪={{sentiment}}",
+            },
+            payload,
+        )
+
+    content = captured["body"]["content"]["post"]["zh_cn"]["content"][0][0]["text"]
+    assert result is True
+    assert "摘要=热度上升" in content
+    assert "标签=AI、融资" in content
+    assert "情绪=positive" in content
 
 
 # ── DingTalk ───────────────────────────────────────────────────────────────────
@@ -159,7 +211,10 @@ async def test_dingtalk_send_with_sign():
         mock_cls.return_value = mock_client
 
         await notifier.send(
-            {"webhook_url": "https://oapi.dingtalk.com/robot/send?access_token=x", "secret": "mysecret"},
+            {
+                "webhook_url": "https://oapi.dingtalk.com/robot/send?access_token=x",
+                "secret": "mysecret",
+            },
             payload,
         )
 

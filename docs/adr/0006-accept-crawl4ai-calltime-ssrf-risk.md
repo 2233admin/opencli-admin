@@ -1,0 +1,3 @@
+# Accept the crawl4ai call-time SSRF residual risk
+
+The unified SSRF validator covers configuration-time URL validation across channels, but crawl4ai's LLM fallback resolves URLs at call time inside litellm, which exposes no seam to pin the resolved IP (unlike httpx, where `PinnedAsyncHTTPTransport` closes the DNS-rebind window). Working around it would mean proxying or forking litellm's transport — high cost for a risk assessed as low (the URLs originate from operator-configured sources, not untrusted input). Decision: accept the residual risk and do not build a workaround; revisit only if litellm grows a transport seam upstream or crawl4ai starts fetching URLs from untrusted content.

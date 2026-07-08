@@ -1,13 +1,20 @@
 # OpenCLI Admin
 
-[![Docker](https://img.shields.io/badge/Docker%20Hub-0.3.6-blue?logo=docker)](https://hub.docker.com/u/xjh1994)
+[![Docker](https://img.shields.io/badge/Docker%20Hub-0.3.6-blue?logo=docker)](https://hub.docker.com/u/2233admin)
 
 **现代化的数据采集系统** — 可视化管理多渠道数据采集，接入 [opencli](https://github.com/jackwener/opencli) 驱动国内外主流平台，支持 AI 处理、多节点分布式调度与实时通知推送。
 
-**OpenCLI WebUI** OpenCLI 可视化界面 [opencli-webui](https://github.com/xjh1994/opencli-webui)
+## 当前仓库边界
+
+- 本仓库是 OpenCLI Admin 单一主仓库，包含前端、后端、Agent、Chrome extension、III/ODP 与编排能力。
+- 新前端位于 `frontend/`，以前端 Canvas/HDA WorkflowProject 为编排主线。
+- 后端位于 `backend/`，前端通过 `/api/v1/*` 与 `/health` 代理对接后端。
+- 扩展仍在 `chrome/extension-src/` 下独立构建。
+
+**OpenCLI WebUI** OpenCLI 可视化界面 [opencli-webui](https://github.com/2233admin/opencli-webui)
 
 **仪表盘**
-<img width="1600" height="900" alt="dashboard" src="https://raw.githubusercontent.com/xjh1994/opencli-admin/main/docs/dashboard.png" />
+<img width="1600" height="900" alt="dashboard" src="https://raw.githubusercontent.com/2233admin/opencli-admin/main/docs/dashboard.png" />
 
 **Agent 节点自动路由**
 <img width="949" height="726" alt="clipboard-image-1774003758" src="https://github.com/user-attachments/assets/2838af3b-2ecb-4d3b-8d8e-21c69db174fc" />
@@ -94,7 +101,73 @@ docker compose up -d   # 启动中心 + agent-1
 
 ---
 
+### 舆情监控实战闭环
+
+当前实战链路已经投到真实运行面，而不是只停留在配置说明：
+
+1. **多账号 / 多节点采集** — 通过「节点管理」和站点绑定，把 `opencli` 采集路由到指定 WS agent；验收脚本会证明 `chrome_endpoint` 和 `node_url` 都落在绑定节点。
+2. **AI 摘要与打标** — `collect → normalize → store → ai → notify` 流水线会把模型输出写入 `ai_enrichment`，监控台读取真实记录展示摘要、标签和情绪分布。
+3. **飞书推送** — 飞书模板可以直接引用 `{{summary}}`、`{{tags}}`、`{{sentiment}}`，把 AI 处理后的内容推到群机器人。
+4. **可视化验收** — 「监控台」的舆情监控卡片读取 `/api/v1/dashboard/opinion-monitor`，展示最近热点、AI 处理量、Feishu sent/failed 证据和来源贡献。
+
+一键生成实战配置：
+
+```bash
+curl -X POST http://localhost:8000/api/v1/presets/opinion-monitor/apply \
+  -H "Content-Type: application/json" \
+  -d '{
+    "source_prefix": "实战舆情",
+    "feishu_webhook_url": "https://open.feishu.cn/open-apis/bot/v2/hook/xxx"
+  }'
+```
+
+这会创建两条默认 `aibase news` 多账号采集源、对应定时计划，以及一个飞书规则。
+如果暂时不填 `feishu_webhook_url`，飞书规则会以 disabled 状态创建，不会伪造推送成功。
+
+关键验收命令：
+
+```powershell
+scripts\acceptance\fleet-acceptance.ps1 `
+  -Site aibase `
+  -Command news `
+  -Limit 1 `
+  -CenterPort 8032 `
+  -AgentPort 19824 `
+  -FreshDb
+```
+
+如果本机已有旧 API/agent 进程占用端口，可以换一组固定端口，例如
+`-CenterPort 8035 -AgentPort 19828`。
+
+最终应输出：
+
+```text
+ACCEPTANCE: PASS
+```
+
+---
+
 ## 快速开始
+
+### 方式零：前后端本地开发（推荐）
+
+新前端在仓库内 `frontend/` 下开发和构建：
+
+```bash
+cd frontend
+pnpm install
+pnpm dev      # Next.js dev server, proxies /api/v1/* to backend
+pnpm lint
+pnpm exec tsc --noEmit
+```
+
+也可以从仓库根目录调用：
+
+```bash
+npm run dev:frontend
+npm run lint:frontend
+npm run typecheck:frontend
+```
 
 ### 方式一：原生 Shell
 
@@ -116,7 +189,6 @@ cp .env.example .env
 
 ```bash
 ./start.sh --no-chrome      # 跳过 Chrome（RSS/API 渠道不需要）
-./start.sh --no-frontend    # 仅启动后端 API
 ./start.sh --cdp-port 9223  # 自定义 Chrome CDP 端口
 ```
 
@@ -153,7 +225,7 @@ docker compose up -d
 | API 文档 | http://localhost:8031/docs |
 | Agent noVNC | http://localhost:3010 |
 
-镜像已发布至 Docker Hub（`xjh1994/opencli-admin-{api,frontend,agent}:0.3.6`），无需本地构建。从源码构建：
+默认 Compose 会从仓库内构建前端。后端和 agent 默认仍可使用已发布镜像；如需全部从源码构建：
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.build.yml up --build -d
@@ -199,7 +271,7 @@ docker run -d --name opencli-agent --restart unless-stopped \
   -e CENTRAL_API_URL=http://<center-ip>:8030 \
   -e AGENT_REGISTER=ws -e AGENT_MODE=bridge \
   -p 19823:19823 \
-  xjh1994/opencli-admin-agent:0.3.6
+  2233admin/opencli-admin-agent:0.3.6
 
 # HTTP 模式（局域网）
 docker run -d --name opencli-agent --restart unless-stopped \
@@ -207,7 +279,7 @@ docker run -d --name opencli-agent --restart unless-stopped \
   -e CENTRAL_API_URL=http://<center-ip>:8030 \
   -e AGENT_REGISTER=http -e AGENT_MODE=bridge \
   -p 19823:19823 \
-  xjh1994/opencli-admin-agent:0.3.6
+  2233admin/opencli-admin-agent:0.3.6
 ```
 
 **一键脚本安装**
@@ -241,6 +313,8 @@ curl -fsSL http://<center>:8030/api/v1/nodes/install/agent.sh | \
 | `AGENT_REGISTER` | 注册模式：`ws` \| `http` | `ws` |
 | `AGENT_MODE` | Chrome 连接模式：`bridge` \| `cdp` | `bridge` |
 | `AGENT_PORT` | Agent 监听端口 | `19823` |
+| `AGENT_ADVERTISE_URL` | 中心回连 Agent 的可达 URL；LAN/NetBird/WireGuard/SSH/custom 都只需要保证它可达 | 自动 |
+| `FLEET_NETWORK_PROVIDER` | 采集层 reachability provider：`lan` \| `netbird` \| `wireguard` \| `ssh` \| `custom` | `lan` |
 | `AGENT_LABEL` | 可读标签 | 主机名 |
 
 ### 采集模式
@@ -328,7 +402,7 @@ OPENAI_API_KEY=sk-...
 
 | 层次 | 技术 |
 |------|------|
-| 前端 | React 18 + TypeScript + Vite + Tailwind CSS |
+| 前端 | Next.js + React 19 + TypeScript + Tailwind CSS |
 | 后端 | FastAPI + SQLAlchemy 2.0 (async) |
 | 数据库 | SQLite（默认）/ PostgreSQL |
 | 任务队列 | asyncio（单机）/ Celery + Redis（分布式） |
@@ -368,10 +442,10 @@ AI 处理（可选）— Claude · OpenAI · DeepSeek · Kimi · GLM · Ollama
 │   ├── pipeline/        # 采集流水线（collect → normalize → store → ai → notify）
 │   ├── scheduler.py     # 本地异步调度器
 │   └── worker/          # Celery 任务定义
-├── frontend/src/
-│   ├── pages/           # 页面组件
-│   ├── components/      # 公共组件
-│   └── api/             # API 客户端
+├── frontend/             # Next.js Canvas/HDA 前端
+├── chrome/extension-src/ # Browser Bridge / extension
+├── iii/                  # III workers and schedules
+├── odp-rs/               # ODP Rust data plane
 ├── scripts/
 │   └── install-agent.sh # 一键安装 Agent
 ├── docker-compose.yml
@@ -404,25 +478,20 @@ TAG=0.3.6
 docker buildx build --builder multiarch \
   --platform linux/amd64,linux/arm64 \
   --build-arg IMAGE_TAG=${TAG} \
-  -t xjh1994/opencli-admin-api:${TAG} --push .
-
-# 前端
-docker buildx build --builder multiarch \
-  --platform linux/amd64,linux/arm64 \
-  -t xjh1994/opencli-admin-frontend:${TAG} --push frontend/
+  -t 2233admin/opencli-admin-api:${TAG} --push .
 
 # Agent 基础版（~100 MB，通过宿主机 Chrome 连接）
 docker buildx build --builder multiarch \
   --platform linux/amd64,linux/arm64 \
   -f agent/Dockerfile \
-  -t xjh1994/opencli-admin-agent:${TAG} --push .
+  -t 2233admin/opencli-admin-agent:${TAG} --push .
 
 # Agent 内置 Chrome 版（~450 MB，完全自包含）
 docker buildx build --builder multiarch \
   --platform linux/amd64,linux/arm64 \
   -f agent/Dockerfile \
   --build-arg INSTALL_CHROME=true \
-  -t xjh1994/opencli-admin-agent:${TAG}-chrome --push .
+  -t 2233admin/opencli-admin-agent:${TAG}-chrome --push .
 ```
 
 如需并行构建所有镜像：
@@ -431,15 +500,13 @@ docker buildx build --builder multiarch \
 TAG=0.3.6
 docker buildx build --builder multiarch --platform linux/amd64,linux/arm64 \
   --build-arg IMAGE_TAG=${TAG} \
-  -t xjh1994/opencli-admin-api:${TAG} --push . > /tmp/build-api.log 2>&1 &
-docker buildx build --builder multiarch --platform linux/amd64,linux/arm64 \
-  -t xjh1994/opencli-admin-frontend:${TAG} --push frontend/ > /tmp/build-frontend.log 2>&1 &
+  -t 2233admin/opencli-admin-api:${TAG} --push . > /tmp/build-api.log 2>&1 &
 docker buildx build --builder multiarch --platform linux/amd64,linux/arm64 \
   -f agent/Dockerfile \
-  -t xjh1994/opencli-admin-agent:${TAG} --push . > /tmp/build-agent.log 2>&1 &
+  -t 2233admin/opencli-admin-agent:${TAG} --push . > /tmp/build-agent.log 2>&1 &
 docker buildx build --builder multiarch --platform linux/amd64,linux/arm64 \
   -f agent/Dockerfile --build-arg INSTALL_CHROME=true \
-  -t xjh1994/opencli-admin-agent:${TAG}-chrome --push . > /tmp/build-agent-chrome.log 2>&1 &
+  -t 2233admin/opencli-admin-agent:${TAG}-chrome --push . > /tmp/build-agent-chrome.log 2>&1 &
 wait && echo "done"
 ```
 
@@ -448,3 +515,29 @@ wait && echo "done"
 ## License
 
 [Apache License 2.0](LICENSE)
+
+---
+
+## 接盘侠指南
+
+新手？从这里开始：
+
+```bash
+# 1. 克隆项目
+git clone https://github.com/2233admin/opencli-admin.git
+cd opencli-admin
+
+# 2. 快速了解项目
+cat README_HANDOVER.md      # 接盘完整指南
+cat PONYTAIL.md             # 开发规范摘要
+
+# 3. 启动开发环境
+docker compose --profile nas up -d
+```
+
+详细文档见：
+- [ARCHITECTURE.md](docs/ARCHITECTURE.md) - 架构设计
+- [ptt-acceptance.md](docs/ptt-acceptance.md) - 集群联机 PTT 验收门
+- [SURVEY_superset.md](docs/SURVEY_superset.md) - 技术选型
+- [PROJECT_MANAGEMENT.md](docs/PROJECT_MANAGEMENT.md) - 任务看板
+- [DEVELOPMENT_STANDARD.md](docs/DEVELOPMENT_STANDARD.md) - 开发规范

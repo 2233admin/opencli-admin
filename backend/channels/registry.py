@@ -31,8 +31,10 @@ def _load_all_channels() -> None:
     from backend.channels import (  # noqa: F401
         api_channel,
         cli_channel,
+        crawl4ai_channel,
         opencli_channel,
         rss_channel,
+        skill_channel,
         web_scraper_channel,
     )
 

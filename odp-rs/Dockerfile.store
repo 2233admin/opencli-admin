@@ -1,0 +1,14 @@
+FROM rust:1.88-bookworm AS builder
+WORKDIR /app
+COPY Cargo.toml Cargo.lock* ./
+COPY crates ./crates
+RUN cargo build --release -p odp-store
+
+FROM debian:bookworm-slim
+# procps provides pgrep, used by the docker-compose healthcheck below: odp-store
+# has no HTTP/TCP listener (it's a pure Redis-stream consumer loop), so the best
+# available liveness probe is "is the process still running" rather than a
+# network check.
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates procps && rm -rf /var/lib/apt/lists/*
+COPY --from=builder /app/target/release/odp-store /usr/local/bin/odp-store
+CMD ["odp-store"]

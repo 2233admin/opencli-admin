@@ -47,7 +47,9 @@ async def test_webhook_notifier_send_success():
     mock_response = MagicMock()
     mock_response.is_success = True
 
-    with patch("httpx.AsyncClient") as mock_client_class:
+    with patch("httpx.AsyncClient") as mock_client_class, patch(
+        "socket.getaddrinfo", return_value=[(None, None, None, "", ("93.184.216.34", 0))]
+    ):
         mock_client = AsyncMock()
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
@@ -75,7 +77,9 @@ async def test_webhook_notifier_send_with_signature():
         mock_resp.is_success = True
         return mock_resp
 
-    with patch("httpx.AsyncClient") as mock_client_class:
+    with patch("httpx.AsyncClient") as mock_client_class, patch(
+        "socket.getaddrinfo", return_value=[(None, None, None, "", ("93.184.216.34", 0))]
+    ):
         mock_client = AsyncMock()
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)

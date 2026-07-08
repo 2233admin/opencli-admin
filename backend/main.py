@@ -10,6 +10,11 @@ from fastapi.responses import JSONResponse
 from backend.api.v1 import v1_router
 from backend.config import get_settings
 from backend.database import run_migrations
+from backend.security.fleet_auth import (
+    FleetAuthMiddleware,
+    enforce_bind_guard,
+    resolve_uvicorn_host,
+)
 
 def _configure_logging() -> None:
     """Restore backend.* logging after uvicorn's dictConfig disables pre-existing loggers.
@@ -62,6 +67,12 @@ def _read_chrome_endpoints() -> list[str]:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # ADR-0005 bind guard: refuse to serve a non-localhost bind without an
+    # API auth token. Raising here aborts uvicorn startup before a single
+    # request is served. get_settings() is read fresh (not the module-level
+    # snapshot) so env changes between import and startup are honored.
+    enforce_bind_guard(resolve_uvicorn_host(), get_settings().api_auth_token)
+
     await run_migrations()
     # Re-apply logging config: alembic resets root logger level to WARNING during migrations
     # and uvicorn's dictConfig disables pre-existing loggers
@@ -127,17 +138,45 @@ async def lifespan(app: FastAPI):
         await session.commit()
     logger.info("Recovered stale tasks on startup")
 
-    if settings.task_executor == "local":
+    use_admin_scheduler = (
+        settings.collection_orchestrator == "admin"
+        and settings.task_executor == "local"
+    )
+    if use_admin_scheduler:
         from backend.scheduler import start_scheduler
         start_scheduler()
+    elif settings.task_executor == "celery":
+        # Bulk-sync redis with the current DB state at startup. redbeat's
+        # entries are otherwise only kept current by the schedule CRUD
+        # endpoints (backend.services.schedule_service._sync_redbeat) — this
+        # catches drift from anything that changed the DB without going
+        # through them (a migration, a direct DB edit, a fresh deploy against
+        # an existing DB). Best-effort: a redis hiccup here must not block
+        # the app from starting.
+        try:
+            from backend.worker.redbeat_sync import populate_all
+            await populate_all()
+        except Exception as exc:
+            logger.warning("redbeat populate_all failed at startup: %s", exc)
+    # Control Cycle (issue 03 / PR-Control-4, ADR-0007): a dedicated
+    # background task, deliberately NOT hung on the collection scheduler
+    # above — the controller and the plant it supervises must not share a
+    # scheduling domain. Always started; the cycle itself is a no-op mutator
+    # in Advisory Mode (the shipped default) and stays a no-op mutator
+    # whenever the kill switch is engaged.
+    from backend.control import cycle_task
+    cycle_task.start()
+
     logger.info(
-        "OpenCLI Admin started (env=%s, executor=%s)",
+        "OpenCLI Admin started (env=%s, executor=%s, orchestrator=%s)",
         settings.app_env,
         settings.task_executor,
+        settings.collection_orchestrator,
     )
     yield
     # Shutdown
-    if settings.task_executor == "local":
+    await cycle_task.stop()
+    if use_admin_scheduler:
         from backend.scheduler import stop_scheduler
         stop_scheduler()
 
@@ -152,6 +191,14 @@ def create_app() -> FastAPI:
         openapi_url="/openapi.json",
         lifespan=lifespan,
     )
+
+    # Fleet auth (ADR-0005): static bearer token on every /api route.
+    # Registered BEFORE CORSMiddleware on purpose — Starlette treats the
+    # last-added middleware as outermost, so CORS ends up wrapping auth:
+    # 401 responses still carry CORS headers and preflight OPTIONS requests
+    # (which browsers send without an Authorization header) are answered by
+    # CORSMiddleware before ever reaching the token check.
+    app.add_middleware(FleetAuthMiddleware)
 
     # CORS
     app.add_middleware(
@@ -176,7 +223,13 @@ def create_app() -> FastAPI:
 
     @app.get("/health")
     async def health() -> dict:
-        return {"status": "ok", "version": "0.1.0", "task_executor": settings.task_executor}
+        # Liveness only. This endpoint is exempt from FleetAuthMiddleware
+        # (it sits outside the /api prefix; docker-compose's healthcheck
+        # curls it with no credentials), so per closeout issue 04 it must
+        # leak nothing: no version, no config flags. The deployment detail
+        # (task_executor, collection_mode, ...) lives at the authenticated
+        # GET /api/v1/system/config instead.
+        return {"status": "ok"}
 
     return app
 

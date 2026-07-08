@@ -10,10 +10,9 @@ Background tasks bypass FastAPI's DB dependency injection (they use the
 module-level AsyncSessionLocal), so we avoid the trigger→poll approach.
 """
 
-import asyncio
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -47,6 +46,10 @@ def _settings_mock(collection_mode: str = "local"):
     s.agent_http_timeout = 30
     s.agent_ws_timeout = 30
     return s
+
+
+def _captured_collect_cmd(captured: list[list], site: str) -> list:
+    return next(cmd for cmd in captured if site in cmd and "--help" not in cmd)
 
 
 # ── fixtures ──────────────────────────────────────────────────────────────────
@@ -131,10 +134,9 @@ async def test_collect_builds_cmd_with_positional_args_before_named_options(
         result = await channel.collect(cfg, {})
 
     assert result.success, f"collect failed: {result.error}"
-    assert len(captured) == 1
-    cmd = captured[0]
+    cmd = _captured_collect_cmd(captured, "bilibili")
 
-    # Expected: [..., "bilibili", "search", "AI agent", "--type", "video", "--limit", "5", "-f", "json"]
+    # Expected: positional args immediately after command, before named options and output format.
     site_idx = cmd.index("bilibili")
     assert cmd[site_idx + 1] == "search"
     assert cmd[site_idx + 2] == "AI agent", (
@@ -170,8 +172,7 @@ async def test_collect_without_positional_args_backward_compat(
         result = await channel.collect(cfg, {})
 
     assert result.success, f"collect failed: {result.error}"
-    assert len(captured) == 1
-    cmd = captured[0]
+    cmd = _captured_collect_cmd(captured, "zhihu")
 
     site_idx = cmd.index("zhihu")
     assert cmd[site_idx + 1] == "hot"
@@ -188,8 +189,8 @@ async def test_collect_agent_mode_passes_positional_args_to_dispatch(
     client, opencli_source_payload
 ):
     """In HTTP agent mode, positional_args is forwarded to _collect_via_agent."""
-    from backend.channels.opencli_channel import OpenCLIChannel
     from backend.browser_pool import LocalBrowserPool
+    from backend.channels.opencli_channel import OpenCLIChannel
 
     create_resp = await client.post("/api/v1/sources", json=opencli_source_payload)
     cfg = create_resp.json()["data"]["channel_config"]
@@ -226,3 +227,105 @@ async def test_collect_agent_mode_passes_positional_args_to_dispatch(
     assert len(captured) == 1
     assert captured[0]["positional_args"] == ["AI agent"]
     assert captured[0]["args"].get("type") == "video"
+
+
+@pytest.mark.asyncio
+async def test_collect_agent_mode_prefers_site_bound_agent(
+    client,
+    db_session,
+    opencli_source_payload,
+):
+    """Agent-mode routing should honor the same site binding used by fleet match."""
+    from backend.browser_pool import LocalBrowserPool
+    from backend.channels.base import ChannelResult
+    from backend.channels.opencli_channel import OpenCLIChannel
+    from backend.services import browser_service
+
+    create_resp = await client.post("/api/v1/sources", json=opencli_source_payload)
+    cfg = create_resp.json()["data"]["channel_config"]
+    await browser_service.create_binding(
+        db_session,
+        browser_endpoint="http://agent-b:19823",
+        site="bilibili",
+        notes="site-bound cluster route",
+    )
+    await db_session.commit()
+
+    selected: list[str | None] = []
+    dispatched: list[dict] = []
+
+    class BoundSessionContext:
+        async def __aenter__(self):
+            return db_session
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    async def fake_collect_via_ws_agent(
+        agent_url,
+        site,
+        command,
+        args,
+        positional_args,
+        fmt,
+        mode,
+    ):
+        dispatched.append(
+            {
+                "agent_url": agent_url,
+                "site": site,
+                "command": command,
+                "positional_args": positional_args,
+                "mode": mode,
+            }
+        )
+        return ChannelResult.ok([{"title": "ok"}], site=site, command=command)
+
+    def fake_acquire(endpoint=None):
+        selected.append(endpoint)
+        ctx = AsyncMock()
+        ctx.__aenter__ = AsyncMock(return_value=endpoint)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        return ctx
+
+    agent_pool = MagicMock(spec=LocalBrowserPool)
+    agent_pool.endpoints = ["http://agent-a:19823", "http://agent-b:19823"]
+    agent_pool.get_agent_protocol.side_effect = lambda endpoint: {
+        "http://agent-a:19823": "http",
+        "http://agent-b:19823": "ws",
+    }[endpoint]
+    agent_pool.get_agent_url.side_effect = lambda endpoint: endpoint
+    agent_pool.get_mode.return_value = "bridge"
+    agent_pool.acquire.side_effect = fake_acquire
+
+    with (
+        patch(
+            "backend.channels.opencli_channel._collect_via_ws_agent",
+            side_effect=fake_collect_via_ws_agent,
+        ),
+        patch(
+            "backend.channels.opencli_channel._command_requires_browser",
+            new=AsyncMock(return_value=True),
+        ),
+        patch(
+            "backend.channels.opencli_channel._get_named_options",
+            new=AsyncMock(return_value=frozenset({"type", "limit"})),
+        ),
+        patch("backend.database.AsyncSessionLocal", return_value=BoundSessionContext()),
+        patch("backend.browser_pool.get_pool", return_value=agent_pool),
+        patch("backend.config.get_settings", return_value=_settings_mock("agent")),
+    ):
+        channel = OpenCLIChannel()
+        result = await channel.collect(cfg, {})
+
+    assert result.success, f"collect failed: {result.error}"
+    assert selected == ["http://agent-b:19823"]
+    assert dispatched == [
+        {
+            "agent_url": "http://agent-b:19823",
+            "site": "bilibili",
+            "command": "search",
+            "positional_args": ["AI agent"],
+            "mode": "bridge",
+        }
+    ]

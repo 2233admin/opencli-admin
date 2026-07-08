@@ -1,0 +1,62 @@
+{
+  "id": "agent-proposal-duplicate-push",
+  "title": "Add duplicate push guard",
+  "summary": "Agent proposes an extra duplicate push branch, but the node id collides with the existing notification node.",
+  "risk": "medium",
+  "validationEvidence": [
+    {
+      "id": "duplicate-push-check",
+      "label": "Duplicate push branch check",
+      "passed": false,
+      "details": "The proposal attempts to add notify-preview, which already exists in the workflow."
+    },
+    {
+      "id": "simulation-autostart-check",
+      "label": "No automatic simulation on accept",
+      "passed": true,
+      "details": "Accept only transforms the workflow draft; simulation remains an explicit caller action."
+    }
+  ],
+  "operations": [
+    {
+      "type": "addNode",
+      "node": {
+        "id": "notify-preview",
+        "kind": "notify",
+        "capability": "send",
+        "adapter": "webhook-notifier",
+        "params": {
+          "template": "duplicate-push"
+        },
+        "ui": {
+          "position": {
+            "x": 1480,
+            "y": 320
+          }
+        }
+      }
+    },
+    {
+      "type": "addEdge",
+      "edge": {
+        "id": "e-router-duplicate-push",
+        "source": "router-importance",
+        "target": "notify-preview",
+        "label": "duplicate push"
+      }
+    },
+    {
+      "type": "updateProjectSettings",
+      "settings": {
+        "maxItemsPerRun": 30
+      }
+    },
+    {
+      "type": "updateProfileRubric",
+      "rubric": {
+        "duplicatePushPolicy": "prevent-existing-notify-node-reuse",
+        "riskTolerance": "manual-review"
+      }
+    }
+  ]
+}

@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from bs4 import BeautifulSoup
 
+from backend.channels.base import ChannelFetchError, FetchContext
 from backend.channels.web_scraper_channel import WebScraperChannel
 
 
@@ -297,3 +298,156 @@ async def test_collect_custom_headers_sent(channel):
     assert result.success is True
     assert captured_headers.get("X-My-Header") == "custom-value"
     assert "User-Agent" in captured_headers
+
+
+# ── GOAL-4 PR-D: fetch() thick contract (ctx.http path — rate limit/retry) ──────
+
+@pytest.mark.asyncio
+async def test_fetch_uses_shared_client_with_per_request_headers(channel):
+    """When ctx.http is present (the runner's RateLimitedClient), headers
+    can't be baked into a shared client's constructor — they must go on the
+    per-request .get() call instead."""
+    response = _make_mock_response()
+    shared_client = AsyncMock()
+    shared_client.get = AsyncMock(return_value=response)
+
+    ctx = FetchContext(
+        config={
+            "url": "https://example.com",
+            "selectors": {"page_title": "h1.page-title"},
+            "headers": {"X-My-Header": "v"},
+        },
+        params={},
+        http=shared_client,
+    )
+    result = await channel.fetch(ctx)
+
+    assert result.items[0]["page_title"] == "Products"
+    call_kwargs = shared_client.get.call_args.kwargs
+    assert call_kwargs["headers"]["X-My-Header"] == "v"
+    assert "User-Agent" in call_kwargs["headers"]
+
+
+@pytest.mark.asyncio
+async def test_fetch_raises_channel_fetch_error_on_timeout():
+    """fetch()'s raise-based contract (not collect()'s return-based one)."""
+    import httpx
+
+    channel = WebScraperChannel()
+    shared_client = AsyncMock()
+    shared_client.get = AsyncMock(side_effect=httpx.TimeoutException("timeout"))
+
+    ctx = FetchContext(
+        config={"url": "https://example.com", "selectors": {"title": "h1"}},
+        params={}, http=shared_client,
+    )
+    with pytest.raises(ChannelFetchError, match="timed out"):
+        await channel.fetch(ctx)
+
+
+@pytest.mark.asyncio
+async def test_collect_still_delegates_to_fetch_without_ctx_http(channel):
+    """collect()'s thin-wrapper contract: no ctx.http, own client, same
+    behaviour as before the migration (already covered above by the full
+    old test suite passing unchanged — this just pins the delegation)."""
+    response = _make_mock_response()
+    mock_client_ctx = _make_mock_client(response)
+
+    with patch("httpx.AsyncClient", return_value=mock_client_ctx):
+        with patch.object(channel, "fetch", wraps=channel.fetch) as spy:
+            result = await channel.collect(
+                {"url": "https://example.com", "selectors": {"page_title": "h1.page-title"}}, {}
+            )
+
+    spy.assert_called_once()
+    assert result.success is True
+
+
+# ── health_check (GOAL-4 PR-E: real per-source probe) ───────────────────────────
+
+@pytest.mark.asyncio
+async def test_health_check_no_config_is_parser_liveness_only(channel):
+    assert await channel.health_check() is True
+
+
+@pytest.mark.asyncio
+async def test_health_check_missing_url_is_unhealthy(channel):
+    assert await channel.health_check({}) is False
+
+
+@pytest.mark.asyncio
+async def test_health_check_reachable_returns_true(channel):
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.raise_for_status = MagicMock()
+    mock_client = AsyncMock()
+    mock_client.head = AsyncMock(return_value=mock_response)
+    mock_client_ctx = AsyncMock()
+    mock_client_ctx.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client_ctx.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("httpx.AsyncClient", return_value=mock_client_ctx):
+        result = await channel.health_check({"url": "https://example.com"})
+
+    assert result is True
+
+
+@pytest.mark.asyncio
+async def test_health_check_unreachable_returns_false(channel):
+    mock_client = AsyncMock()
+    mock_client.head = AsyncMock(side_effect=OSError("connection refused"))
+    mock_client_ctx = AsyncMock()
+    mock_client_ctx.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client_ctx.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("httpx.AsyncClient", return_value=mock_client_ctx):
+        result = await channel.health_check({"url": "https://example.com"})
+
+    assert result is False
+
+
+@pytest.mark.asyncio
+async def test_health_check_lxml_unavailable_returns_false(channel):
+    """The "driver" (parser backend) tier — a broken lxml install must fail
+    the check before any network probe is even attempted."""
+    with patch(
+        "backend.channels.web_scraper_channel.BeautifulSoup",
+        side_effect=Exception("lxml not installed"),
+    ):
+        result = await channel.health_check({"url": "https://example.com"})
+
+    assert result is False
+
+
+# ── auth.type == "cookie" (CookieCloud-synced session) ──────────────────────────
+@pytest.mark.asyncio
+async def test_collect_cookie_auth_sends_synced_cookies(channel):
+    response = _make_mock_response()
+    mock_client_ctx = _make_mock_client(response)
+
+    with patch("httpx.AsyncClient", return_value=mock_client_ctx) as ctor, patch(
+        "backend.auth.manager.AuthManager.resolve_cookies",
+        AsyncMock(return_value=[{"name": "session_id", "value": "abc"}]),
+    ) as resolve_cookies:
+        result = await channel.collect(
+            {"url": "https://example.com", "selectors": {"title": "h1"}, "auth": {"type": "cookie"}}, {}
+        )
+
+    resolve_cookies.assert_awaited_once_with("example.com")
+    assert result.success is True
+    assert ctor.call_args.kwargs["headers"]["Cookie"] == "session_id=abc"
+
+
+@pytest.mark.asyncio
+async def test_collect_no_cookie_auth_type_never_calls_resolve_cookies(channel):
+    """No auth.type == "cookie" configured — resolve_cookies must never be hit
+    (avoid a DB round trip on every plain scrape)."""
+    response = _make_mock_response()
+    mock_client_ctx = _make_mock_client(response)
+
+    with patch("httpx.AsyncClient", return_value=mock_client_ctx), patch(
+        "backend.auth.manager.AuthManager.resolve_cookies", AsyncMock()
+    ) as resolve_cookies:
+        await channel.collect({"url": "https://example.com", "selectors": {"title": "h1"}}, {})
+
+    resolve_cookies.assert_not_awaited()

@@ -50,7 +50,19 @@ dependencies = [
     "jsonschema>=4.21.0",
     # Docker SDK (for chrome pool management via API)
     "docker>=7.0.0",
+    # Browser automation (skill execute loop over CDP)
+    "playwright>=1.40.0",
+    "cryptography>=46.0.5",
+    "celery-redbeat>=2.3.3",
+    # CookieCloud sync client (auth_kind="cookie" — see backend/auth/cookiecloud_sync.py)
+    "PyCookieCloud>=0.4.0",
+    # JS-rendered page scraping + anti-detection (backend/channels/crawl4ai_channel.py)
+    "crawl4ai>=0.7.0",
 ]
+
+[project.scripts]
+opencli-skill = "backend.cli:main"
+opencli-mcp = "backend.mcp_server:main"
 
 [project.optional-dependencies]
 dev = [
@@ -64,6 +76,10 @@ dev = [
     "types-beautifulsoup4",
     "types-python-dateutil",
 ]
+# MCP stdio server (backend/mcp_server.py) — separate process, not needed by the API itself
+mcp = [
+    "mcp>=1.2.0",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["backend"]
@@ -73,20 +89,35 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 addopts = "--cov=backend --cov-report=term-missing --cov-fail-under=80"
 markers = [
-    "live: tests that require a running API server and opencli daemon (deselect with -m 'not live')",
+    "live: tests that require a running API server and opencli daemon, or a local Chrome reachable over CDP (deselect with -m 'not live')",
 ]
 
 [tool.coverage.run]
 concurrency = ["greenlet", "thread"]
 omit = [
+    # Celery worker (requires Redis/broker at runtime)
     "backend/worker/tasks.py",
     "backend/worker/beat_schedule.py",
     "backend/worker/celery_app.py",
+    # AI processors (require API keys)
     "backend/processors/claude_processor.py",
     "backend/processors/openai_processor.py",
     "backend/processors/local_processor.py",
-    "backend/processors/external_processor.py",
+    # Email notifier (requires SMTP config)
     "backend/notifiers/email_notifier.py",
+    # ODP client (III integration, tested separately)
+    "backend/pipeline/odp_client.py",
+    # Agent server (complex WS/Chrome pool, integration tested)
+    "backend/agent_server.py",
+    # MCP stdio server (thin HTTP wrapper, requires a running API instance)
+    "backend/mcp_server.py",
+    # API routers (require full app context / DB)
+    "backend/api/v1/browsers.py",
+    "backend/api/v1/nodes.py",
+    "backend/api/v1/system.py",
+    "backend/api/v1/dashboard.py",
+    "backend/database.py",
+    "backend/main.py",
 ]
 
 [tool.ruff]
@@ -100,3 +131,6 @@ select = ["E", "F", "I", "N", "W", "UP"]
 python_version = "3.11"
 strict = false
 ignore_missing_imports = true
+
+[tool.vercel]
+entrypoint = "backend.main:app"

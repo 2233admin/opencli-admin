@@ -3,12 +3,98 @@
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from typing import Any
 
+from backend.channels.base import ChannelFetchError
+from backend.control.error_kinds import map_error_type, map_exception
+from backend.control.recorder import FreshnessInfo, record_run_measurement
 from backend.models.source import DataSource
 from backend.pipeline import events
+from backend.pipeline.error_taxonomy import effective_error_type, is_retryable
 
 logger = logging.getLogger(__name__)
+
+
+def _parse_item_timestamp(value: Any) -> datetime | None:
+    """Best-effort parse of a normalized ``published_at`` string into an aware
+    datetime. Handles RFC 822 (what feedparser/RSS produces) and ISO-8601.
+    Returns None (never raises) for anything that doesn't parse — an
+    unparseable string is evidence of ``source_ts_quality="invalid"``, not a
+    crash.
+    """
+    if not value or not isinstance(value, str):
+        return None
+    try:
+        dt = parsedate_to_datetime(value)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+    except (TypeError, ValueError):
+        pass
+    try:
+        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+    except (TypeError, ValueError):
+        return None
+
+
+def _derive_freshness(new_records: list[Any], now: datetime) -> FreshnessInfo:
+    """Honestly derive freshness quality from whatever item timestamps the
+    sink's normalized records already carry (``normalized_data['published_at']``
+    — set by ``backend.pipeline.normalizer`` from the item's own date field,
+    e.g. RSS's ``published``). No channel wiring is added here — if a channel
+    never produced a date field, or none of it parses, this returns
+    ``quality="missing"``/``"invalid"`` rather than fabricating a timestamp.
+
+    * Every accepted record's raw published_at string is empty → "observed_fallback"
+      (there's no source-provided time signal at all; wall-clock collection time
+      stands in for it).
+    * At least one non-empty published_at string, all unparsable → "invalid".
+    * At least one parses → "source", using the newest parsed value.
+    * No accepted records at all this run → "missing" (nothing to derive from).
+    """
+    if not new_records:
+        return FreshnessInfo(newest_observed_at=now, quality="missing")
+
+    raw_values: list[str] = []
+    for rec in new_records:
+        normalized = getattr(rec, "normalized_data", None) or {}
+        raw_values.append(normalized.get("published_at") or "")
+
+    if not any(raw_values):
+        return FreshnessInfo(newest_observed_at=now, quality="observed_fallback")
+
+    parsed = [p for v in raw_values if v and (p := _parse_item_timestamp(v)) is not None]
+    if not parsed:
+        return FreshnessInfo(newest_observed_at=now, quality="invalid")
+
+    newest_source_ts = max(parsed)
+    lag = int((now - newest_source_ts).total_seconds())
+    return FreshnessInfo(
+        newest_source_ts=newest_source_ts,
+        newest_observed_at=now,
+        freshness_lag_seconds=lag,
+        quality="source",
+    )
+
+
+async def _record_measurement_best_effort(**kwargs: Any) -> None:
+    """Wrap ``record_run_measurement`` in its own short-lived session, commit,
+    and swallow failures (mirrors ``events.emit``): a measurement-recording bug
+    must never fail or mask the run it's trying to observe (§0 — the sensor
+    must not become a new source of run failures either).
+    """
+    try:
+        from backend.database import AsyncSessionLocal
+
+        async with AsyncSessionLocal() as session:
+            await record_run_measurement(session, **kwargs)
+            await session.commit()
+    except Exception as exc:
+        logger.warning("record_run_measurement failed (non-fatal): %s", exc)
 
 
 @dataclass
@@ -33,17 +119,34 @@ async def run_pipeline(
     enable_notifications: bool = True,
     agent_config: dict[str, Any] | None = None,
     run_id: str | None = None,
+    sink=None,  # ItemSink | None — write destination; defaults to LegacyDbSink
 ) -> PipelineResult:
     """Execute the full collection pipeline. Each write step uses its own
     short-lived session so no write lock is held during long-running I/O."""
     from backend.database import AsyncSessionLocal
-    from backend.pipeline import ai_processor, collector, notifier_dispatch, normalizer, storer
+    from backend.pipeline import ai_processor, collector, notifier_dispatch
 
     started = datetime.now(timezone.utc)
     params = parameters or {}
 
-    # Pre-step: auto-resolve chrome endpoint from browser binding (opencli only)
-    if source.channel_type == "opencli" and not params.get("chrome_endpoint"):
+    # Pre-step: auto-resolve chrome endpoint from a browser binding. Channels that
+    # declare capabilities.session_affinity (opencli, skill) drive a real Chrome
+    # from the shared pool, so a site-keyed binding lets them attach to a
+    # logged-in browser. Best-effort: a missing binding is not an error
+    # (browser_pool.acquire(endpoint=None) picks a default), so we only override
+    # chrome_endpoint when a binding exists. Gated by the capability rather than a
+    # hardcoded channel list, so a new session-bound channel needs no change here.
+    from backend.channels.registry import get_channel
+
+    try:
+        _affinity_channel = get_channel(source.channel_type)
+    except Exception:
+        _affinity_channel = None  # unknown channel_type surfaces in the collect step
+    if (
+        _affinity_channel is not None
+        and _affinity_channel.capabilities.session_affinity
+        and not params.get("chrome_endpoint")
+    ):
         site = source.channel_config.get("site", "")
         if site:
             from backend.services import browser_service
@@ -60,7 +163,20 @@ async def run_pipeline(
     step1_start = datetime.now(timezone.utc)
 
     if run_id:
+        # Skill channel: inject run_id into params BEFORE dispatch so the loop can
+        # emit per-step events via events.emit(run_id, ...). Scoped to "skill" —
+        # other channels don't expect a run_id param. (chrome_endpoint, if any,
+        # was already injected by the pre-step binding above.)
+        if source.channel_type == "skill":
+            params = {**params, "run_id": run_id}
         collect_detail: dict = {"channel_type": source.channel_type, "params": params}
+        if source.channel_type == "skill":
+            _skill_md = source.channel_config.get("skill_md") or ""
+            collect_detail["skill"] = {
+                "skill_chars": len(_skill_md),
+                "has_chrome_endpoint": bool(params.get("chrome_endpoint")),
+                "auto_confirm": bool(source.channel_config.get("auto_confirm", False)),
+            }
         if source.channel_type == "opencli":
             from backend.channels.opencli_channel import _get_named_options, _OPENCLI_BIN
             cfg = source.channel_config
@@ -92,24 +208,51 @@ async def run_pipeline(
     try:
         channel_result = await collector.collect(source, params)
     except Exception as exc:
-        logger.exception("[task:%s] step1/collect exception | %s", task_id, exc)
+        error_type = effective_error_type(exc)
+        logger.exception(
+            "[task:%s] step1/collect exception | error_type=%s | %s", task_id, error_type, exc
+        )
         if run_id:
             await events.emit(
                 run_id, "collect",
                 f"采集失败: {exc}",
                 level="error",
-                detail={"error": str(exc)},
+                detail={"error": str(exc), "error_type": error_type},
+            )
+        if is_retryable(error_type):
+            # Let this propagate to the celery task boundary so its
+            # autoretry_for policy applies instead of burning a permanent
+            # failure on a transient fault.
+            raise
+        if run_id:
+            await _record_measurement_best_effort(
+                source_id=source.id, run_id=run_id,
+                fetch_latency_ms=int((datetime.now(timezone.utc) - step1_start).total_seconds() * 1000),
+                error_kind=map_exception(exc),
+                raw={"stage": "collect", "error": str(exc), "error_type": error_type},
             )
         return PipelineResult(success=False, source_id=source.id, error=str(exc))
 
     if not channel_result.success:
-        logger.error("[task:%s] step1/collect failed | error=%s", task_id, channel_result.error)
+        logger.error(
+            "[task:%s] step1/collect failed | error=%s error_type=%s",
+            task_id, channel_result.error, channel_result.error_type,
+        )
         if run_id:
             await events.emit(
                 run_id, "collect",
                 f"采集失败: {channel_result.error}",
                 level="error",
-                detail={"error": channel_result.error},
+                detail={"error": channel_result.error, "error_type": channel_result.error_type},
+            )
+        if is_retryable(channel_result.error_type):
+            raise ChannelFetchError(channel_result.error or "collect failed")
+        if run_id:
+            await _record_measurement_best_effort(
+                source_id=source.id, run_id=run_id,
+                fetch_latency_ms=int((datetime.now(timezone.utc) - step1_start).total_seconds() * 1000),
+                error_type=channel_result.error_type,
+                raw={"stage": "collect", "error": channel_result.error},
             )
         return PipelineResult(success=False, source_id=source.id, error=channel_result.error)
 
@@ -126,38 +269,110 @@ async def run_pipeline(
             elapsed_ms=step1_elapsed,
         )
 
-    # Step 2: Normalize
-    triples = normalizer.normalize_items(channel_result.items, source.id)
-    logger.info("[task:%s] step2/normalize done | items=%d", task_id, len(triples))
-    if run_id:
-        await events.emit(
-            run_id, "normalize",
-            f"归一化完成 | {len(triples)} 条",
-            detail={"items": len(triples)},
-        )
+    # Steps 2+3: Normalize + Store, behind the write seam. The sink owns its own
+    # normalization, dedup, and persistence; the orchestrator stays
+    # destination-agnostic. An explicitly injected sink wins (tests, callers);
+    # otherwise the source's write_strategy selects it (default 'legacy' →
+    # LegacyDbSink, the original inline path).
+    from backend.pipeline.sinks.base import RunContext
+    from backend.pipeline.sinks.strategy import select_sink
 
-    # Step 3: Store
-    logger.info("[task:%s] step3/store start | items=%d", task_id, len(triples))
+    active_sink = sink or select_sink(getattr(source, "write_strategy", None))
+    sink_ctx = RunContext(
+        task_id=task_id,
+        source_id=source.id,
+        provider=source.channel_type,
+        run_id=run_id,
+    )
+    logger.info("[task:%s] step2-3/sink start | sink=%s items=%d",
+                task_id, type(active_sink).__name__, channel_result.count)
     try:
-        async with AsyncSessionLocal() as session:
-            new_records, skipped = await storer.store_records(session, task_id, source.id, triples)
-            await session.commit()
+        sink_result = await active_sink.write_batch(sink_ctx, channel_result.items)
     except Exception as exc:
-        logger.exception("[task:%s] step3/store exception | %s", task_id, exc)
+        error_type = effective_error_type(exc)
+        logger.exception(
+            "[task:%s] step2-3/sink exception | error_type=%s | %s", task_id, error_type, exc
+        )
+        if run_id:
+            await events.emit(
+                run_id, "store",
+                f"持久化失败: {exc}",
+                level="error",
+                detail={"error": str(exc), "error_type": error_type},
+            )
+        if is_retryable(error_type):
+            raise
+        if run_id:
+            await _record_measurement_best_effort(
+                source_id=source.id, run_id=run_id,
+                accepted=0, duplicates=0, rejected=channel_result.count,
+                fetch_latency_ms=step1_elapsed,
+                error_kind=map_exception(exc),
+                raw={"stage": "store", "error": str(exc), "error_type": error_type},
+            )
         return PipelineResult(
             success=False,
             source_id=source.id,
             collected=channel_result.count,
             error=str(exc),
         )
-    logger.info("[task:%s] step3/store done | new=%d skipped=%d",
-                task_id, len(new_records), skipped)
+    new_records = sink_result.records
+    skipped = sink_result.duplicates
+    logger.info("[task:%s] step2-3/sink done | normalized=%d new=%d skipped=%d",
+                task_id, sink_result.normalized, len(new_records), skipped)
     if run_id:
+        await events.emit(
+            run_id, "normalize",
+            f"归一化完成 | {sink_result.normalized} 条",
+            detail={"items": sink_result.normalized},
+        )
         await events.emit(
             run_id, "store",
             f"入库完成 | 新增 {len(new_records)} 条，跳过 {skipped} 条（重复）",
             detail={"new": len(new_records), "skipped": skipped},
         )
+
+    # Shadow-sink errors (e.g. DualSink's best-effort ODP forward failing while
+    # the legacy write still succeeded) are non-blocking by design — the run
+    # must still complete — but must not vanish silently either. Surface them
+    # as a warning event and onto PipelineResult.metadata so a source with ODP
+    # down consistently shows a signal, not just a worker-log line (P1-7).
+    shadow_errors = list(sink_result.errors)
+    if shadow_errors:
+        logger.warning(
+            "[task:%s] step2-3/sink shadow errors | count=%d errors=%s",
+            task_id, len(shadow_errors), shadow_errors,
+        )
+        if run_id:
+            await events.emit(
+                run_id, "store",
+                f"影子写入出现 {len(shadow_errors)} 个错误（不影响本次任务结果）",
+                level="warning",
+                detail={
+                    "shadow_errors": shadow_errors,
+                    "shadow_meta": sink_result.shadow_meta,
+                },
+            )
+
+    # Incremental cursor: advance the persisted cursor ONLY now that the write sink
+    # has accepted this batch. A raised/failed sink returned above, so reaching here
+    # means the data landed; committing during fetch would skip items that never got
+    # written. (Deeper ODP durability — a queued 202 that never persists — is an
+    # ODP-side guarantee, tracked separately.)
+    pending_cursor = channel_result.metadata.pop("__cursor_pending__", None)
+    cursor_source_id = channel_result.metadata.pop("__cursor_source_id__", None)
+    # Real commit result (backend.pipeline.cursor_store.CommitResult), not a
+    # guess — False for non-incremental channels/runs that never staged a
+    # cursor at all, so cursor_advanced in the measurement below reflects
+    # what actually got persisted, never "save() was called".
+    cursor_advanced = False
+    if pending_cursor is not None and cursor_source_id is not None:
+        from backend.pipeline.cursor_store import DBCursorStore
+
+        commit_result = await DBCursorStore().save(cursor_source_id, pending_cursor)
+        cursor_advanced = commit_result.advanced
+        logger.info("[task:%s] cursor committed post-write | source=%s advanced=%s",
+                    task_id, cursor_source_id, cursor_advanced)
 
     # Step 4: AI processing
     effective_ai_config = agent_config or source.ai_config
@@ -228,6 +443,15 @@ async def run_pipeline(
 
     duration_ms = int((datetime.now(timezone.utc) - started).total_seconds() * 1000)
 
+    if shadow_errors:
+        # Non-blocking signal onto the result too (in addition to the emitted
+        # event above), so a caller with no run_id (or one that persists
+        # PipelineResult.metadata onto TaskRun, see runner.py) still observes
+        # the shadow failure instead of it only living in a worker log line.
+        channel_result.metadata["shadow_errors"] = shadow_errors
+        if sink_result.shadow_meta is not None:
+            channel_result.metadata["shadow_meta"] = sink_result.shadow_meta
+
     if run_id:
         await events.emit(
             run_id, "complete",
@@ -238,6 +462,27 @@ async def run_pipeline(
                 "stored": len(new_records),
                 "skipped": skipped,
             },
+        )
+        completed_at = datetime.now(timezone.utc)
+        # A successful run has no terminal error_type by definition — shadow-sink
+        # errors are non-blocking (the run still succeeded) and are already
+        # surfaced via the "complete" event above and PipelineResult.metadata;
+        # they're carried into raw here too so they're visible alongside the
+        # measurement, without fabricating a fake error_kind for a run that
+        # actually succeeded.
+        await _record_measurement_best_effort(
+            source_id=source.id, run_id=run_id,
+            accepted=len(new_records), duplicates=skipped, rejected=sink_result.rejected,
+            fetch_latency_ms=step1_elapsed, store_latency_ms=duration_ms - step1_elapsed,
+            cursor_advanced=cursor_advanced,
+            freshness=_derive_freshness(new_records, completed_at),
+            raw={
+                "stage": "complete",
+                "collected": channel_result.count,
+                "duration_ms": duration_ms,
+                "shadow_errors": shadow_errors or None,
+            },
+            measured_at=completed_at,
         )
 
     return PipelineResult(

@@ -1,0 +1,14 @@
+[
+  {
+    "nodeId": "unsupported-export",
+    "eventType": "blocked",
+    "blockReasonCode": "missing_runtime_binding",
+    "messageContains": "No runtime binding registered",
+    "blockReasonDetailsSubset": {
+      "code": "missing_runtime_binding",
+      "node_id": "unsupported-export",
+      "kind": "action",
+      "capability": "summarize"
+    }
+  }
+]

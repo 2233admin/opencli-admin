@@ -1,0 +1,29 @@
+[
+  {
+    "nodeId": "notify-webhook",
+    "eventType": "queued"
+  },
+  {
+    "nodeId": "notify-webhook",
+    "eventType": "started",
+    "messageContains": "Webhook delivery started"
+  },
+  {
+    "nodeId": "notify-webhook",
+    "eventType": "partial",
+    "bindingId": "workflow.notifier.webhook.send",
+    "messageContains": "Webhook delivery evidence emitted",
+    "detailsSubset": {
+      "deliveryAttempted": true,
+      "delivered": true,
+      "event": "workflow.evidence_batch.ready",
+      "payloadSchema": "workflow.webhook.evidence_batch.v1",
+      "itemCount": 1
+    }
+  },
+  {
+    "nodeId": "notify-webhook",
+    "eventType": "completed",
+    "messageContains": "Webhook delivery completed"
+  }
+]

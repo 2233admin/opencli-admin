@@ -1,0 +1,24 @@
+[
+  {
+    "id": "jin10-20260704-001",
+    "time": "2026-07-04T05:00:00+08:00",
+    "title": "金十数据快讯样例",
+    "content": "央行公开市场今日净投放为零，市场流动性保持平稳。",
+    "important": false,
+    "source": "金十数据",
+    "channels": ["macro"],
+    "tags": ["央行", "流动性"],
+    "url": "https://www.jin10.com/"
+  },
+  {
+    "id": "jin10-20260704-002",
+    "time": "2026-07-04T05:05:00+08:00",
+    "title": "重要数据提醒",
+    "content": "美国非农就业数据即将公布，市场波动风险上升。",
+    "important": true,
+    "source": "金十数据",
+    "channels": ["macro", "us"],
+    "tags": ["非农", "就业"],
+    "url": "https://www.jin10.com/"
+  }
+]

@@ -1,0 +1,116 @@
+import type { WorkflowNode, WorkflowEdge } from "./types"
+
+export const initialNodes: WorkflowNode[] = [
+  {
+    id: "trigger-1",
+    type: "workflow",
+    position: { x: 80, y: 200 },
+    data: {
+      label: "Webhook 触发",
+      description: "接收外部事件",
+      nodeType: "trigger",
+      category: "trigger",
+      icon: "Zap",
+      color: "var(--chart-1)",
+      status: "success",
+      fields: [{ id: "event", label: "事件", value: "order.created" }],
+    },
+  },
+  {
+    id: "http-1",
+    type: "workflow",
+    position: { x: 400, y: 120 },
+    data: {
+      label: "获取用户信息",
+      description: "调用用户服务",
+      nodeType: "http",
+      category: "action",
+      icon: "Globe",
+      color: "var(--chart-2)",
+      status: "success",
+      fields: [
+        { id: "method", label: "方法", value: "GET" },
+        { id: "url", label: "地址", value: "/api/users/:id" },
+      ],
+    },
+  },
+  {
+    id: "cond-1",
+    type: "workflow",
+    position: { x: 400, y: 320 },
+    data: {
+      label: "是否 VIP",
+      nodeType: "condition",
+      category: "logic",
+      icon: "GitBranch",
+      color: "var(--chart-3)",
+      status: "running",
+      condition: "user.vip === true",
+    },
+  },
+  {
+    id: "action-1",
+    type: "workflow",
+    position: { x: 760, y: 220 },
+    data: {
+      label: "发送欢迎邮件",
+      nodeType: "action",
+      category: "action",
+      icon: "Play",
+      color: "var(--chart-2)",
+      status: "idle",
+      fields: [{ id: "action", label: "动作", value: "sendEmail" }],
+    },
+  },
+  {
+    id: "delay-1",
+    type: "workflow",
+    position: { x: 760, y: 420 },
+    data: {
+      label: "等待 1 小时",
+      nodeType: "delay",
+      category: "logic",
+      icon: "Clock",
+      color: "var(--chart-3)",
+      status: "idle",
+      fields: [{ id: "duration", label: "时长", value: "1h" }],
+    },
+  },
+  {
+    id: "note-1",
+    type: "note",
+    position: { x: 80, y: 420 },
+    data: {
+      label: "备注",
+      nodeType: "note",
+      category: "annotation",
+      icon: "StickyNote",
+      color: "var(--chart-5)",
+      description: "该工作流处理新订单的用户触达流程。",
+    },
+  },
+]
+
+export const initialEdges: WorkflowEdge[] = [
+  { id: "e1", source: "trigger-1", target: "http-1", type: "workflow", animated: true },
+  { id: "e2", source: "trigger-1", target: "cond-1", type: "workflow", animated: true },
+  { id: "e3", source: "http-1", target: "action-1", type: "workflow", animated: true },
+  {
+    id: "e4",
+    source: "cond-1",
+    target: "action-1",
+    type: "workflow",
+    animated: true,
+    label: "是",
+    sourceHandle: "true",
+  },
+  {
+    id: "e5",
+    source: "cond-1",
+    target: "delay-1",
+    type: "workflow",
+    animated: true,
+    label: "否",
+    sourceHandle: "false",
+  },
+]

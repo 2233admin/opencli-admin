@@ -1,0 +1,85 @@
+[constraints]
+max_cycles = 0
+ignore_test_dependencies = false
+pollution_exclusions = [
+  ".venv",
+  ".sentrux",
+  "frontend/.next",
+  "frontend/node_modules",
+  "node_modules",
+  "dist",
+  "build",
+]
+
+[[layers]]
+name = "workers_and_hot_path"
+paths = ["iii/workers/*", "odp-rs/crates/*"]
+order = 0
+
+[[layers]]
+name = "backend_contracts"
+paths = [
+  "backend/models/*",
+  "backend/schemas/*",
+  "backend/odp/*",
+  "backend/plan_ir/*",
+  "backend/control/*",
+]
+order = 1
+
+[[layers]]
+name = "backend_capabilities"
+paths = [
+  "backend/channels/*",
+  "backend/notifiers/*",
+  "backend/agent_runtimes/*",
+  "backend/skills/*",
+  "backend/processors/*",
+]
+order = 2
+
+[[layers]]
+name = "backend_runtime"
+paths = [
+  "backend/services/*",
+  "backend/pipeline/*",
+  "backend/executor/*",
+  "backend/worker/*",
+  "backend/workflow/*",
+]
+order = 3
+
+[[layers]]
+name = "backend_api"
+paths = ["backend/api/*", "backend/main.py", "backend/cli.py", "backend/mcp_server.py"]
+order = 4
+
+[[layers]]
+name = "frontend"
+paths = ["frontend/app/*", "frontend/components/*", "frontend/lib/*", "frontend/hooks/*"]
+order = 5
+
+[[boundaries]]
+from = "frontend/*"
+to = "backend/*"
+reason = "Frontend must consume backend HTTP/proxy contracts instead of importing Python internals."
+
+[[boundaries]]
+from = "backend/channels/*"
+to = "backend/api/*"
+reason = "DataSource channels are reusable capabilities below API routes."
+
+[[boundaries]]
+from = "backend/notifiers/*"
+to = "backend/api/*"
+reason = "Notifier implementations are reusable sinks below API routes."
+
+[[boundaries]]
+from = "backend/odp/*"
+to = "backend/api/*"
+reason = "ODP schemas and mappers are wire contracts below API routes."
+
+[[boundaries]]
+from = "iii/workers/*"
+to = "backend/api/*"
+reason = "III workers dispatch through envelopes and queues, not FastAPI internals."

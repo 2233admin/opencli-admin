@@ -1,0 +1,14 @@
+[
+  {
+    "nodeId": "publish-turbopush",
+    "eventType": "blocked",
+    "blockReasonCode": "missing_turbopush_service",
+    "blockReasonCategory": "missing_runtime_resource",
+    "messageContains": "TurboPush local service is not configured",
+    "blockReasonDetailsSubset": {
+      "code": "missing_turbopush_service",
+      "node_id": "publish-turbopush",
+      "provider": "turbopush"
+    }
+  }
+]

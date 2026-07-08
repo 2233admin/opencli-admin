@@ -1,0 +1,781 @@
+import type {
+  AdapterBinding,
+  WorkflowCapability,
+  WorkflowNodeKind,
+  WorkflowProfile,
+  WorkflowProject,
+  WorkflowProjectNode,
+} from "./schema"
+import { parseWorkflowProject } from "./schema"
+import { getNodeInternals } from "./node-internals"
+import { createParameterInterfaceFromInternals } from "./parameter-interface"
+import {
+  catalogRuntimeCapability,
+  type WorkflowCapabilitiesResponse,
+  type WorkflowRuntimeCapability,
+} from "./capabilities"
+
+export type WorkflowNodeCatalogCategory =
+  | "trigger"
+  | "source"
+  | "processing"
+  | "flow"
+  | "decision"
+  | "control"
+  | "sink"
+  | "output"
+  | "package"
+
+export type WorkflowNodeCatalogItem = {
+  id: string
+  idPrefix: string
+  label: string
+  description: string
+  category: WorkflowNodeCatalogCategory
+  profile: WorkflowProfile
+  kind: WorkflowNodeKind
+  capability: WorkflowCapability
+  icon: string
+  color: string
+  adapter?: string
+  requiredAdapters?: AdapterBinding[]
+  params: Record<string, unknown>
+  topicCollapse?: WorkflowProjectNode["topicCollapse"]
+  internals?: WorkflowProjectNode["internals"]
+  runtimeCapability?: WorkflowRuntimeCapability
+  keywords: string[]
+}
+
+export const COLLECTION_NEED_CATALOG_ID = "intelligence.input.collection-need"
+export const TURBOPUSH_PUBLISH_CATALOG_ID = "intelligence.output.turbopush-publish"
+
+const JIN10_ADAPTER: AdapterBinding = {
+  id: "jin10-kuaixun",
+  type: "source",
+  provider: "jin10",
+  mode: "fixture",
+  config: { feed: "kuaixun" },
+}
+
+const WEBHOOK_NOTIFY_ADAPTER: AdapterBinding = {
+  id: "webhook-notifier",
+  type: "notification",
+  provider: "webhook",
+  mode: "webhook",
+  config: { notifierType: "webhook", target: "webhook" },
+}
+
+const TURBOPUSH_ADAPTER: AdapterBinding = {
+  id: "turbopush-local",
+  type: "notification",
+  provider: "turbopush",
+  mode: "live",
+  config: { channel: "turbopush", mcpServer: "turbo-push", resourceMode: "auto" },
+}
+
+export type OpenCLISourceSlot = {
+  id: string
+  label: string
+  sourceGroup: string
+  site: string
+  command: string
+  args: Record<string, unknown>
+  adapterId?: string
+  format?: string
+  mode?: string
+  profileId?: string
+  profileBinding?: string
+  sessionPolicy?: string
+  workerTags?: string[]
+  resourceTags?: string[]
+}
+
+export const DEFAULT_OPENCLI_HDA_SOURCES: OpenCLISourceSlot[] = [
+  {
+    id: "bilibili",
+    label: "Bilibili Search",
+    sourceGroup: "video",
+    site: "bilibili",
+    command: "search",
+    args: { keyword: "ai" },
+  },
+  {
+    id: "xiaohongshu",
+    label: "Xiaohongshu Search",
+    sourceGroup: "social",
+    site: "xiaohongshu",
+    command: "search",
+    args: { keyword: "ai" },
+  },
+]
+
+export function opencliAdaptersForSourceSlots(sources: OpenCLISourceSlot[]): AdapterBinding[] {
+  const adapters = sources.map((source) => ({
+    id: source.adapterId ?? opencliAdapterId(source.site),
+    type: "source" as const,
+    provider: "opencli",
+    mode: "live" as const,
+    config: { channel: "opencli" },
+  }))
+  return Array.from(new Map(adapters.map((adapter) => [adapter.id, adapter])).values())
+}
+
+export function buildOpenCLIMultiSourceHDAInternals(sources: OpenCLISourceSlot[]): WorkflowProjectNode["internals"] {
+  const sourceGroups = sources.map((source) => source.sourceGroup || source.site)
+  const sourcePoolNode = {
+    id: "source-pool",
+    kind: "agent" as const,
+    capability: "normalize" as const,
+    params: { sourceCount: sources.length, sourceGroups, fanout: "parallel" },
+    ui: {
+      label: "Source Pool",
+      description: "Fanout source intent into parallel OpenCLI source slots",
+      icon: "Network",
+      color: "var(--chart-4)",
+      catalogId: "intelligence.source.pool",
+      position: { x: 0, y: Math.max(0, ((sources.length - 1) * 150) / 2) },
+    },
+  }
+  const sourceNodes = sources.map((source, index) => ({
+    id: opencliSourceNodeId(source),
+    kind: "source" as const,
+    capability: "fetch" as const,
+    adapter: source.adapterId ?? opencliAdapterId(source.site),
+    params: {
+      site: source.site,
+      command: source.command,
+      args: source.args,
+      sourceGroup: source.sourceGroup,
+      ...(source.format ? { format: source.format } : {}),
+      ...(source.mode ? { mode: source.mode } : {}),
+      ...(source.profileId ? { profileId: source.profileId } : {}),
+      ...(source.profileBinding ? { profileBinding: source.profileBinding } : {}),
+      ...(source.sessionPolicy ? { sessionPolicy: source.sessionPolicy } : {}),
+      ...(source.workerTags ? { workerTags: source.workerTags } : {}),
+      ...(source.resourceTags ? { resourceTags: source.resourceTags } : {}),
+    },
+    ui: {
+      label: source.label,
+      description: `${source.site} ${source.command}`,
+      icon: "Globe",
+      color: "var(--chart-4)",
+      catalogId: "intelligence.source.opencli-slot",
+      position: { x: 280, y: index * 150 },
+    },
+  }))
+  const midpointY = Math.max(0, ((sourceNodes.length - 1) * 150) / 2)
+  const outputNode = {
+    id: "collection-output",
+    kind: "inbox" as const,
+    capability: "store" as const,
+    params: { queue: "opencli-hda-output", archive: false },
+    ui: {
+      label: "Collection Output",
+      description: "Expose normalized items as the package output",
+      icon: "Inbox",
+      color: "var(--chart-4)",
+      catalogId: "intelligence.output.collection-result",
+      position: { x: 920, y: midpointY },
+    },
+  }
+  return {
+    locked: true,
+    nodes: [
+      sourcePoolNode,
+      ...sourceNodes,
+      {
+        id: "internal-normalize",
+        kind: "agent",
+        capability: "normalize",
+        params: { language: "zh-CN", preserveSourceRefs: true },
+        ui: {
+          label: "Normalize Items",
+          description: "Normalize OpenCLI source slot results",
+          icon: "ArrowRightLeft",
+          color: "var(--chart-2)",
+          catalogId: "intelligence.processing.normalize",
+          position: { x: 620, y: midpointY },
+        },
+      },
+      outputNode,
+    ],
+    edges: [
+      ...sourceNodes.map((sourceNode) => ({
+        id: `source-pool-${sourceNode.id}`,
+        source: "source-pool",
+        target: sourceNode.id,
+        sourcePort: "trigger",
+        targetPort: "trigger",
+      })),
+      ...sourceNodes.map((sourceNode) => ({
+        id: `${sourceNode.id}-normalize`,
+        source: sourceNode.id,
+        target: "internal-normalize",
+        sourcePort: "items",
+        targetPort: "items",
+      })),
+      {
+        id: "internal-normalize-output",
+        source: "internal-normalize",
+        target: "collection-output",
+        sourcePort: "items",
+        targetPort: "items",
+      },
+    ],
+  }
+}
+
+function opencliAdapterId(site: string): string {
+  return `opencli-${safeIdPart(site)}`
+}
+
+function opencliSourceNodeId(source: OpenCLISourceSlot): string {
+  return `source-${safeIdPart(source.id || source.sourceGroup || source.site)}`
+}
+
+function safeIdPart(value: string): string {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "source"
+}
+
+export const WORKFLOW_NODE_CATALOG: WorkflowNodeCatalogItem[] = [
+  {
+    id: COLLECTION_NEED_CATALOG_ID,
+    idPrefix: "collection-need",
+    label: "Collection Need",
+    description: "用户只输入采集需求，由后端 demand-draft 组装真实节点 patch",
+    category: "trigger",
+    profile: "intelligence",
+    kind: "schedule",
+    capability: "trigger",
+    icon: "MessageSquare",
+    color: "var(--chart-1)",
+    params: { text: "抓小红书热帖", locale: "zh-CN", mode: "demand-draft" },
+    keywords: ["need", "demand", "input", "manual", "需求", "输入", "采集"],
+  },
+  {
+    id: "intelligence.schedule.cron",
+    idPrefix: "schedule",
+    label: "Cron Schedule",
+    description: "按 cron/interval 周期触发情报工作流",
+    category: "trigger",
+    profile: "intelligence",
+    kind: "schedule",
+    capability: "trigger",
+    icon: "Clock",
+    color: "var(--chart-1)",
+    params: { interval: "5m", timezone: "Asia/Shanghai" },
+    keywords: ["schedule", "cron", "hourly", "daily", "定时", "触发"],
+  },
+  {
+    id: "intelligence.source.jin10",
+    idPrefix: "source-jin10",
+    label: "JIN10 Source",
+    description: "读取金十快讯 fixture/live feed",
+    category: "source",
+    profile: "intelligence",
+    kind: "source",
+    capability: "fetch",
+    icon: "Globe",
+    color: "var(--chart-4)",
+    adapter: JIN10_ADAPTER.id,
+    requiredAdapters: [JIN10_ADAPTER],
+    params: { limit: 20, importantOnly: false, channel: "kuaixun" },
+    keywords: ["jin10", "金十", "source", "news", "kuaixun", "fetch"],
+  },
+  {
+    id: "intelligence.processing.normalize",
+    idPrefix: "normalize",
+    label: "Normalize Items",
+    description: "统一字段、语言和时间格式",
+    category: "processing",
+    profile: "intelligence",
+    kind: "agent",
+    capability: "normalize",
+    icon: "ArrowRightLeft",
+    color: "var(--chart-2)",
+    params: { language: "zh-CN", preserveSourceRefs: true },
+    keywords: ["normalize", "clean", "format", "标准化", "清洗"],
+  },
+  {
+    id: "intelligence.processing.dedupe",
+    idPrefix: "dedupe",
+    label: "Dedupe Items",
+    description: "按标题、时间和来源去重",
+    category: "processing",
+    profile: "intelligence",
+    kind: "agent",
+    capability: "dedupe",
+    icon: "Filter",
+    color: "var(--chart-2)",
+    params: { key: "title+source+publishedAt", window: "24h" },
+    keywords: ["dedupe", "duplicate", "去重", "重复"],
+  },
+  {
+    id: "intelligence.flow.merge",
+    idPrefix: "merge",
+    label: "Merge",
+    description: "Houdini-style typed fan-in，合并多路候选流并保留 lineage",
+    category: "flow",
+    profile: "intelligence",
+    kind: "flow",
+    capability: "merge",
+    icon: "GitMerge",
+    color: "var(--chart-5)",
+    params: {
+      strategy: "concat",
+      preserveLineage: true,
+      inputType: "recordCandidate[]",
+      outputType: "recordCandidate[]",
+    },
+    keywords: ["merge", "join", "fan-in", "lineage", "合并", "汇流"],
+  },
+  {
+    id: "intelligence.agent.summary",
+    idPrefix: "summary",
+    label: "LLM Summary",
+    description: "生成短摘要和影响解释",
+    category: "processing",
+    profile: "intelligence",
+    kind: "agent",
+    capability: "summarize",
+    icon: "Sparkles",
+    color: "var(--chart-2)",
+    params: { model: "deepseek", style: "macro-brief", maxChars: 280 },
+    keywords: ["deepseek", "gpt", "claude", "llm", "agent", "summary", "摘要"],
+  },
+  {
+    id: "intelligence.agent.score",
+    idPrefix: "score",
+    label: "Importance Score",
+    description: "按影响范围和紧急度打分",
+    category: "processing",
+    profile: "intelligence",
+    kind: "agent",
+    capability: "score",
+    icon: "Sigma",
+    color: "var(--chart-3)",
+    params: { threshold: 0.7, dimensions: ["market", "policy", "urgency"] },
+    keywords: ["score", "rating", "importance", "打分", "重要性"],
+  },
+  {
+    id: "intelligence.agent.tag",
+    idPrefix: "tag",
+    label: "Auto Tag",
+    description: "给条目打主题、市场和风险标签",
+    category: "processing",
+    profile: "intelligence",
+    kind: "agent",
+    capability: "tag",
+    icon: "Code",
+    color: "var(--chart-3)",
+    params: { taxonomy: ["macro", "fx", "commodity", "policy", "risk"] },
+    keywords: ["tag", "label", "topic", "标签", "分类"],
+  },
+  {
+    id: "intelligence.router.importance",
+    idPrefix: "router-importance",
+    label: "Importance Router",
+    description: "按分数和条件路由到 Inbox/Notify",
+    category: "decision",
+    profile: "intelligence",
+    kind: "router",
+    capability: "route",
+    icon: "GitBranch",
+    color: "var(--chart-5)",
+    params: { expression: "item.important === true || item.score >= 0.7" },
+    keywords: ["score", "router", "condition", "threshold", "路由", "阈值"],
+  },
+  {
+    id: "intelligence.control.record-acceptance",
+    idPrefix: "record-acceptance",
+    label: "Record Acceptance Gate",
+    description: "把 Record Candidate 通过 schema、去重、质量和 lineage 检查后接收为 Record",
+    category: "control",
+    profile: "intelligence",
+    kind: "control",
+    capability: "accept",
+    icon: "BadgeCheck",
+    color: "var(--chart-3)",
+    params: {
+      mode: "automatic_with_review",
+      schema: "record.v1",
+      dedupe: "required",
+      lineageRequired: true,
+      minQuality: 0,
+    },
+    keywords: ["record", "acceptance", "gate", "quality", "lineage", "入库", "审核"],
+  },
+  {
+    id: "intelligence.output.inbox",
+    idPrefix: "inbox",
+    label: "Inbox Store",
+    description: "保存到人工复核队列",
+    category: "output",
+    profile: "intelligence",
+    kind: "inbox",
+    capability: "store",
+    icon: "Inbox",
+    color: "var(--chart-4)",
+    params: { queue: "macro-watch", archive: true },
+    keywords: ["inbox", "store", "cache", "archive", "收件箱", "归档"],
+  },
+  {
+    id: "intelligence.sink.records",
+    idPrefix: "record-sink",
+    label: "Record Sink",
+    description: "把已接收的 Record 写入 records 系统，保留 lineage 和 run trace 指针",
+    category: "sink",
+    profile: "intelligence",
+    kind: "sink",
+    capability: "store",
+    icon: "Database",
+    color: "var(--chart-4)",
+    params: { target: "records", writeMode: "append", preserveLineage: true },
+    keywords: ["record", "sink", "database", "records", "落库", "存储"],
+  },
+  {
+    id: "intelligence.output.webhook",
+    idPrefix: "notify",
+    label: "Webhook Notify",
+    description: "通过后端 guarded webhook notifier 发送工作流通知",
+    category: "output",
+    profile: "intelligence",
+    kind: "notify",
+    capability: "send",
+    icon: "Bell",
+    color: "var(--chart-1)",
+    adapter: WEBHOOK_NOTIFY_ADAPTER.id,
+    requiredAdapters: [WEBHOOK_NOTIFY_ADAPTER],
+    params: { template: "brief", target: "webhook" },
+    keywords: ["feishu", "wecom", "tg", "telegram", "qq", "notify", "webhook", "通知"],
+  },
+  {
+    id: TURBOPUSH_PUBLISH_CATALOG_ID,
+    idPrefix: "turbopush-publish",
+    label: "TurboPush Publish",
+    description: "通过本机 TurboPush 服务发布文章/图文/视频到已登录平台账号",
+    category: "output",
+    profile: "intelligence",
+    kind: "notify",
+    capability: "send",
+    icon: "Send",
+    color: "var(--state-action)",
+    adapter: TURBOPUSH_ADAPTER.id,
+    requiredAdapters: [TURBOPUSH_ADAPTER],
+    params: {
+      contentType: "graph_text",
+      contentSource: "upstream",
+      title: "{{item.title}}",
+      markdown: "{{item.markdown}}",
+      desc: "{{item.summary}}",
+      files: [],
+      thumb: [],
+      targetPlatforms: ["xiaohongshu"],
+      accountSelector: "logged_accounts_by_platform",
+      platformSettings: {},
+      syncDraft: false,
+    },
+    keywords: [
+      "turbopush",
+      "publish",
+      "send",
+      "wechat",
+      "douyin",
+      "xiaohongshu",
+      "youtube",
+      "bilibili",
+      "多平台",
+      "发布",
+      "发送",
+    ],
+  },
+  {
+    id: "package.collection.pipeline",
+    idPrefix: "pkg-collection",
+    label: "Collection Pipeline",
+    description: "封装调度触发、多源采集（JIN10/RSS/HTTP）、标准化、去重和富化的采集管线",
+    category: "package",
+    profile: "intelligence",
+    kind: "source",
+    capability: "fetch",
+    icon: "Globe",
+    color: "var(--chart-4)",
+    adapter: JIN10_ADAPTER.id,
+    requiredAdapters: [JIN10_ADAPTER],
+    params: { template: "collection-pipeline", runtime: "fixture", lockedInternals: true },
+    keywords: ["package", "collection", "source", "rss", "http", "采集", "封装"],
+  },
+  {
+    id: "intelligence.source.pool",
+    idPrefix: "source-pool",
+    label: "Source Pool",
+    description: "把业务来源组展开为并行 source slots，资源由 runtime resolver 隐式处理",
+    category: "source",
+    profile: "intelligence",
+    kind: "agent",
+    capability: "normalize",
+    icon: "Network",
+    color: "var(--chart-4)",
+    params: { sourceCount: 2, sourceGroups: ["video", "social"], fanout: "parallel" },
+    keywords: ["source", "pool", "fanout", "registry", "来源池", "数据源"],
+  },
+  {
+    id: "intelligence.source.opencli-slot",
+    idPrefix: "source-opencli",
+    label: "OpenCLI Source Slot",
+    description: "一个由 HDA/source planner 生成的 OpenCLI source 槽位，运行时交给 OpenCLI channel 执行",
+    category: "source",
+    profile: "intelligence",
+    kind: "source",
+    capability: "fetch",
+    icon: "Globe",
+    color: "var(--chart-4)",
+    params: { site: "bilibili", command: "search", sourceGroup: "video", args: { keyword: "ai" } },
+    keywords: ["opencli", "source", "slot", "bilibili", "xiaohongshu", "adapter", "来源槽"],
+  },
+  {
+    id: "intelligence.output.collection-result",
+    idPrefix: "collection-output",
+    label: "Collection Output",
+    description: "把 HDA 内部标准化结果暴露为可审计的 items[] 输出",
+    category: "output",
+    profile: "intelligence",
+    kind: "inbox",
+    capability: "store",
+    icon: "Inbox",
+    color: "var(--chart-4)",
+    params: { queue: "opencli-hda-output", archive: false },
+    keywords: ["output", "items", "collection", "result", "采集输出", "结果"],
+  },
+  {
+    id: "package.opencli.multi-source-hda",
+    idPrefix: "pkg-opencli-hda",
+    label: "OpenCLI Multi-source HDA",
+    description: "封装可扩展 OpenCLI source slot 并行 fanout 和内部标准化",
+    category: "package",
+    profile: "intelligence",
+    kind: "agent",
+    capability: "normalize",
+    icon: "Network",
+    color: "var(--chart-4)",
+    requiredAdapters: opencliAdaptersForSourceSlots(DEFAULT_OPENCLI_HDA_SOURCES),
+    params: {
+      template: "opencli-multi-source",
+      runtime: "iii",
+      lockedInternals: true,
+      execution: {
+        fanout: "parallel",
+        maxConcurrency: 4,
+      },
+      sources: DEFAULT_OPENCLI_HDA_SOURCES,
+      aiCallable: {
+        schema: "opencli.multi_source_hda.v1",
+        editable: ["sources", "sources[].args", "execution.maxConcurrency"],
+        sourceMode: "parallel",
+      },
+    },
+    topicCollapse: {
+      groupId: "opencli-package",
+      nodeCount: DEFAULT_OPENCLI_HDA_SOURCES.length + 3,
+      mode: "locked",
+      packageInternal: true,
+    },
+    internals: buildOpenCLIMultiSourceHDAInternals(DEFAULT_OPENCLI_HDA_SOURCES),
+    keywords: ["package", "hda", "opencli", "bilibili", "xiaohongshu", "multi-source", "采集", "封装"],
+  },
+  {
+    id: "package.dispatch.fanout",
+    idPrefix: "pkg-dispatch",
+    label: "Dispatch Fanout",
+    description: "封装重要性路由、限流和 Webhook/Telegram/邮件多通道发送与 Postgres 存档",
+    category: "package",
+    profile: "intelligence",
+    kind: "notify",
+    capability: "send",
+    icon: "Bell",
+    color: "var(--chart-1)",
+    adapter: WEBHOOK_NOTIFY_ADAPTER.id,
+    requiredAdapters: [WEBHOOK_NOTIFY_ADAPTER],
+    params: { template: "dispatch-fanout", runtime: "mock", lockedInternals: true },
+    keywords: ["package", "dispatch", "fanout", "telegram", "email", "发送", "分发", "封装"],
+  },
+  {
+    id: "package.intelligence.pipeline",
+    idPrefix: "pkg-intelligence",
+    label: "Intelligence Pipeline",
+    description: "封装定时抓取、标准化、摘要评分、复核和通知的情报流水线",
+    category: "package",
+    profile: "intelligence",
+    kind: "agent",
+    capability: "normalize",
+    icon: "Network",
+    color: "var(--chart-2)",
+    params: { template: "jin10-intelligence", runtime: "fixture", lockedInternals: true },
+    keywords: ["package", "dop", "intelligence", "pipeline", "情报", "封装"],
+  },
+  {
+    id: "package.ops.event",
+    idPrefix: "pkg-ops-event",
+    label: "Ops Event",
+    description: "封装触发、队列、重试、日志和执行证据的任务事件",
+    category: "package",
+    profile: "intelligence",
+    kind: "action",
+    capability: "send",
+    icon: "ServerCog",
+    color: "var(--chart-4)",
+    params: { template: "ops-event", runtime: "template", lockedInternals: true },
+    keywords: ["package", "ops", "event", "job", "automation", "任务"],
+  },
+  {
+    id: "package.ops.monitor-guard",
+    idPrefix: "pkg-monitor",
+    label: "Monitor Guard",
+    description: "封装指标采集、阈值、delta 和限流的监控闸门",
+    category: "package",
+    profile: "intelligence",
+    kind: "router",
+    capability: "route",
+    icon: "Activity",
+    color: "var(--chart-4)",
+    params: { template: "monitor-guard", runtime: "template", lockedInternals: true },
+    keywords: ["package", "monitor", "guard", "metric", "alert", "监控"],
+  },
+  {
+    id: "package.ops.alert-response",
+    idPrefix: "pkg-alert",
+    label: "Alert Response",
+    description: "封装告警分派、通知、工单、快照和升级动作",
+    category: "package",
+    profile: "intelligence",
+    kind: "notify",
+    capability: "send",
+    icon: "Bell",
+    color: "var(--chart-1)",
+    params: { template: "alert-response", runtime: "template", lockedInternals: true },
+    keywords: ["package", "alert", "response", "ticket", "snapshot", "告警"],
+  },
+  {
+    id: "package.ai.prompt-experiment",
+    idPrefix: "pkg-prompt-exp",
+    label: "Prompt Experiment",
+    description: "封装 prompt 版本、测试用例、模型对比和实验记录",
+    category: "package",
+    profile: "intelligence",
+    kind: "agent",
+    capability: "summarize",
+    icon: "FlaskConical",
+    color: "var(--state-action)",
+    params: { template: "prompt-experiment", runtime: "mock", lockedInternals: true },
+    keywords: ["package", "prompt", "experiment", "model", "eval", "实验"],
+  },
+  {
+    id: "package.verify.regression-gate",
+    idPrefix: "pkg-regression",
+    label: "Regression Gate",
+    description: "封装 dataset、evaluator、scorecard 和回归门禁",
+    category: "package",
+    profile: "intelligence",
+    kind: "router",
+    capability: "route",
+    icon: "ShieldCheck",
+    color: "#4ade80",
+    params: { template: "regression-gate", runtime: "mock", lockedInternals: true },
+    keywords: ["package", "regression", "scorecard", "coverage", "gate", "回归"],
+  },
+  {
+    id: "package.map.knowledge-map",
+    idPrefix: "pkg-knowledge-map",
+    label: "Knowledge Map",
+    description: "封装来源锚点、语义连线、主题折叠和知识导出",
+    category: "package",
+    profile: "intelligence",
+    kind: "action",
+    capability: "store",
+    icon: "Network",
+    color: "var(--chart-3)",
+    params: { template: "knowledge-map", runtime: "template", lockedInternals: true },
+    keywords: ["package", "knowledge", "map", "turnmap", "obsidian", "知识图"],
+  },
+  {
+    id: "package.review.human-review",
+    idPrefix: "pkg-human-review",
+    label: "Human Review",
+    description: "封装人工审核、Inbox、审批分支和审计证据",
+    category: "package",
+    profile: "intelligence",
+    kind: "inbox",
+    capability: "store",
+    icon: "Inbox",
+    color: "var(--chart-4)",
+    params: { template: "human-review", runtime: "template", lockedInternals: true },
+    keywords: ["package", "human", "review", "approval", "inbox", "人工"],
+  },
+]
+
+export function getWorkflowNodeCatalog(
+  profile: WorkflowProfile,
+  capabilities?: WorkflowCapabilitiesResponse | null,
+): WorkflowNodeCatalogItem[] {
+  return WORKFLOW_NODE_CATALOG.filter((item) => item.profile === profile).map((item) => ({
+    ...item,
+    runtimeCapability: catalogRuntimeCapability(capabilities, item.id),
+  }))
+}
+
+export function createWorkflowNodeFromCatalog(
+  item: WorkflowNodeCatalogItem,
+  id: string,
+  position: { x: number; y: number },
+): WorkflowProjectNode {
+  const parameterInterface = createParameterInterfaceFromInternals(
+    id,
+    getNodeInternals({
+      id,
+      kind: item.kind,
+      capability: item.capability,
+      adapter: item.adapter,
+      params: item.params,
+      ui: { catalogId: item.id },
+    }),
+  )
+
+  return {
+    id,
+    kind: item.kind,
+    capability: item.capability,
+    adapter: item.adapter,
+    params: cloneCatalogValue(item.params) ?? {},
+    topicCollapse: cloneCatalogValue(item.topicCollapse),
+    parameterInterface,
+    internals: cloneCatalogValue(item.internals),
+    ui: {
+      label: item.label,
+      description: item.description,
+      icon: item.icon,
+      color: item.color,
+      position,
+      catalogId: item.id,
+      runtimeCapability: cloneCatalogValue(item.runtimeCapability),
+    },
+  }
+}
+
+export function addCatalogNodeToWorkflowProject(
+  project: WorkflowProject,
+  item: WorkflowNodeCatalogItem,
+  id: string,
+  position: { x: number; y: number },
+): WorkflowProject {
+  const existingAdapters = new Set(project.adapters.map((adapter) => adapter.id))
+  const requiredAdapters = (item.requiredAdapters ?? []).filter((adapter) => !existingAdapters.has(adapter.id))
+  return parseWorkflowProject({
+    ...project,
+    adapters: [...project.adapters, ...requiredAdapters],
+    nodes: [...project.nodes, createWorkflowNodeFromCatalog(item, id, position)],
+  })
+}
+
+function cloneCatalogValue<T>(value: T | undefined): T | undefined {
+  return value === undefined ? undefined : (JSON.parse(JSON.stringify(value)) as T)
+}

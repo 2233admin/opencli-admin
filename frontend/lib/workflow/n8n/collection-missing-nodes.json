@@ -1,0 +1,80 @@
+{
+  "name": "OpenCLI Collection Missing Nodes",
+  "nodes": [
+    {
+      "id": "rss-read-01",
+      "name": "RSS Feed Read",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.1,
+      "position": [220, 320],
+      "parameters": {
+        "url": "{{source.feedUrl}}",
+        "options": { "ignoreSSL": false }
+      }
+    },
+    {
+      "id": "http-request-01",
+      "name": "HTTP API Source",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [220, 520],
+      "parameters": {
+        "method": "GET",
+        "url": "{{source.apiUrl}}",
+        "authentication": "genericCredentialType",
+        "options": { "timeout": 10000, "redirect": { "followRedirects": true } }
+      }
+    },
+    {
+      "id": "telegram-send-01",
+      "name": "Telegram Send",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1180, 320],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "{{channel.telegram.chatId}}",
+        "text": "={{ $json.digest }}"
+      },
+      "credentials": {
+        "telegramApi": { "id": "cred-telegram", "name": "telegram-bot" }
+      }
+    },
+    {
+      "id": "email-send-01",
+      "name": "Email Send",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [1180, 520],
+      "parameters": {
+        "fromEmail": "alerts@opencli.local",
+        "toEmail": "{{channel.email.to}}",
+        "subject": "={{ $json.title }}",
+        "text": "={{ $json.digest }}"
+      },
+      "credentials": {
+        "smtp": { "id": "cred-smtp", "name": "smtp-relay" }
+      }
+    },
+    {
+      "id": "postgres-store-01",
+      "name": "Postgres Archive",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1180, 720],
+      "parameters": {
+        "operation": "insert",
+        "schema": "public",
+        "table": "collection_records",
+        "columns": "source,title,summary,score,published_at"
+      },
+      "credentials": {
+        "postgres": { "id": "cred-postgres", "name": "records-db" }
+      }
+    }
+  ],
+  "connections": {},
+  "active": false,
+  "settings": { "executionOrder": "v1" }
+}

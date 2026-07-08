@@ -1,0 +1,27 @@
+# III engine — ODP control plane (M0+M1+M2)
+# Docs: https://iii.dev/docs/using-iii/engine
+
+workers:
+  - name: iii-http
+    config:
+      port: ${III_HTTP_PORT:3111}
+      host: 0.0.0.0
+
+  # M2: cron triggers → odp.collect::discord_snapshot (via schedule-bootstrap)
+  - name: iii-cron
+    config:
+      adapter:
+        name: kv
+
+  - name: iii-observability
+    config:
+      enabled: true
+      service_name: opencli-admin-odp
+      exporter: memory
+      memory_max_spans: 10000
+      metrics_enabled: true
+      metrics_exporter: memory
+      logs_enabled: true
+      logs_exporter: memory
+      logs_console_output: true
+      sampling_ratio: 1.0

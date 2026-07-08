@@ -1,0 +1,26 @@
+{
+  "name": "opencli-admin",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "chrome/extension-src"
+  ],
+  "scripts": {
+    "dev": "nx run extension:dev",
+    "dev:frontend": "node scripts/frontend.mjs dev",
+    "build:frontend": "node scripts/frontend.mjs build",
+    "lint:frontend": "node scripts/frontend.mjs lint",
+    "typecheck:frontend": "node scripts/frontend.mjs typecheck",
+    "dev:extension": "nx run extension:dev",
+    "build": "nx run extension:build",
+    "build:extension": "nx run extension:build",
+    "test": "nx run-many --target=test --all --parallel",
+    "typecheck": "nx run-many --target=typecheck --all --parallel",
+    "format": "nx format:write",
+    "lint": "nx run-many --target=lint --all --parallel",
+    "nx": "nx"
+  },
+  "devDependencies": {
+    "nx": "^20.6.0"
+  }
+}

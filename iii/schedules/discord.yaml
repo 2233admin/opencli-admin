@@ -1,0 +1,76 @@
+# Declarative Discord collection schedules (M2).
+# Template: schedules/discord.yaml.example
+#
+# Required per entry: id, channel_id, channel_name, expression, limit
+# channel_name — substring for `discord recent -c` (see collector-discord)
+#
+# Guild: 观察者聚合 (1340918593067679799)
+# Cron: 6-field (second minute hour day month weekday).
+
+version: 1
+
+schedules:
+  # Smoke test — Wooting announcements (M2 e2e)
+  - id: smoke-test
+    enabled: true
+    channel_id: "195654289811570688"
+    limit: 20
+    expression: "0 */5 * * * *"
+
+  # --- 观察者聚合 — user-confirmed 2026-06-18 ---
+
+  - id: guanzhe-community
+    enabled: true
+    channel_id: "1357021092023111770"
+    channel_name: "社区交流群"
+    limit: 20
+    expression: "0 */15 * * * *"
+
+  - id: guanzhe-video
+    enabled: true
+    channel_id: "1410565827975053363"
+    channel_name: "视频通知"
+    limit: 20
+    expression: "0 */5 * * * *"
+
+  - id: guanzhe-shuqin
+    enabled: true
+    channel_id: "1340919349023739986"
+    channel_name: "舒琴行情分析"
+    limit: 20
+    expression: "0 */5 * * * *"
+
+  - id: guanzhe-woods
+    enabled: true
+    channel_id: "1356701964141985952"
+    channel_name: "woods"
+    limit: 20
+    expression: "0 */5 * * * *"
+
+  - id: guanzhe-johnny
+    enabled: true
+    channel_id: "1340920849737453639"
+    channel_name: "johnny"
+    limit: 20
+    expression: "0 */5 * * * *"
+
+  - id: guanzhe-alert-sum
+    enabled: true
+    channel_id: "1340920804497690654"
+    channel_name: "策略警报汇总"
+    limit: 20
+    expression: "0 */5 * * * *"
+
+  - id: guanzhe-entry-sum
+    enabled: true
+    channel_id: "1340920781978472458"
+    channel_name: "交易策略汇总"
+    limit: 20
+    expression: "0 */5 * * * *"
+
+  - id: guanzhe-astekz
+    enabled: true
+    channel_id: "1379781458620710982"
+    channel_name: "astekz"
+    limit: 20
+    expression: "0 */5 * * * *"

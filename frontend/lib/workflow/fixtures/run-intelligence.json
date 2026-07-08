@@ -1,0 +1,238 @@
+{
+  "runId": "sim-workflow-intelligence",
+  "workflowId": "workflow-intelligence",
+  "profile": "intelligence",
+  "trace": [
+    {
+      "sequence": 1,
+      "nodeId": "schedule-5m",
+      "kind": "schedule",
+      "event": "triggered",
+      "itemCount": 0,
+      "details": {
+        "interval": "5m"
+      }
+    },
+    {
+      "sequence": 2,
+      "nodeId": "source-jin10",
+      "kind": "source",
+      "event": "fetched",
+      "itemCount": 2,
+      "details": {
+        "adapter": "jin10-kuaixun",
+        "itemIds": [
+          "jin10-20260704-001",
+          "jin10-20260704-002"
+        ]
+      }
+    },
+    {
+      "sequence": 3,
+      "nodeId": "agent-normalize",
+      "kind": "agent",
+      "event": "normalized",
+      "itemCount": 2,
+      "details": {
+        "language": "zh-CN",
+        "itemIds": [
+          "jin10-20260704-001",
+          "jin10-20260704-002"
+        ]
+      }
+    },
+    {
+      "sequence": 4,
+      "nodeId": "router-importance",
+      "kind": "router",
+      "event": "routed",
+      "itemCount": 2,
+      "details": {
+        "expression": "item.important === true || item.score >= 0.7",
+        "targets": [
+          "inbox-review",
+          "notify-preview"
+        ]
+      }
+    },
+    {
+      "sequence": 5,
+      "nodeId": "inbox-review",
+      "kind": "inbox",
+      "event": "stored",
+      "itemCount": 2,
+      "details": {
+        "queue": "macro-watch",
+        "itemIds": [
+          "jin10-20260704-001",
+          "jin10-20260704-002"
+        ]
+      }
+    },
+    {
+      "sequence": 6,
+      "nodeId": "notify-preview",
+      "kind": "notify",
+      "event": "sent",
+      "itemCount": 1,
+      "details": {
+        "adapter": "webhook-notifier",
+        "template": "brief",
+        "itemIds": [
+          "jin10-20260704-002"
+        ]
+      }
+    }
+  ],
+  "spans": [
+    {
+      "spanId": "span-001-schedule-5m",
+      "sequence": 1,
+      "nodeId": "schedule-5m",
+      "type": "tool.call",
+      "status": "ok",
+      "durationMs": 9,
+      "inputCount": 1,
+      "outputCount": 1,
+      "details": {
+        "tool": "schedule-driver",
+        "interval": "5m"
+      }
+    },
+    {
+      "spanId": "span-002-source-jin10",
+      "sequence": 2,
+      "nodeId": "source-jin10",
+      "type": "tool.call",
+      "status": "ok",
+      "durationMs": 13,
+      "inputCount": 1,
+      "outputCount": 2,
+      "details": {
+        "tool": "jin10-kuaixun",
+        "itemIds": [
+          "jin10-20260704-001",
+          "jin10-20260704-002"
+        ]
+      }
+    },
+    {
+      "spanId": "span-003-agent-normalize",
+      "sequence": 3,
+      "nodeId": "agent-normalize",
+      "type": "prompt.parse",
+      "status": "ok",
+      "durationMs": 16,
+      "inputCount": 2,
+      "outputCount": 2,
+      "details": {
+        "preset": "normalize",
+        "version": "v1"
+      }
+    },
+    {
+      "spanId": "span-004-agent-normalize",
+      "parentSpanId": "span-003-agent-normalize",
+      "sequence": 4,
+      "nodeId": "agent-normalize",
+      "type": "model.call",
+      "status": "ok",
+      "durationMs": 19,
+      "inputCount": 2,
+      "outputCount": 2,
+      "details": {
+        "model": "deterministic-normalizer",
+        "parent": "span-003-agent-normalize"
+      }
+    },
+    {
+      "spanId": "span-005-router-importance",
+      "sequence": 5,
+      "nodeId": "router-importance",
+      "type": "router.decision",
+      "status": "ok",
+      "durationMs": 22,
+      "inputCount": 2,
+      "outputCount": 2,
+      "details": {
+        "expression": "item.important === true || item.score >= 0.7",
+        "targets": [
+          "inbox-review",
+          "notify-preview"
+        ]
+      }
+    },
+    {
+      "spanId": "span-006-inbox-review",
+      "sequence": 6,
+      "nodeId": "inbox-review",
+      "type": "assertion.check",
+      "status": "ok",
+      "durationMs": 25,
+      "inputCount": 2,
+      "outputCount": 2,
+      "details": {
+        "assertion": "items persisted to review queue",
+        "queue": "macro-watch"
+      }
+    },
+    {
+      "spanId": "span-007-notify-preview",
+      "sequence": 7,
+      "nodeId": "notify-preview",
+      "type": "delivery.webhook",
+      "status": "ok",
+      "durationMs": 27,
+      "inputCount": 1,
+      "outputCount": 1,
+      "details": {
+        "adapter": "webhook-notifier",
+        "template": "brief"
+      }
+    }
+  ],
+  "evaluation": {
+    "dataset": "intelligence-fixture-regression",
+    "caseCount": 2,
+    "evaluator": "deterministic-cozeloop-inspired-evaluator",
+    "status": "pass",
+    "scorecard": {
+      "accuracy": 0.94,
+      "relevance": 0.91,
+      "compliance": 0.98,
+      "latency": 0.869,
+      "overall": 0.925
+    },
+    "regressionFindings": [
+      {
+        "id": "regression-no-span-errors",
+        "status": "pass",
+        "summary": "No span-level errors observed."
+      },
+      {
+        "id": "regression-overall-score",
+        "status": "pass",
+        "summary": "Overall deterministic score is 0.925."
+      }
+    ]
+  },
+  "quality": {
+    "fetchedItems": 2,
+    "normalizedItems": 2,
+    "routedItems": 2,
+    "importantItems": 1,
+    "storedItems": 2,
+    "notifiedItems": 1,
+    "droppedItems": 0,
+    "routeCoverage": 1,
+    "averageScore": 0.725
+  },
+  "runtime": {
+    "nodeCount": 6,
+    "edgeCount": 5,
+    "executedNodeCount": 6,
+    "traceEventCount": 6,
+    "sourceAdapterCount": 1,
+    "deterministicDurationMs": 37
+  }
+}

@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opencli-admin.local/contracts/record_v2.schema.json",
+  "title": "ODP Record Event v2",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "provider",
+    "source_id",
+    "event_id",
+    "ingest_mode",
+    "source_ts",
+    "payload"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "provider": {
+      "type": "string",
+      "minLength": 1,
+      "description": "e.g. opencli/bilibili, qq/group, rss/feed"
+    },
+    "source_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "event_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Stable id for idempotency: msg_id, url hash, etc."
+    },
+    "ingest_mode": {
+      "type": "string",
+      "enum": ["snapshot", "stream"]
+    },
+    "source_ts": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "cursor": {
+      "type": ["string", "null"]
+    },
+    "payload": {
+      "type": "object",
+      "description": "Normalized fields: title, url, content, author, group_id, sender, ..."
+    },
+    "raw_data": {
+      "type": "object"
+    },
+    "trace_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "task_id": {
+      "type": ["string", "null"],
+      "format": "uuid",
+      "description": "Optional snapshot collection task reference"
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,17 +1,37 @@
+import asyncio
+import json
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.ext.asyncio import AsyncSession
-
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database import get_db
 from backend.models.source import DataSource
+from backend.models.task import TaskRun, TaskRunEvent
 from backend.schemas.common import ApiResponse, PaginationMeta
 from backend.schemas.task import CollectionTaskRead, TaskRunRead, TaskTriggerRequest
 from backend.services import source_service, task_service
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
+
+
+def _serialize_run_event(event: TaskRunEvent) -> dict:
+    return {
+        "id": event.id,
+        "run_id": event.run_id,
+        "level": event.level,
+        "step": event.step,
+        "message": event.message,
+        "detail": event.detail,
+        "elapsed_ms": event.elapsed_ms,
+        "created_at": event.created_at.isoformat(),
+    }
+
+
+def _sse(event: str, data: dict) -> str:
+    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
 @router.get("", response_model=ApiResponse[list[CollectionTaskRead]])
@@ -29,9 +49,9 @@ async def list_tasks(
     sources = (await db.execute(select(DataSource).where(DataSource.id.in_(source_ids)))).scalars().all()
     name_map = {s.id: s.name for s in sources}
     data = []
-    for t in tasks:
-        item = CollectionTaskRead.model_validate(t)
-        item.source_name = name_map.get(t.source_id)
+    for task in tasks:
+        item = CollectionTaskRead.model_validate(task)
+        item.source_name = name_map.get(task.source_id)
         data.append(item)
     return ApiResponse.ok(
         data=data,
@@ -57,10 +77,11 @@ async def trigger_task(
         priority=body.priority,
         agent_id=body.agent_id,
     )
-    # Commit before dispatching so the background runner's new session can find the task
+    # Commit before dispatching so the background runner's new session can find the task.
     await db.commit()
 
     from backend.executor import get_executor
+
     result = await get_executor().dispatch_collection(task.id, body.parameters)
 
     return ApiResponse.ok(result)
@@ -91,30 +112,74 @@ async def list_task_runs(
     )
 
 
+async def _get_run_for_task(db: AsyncSession, task_id: str, run_id: str) -> TaskRun:
+    result = await db.execute(
+        select(TaskRun).where(TaskRun.id == run_id, TaskRun.task_id == task_id)
+    )
+    run = result.scalar_one_or_none()
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    return run
+
+
 @router.get("/{task_id}/runs/{run_id}/events", response_model=ApiResponse[list[dict]])
 async def list_run_events(
     task_id: str,
     run_id: str,
     db: AsyncSession = Depends(get_db),
 ) -> ApiResponse:
-    from backend.models.task import TaskRunEvent
-    from sqlalchemy import select
+    await _get_run_for_task(db, task_id, run_id)
     result = await db.execute(
         select(TaskRunEvent)
         .where(TaskRunEvent.run_id == run_id)
-        .order_by(TaskRunEvent.created_at)
+        .order_by(TaskRunEvent.created_at, TaskRunEvent.id)
     )
     events_list = result.scalars().all()
-    return ApiResponse.ok([
-        {
-            "id": e.id,
-            "run_id": e.run_id,
-            "level": e.level,
-            "step": e.step,
-            "message": e.message,
-            "detail": e.detail,
-            "elapsed_ms": e.elapsed_ms,
-            "created_at": e.created_at.isoformat(),
-        }
-        for e in events_list
-    ])
+    return ApiResponse.ok([_serialize_run_event(event) for event in events_list])
+
+
+@router.get("/{task_id}/runs/{run_id}/events/stream")
+async def stream_run_events(
+    task_id: str,
+    run_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> StreamingResponse:
+    await _get_run_for_task(db, task_id, run_id)
+
+    async def event_generator():
+        seen_ids: set[str] = set()
+        heartbeat_count = 0
+
+        while not await request.is_disconnected():
+            result = await db.execute(
+                select(TaskRunEvent)
+                .where(TaskRunEvent.run_id == run_id)
+                .order_by(TaskRunEvent.created_at, TaskRunEvent.id)
+            )
+            events = result.scalars().all()
+            for event in events:
+                if event.id in seen_ids:
+                    continue
+                seen_ids.add(event.id)
+                yield _sse("run_event", _serialize_run_event(event))
+
+            run = await _get_run_for_task(db, task_id, run_id)
+            if run.status not in {"pending", "running", "ai_processing", "queued"}:
+                yield _sse("run_status", {"run_id": run.id, "status": run.status})
+                break
+
+            heartbeat_count += 1
+            if heartbeat_count % 10 == 0:
+                yield _sse("heartbeat", {"run_id": run_id})
+            await asyncio.sleep(1)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )

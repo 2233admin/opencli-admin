@@ -12,17 +12,68 @@ from urllib.parse import urlparse
 
 import yaml
 
-from backend.channels.base import AbstractChannel, ChannelResult
+from backend.channels.base import AbstractChannel, Capabilities, ChannelResult
 from backend.channels.registry import register_channel
 
 logger = logging.getLogger(__name__)
 
 _DAEMON_PORT = 19825
 # Binary to invoke. Override with OPENCLI_BIN env var if needed.
-_OPENCLI_BIN = os.environ.get("OPENCLI_BIN", "opencli")
+_OPENCLI_BIN = os.environ.get("OPENCLI_BIN") or "opencli"
 
 # Cache: (bin, site, command) → frozenset of accepted --option names (excluding builtins)
 _help_cache: dict[tuple[str, str, str], frozenset[str]] = {}
+_browser_requirement_cache: dict[tuple[str, str, str], bool] = {}
+
+
+async def _site_bound_agent_endpoint(pool: Any, site: str) -> str | None:
+    if not site:
+        return None
+
+    from backend.database import AsyncSessionLocal
+    from backend.services import browser_service
+
+    async with AsyncSessionLocal() as session:
+        binding = await browser_service.get_binding_by_site(session, site)
+    if not binding:
+        return None
+
+    endpoint = binding.browser_endpoint
+    if endpoint not in pool.endpoints:
+        logger.warning(
+            "agent mode: site binding for %s points at endpoint %s outside the pool",
+            site,
+            endpoint,
+        )
+        return None
+    if not pool.get_agent_protocol(endpoint):
+        logger.warning(
+            "agent mode: site binding for %s points at endpoint %s without an agent protocol",
+            site,
+            endpoint,
+        )
+        return None
+    return endpoint
+
+
+async def _select_agent_endpoint(pool: Any, site: str) -> str | None:
+    bound_endpoint = await _site_bound_agent_endpoint(pool, site)
+    if bound_endpoint:
+        logger.debug(
+            "agent mode: selected site-bound endpoint %s for site=%s",
+            bound_endpoint,
+            site,
+        )
+        return bound_endpoint
+
+    agent_eps = [ep for ep in pool.endpoints if pool.get_agent_protocol(ep)]
+    if agent_eps:
+        logger.debug(
+            "agent mode: selected endpoint %s (has agent_protocol)",
+            agent_eps[0],
+        )
+        return agent_eps[0]
+    return None
 
 
 async def _get_named_options(bin_path: str, site: str, command: str) -> frozenset[str]:
@@ -54,8 +105,47 @@ async def _get_named_options(bin_path: str, site: str, command: str) -> frozense
     return names
 
 
+async def _command_requires_browser(bin_path: str, site: str, command: str) -> bool:
+    """Return whether an opencli command declares it needs browser automation.
+
+    OpenCLI site help is the adapter manifest. If it cannot be read, default to
+    browser=True so authenticated/dynamic sites keep the safer routed behavior.
+    """
+    key = (bin_path, site, command)
+    if key in _browser_requirement_cache:
+        return _browser_requirement_cache[key]
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            bin_path,
+            site,
+            "--help",
+            "-f",
+            "yaml",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=10)
+        manifest = yaml.safe_load(stdout.decode(errors="replace")) or {}
+        commands = manifest.get("commands", [])
+        match = next(
+            (
+                item
+                for item in commands
+                if isinstance(item, dict) and item.get("name") == command
+            ),
+            None,
+        )
+        requires_browser = bool(match.get("browser", True)) if match else True
+    except Exception as exc:
+        logger.debug("could not inspect browser requirement for %s %s: %s", site, command, exc)
+        requires_browser = True
+    _browser_requirement_cache[key] = requires_browser
+    return requires_browser
+
+
 def _resolve_bin(mode: str) -> str:  # noqa: ARG001 — mode unused, kept for call-site compat
-    return _OPENCLI_BIN
+    configured = _OPENCLI_BIN or "opencli"
+    return shutil.which(configured) or configured
 
 
 def _parse_json(raw: str) -> list[dict]:
@@ -83,7 +173,7 @@ def _parse_csv(raw: str) -> list[dict]:
 def _parse_table(raw: str) -> list[dict]:
     """Parse cli-table3 Unicode box-drawing table into list of dicts."""
     lines = raw.splitlines()
-    data_lines = [l for l in lines if l.strip().startswith("│")]
+    data_lines = [line for line in lines if line.strip().startswith("│")]
     if not data_lines:
         return [{"content": raw}]
 
@@ -101,7 +191,7 @@ def _parse_table(raw: str) -> list[dict]:
 
 def _parse_markdown(raw: str) -> list[dict]:
     """Parse markdown table into list of dicts."""
-    lines = [l.strip() for l in raw.splitlines() if l.strip().startswith("|")]
+    lines = [line.strip() for line in raw.splitlines() if line.strip().startswith("|")]
     if len(lines) < 2:
         return [{"content": raw}]
 
@@ -273,7 +363,11 @@ async def _cleanup_cdp_tabs(cdp_endpoint: str, pre_existing_ids: set[str]) -> No
                 if tab.get("type") == "page" and tab_id not in pre_existing_ids:
                     try:
                         await client.get(f"{cdp_endpoint}/json/close/{tab_id}")
-                        logger.info("cleanup: closed new tab %s url=%s", tab_id, tab.get("url", "")[:80])
+                        logger.info(
+                            "cleanup: closed new tab %s url=%s",
+                            tab_id,
+                            tab.get("url", "")[:80],
+                        )
                         remaining_pages -= 1
                     except Exception:
                         pass
@@ -301,15 +395,79 @@ async def _run_opencli(cmd: list[str], env: dict) -> tuple[int, str, str]:
             env=env,
         )
         from backend.config import get_settings
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=get_settings().opencli_timeout)
+        timeout = get_settings().opencli_timeout
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
         return proc.returncode, stdout.decode(), stderr.decode().strip()
-    except asyncio.TimeoutError:
+    except TimeoutError:
         if proc:
             proc.kill()
             await proc.wait()
         raise
-    except FileNotFoundError:
-        raise
+
+
+async def _collect_with_opencli_subprocess(
+    cmd: list[str],
+    env: dict,
+    *,
+    site: str,
+    command: str,
+    output_format: str,
+    mode: str,
+    chrome_mode: str | None = None,
+) -> ChannelResult:
+    try:
+        returncode, stdout_text, stderr_text = await _run_opencli(cmd, env)
+    except TimeoutError as exc:
+        logger.error("opencli timeout | cmd=%s", " ".join(cmd))
+        return ChannelResult.fail(
+            "opencli command timed out after 120s", error_type=type(exc).__name__
+        )
+    except FileNotFoundError as exc:
+        logger.error("opencli binary not found: %s", cmd[0])
+        return ChannelResult.fail(
+            f"opencli binary not found: {cmd[0]}", error_type=type(exc).__name__
+        )
+    except Exception as exc:
+        logger.exception("opencli subprocess error | %s", exc)
+        return ChannelResult.fail(
+            f"Failed to run opencli: {exc}", error_type=type(exc).__name__
+        )
+
+    if stderr_text:
+        logger.warning("opencli stderr | %s", stderr_text[:500])
+
+    if returncode != 0:
+        logger.error("opencli exit=%d | stderr=%s", returncode, stderr_text[:500])
+        return ChannelResult.fail(f"opencli exited with code {returncode}: {stderr_text}")
+
+    raw = stdout_text
+    logger.debug("opencli stdout | %d chars | preview=%s", len(raw), raw[:200])
+    parser = _PARSERS.get(output_format, _PARSERS["json"])
+    try:
+        items = parser(raw)
+    except Exception as exc:
+        logger.error(
+            "opencli parse error | format=%s error=%s output_preview=%s",
+            output_format,
+            exc,
+            raw[:300],
+        )
+        return ChannelResult.fail(
+            f"Failed to parse opencli {output_format} output: {exc}",
+            error_type=type(exc).__name__,
+        )
+
+    logger.info(
+        "opencli done | site=%s cmd=%s mode=%s items=%d",
+        site,
+        command,
+        mode,
+        len(items),
+    )
+    metadata = {"site": site, "command": command}
+    if chrome_mode:
+        metadata["chrome_mode"] = chrome_mode
+    return ChannelResult.ok(items, **metadata)
 
 
 @register_channel
@@ -317,6 +475,9 @@ class OpenCLIChannel(AbstractChannel):
     """Collect data by running the opencli CLI tool."""
 
     channel_type = "opencli"
+    # Drives a real Chrome from the shared pool → must run on the node holding the
+    # live session; the pipeline resolves a site-keyed browser binding for it.
+    capabilities = Capabilities(session_affinity=True)
 
     async def collect(
         self, config: dict[str, Any], parameters: dict[str, Any]
@@ -340,7 +501,12 @@ class OpenCLIChannel(AbstractChannel):
         extra_positional: list[str] = []
         for k, v in raw_args.items():
             if named_options and k not in named_options:
-                logger.debug("arg %r not a named option for %s/%s — passing as positional", k, site, command)
+                logger.debug(
+                    "arg %r not a named option for %s/%s — passing as positional",
+                    k,
+                    site,
+                    command,
+                )
                 extra_positional.append(str(v))
             else:
                 args[k] = v
@@ -349,27 +515,53 @@ class OpenCLIChannel(AbstractChannel):
 
         env = os.environ.copy()
 
-        from backend.browser_pool import get_pool, LocalBrowserPool
+        from backend.browser_pool import LocalBrowserPool, get_pool
         from backend.config import get_settings
-        pool = get_pool()
         settings = get_settings()
+        requires_browser = await _command_requires_browser(
+            opencli_bin_early, site, command
+        )
+
+        if not requires_browser:
+            cmd = [opencli_bin_early, site, command]
+            cmd.extend(positional_args)
+            for key, value in args.items():
+                cmd.extend([f"--{key}", str(value)])
+            cmd.extend(["-f", output_format])
+            return await _collect_with_opencli_subprocess(
+                cmd,
+                env,
+                site=site,
+                command=command,
+                output_format=output_format,
+                mode="direct",
+            )
+
+        pool = get_pool()
 
         # In agent mode, prefer endpoints that have a registered agent_url/protocol.
         # The pool may also contain local chrome endpoints without agent metadata.
         _acquire_endpoint = chrome_endpoint
-        if settings.collection_mode == "agent" and not chrome_endpoint and isinstance(pool, LocalBrowserPool):
-            agent_eps = [ep for ep in pool.endpoints if pool.get_agent_protocol(ep)]
-            if agent_eps:
-                _acquire_endpoint = agent_eps[0]
-                logger.debug("agent mode: selected endpoint %s (has agent_protocol)", _acquire_endpoint)
-            else:
-                return ChannelResult.fail("No registered agent nodes available. Please add an agent node first.")
+        if (
+            settings.collection_mode == "agent"
+            and not chrome_endpoint
+            and isinstance(pool, LocalBrowserPool)
+        ):
+            _acquire_endpoint = await _select_agent_endpoint(pool, site)
+            if not _acquire_endpoint:
+                return ChannelResult.fail(
+                    "No registered agent nodes available. Please add an agent node first."
+                )
 
         async with pool.acquire(endpoint=_acquire_endpoint) as cdp_endpoint:
             mode = pool.get_mode(cdp_endpoint)
             # Agent mode: dispatch to remote edge node
             if settings.collection_mode == "agent":
-                protocol = pool.get_agent_protocol(cdp_endpoint) if isinstance(pool, LocalBrowserPool) else "http"
+                protocol = (
+                    pool.get_agent_protocol(cdp_endpoint)
+                    if isinstance(pool, LocalBrowserPool)
+                    else "http"
+                )
                 agent_url = pool.get_agent_url(cdp_endpoint) or cdp_endpoint
                 if not protocol:
                     return ChannelResult.fail(
@@ -385,7 +577,11 @@ class OpenCLIChannel(AbstractChannel):
                         agent_url, site, command, args, positional_args, output_format, mode
                     )
                 else:
-                    logger.error("Unknown agent_protocol %r for endpoint %s", protocol, cdp_endpoint)
+                    logger.error(
+                        "Unknown agent_protocol %r for endpoint %s",
+                        protocol,
+                        cdp_endpoint,
+                    )
                     return ChannelResult.fail(f"Unknown agent_protocol: {protocol!r}")
 
             opencli_bin = _resolve_bin(mode)
@@ -401,11 +597,18 @@ class OpenCLIChannel(AbstractChannel):
                 env.pop("OPENCLI_CDP_ENDPOINT", None)
                 env["OPENCLI_DAEMON_HOST"] = daemon_host
                 env["OPENCLI_DAEMON_PORT"] = str(_DAEMON_PORT)
-                logger.info("opencli bridge | cmd=%s daemon=%s:%s", " ".join(cmd), daemon_host, _DAEMON_PORT)
+                logger.info(
+                    "opencli bridge | cmd=%s daemon=%s:%s",
+                    " ".join(cmd),
+                    daemon_host,
+                    _DAEMON_PORT,
+                )
                 bridge_err = await _check_bridge_ready(daemon_host, _DAEMON_PORT)
                 if bridge_err:
-                    logger.error("bridge not ready: %s", bridge_err)
-                    return ChannelResult.fail(bridge_err)
+                    logger.warning(
+                        "bridge readiness probe failed; trying opencli anyway: %s",
+                        bridge_err,
+                    )
             else:
                 env["OPENCLI_CDP_ENDPOINT"] = cdp_endpoint
                 logger.info("opencli cdp | cmd=%s cdp=%s", " ".join(cmd), cdp_endpoint)
@@ -414,45 +617,20 @@ class OpenCLIChannel(AbstractChannel):
             if mode == "cdp":
                 pre_tab_ids = await _snapshot_tab_ids(cdp_endpoint)
 
-            try:
-                returncode, stdout_text, stderr_text = await _run_opencli(cmd, env)
-            except asyncio.TimeoutError:
-                logger.error("opencli timeout | cmd=%s", " ".join(cmd))
-                if mode == "cdp":
-                    await _cleanup_cdp_tabs(cdp_endpoint, pre_tab_ids)
-                return ChannelResult.fail("opencli command timed out after 120s")
-            except FileNotFoundError:
-                logger.error("opencli binary not found: %s", opencli_bin)
-                return ChannelResult.fail(f"opencli binary not found: {opencli_bin}")
-            except Exception as exc:
-                logger.exception("opencli subprocess error | %s", exc)
-                if mode == "cdp":
-                    await _cleanup_cdp_tabs(cdp_endpoint, pre_tab_ids)
-                return ChannelResult.fail(f"Failed to run opencli: {exc}")
+            result = await _collect_with_opencli_subprocess(
+                cmd,
+                env,
+                site=site,
+                command=command,
+                output_format=output_format,
+                mode=mode,
+                chrome_mode=mode,
+            )
 
             if mode == "cdp":
                 await _cleanup_cdp_tabs(cdp_endpoint, pre_tab_ids)
 
-            if stderr_text:
-                logger.warning("opencli stderr | %s", stderr_text[:500])
-
-            if returncode != 0:
-                logger.error("opencli exit=%d | stderr=%s", returncode, stderr_text[:500])
-                return ChannelResult.fail(f"opencli exited with code {returncode}: {stderr_text}")
-
-            raw = stdout_text
-            logger.debug("opencli stdout | %d chars | preview=%s", len(raw), raw[:200])
-
-        parser = _PARSERS.get(output_format, _PARSERS["json"])
-        try:
-            items = parser(raw)
-        except Exception as exc:
-            logger.error("opencli parse error | format=%s error=%s output_preview=%s",
-                         output_format, exc, raw[:300])
-            return ChannelResult.fail(f"Failed to parse opencli {output_format} output: {exc}")
-
-        logger.info("opencli done | site=%s cmd=%s mode=%s items=%d", site, command, mode, len(items))
-        return ChannelResult.ok(items, site=site, command=command, chrome_mode=mode)
+            return result
 
     async def validate_config(self, config: dict[str, Any]) -> list[str]:
         errors: list[str] = []
@@ -462,8 +640,51 @@ class OpenCLIChannel(AbstractChannel):
             errors.append("'command' is required for opencli channel")
         return errors
 
-    async def health_check(self) -> bool:
+    async def health_check(
+        self, config: dict[str, Any] | None = None, source_id: str | None = None
+    ) -> bool:
+        """Two-tier: cheap liveness (binary on PATH) always runs first and
+        short-circuits on failure; deep readiness (a real browser reachable
+        via CDP) only runs in local cdp/bridge mode — agent mode dispatches
+        to a remote node with its own registration/health concern, and a
+        bridge-mode endpoint has no local /json/version to hit. Acquires a
+        pool slot only for the duration of the probe, not held afterward.
+        When `config.site` has a browser binding (same lookup pipeline.py
+        does before collect()), the probe targets that bound endpoint
+        instead of an arbitrary pool member, so multi-endpoint pools give a
+        result that reflects this source's actual endpoint."""
         if not (shutil.which(_OPENCLI_BIN) or os.path.isfile(_OPENCLI_BIN)):
             return False
-        # Binary found; extension connectivity is mode-dependent, not a hard failure here
-        return True
+
+        from backend.config import get_settings
+        if get_settings().collection_mode == "agent":
+            return True
+
+        from backend.browser_pool import get_pool
+        try:
+            pool = get_pool()
+        except RuntimeError:
+            return True  # pool not initialized yet (e.g. tested standalone) — binary check stands
+
+        acquire_endpoint: str | None = None
+        site = (config or {}).get("site")
+        if site:
+            from backend.database import AsyncSessionLocal
+            from backend.services import browser_service
+            async with AsyncSessionLocal() as session:
+                binding = await browser_service.get_binding_by_site(session, site)
+                if binding:
+                    acquire_endpoint = binding.browser_endpoint
+
+        try:
+            async with pool.acquire(endpoint=acquire_endpoint) as cdp_endpoint:
+                if pool.get_mode(cdp_endpoint) != "cdp":
+                    return True  # bridge mode: reachability is the daemon's concern, not ours
+                import httpx
+                async with httpx.AsyncClient(timeout=5) as client:
+                    resp = await client.get(f"{cdp_endpoint}/json/version")
+                    resp.raise_for_status()
+            return True
+        except Exception as exc:
+            logger.warning("opencli health_check: CDP endpoint unreachable: %s", exc)
+            return False

@@ -1,0 +1,402 @@
+
+/* ---- React Flow canvas re-skin ---- */
+
+.react-flow {
+  --xy-background-color: var(--background);
+  --xy-edge-stroke: #3a3d42;
+  --xy-edge-stroke-selected: #ffffff;
+  --xy-attribution-background-color: transparent;
+}
+
+.react-flow__background {
+  opacity: 0.5;
+}
+
+.react-flow__edge-path {
+  stroke: #3a3d42;
+  stroke-width: 1.25;
+  shape-rendering: geometricPrecision;
+  vector-effect: non-scaling-stroke;
+}
+
+.react-flow__edge.selected .react-flow__edge-path,
+.react-flow__edge:focus .react-flow__edge-path {
+  stroke: #ffffff;
+  stroke-width: 1.5;
+}
+
+.react-flow__edge:hover .react-flow__edge-path {
+  stroke: #6a6f78;
+}
+
+.react-flow__handle {
+  border-radius: 2px;
+}
+
+.react-flow__selection {
+  background: rgb(255 255 255 / 0.04);
+  border: 1px solid rgb(255 255 255 / 0.25);
+}
+
+.react-flow__nodesselection-rect {
+  background: rgb(255 255 255 / 0.04);
+  border: 1px dashed rgb(255 255 255 / 0.3);
+}
+
+.react-flow__controls {
+  box-shadow: none;
+}
+
+.react-flow__minimap {
+  opacity: 0.9;
+}
+
+/* ---- Workflow micro-interactions ---- */
+
+@keyframes workflow-node-enter {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 4px, 0) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes workflow-node-running {
+  0%,
+  100% {
+    outline-color: var(--border);
+    box-shadow: 0 0 0 0 rgb(255 122 23 / 0);
+  }
+  50% {
+    outline-color: rgb(255 122 23 / 0.72);
+    box-shadow: 0 0 0 3px rgb(255 122 23 / 0.08), 0 0 22px rgb(255 122 23 / 0.1);
+  }
+}
+
+@keyframes workflow-node-scan {
+  from {
+    transform: translateX(-120%);
+  }
+  to {
+    transform: translateX(120%);
+  }
+}
+
+@keyframes workflow-edge-flow {
+  to {
+    stroke-dashoffset: -28;
+  }
+}
+
+@keyframes workflow-edge-confirm {
+  0% {
+    stroke-dashoffset: 16;
+    opacity: 0.62;
+  }
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+}
+
+@keyframes workflow-panel-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, -4px, 0) scale(0.995);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes workflow-toast-in {
+  from {
+    opacity: 0;
+    transform: translate3d(-50%, 8px, 0) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(-50%, 0, 0) scale(1);
+  }
+}
+
+@keyframes workflow-scissor-dash {
+  to {
+    stroke-dashoffset: -24;
+  }
+}
+
+.workflow-node-card {
+  animation: workflow-node-enter var(--motion-base) var(--motion-ease-out) both;
+  transform-origin: center;
+  text-rendering: geometricPrecision;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-synthesis: none;
+  will-change: transform, outline-color, box-shadow;
+  transition:
+    transform var(--motion-fast) var(--motion-spring),
+    outline-color var(--motion-base) var(--motion-ease-out),
+    box-shadow var(--motion-base) var(--motion-ease-out),
+    background-color var(--motion-fast) linear,
+    border-color var(--motion-fast) linear;
+}
+
+.workflow-node-card:hover {
+  transform: translate3d(0, -1px, 0);
+  box-shadow: 0 8px 20px rgb(0 0 0 / 0.28);
+}
+
+.workflow-node-card:active {
+  transform: translate3d(0, 0, 0) scale(0.992);
+}
+
+.workflow-node-card::before {
+  content: "";
+  pointer-events: none;
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  width: 3px;
+  background: var(--node-stripe, var(--border));
+  opacity: 0.92;
+}
+
+.workflow-node-sigil {
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--node-stripe, var(--border)) 18%, transparent), transparent 70%),
+    repeating-linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--node-stripe, var(--border)) 14%, transparent) 0 1px,
+      transparent 1px 5px
+    );
+}
+
+.workflow-node-mini-code {
+  display: inline-flex;
+  min-width: 2.25rem;
+  height: 1.25rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid color-mix(in srgb, var(--node-stripe, var(--border)) 52%, var(--border));
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--node-stripe, var(--border)) 16%, var(--card));
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  font-weight: 650;
+  letter-spacing: 0;
+}
+
+.workflow-node-card svg,
+.react-flow__handle {
+  shape-rendering: geometricPrecision;
+}
+
+.workflow-node-card[data-selected="true"]::after,
+.workflow-node-card[data-package-state="draft"]::after {
+  content: "";
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.08), transparent);
+  animation: workflow-node-scan 1.7s linear infinite;
+}
+
+.workflow-node-card[data-selected="true"] {
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 0.16), 0 0 24px rgb(255 255 255 / 0.08);
+}
+
+.workflow-node-card[data-status="running"] {
+  animation:
+    workflow-node-enter var(--motion-base) var(--motion-ease-out) both,
+    workflow-node-running 1.1s var(--motion-ease-in-out) infinite;
+}
+
+.workflow-node-card[data-package-state="locked"] {
+  outline-color: rgb(217 119 6 / 0.55) !important;
+}
+
+.workflow-node-card[data-package-state="draft"] {
+  outline-color: rgb(74 222 128 / 0.55) !important;
+}
+
+.react-flow .workflow-edge-path {
+  stroke-dasharray: 7 7;
+  animation:
+    workflow-edge-confirm var(--motion-slow) var(--motion-ease-out) both,
+    workflow-edge-flow 1.3s linear infinite !important;
+  transition:
+    stroke var(--motion-fast) linear,
+    stroke-width var(--motion-fast) var(--motion-ease-out),
+    opacity var(--motion-fast) linear;
+}
+
+.react-flow .workflow-edge-path[data-selected="true"] {
+  stroke-width: 1.75;
+  filter: drop-shadow(0 0 4px rgb(255 255 255 / 0.22));
+}
+
+.react-flow .workflow-edge-path[data-draft="true"] {
+  stroke-dasharray: 4 6;
+}
+
+.workflow-floating-panel {
+  animation: workflow-panel-in var(--motion-base) var(--motion-ease-out) both;
+  transform-origin: top left;
+}
+
+.workflow-context-menu {
+  animation: workflow-panel-in var(--motion-fast) var(--motion-ease-out) both;
+  transform-origin: top left;
+}
+
+.workflow-toast {
+  animation: workflow-toast-in var(--motion-base) var(--motion-ease-out) both;
+}
+
+.workflow-scissor-trail {
+  animation: workflow-scissor-dash 420ms linear infinite;
+  filter: drop-shadow(0 0 5px rgb(255 122 23 / 0.28));
+}
+
+.workflow-proximity-ring {
+  fill: transparent;
+  stroke: rgb(255 255 255 / 0.58);
+  stroke-width: 1;
+  stroke-dasharray: 5 4;
+  opacity: 0.48;
+  vector-effect: non-scaling-stroke;
+  animation: workflow-edge-flow 1.1s linear infinite;
+}
+
+.workflow-proximity-ring[data-state="overlap"] {
+  stroke: rgb(255 122 23 / 0.82);
+  stroke-width: 1.5;
+  stroke-dasharray: 3 3;
+  filter: drop-shadow(0 0 6px rgb(255 122 23 / 0.24));
+}
+
+.workflow-inspector-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #3b414a transparent;
+}
+
+.workflow-inspector-scroll::-webkit-scrollbar {
+  width: 9px;
+}
+
+.workflow-inspector-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.workflow-inspector-scroll::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: #3b414a;
+  background-clip: padding-box;
+}
+
+.workflow-inspector-scroll::-webkit-scrollbar-thumb:hover {
+  background: #59616d;
+  background-clip: padding-box;
+}
+
+.houdini-range {
+  height: 1rem;
+  appearance: none;
+  background: transparent;
+}
+
+.houdini-range:focus {
+  outline: none;
+}
+
+.houdini-range::-webkit-slider-runnable-track {
+  height: 0.25rem;
+  border: 1px solid #303641;
+  border-radius: 2px;
+  background: #11151b;
+  box-shadow: inset 0 1px 1px rgb(0 0 0 / 0.45);
+}
+
+.houdini-range::-webkit-slider-thumb {
+  width: 0.7rem;
+  height: 1.05rem;
+  margin-top: -0.47rem;
+  appearance: none;
+  border: 1px solid #a5aeb9;
+  border-radius: 2px;
+  background: linear-gradient(#8793a1, #66717f);
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.45);
+}
+
+.houdini-range:focus::-webkit-slider-thumb {
+  border-color: #d1d7df;
+}
+
+.houdini-range::-moz-range-track {
+  height: 0.25rem;
+  border: 1px solid #303641;
+  border-radius: 2px;
+  background: #11151b;
+  box-shadow: inset 0 1px 1px rgb(0 0 0 / 0.45);
+}
+
+.houdini-range::-moz-range-thumb {
+  width: 0.7rem;
+  height: 1.05rem;
+  border: 1px solid #a5aeb9;
+  border-radius: 2px;
+  background: linear-gradient(#8793a1, #66717f);
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.45);
+}
+
+.houdini-checkbox {
+  width: 0.78rem;
+  height: 0.78rem;
+  appearance: none;
+  border: 1px solid #3a414b;
+  border-radius: 2px;
+  background: #050607;
+  box-shadow: inset 0 1px 1px rgb(0 0 0 / 0.55);
+}
+
+.houdini-checkbox:checked {
+  border-color: #a5aeb9;
+  background:
+    linear-gradient(135deg, transparent 0 35%, #d5dbe2 35% 50%, transparent 50%),
+    linear-gradient(45deg, transparent 0 42%, #d5dbe2 42% 56%, transparent 56%),
+    #29313a;
+}
+
+.houdini-checkbox:focus-visible {
+  outline: 1px solid #7c8795;
+  outline-offset: 2px;
+}
+
+.houdini-checkbox:disabled {
+  opacity: 0.55;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .workflow-node-card,
+  .workflow-node-card:hover,
+  .workflow-node-card:active,
+  .workflow-node-card[data-status="running"],
+  .workflow-node-card[data-selected="true"]::after,
+  .workflow-node-card[data-package-state="draft"]::after,
+  .react-flow .workflow-edge-path,
+  .workflow-floating-panel,
+  .workflow-context-menu,
+  .workflow-toast,
+  .workflow-scissor-trail,
+  .workflow-proximity-ring {
+    animation: none !important;
+    transform: none;
+    transition: none;
+  }
+}

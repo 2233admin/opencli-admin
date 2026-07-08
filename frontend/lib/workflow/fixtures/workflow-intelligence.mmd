@@ -1,0 +1,18 @@
+flowchart TB
+  schedule-5m["schedule-5m"]
+  source-jin10["source-jin10"]
+  agent-normalize["agent-normalize"]
+  router-importance["router-importance"]
+  inbox-review["inbox-review"]
+  notify-preview["notify-preview"]
+  schedule-5m --> source-jin10
+  source-jin10 --> agent-normalize
+  agent-normalize --> router-importance
+  router-importance -- "review" --> inbox-review
+  router-importance -- "webhook" --> notify-preview
+  class schedule-5m schedule,trigger;
+  class source-jin10 source,fetch;
+  class agent-normalize agent,normalize;
+  class router-importance router,route;
+  class inbox-review inbox,store;
+  class notify-preview notify,send;

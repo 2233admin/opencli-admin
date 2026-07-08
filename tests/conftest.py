@@ -1,19 +1,39 @@
 """Shared pytest fixtures."""
 
 import asyncio
+import os
 from collections.abc import AsyncGenerator
 
 import pytest
 import pytest_asyncio
+from cryptography.fernet import Fernet
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from backend.auth import crypto
 from backend.database import Base, get_db
 from backend.main import app
 from backend.models import *  # noqa: F401, F403 — register all models
 
 
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _default_credential_key():
+    """Provide a valid Fernet key for the whole test session so any code path
+    that encrypts/decrypts secrets at rest works without every test wiring it
+    up. ModelProvider.api_key is now an encrypting property (its setter calls
+    crypto.encrypt), so constructing ModelProvider(api_key=...) — done all over
+    the channel/provider tests — requires the key to be present; providing one
+    default here is the single choke point instead of patching each test.
+
+    Tests that specifically assert the missing-key behavior override this per
+    function via monkeypatch.delenv(crypto.ENV_KEY); tests wanting a known key
+    still monkeypatch.setenv their own. Set only if unset so those keep control."""
+    if not os.environ.get(crypto.ENV_KEY):
+        os.environ[crypto.ENV_KEY] = Fernet.generate_key().decode()
+    yield
 
 
 @pytest.fixture(scope="session")

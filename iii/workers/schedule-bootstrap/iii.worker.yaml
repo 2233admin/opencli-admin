@@ -1,0 +1,4 @@
+name: schedule-bootstrap
+description: Registers III cron triggers from schedules/discord.yaml
+runtime: python
+entrypoint: src/main.py

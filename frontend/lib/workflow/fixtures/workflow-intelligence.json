@@ -1,0 +1,159 @@
+{
+  "id": "workflow-intelligence",
+  "name": "Intelligence Monitor",
+  "profile": "intelligence",
+  "version": 1,
+  "settings": {
+    "timezone": "Asia/Shanghai",
+    "deterministicSimulation": true,
+    "maxItemsPerRun": 20
+  },
+  "adapters": [
+    {
+      "id": "jin10-kuaixun",
+      "type": "source",
+      "provider": "jin10",
+      "mode": "fixture",
+      "config": {
+        "feed": "kuaixun"
+      }
+    },
+    {
+      "id": "webhook-notifier",
+      "type": "notification",
+      "provider": "webhook",
+      "mode": "webhook",
+      "config": {
+        "notifierType": "webhook",
+        "target": "webhook"
+      }
+    }
+  ],
+  "agentPermissions": {
+    "canFetchNetwork": false,
+    "canSendNotifications": false,
+    "canWriteInbox": true,
+    "allowedDomains": [
+      "jin10.com"
+    ]
+  },
+  "nodes": [
+    {
+      "id": "schedule-5m",
+      "kind": "schedule",
+      "capability": "trigger",
+      "params": {
+        "interval": "5m"
+      },
+      "ui": {
+        "position": {
+          "x": 520,
+          "y": 60
+        }
+      }
+    },
+    {
+      "id": "source-jin10",
+      "kind": "source",
+      "capability": "fetch",
+      "adapter": "jin10-kuaixun",
+      "params": {
+        "limit": 20,
+        "importantOnly": false
+      },
+      "ui": {
+        "position": {
+          "x": 520,
+          "y": 280
+        }
+      }
+    },
+    {
+      "id": "agent-normalize",
+      "kind": "agent",
+      "capability": "normalize",
+      "params": {
+        "language": "zh-CN"
+      },
+      "ui": {
+        "position": {
+          "x": 520,
+          "y": 500
+        }
+      }
+    },
+    {
+      "id": "router-importance",
+      "kind": "router",
+      "capability": "route",
+      "params": {
+        "expression": "item.important === true || item.score >= 0.7"
+      },
+      "ui": {
+        "position": {
+          "x": 520,
+          "y": 720
+        }
+      }
+    },
+    {
+      "id": "inbox-review",
+      "kind": "inbox",
+      "capability": "store",
+      "params": {
+        "queue": "macro-watch"
+      },
+      "ui": {
+        "position": {
+          "x": 340,
+          "y": 940
+        }
+      }
+    },
+    {
+      "id": "notify-preview",
+      "kind": "notify",
+      "capability": "send",
+      "adapter": "webhook-notifier",
+      "params": {
+        "template": "brief",
+        "target": "webhook"
+      },
+      "ui": {
+        "position": {
+          "x": 700,
+          "y": 940
+        }
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-schedule-source",
+      "source": "schedule-5m",
+      "target": "source-jin10"
+    },
+    {
+      "id": "e-source-normalize",
+      "source": "source-jin10",
+      "target": "agent-normalize"
+    },
+    {
+      "id": "e-normalize-router",
+      "source": "agent-normalize",
+      "target": "router-importance"
+    },
+    {
+      "id": "e-router-inbox",
+      "source": "router-importance",
+      "target": "inbox-review",
+      "label": "review"
+    },
+    {
+      "id": "e-router-notify",
+      "source": "router-importance",
+      "target": "notify-preview",
+      "label": "webhook"
+    }
+  ]
+}

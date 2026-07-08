@@ -1,6 +1,6 @@
 # Shared backend config (DRY)
 x-backend-common: &backend-common
-  image: ${DOCKER_REGISTRY:-docker.io/}xjh1994/opencli-admin-api:${IMAGE_TAG:-0.3.6}
+  image: ${DOCKER_REGISTRY:-docker.io/}${DOCKER_IMAGE_NAMESPACE:-2233admin}/opencli-admin-api:${IMAGE_TAG:-0.3.6}
   env_file:
     - path: .env
       required: false
@@ -12,7 +12,7 @@ x-backend-common: &backend-common
 services:
   # ── Infrastructure (only needed for TASK_EXECUTOR=celery) ─────────────────
   redis:
-    profiles: ["celery"]
+    profiles: ["celery", "odp", "nas"]
     image: ${DOCKER_REGISTRY:-}redis:7-alpine
     volumes:
       - redis_data:/data
@@ -25,9 +25,10 @@ services:
 
   postgres:
     image: ${DOCKER_REGISTRY:-}postgres:16-alpine
-    profiles: ["postgres"]
+    profiles: ["postgres", "odp", "nas"]
+    # Host port optional — default off to avoid clashing with NAS Postgres on :5432
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PUBLISH_PORT:-}:5432"
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-opencli_admin}
       POSTGRES_USER: ${POSTGRES_USER:-opencli}
@@ -54,6 +55,7 @@ services:
       REDIS_URL: redis://redis:6379/0
       DEBUG: ${DEBUG:-false}
       SECRET_KEY: ${SECRET_KEY:-change-me-in-production}
+      API_AUTH_TOKEN: ${API_AUTH_TOKEN:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       # Built-in sidecar agent URL (Chrome + agent_server in one container).
@@ -68,6 +70,10 @@ services:
       PUBLIC_URL: ${PUBLIC_URL:-}
       # Passed to the agent pool manager so it can name containers/networks correctly
       COMPOSE_PROJECT_NAME: ${COMPOSE_PROJECT_NAME:-opencli-admin}
+      # NAS + III: cron 由 III schedule-bootstrap 驱动，API 不再跑内置 scheduler
+      COLLECTION_ORCHESTRATOR: ${COLLECTION_ORCHESTRATOR:-admin}
+      ODP_INGEST_URL: ${ODP_INGEST_URL:-}
+      III_URL: ${III_URL:-}
     volumes:
       - db_data:/data
       - ./backend:/app/backend
@@ -96,6 +102,7 @@ services:
       REDIS_URL: redis://redis:6379/0
       RUN_MIGRATIONS: "false"
       SECRET_KEY: ${SECRET_KEY:-change-me-in-production}
+      API_AUTH_TOKEN: ${API_AUTH_TOKEN:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENCLI_CDP_ENDPOINT: ${OPENCLI_CDP_ENDPOINT:-http://agent-1:19823}
@@ -118,6 +125,7 @@ services:
       REDIS_URL: redis://redis:6379/0
       RUN_MIGRATIONS: "false"
       SECRET_KEY: ${SECRET_KEY:-change-me-in-production}
+      API_AUTH_TOKEN: ${API_AUTH_TOKEN:-}
     depends_on:
       redis:
         condition: service_healthy
@@ -133,8 +141,7 @@ services:
   #   • macOS/Linux: open -a "Google Chrome" --args --remote-debugging-port=9222
   #   • Or start the Bridge daemon: node $(npm root -g)/@jackwener/opencli/dist/daemon.js
   agent-1:
-    container_name: agent-1
-    image: ${DOCKER_REGISTRY:-docker.io/}xjh1994/opencli-admin-agent:${IMAGE_TAG:-0.3.6}${CHROME_SUFFIX:-}
+    image: ${DOCKER_REGISTRY:-docker.io/}${DOCKER_IMAGE_NAMESPACE:-2233admin}/opencli-admin-agent:${IMAGE_TAG:-0.3.6}${CHROME_SUFFIX:-}
     environment:
       CENTRAL_API_URL: http://api:8000
       # Use container name so the API can reach this agent by DNS within the Docker network
@@ -151,6 +158,8 @@ services:
       # cdp mode: Chrome DevTools Protocol on host
       OPENCLI_CDP_ENDPOINT: ${OPENCLI_CDP_ENDPOINT:-http://host.docker.internal:9222}
       OPENCLI_TIMEOUT: ${OPENCLI_TIMEOUT:-120}
+      API_AUTH_TOKEN: ${API_AUTH_TOKEN:-}
+      AGENT_API_TOKEN: ${AGENT_API_TOKEN:-}
       HTTP_PROXY: ${HTTP_PROXY:-}
       HTTPS_PROXY: ${HTTPS_PROXY:-}
     extra_hosts:
@@ -176,13 +185,13 @@ services:
   #     -e CENTRAL_API_URL=http://<center-ip>:8031 \
   #     -e AGENT_REGISTER=ws \
   #     -p 19823:19823 \
-  #     xjh1994/opencli-admin-agent:0.1.0
+  #     2233admin/opencli-admin-agent:0.3.6
   #
   # Or start the bundled agent profile (local network):
   #   docker compose --profile agent up agent
   agent:
     profiles: ["agent"]
-    image: ${DOCKER_REGISTRY:-docker.io/}xjh1994/opencli-admin-agent:${IMAGE_TAG:-0.3.6}${CHROME_SUFFIX:-}
+    image: ${DOCKER_REGISTRY:-docker.io/}${DOCKER_IMAGE_NAMESPACE:-2233admin}/opencli-admin-agent:${IMAGE_TAG:-0.3.6}${CHROME_SUFFIX:-}
     environment:
       CENTRAL_API_URL: ${CENTRAL_API_URL:-}
       AGENT_ADVERTISE_URL: ${AGENT_ADVERTISE_URL:-}
@@ -191,6 +200,8 @@ services:
       AGENT_LABEL: ${AGENT_LABEL:-}
       AGENT_REGISTER: ${AGENT_REGISTER:-http}
       OPENCLI_TIMEOUT: ${OPENCLI_TIMEOUT:-120}
+      API_AUTH_TOKEN: ${API_AUTH_TOKEN:-}
+      AGENT_API_TOKEN: ${AGENT_API_TOKEN:-}
       HTTP_PROXY: ${HTTP_PROXY:-}
       HTTPS_PROXY: ${HTTPS_PROXY:-}
     volumes:
@@ -199,33 +210,136 @@ services:
       - "${AGENT_PORT:-19823}:19823"
     restart: unless-stopped
 
-  # ── Frontend (nginx + built React) — production ───────────────────────────
-  frontend:
-    image: ${DOCKER_REGISTRY:-docker.io/}xjh1994/opencli-admin-frontend:${IMAGE_TAG:-0.3.6}
+  # ── ODP data plane (Rust hot path) — docker compose --profile odp up
+  odp-ingest:
+    profiles: ["odp", "nas"]
+    build:
+      context: ./odp-rs
+      dockerfile: Dockerfile.ingest
+    environment:
+      ODP_INGEST_HOST: 0.0.0.0
+      ODP_INGEST_PORT: 8040
+      ODP_REDIS_URL: redis://redis:6379/2
+      RUST_LOG: info,odp_ingest=debug
     ports:
-      - "${FRONTEND_PORT:-8030}:80"
+      - "${ODP_INGEST_PORT:-8040}:8040"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8040/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     depends_on:
-      api:
+      redis:
         condition: service_healthy
     restart: unless-stopped
 
-  # ── Frontend dev server (Vite HMR) — run with: docker compose --profile dev up frontend-dev
-  frontend-dev:
-    profiles: ["dev"]
-    image: ${DOCKER_REGISTRY:-}node:22-alpine
-    working_dir: /app
-    command: sh -c "npm ci --legacy-peer-deps && npm run dev -- --host"
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-    ports:
-      - "${FRONTEND_PORT:-8030}:5173"
+  odp-store:
+    profiles: ["odp", "nas"]
+    build:
+      context: ./odp-rs
+      dockerfile: Dockerfile.store
     environment:
-      VITE_API_PROXY_TARGET: "http://api:8000"
+      ODP_REDIS_URL: redis://redis:6379/2
+      ODP_DATABASE_URL: postgresql://${POSTGRES_USER:-opencli}:${POSTGRES_PASSWORD:-opencli_secret}@postgres:5432/${POSTGRES_DB:-opencli_admin}
+      ODP_STORE_BATCH_SIZE: ${ODP_STORE_BATCH_SIZE:-500}
+      RUST_LOG: info,odp_store=debug
+    # odp-store has no HTTP/TCP listener (pure Redis-stream consumer loop), so
+    # this is a process-liveness probe, not a readiness probe: it confirms the
+    # binary hasn't crashed, not that Postgres/Redis connectivity is healthy.
+    healthcheck:
+      test: ["CMD", "pgrep", "-x", "odp-store"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     depends_on:
-      api:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      odp-ingest:
         condition: service_healthy
     restart: unless-stopped
+
+  # ── III control plane (M0+M1) — docker compose --profile iii --profile odp up
+  iii-engine:
+    profiles: ["iii", "nas"]
+    image: ${DOCKER_REGISTRY:-}iiidev/iii:latest
+    ports:
+      - "${III_WS_PORT:-49134}:49134"
+      - "${III_HTTP_PORT:-3111}:3111"
+      - "${III_STREAM_PORT:-3112}:3112"
+    volumes:
+      - ./iii/config.yaml:/app/config.yaml:ro
+    environment:
+      RUST_LOG: info
+      III_EXECUTION_CONTEXT: docker
+    restart: unless-stopped
+
+  iii-odp-ingest-bridge:
+    profiles: ["iii", "nas"]
+    build:
+      context: ./iii
+      dockerfile: workers/odp-ingest-bridge/Dockerfile
+    environment:
+      III_URL: ws://iii-engine:49134
+      ODP_INGEST_URL: http://odp-ingest:8040
+    depends_on:
+      iii-engine:
+        condition: service_started
+      odp-ingest:
+        condition: service_healthy
+    restart: unless-stopped
+
+  iii-schedule-bootstrap:
+    profiles: ["iii", "nas"]
+    build:
+      context: ./iii
+      dockerfile: workers/schedule-bootstrap/Dockerfile
+    environment:
+      III_URL: ws://iii-engine:49134
+      DISCORD_SCHEDULES_PATH: /app/schedules/discord.yaml
+      OPENCLI_SCHEDULES_PATH: /app/schedules/opencli.yaml
+    volumes:
+      - ./iii/schedules:/app/schedules:ro
+    depends_on:
+      iii-engine:
+        condition: service_started
+    restart: unless-stopped
+
+  iii-collector-opencli:
+    profiles: ["iii", "nas"]
+    build:
+      context: ./iii
+      dockerfile: workers/collector-opencli/Dockerfile
+    environment:
+      III_URL: ws://iii-engine:49134
+      OPENCLI_MODE: ${OPENCLI_MODE:-bridge}
+      OPENCLI_DAEMON_HOST: agent-1
+      OPENCLI_DAEMON_PORT: ${OPENCLI_DAEMON_PORT:-19825}
+      OPENCLI_TIMEOUT: ${OPENCLI_TIMEOUT:-120}
+    depends_on:
+      iii-engine:
+        condition: service_started
+      agent-1:
+        condition: service_started
+    restart: unless-stopped
+
+  # Discord auth lives on the host — run collector-discord locally when using discord-cli.
+  # Uncomment on NAS only if discord-cli + token are baked into the image/volume.
+  # iii-collector-discord:
+  #   profiles: ["iii"]
+  #   build:
+  #     context: ./iii
+  #     dockerfile: workers/collector-discord/Dockerfile
+  #   environment:
+  #     III_URL: ws://iii-engine:49134
+  #     DISCORD_CLI_BIN: discord
+  #   depends_on:
+  #     iii-engine:
+  #       condition: service_started
+  #   restart: unless-stopped
 
 volumes:
   redis_data:

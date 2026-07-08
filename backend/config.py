@@ -24,14 +24,39 @@ class Settings(BaseSettings):
     # Task execution mode: "local" (in-process asyncio) or "celery" (distributed)
     task_executor: Literal["local", "celery"] = "local"
 
+    # Collection orchestrator:
+    # admin — API内置 scheduler.py / Celery Beat 驱动定时采集（默认）
+    # iii   — III engine + schedule-bootstrap 驱动 cron；API 仅保留 UI/手动任务
+    collection_orchestrator: Literal["admin", "iii"] = "admin"
+
     # Redis / Celery — only required when task_executor="celery"
     redis_url: str = "redis://localhost:6379/0"
     celery_broker_url: str = "redis://localhost:6379/0"
     celery_result_backend: str = "redis://localhost:6379/1"
 
     # API Security
+    # (api_key_enabled/api_key predate fleet auth and were never enforced by
+    # any dependency — kept only so existing .env files don't break parsing.
+    # api_auth_token below is the one that counts.)
     api_key_enabled: bool = False
     api_key: str = ""
+    # Fleet auth (ADR-0005, closeout issue 04): single static bearer token
+    # required on every /api route once set (backend/security/fleet_auth.py).
+    # Empty (default) = auth disabled — dev posture, which the startup bind
+    # guard only allows on a localhost bind. Env: API_AUTH_TOKEN.
+    api_auth_token: str = ""
+
+    # CLI channel binary allowlist (ADR-0005, audit P0-4). The cli channel is
+    # an arbitrary-binary-execution surface, so it only runs binaries the
+    # operator explicitly listed here. Comma-separated binary paths/names,
+    # e.g. "/usr/bin/mycli,C:\\tools\\other.exe". Empty (default) = deny all.
+    # Deliberately orthogonal to API auth: a stolen token must not grant
+    # arbitrary code execution.
+    cli_channel_allowed_binaries: str = ""
+
+    @property
+    def cli_allowed_binaries(self) -> list[str]:
+        return [b.strip() for b in self.cli_channel_allowed_binaries.split(",") if b.strip()]
 
     # Email
     smtp_host: str = ""
@@ -56,6 +81,17 @@ class Settings(BaseSettings):
     # If empty, the system tries to derive it from request headers (may give internal URL
     # when behind a reverse proxy with changeOrigin=true).
     public_url: str = ""
+
+    # Fleet network bootstrap used by the generated edge-agent installer.
+    # The collection layer only needs reachability between CENTRAL_API_URL and
+    # AGENT_ADVERTISE_URL. Providers are bootstrap hints for that reachability,
+    # not part of collection routing semantics. API_AUTH_TOKEN still gates
+    # every /api route regardless of the network provider.
+    fleet_network_provider: Literal["lan", "netbird", "wireguard", "ssh", "custom"] = "lan"
+    netbird_mode: Literal["off", "host", "docker"] = "off"
+    netbird_setup_key: str = ""
+    netbird_management_url: str = ""
+    netbird_image_tag: str = "latest"
 
     # Agent pool: comma-separated agent/CDP endpoint URLs.
     # Each entry is a Chrome agent node (local or remote).
@@ -91,6 +127,63 @@ class Settings(BaseSettings):
     # Pagination
     default_page_size: int = 20
     max_page_size: int = 100
+
+    # Control layer (docs/CONTROL_THEORY_ARCHITECTURE.md §4-5): "advisory"
+    # means backend.control only classifies state and suggests ControlActions
+    # — nothing executes. "automatic" is surfaced here for the frontend and a
+    # FUTURE PR (PR-Control-4, actuators.py) to read; this PR does NOT wire up
+    # any execution path even when control_mode="automatic" is set — there is
+    # no actuator yet. Changing this setting alone has no runtime effect today.
+    control_mode: Literal["advisory", "automatic"] = "advisory"
+
+    # PR-Control-3.5 (advisory evidence ledger). The control-state endpoint is
+    # polled by the frontend, so identical consecutive suggestions must
+    # deduplicate instead of spamming control_actions rows: a suggestion is
+    # skipped when the latest ledger row for the same (source_id, action_type)
+    # carries the same state and is younger than this window. 600s ≈ well over
+    # any sane poll interval while still recording a fresh row when the same
+    # problem persists across a new decision epoch.
+    control_advisory_dedup_seconds: int = 600
+    # Outcome judgment (backend/control/outcomes.py): how long a ledger row
+    # must age before its suggestion is judged against subsequent
+    # source_measurements evidence (the plant needs time to produce a
+    # post-decision reading)...
+    control_outcome_min_age_seconds: int = 3600
+    # ...and after how long with NO post-decision measurement at all we stop
+    # waiting and record "insufficient_data" — an honest "we never got to see"
+    # rather than a verdict.
+    control_outcome_stale_seconds: int = 86400
+
+    # Issue 03 (Control Cycle + Actuator, ADR-0007). Background cycle period —
+    # deliberately NOT tied to the collection scheduler's own cadence.
+    control_cycle_period_seconds: int = 60
+
+    # Global kill switch (config half; the other half is the in-memory
+    # runtime toggle under backend.control.kill_switch, POST/GET
+    # /api/v1/control/kill-switch — resets to THIS value on restart). Off by
+    # default: shipped configuration must execute nothing.
+    control_kill_switch: bool = False
+
+    # Execution gate (docs/CONTROL_THEORY_ARCHITECTURE.md, ADR-0007): a
+    # (state, action_type) advisory-report bucket must clear BOTH a minimum
+    # sample size and a minimum recovery rate before the actuator may execute
+    # that suggestion automatically.
+    control_gate_min_samples: int = 10
+    control_gate_min_recovery_rate: float = 0.6
+
+    # Anti-oscillation guards. Cooldown is per (source_id, action_type);
+    # the hourly cap is global across every executed action.
+    control_action_cooldown_seconds: int = 3600
+    control_max_actions_per_hour: int = 20
+
+    # increase_interval actuator (bounded multiplicative backoff on a
+    # source's CronSchedule step interval, e.g. "*/5 * * * *" -> "*/10 * * * *").
+    control_increase_interval_factor: float = 2.0
+    control_increase_interval_max_minutes: int = 1440
+
+    # pause actuator TTL — how long an executed pause disables a source
+    # before the Control Cycle auto-resumes it.
+    control_pause_ttl_seconds: int = 3600
 
     @property
     def is_sqlite(self) -> bool:

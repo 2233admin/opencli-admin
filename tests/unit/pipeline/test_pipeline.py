@@ -337,4 +337,106 @@ async def test_run_pipeline_opencli_auto_binding(db_session):
             enable_notifications=False,
         )
 
+
+# ── P1-7: DualSink shadow errors must surface, not vanish ──────────────────
+
+@pytest.mark.asyncio
+async def test_shadow_sink_errors_surface_but_run_still_succeeds(db_session):
+    """A DualSink shadow(ODP)-write failure must be observable (an emitted
+    warning event AND PipelineResult.metadata), while the run itself still
+    succeeds — the legacy write landed, ODP is best-effort by design."""
+    from backend.models.source import DataSource
+    from backend.models.task import CollectionTask
+    from backend.pipeline.sinks import SinkResult
+
+    source = DataSource(
+        name="Shadow Error Source", channel_type="rss",
+        channel_config={"feed_url": "https://ex.com/feed.xml"},
+    )
+    db_session.add(source)
+    await db_session.flush()
+    task = CollectionTask(source_id=source.id, trigger_type="manual", parameters={})
+    db_session.add(task)
+    await db_session.flush()
+
+    channel_result = ChannelResult.ok([{"title": "Item", "url": "https://ex.com/1"}])
+    mock_record = MagicMock()
+    shadow_sink = MagicMock()
+    shadow_sink.write_batch = AsyncMock(
+        return_value=SinkResult(
+            accepted=1,
+            records=[mock_record],
+            errors=["odp shadow: RuntimeError('odp down')"],
+            shadow_meta={"accepted": 0, "duplicates": 0, "rejected": 0},
+        )
+    )
+
+    emitted: list[dict] = []
+
+    async def fake_emit(run_id, step, message, level="info", detail=None, elapsed_ms=None):
+        emitted.append({"step": step, "level": level, "message": message, "detail": detail})
+
+    with (
+        patch("backend.pipeline.collector.collect", return_value=channel_result),
+        patch("backend.pipeline.events.emit", new=fake_emit),
+    ):
+        result = await run_pipeline(
+            task.id,
+            source,
+            enable_ai=False,
+            enable_notifications=False,
+            run_id="run-1",
+            sink=shadow_sink,
+        )
+
+    # The run still succeeds — shadow failures are non-blocking by design.
+    assert result.success is True
+    assert result.stored == 1
+
+    # Signal 1: an emitted warning event carries the shadow error.
+    warning_events = [e for e in emitted if e["level"] == "warning" and e["step"] == "store"]
+    assert len(warning_events) == 1
+    assert "odp down" in str(warning_events[0]["detail"]["shadow_errors"])
+    assert warning_events[0]["detail"]["shadow_meta"] == {
+        "accepted": 0, "duplicates": 0, "rejected": 0,
+    }
+
+    # Signal 2: PipelineResult.metadata also carries it (for callers with no
+    # run_id, and for runner.py to persist onto TaskRun.error_detail).
+    assert "odp down" in str(result.metadata["shadow_errors"])
+    assert result.metadata["shadow_meta"] == {"accepted": 0, "duplicates": 0, "rejected": 0}
+
+
+@pytest.mark.asyncio
+async def test_no_shadow_errors_means_no_shadow_metadata(db_session):
+    """The absence-case: a sink with no errors must not synthesize any
+    shadow_errors/shadow_meta noise onto the result."""
+    from backend.models.source import DataSource
+    from backend.models.task import CollectionTask
+    from backend.pipeline.sinks import SinkResult
+
+    source = DataSource(
+        name="No Shadow Error Source", channel_type="rss",
+        channel_config={"feed_url": "https://ex.com/feed.xml"},
+    )
+    db_session.add(source)
+    await db_session.flush()
+    task = CollectionTask(source_id=source.id, trigger_type="manual", parameters={})
+    db_session.add(task)
+    await db_session.flush()
+
+    channel_result = ChannelResult.ok([{"title": "Item", "url": "https://ex.com/1"}])
+    clean_sink = MagicMock()
+    clean_sink.write_batch = AsyncMock(
+        return_value=SinkResult(accepted=1, records=[MagicMock()])
+    )
+
+    with patch("backend.pipeline.collector.collect", return_value=channel_result):
+        result = await run_pipeline(
+            task.id, source, enable_ai=False, enable_notifications=False, sink=clean_sink,
+        )
+
+    assert result.success is True
+    assert "shadow_errors" not in result.metadata
+
     assert result.success is True

@@ -1,0 +1,19 @@
+[
+  {
+    "nodeId": "notify-webhook",
+    "eventType": "blocked",
+    "blockReasonCode": "missing_delivery_projection",
+    "blockReasonCategory": "missing_config",
+    "messageContains": "configured webhook URL",
+    "blockReasonDetailsSubset": {
+      "code": "missing_delivery_projection",
+      "node_id": "notify-webhook",
+      "provider": "webhook",
+      "required_params": [
+        "evidencebatch_projection_api",
+        "delivery_projection",
+        "webhook_url"
+      ]
+    }
+  }
+]

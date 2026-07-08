@@ -1,0 +1,9 @@
+# Force LF everywhere. Some frontend files in this repo's history carried
+# mixed CRLF/LF line endings (pre-dating this file); an editor touching any
+# line of such a file makes git's line-based diff show the whole file as
+# changed, even when the real content delta is tiny (see
+# frontend/src/components/ChannelConfigForm.tsx and
+# frontend/src/pages/SourcesPage.tsx in refactor/thin-channel-thick-runner —
+# `git diff -w` shows the real, small diff). This doesn't rewrite already-
+# pushed history; it just stops new churn from the same cause.
+* text=auto eol=lf

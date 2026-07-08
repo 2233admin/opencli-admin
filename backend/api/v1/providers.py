@@ -15,7 +15,12 @@ router = APIRouter(prefix="/providers", tags=["providers"])
 @router.get("", response_model=ApiResponse[list[ModelProviderRead]])
 async def list_providers(db: AsyncSession = Depends(get_db)) -> ApiResponse:
     result = await db.execute(select(ModelProvider).order_by(ModelProvider.created_at.desc()))
-    return ApiResponse.ok(list(result.scalars().all()))
+    # ModelProviderRead.from_model masks api_key (has_api_key/api_key_preview
+    # only) — see AUDIT item B3. Built explicitly rather than relying on
+    # response_model's from_attributes, since api_key -> has_api_key/
+    # api_key_preview isn't a 1:1 attribute mapping.
+    providers = [ModelProviderRead.from_model(p) for p in result.scalars().all()]
+    return ApiResponse.ok(providers)
 
 
 @router.post("", response_model=ApiResponse[ModelProviderRead], status_code=201)
@@ -24,7 +29,7 @@ async def create_provider(body: ModelProviderCreate, db: AsyncSession = Depends(
     db.add(provider)
     await db.commit()
     await db.refresh(provider)
-    return ApiResponse.ok(provider)
+    return ApiResponse.ok(ModelProviderRead.from_model(provider))
 
 
 @router.patch("/{provider_id}", response_model=ApiResponse[ModelProviderRead])
@@ -39,7 +44,7 @@ async def update_provider(
         setattr(provider, field, value)
     await db.commit()
     await db.refresh(provider)
-    return ApiResponse.ok(provider)
+    return ApiResponse.ok(ModelProviderRead.from_model(provider))
 
 
 @router.delete("/{provider_id}", response_model=ApiResponse[None])

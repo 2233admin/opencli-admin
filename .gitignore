@@ -21,6 +21,8 @@ env/
 htmlcov/
 *.coveragerc
 coverage.xml
+.tmp-smoke/
+.tmp/opencli-conformance/
 
 # Database files
 *.db
@@ -31,15 +33,20 @@ coverage.xml
 .env
 .env.local
 .env.*.local
+.mcp.json
 
 # Alembic versions (keep the folder, ignore generated files optionally)
 # Uncomment if you don't want to commit migration versions:
 # backend/migrations/versions/*.py
 
 # Node / frontend
+node_modules/
 frontend/node_modules/
+frontend/.next/
 frontend/dist/
 frontend/tsconfig.tsbuildinfo
+frontend/.mcp.json
+.nx/
 
 # macOS
 .DS_Store
@@ -55,6 +62,8 @@ frontend/tsconfig.tsbuildinfo
 # Logs
 *.log
 logs/
+.omx/
+.serena/
 
 # Docker volumes / data
 data/
@@ -70,3 +79,13 @@ chrome/extension-src/store-assets/
 
 # Local working artifacts (not for upstream)
 /PR-DESCRIPTION.md
+
+# Rust build
+odp-rs/target/
+.gstack/
+.repowise/
+.understand-anything/
+.codex/
+.sentrux/agent-sessions/
+.sentrux/baseline.json
+artifacts/

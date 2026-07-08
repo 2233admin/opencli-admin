@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import os
 import re
 import shlex
 import shutil
@@ -16,6 +17,16 @@ _TEMPLATE_RE = re.compile(r"\{\{(\w+)\}\}")
 def _render_template(value: str, context: dict[str, Any]) -> str:
     """Simple {{key}} template rendering."""
     return _TEMPLATE_RE.sub(lambda m: str(context.get(m.group(1), m.group(0))), value)
+
+
+def _binary_allowed(binary: str, allowlist: list[str]) -> bool:
+    """Exact match after path normalization (separators, case on Windows).
+
+    Deliberately no basename matching and no PATH resolution: the operator
+    allowlists the precise string/path they intend to run, nothing looser.
+    """
+    target = os.path.normcase(os.path.normpath(binary))
+    return any(os.path.normcase(os.path.normpath(a)) == target for a in allowlist)
 
 
 @register_channel
@@ -33,13 +44,27 @@ class CLIChannel(AbstractChannel):
         timeout: int = config.get("timeout", 60)
         env_vars: dict[str, str] = config.get("env", {})
 
+        # ADR-0005 (audit P0-4): this channel is an arbitrary-binary-execution
+        # surface, so it only runs binaries the operator explicitly allowlisted
+        # (CLI_CHANNEL_ALLOWED_BINARIES; empty default = deny all). Enforced
+        # before any subprocess is spawned; the rejection is a permanent error
+        # (see pipeline/error_taxonomy.py) so runs fail fast and honestly
+        # instead of burning retry budget on a deterministic denial.
+        from backend.config import get_settings
+
+        if not _binary_allowed(binary, get_settings().cli_allowed_binaries):
+            return ChannelResult.fail(
+                f"Binary {binary!r} is not on the CLI channel allowlist "
+                "(CLI_CHANNEL_ALLOWED_BINARIES; empty = deny all, ADR-0005)",
+                error_type="BinaryNotAllowedError",
+            )
+
         context = {**config.get("defaults", {}), **parameters}
         rendered_cmd = [
             _render_template(part, context) for part in command_template
         ]
         full_cmd = [binary, *rendered_cmd]
 
-        import os
         env = {**os.environ, **env_vars}
 
         try:
@@ -50,12 +75,23 @@ class CLIChannel(AbstractChannel):
                 env=env,
             )
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
-        except asyncio.TimeoutError:
-            return ChannelResult.fail(f"CLI command timed out after {timeout}s")
-        except FileNotFoundError:
-            return ChannelResult.fail(f"Binary not found: {binary!r}")
+        except asyncio.TimeoutError as exc:
+            # Don't orphan the child: wait_for only cancels communicate();
+            # the subprocess itself keeps running until explicitly killed.
+            proc.kill()
+            try:
+                await proc.wait()
+            except Exception:
+                pass
+            return ChannelResult.fail(
+                f"CLI command timed out after {timeout}s", error_type=type(exc).__name__
+            )
+        except FileNotFoundError as exc:
+            return ChannelResult.fail(
+                f"Binary not found: {binary!r}", error_type=type(exc).__name__
+            )
         except Exception as exc:
-            return ChannelResult.fail(f"CLI execution failed: {exc}")
+            return ChannelResult.fail(f"CLI execution failed: {exc}", error_type=type(exc).__name__)
 
         if proc.returncode != 0:
             return ChannelResult.fail(
@@ -83,5 +119,7 @@ class CLIChannel(AbstractChannel):
             errors.append("'command' is required for cli channel")
         return errors
 
-    async def health_check(self) -> bool:
+    async def health_check(
+        self, config: dict[str, Any] | None = None, source_id: str | None = None
+    ) -> bool:
         return True  # Binary existence checked per-collect

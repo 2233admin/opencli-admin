@@ -25,7 +25,7 @@ RUN if [ "$INSTALL_CHROME" = "true" ]; then \
 fi
 
 # Install opencli globally — available as 'opencli' on PATH
-ARG OPENCLI_VERSION=1.1.1
+ARG OPENCLI_VERSION=1.8.3
 RUN npm install -g @jackwener/opencli@${OPENCLI_VERSION} \
     && rm -rf /root/.npm
 
@@ -44,13 +44,15 @@ COPY chrome/extension-src/manifest.json /home/agent/extension/manifest.json
 COPY chrome/extension-src/icons/         /home/agent/extension/icons/
 COPY chrome/extension-src/dist/background.js /home/agent/extension/dist/background.js
 
-# Agent server source — only agent_server.py is needed at runtime
+# Agent server source plus the runtime adapters it imports at startup.
 WORKDIR /app
 COPY backend/agent_server.py ./backend/agent_server.py
+COPY backend/agent_runtimes/ ./backend/agent_runtimes/
+COPY backend/miniflow/ ./backend/miniflow/
 RUN touch ./backend/__init__.py
 
 COPY agent/entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+RUN sed -i 's/\r$//' /entrypoint.sh && chmod +x /entrypoint.sh
 
 RUN useradd -m -u 1000 agent \
     && mkdir -p /home/agent/.config/chromium \

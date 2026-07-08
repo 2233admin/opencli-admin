@@ -1,0 +1,20 @@
+[
+  {
+    "nodeId": "source-jin10",
+    "eventType": "blocked",
+    "blockReasonCode": "fetch_permission_required",
+    "blockReasonDetailsSubset": {
+      "bindingId": "workflow.source.fetch",
+      "requiredPermission": "canFetchNetwork"
+    }
+  },
+  {
+    "nodeId": "notify-preview",
+    "eventType": "blocked",
+    "blockReasonCode": "send_permission_required",
+    "blockReasonDetailsSubset": {
+      "bindingId": "workflow.notify.send",
+      "requiredPermission": "canSendNotifications"
+    }
+  }
+]

@@ -3,9 +3,8 @@
 # Reuses the native opencli and Chrome/Chromium already installed on the system.
 #
 # Usage:
-#   ./start.sh                   # start all: Chrome + backend + frontend
+#   ./start.sh                   # start Chrome + backend API
 #   ./start.sh --no-chrome       # skip Chrome (if CDP not needed)
-#   ./start.sh --no-frontend     # skip Vite dev server
 #   ./start.sh --help
 
 set -euo pipefail
@@ -35,21 +34,17 @@ trap cleanup SIGINT SIGTERM
 
 # ── Options (parsed early for --help; ports resolved after .env load) ─────────
 SKIP_CHROME=false
-SKIP_FRONTEND=false
 _ARG_API_PORT=""
-_ARG_FRONTEND_PORT=""
 _ARG_CDP_PORT=""
 CHROME_PROFILE="${HOME}/.opencli-admin/chrome-profile"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --no-chrome)     SKIP_CHROME=true ;;
-    --no-frontend)   SKIP_FRONTEND=true ;;
     --api-port)      _ARG_API_PORT="$2"; shift ;;
-    --frontend-port) _ARG_FRONTEND_PORT="$2"; shift ;;
     --cdp-port)      _ARG_CDP_PORT="$2"; shift ;;
     -h|--help)
-      echo "Usage: $0 [--no-chrome] [--no-frontend] [--api-port N] [--frontend-port N] [--cdp-port N]"
+      echo "Usage: $0 [--no-chrome] [--api-port N] [--cdp-port N]"
       exit 0 ;;
     *) die "Unknown option: $1" ;;
   esac
@@ -73,7 +68,6 @@ fi
 
 # Priority: CLI arg > .env > hardcoded default
 API_PORT="${_ARG_API_PORT:-${API_PORT:-8031}}"
-FRONTEND_PORT="${_ARG_FRONTEND_PORT:-${FRONTEND_PORT:-8030}}"
 CDP_PORT="${_ARG_CDP_PORT:-${CDP_PORT:-9222}}"
 
 # ── Check Python ──────────────────────────────────────────────────────────────
@@ -107,7 +101,7 @@ if command -v opencli &>/dev/null; then
 else
   read -r -p "opencli not found. Install now via npm? [Y/n] " _reply
   if [[ "${_reply:-Y}" =~ ^[Yy]$ ]]; then
-    npm install -g @jackwener/opencli@1.7.4
+    npm install -g @jackwener/opencli@1.8.3
     ok "opencli: $(opencli --version 2>/dev/null | head -1 || echo 'installed')"
   else
     warn "Skipped — opencli channel will be unavailable"
@@ -187,27 +181,10 @@ uvicorn backend.main:app \
 PIDS+=($!)
 ok "Backend API started"
 
-# ── Start frontend dev server ──────────────────────────────────────────────────
-if [[ "$SKIP_FRONTEND" == false ]]; then
-  if ! command -v node &>/dev/null; then
-    warn "Node.js not found — skipping frontend dev server"
-    warn "  Install Node.js 18+ from https://nodejs.org"
-  else
-    info "Installing frontend dependencies..."
-    (cd frontend && npm install -q --legacy-peer-deps 2>&1 | tail -1)
-    info "Starting frontend dev server on http://localhost:$FRONTEND_PORT ..."
-    # VITE_API_PROXY_TARGET tells vite.config.ts where to proxy /api requests
-    (cd frontend && VITE_API_PROXY_TARGET="http://localhost:$API_PORT" \
-      npm run dev -- --host --port "$FRONTEND_PORT") &
-    PIDS+=($!)
-    ok "Frontend dev server started"
-  fi
-fi
-
 # ── Summary ───────────────────────────────────────────────────────────────────
 echo ""
-echo "  管理界面   →   http://localhost:$FRONTEND_PORT"
 echo "  API 文档   →   http://localhost:$API_PORT/docs"
+echo "  前端项目   →   $SCRIPT_DIR/frontend"
 if [[ -n "$CHROME_PID" ]]; then
   echo ""
   echo "  Chrome 已在后台启动，请打开需要采集的平台网址并登录账号。"

@@ -1,9 +1,16 @@
 """Pipeline Step 3: Persist normalized records, skipping duplicates."""
 
+import logging
+import os
+
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.models.record import CollectedRecord
+from backend.pipeline import odp_client
+
+logger = logging.getLogger(__name__)
 
 
 async def store_records(
@@ -11,13 +18,41 @@ async def store_records(
     task_id: str,
     source_id: str,
     normalized_triples: list[tuple[dict, dict, str]],
+    *,
+    channel_type: str = "unknown",
+    forward_to_odp: bool = False,
 ) -> tuple[list[CollectedRecord], int]:
     """Insert new records; skip existing ones by content_hash.
+
+    ``forward_to_odp`` gates a forward to the Rust ODP ingest hot path (fires
+    only when ``ODP_INGEST_URL`` is ALSO set). Defaults to False: the ODP
+    forward is opt-in, chosen explicitly by the write-seam layer under a
+    source's ``write_strategy`` (``OdpSink`` / ``DualSink``, see
+    ``backend/pipeline/sinks/strategy.py``), not an implicit side effect of a
+    bare env var being present (P1-1). Previously this defaulted to True, so
+    setting ``ODP_INGEST_URL`` anywhere forwarded every ``legacy``-strategy
+    source's data into ODP too — bypassing the write_strategy state machine
+    entirely and silently enrolling sources that were never migrated.
+    ``LegacyDbSink`` (the ``legacy`` strategy's sink) now passes this
+    explicitly; nothing should rely on the old implicit-True default.
 
     Returns (new_records, skipped_count).
     """
     if not normalized_triples:
         return [], 0
+
+    if forward_to_odp and odp_client.ingest_url():
+        try:
+            await odp_client.forward_triples(
+                channel_type=channel_type,
+                task_id=task_id,
+                source_id=source_id,
+                triples=normalized_triples,
+            )
+        except Exception as exc:
+            if os.environ.get("ODP_INGEST_REQUIRED", "").lower() in ("1", "true", "yes"):
+                raise
+            logger.warning("odp ingest forward failed (continuing sqlite path): %s", exc)
 
     # Collect all hashes to check for duplicates in one query
     hashes = [h for _, _, h in normalized_triples]
@@ -31,11 +66,17 @@ async def store_records(
 
     new_records: list[CollectedRecord] = []
     skipped = 0
+    # Dedup within this batch too: two triples can share a content_hash (e.g. two
+    # CLI sub-commands that normalize to identical content). Without this, both
+    # pass the existing_hashes check, both get added, and flush() fails the whole
+    # batch atomically on the UNIQUE(source_id, content_hash) constraint.
+    seen_in_batch: set[str] = set()
 
     for raw, normalized, content_hash in normalized_triples:
-        if content_hash in existing_hashes:
+        if content_hash in existing_hashes or content_hash in seen_in_batch:
             skipped += 1
             continue
+        seen_in_batch.add(content_hash)
 
         record = CollectedRecord(
             task_id=task_id,
@@ -48,5 +89,39 @@ async def store_records(
         session.add(record)
         new_records.append(record)
 
-    await session.flush()
+    try:
+        await session.flush()
+    except IntegrityError:
+        # A concurrent writer (e.g. a celery retry racing the original attempt)
+        # inserted an overlapping content_hash between our existence check and
+        # this flush. Re-check against the DB and insert survivors one at a
+        # time so one collision doesn't lose the rest of an otherwise-new batch
+        # (retries becoming real in PR-B makes this reachable in practice, not
+        # just theoretical).
+        await session.rollback()
+        recheck = await session.execute(
+            select(CollectedRecord.content_hash).where(
+                CollectedRecord.source_id == source_id,
+                CollectedRecord.content_hash.in_([r.content_hash for r in new_records]),
+            )
+        )
+        already_there = {row[0] for row in recheck}
+        survivors: list[CollectedRecord] = []
+        for record in new_records:
+            if record.content_hash in already_there:
+                skipped += 1
+                continue
+            # Nested transaction (SAVEPOINT) per record: a plain session.rollback()
+            # here would undo every earlier survivor's flush too, since they all
+            # share this one session/transaction — begin_nested() scopes the
+            # rollback to just this record's failed insert.
+            try:
+                async with session.begin_nested():
+                    session.add(record)
+                    await session.flush()
+                survivors.append(record)
+            except IntegrityError:
+                skipped += 1
+        new_records = survivors
+
     return new_records, skipped

@@ -1,0 +1,45 @@
+[
+  {
+    "nodeId": "source-jin10",
+    "eventType": "partial",
+    "messageContains": "Runtime source output",
+    "detailsSubset": {
+      "itemCount": 2,
+      "outputPort": "items[]"
+    }
+  },
+  {
+    "nodeId": "router-importance",
+    "eventType": "partial",
+    "bindingId": "workflow.router.route",
+    "detailsSubset": {
+      "routedCandidateCount": 1
+    }
+  },
+  {
+    "nodeId": "inbox-review",
+    "eventType": "partial",
+    "bindingId": "workflow.inbox.store",
+    "detailsSubset": {
+      "target": "macro-watch",
+      "storedRecordCount": 1
+    }
+  },
+  {
+    "nodeId": "notify-preview",
+    "eventType": "partial",
+    "bindingId": "workflow.notify.send",
+    "messageContains": "Notification payload",
+    "detailsSubset": {
+      "target": "simulated-webhook",
+      "deliveryConfigured": true,
+      "inputItemCount": 1
+    }
+  },
+  {
+    "nodeId": "notify-preview",
+    "eventType": "completed",
+    "blockReasonCode": null,
+    "messageContains": "Notification send completed"
+  }
+]

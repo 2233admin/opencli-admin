@@ -11,8 +11,10 @@
 #
 # Environment variables (override at runtime):
 #   CENTRAL_API_URL    Center API base URL (required)
+#   AGENT_API_TOKEN    Bearer token for center /api auth (optional unless center enforces it)
 #   AGENT_REGISTER     Registration mode: http | ws (default: ws)
 #   AGENT_PORT         Agent HTTP port (default: 19823)
+#   AGENT_ADVERTISE_URL Canonical agent URL registered at center (optional; useful for overlay/tunnel IP/DNS)
 #   AGENT_LABEL        Human-readable label (default: hostname)
 #   AGENT_MODE         Chrome connection mode: cdp | bridge (default: cdp)
 #   INSTALL_CHROME     Embed Chromium in Docker image: true | false (default: false)
@@ -21,21 +23,46 @@
 #   HTTP_PROXY         HTTP proxy for agent → center (optional)
 #   HTTPS_PROXY        HTTPS proxy for agent → center (optional)
 #   IMAGE_TAG          Docker image tag (default: injected by center API)
+#   FLEET_NETWORK_PROVIDER lan | netbird | wireguard | ssh | custom (default: injected by center API)
+#   NETBIRD_MODE       off | host | docker (default: injected by center API)
+#   NETBIRD_SETUP_KEY  Setup key used to enroll this node into NetBird
+#   NETBIRD_MANAGEMENT_URL Self-hosted NetBird management URL (optional)
+#   NETBIRD_IMAGE_TAG  NetBird Docker image tag (default: latest)
 # ─────────────────────────────────────────────────────────────────────────────
 
 set -euo pipefail
 
 # ── Injected by center API ────────────────────────────────────────────────────
 CENTRAL_API_URL="${CENTRAL_API_URL:-__CENTRAL_API_URL__}"
+AGENT_API_TOKEN="${AGENT_API_TOKEN:-${API_AUTH_TOKEN:-__AGENT_API_TOKEN__}}"
+FLEET_NETWORK_PROVIDER="${FLEET_NETWORK_PROVIDER:-__FLEET_NETWORK_PROVIDER__}"
+NETBIRD_MODE="${NETBIRD_MODE:-__NETBIRD_MODE__}"
+NETBIRD_SETUP_KEY="${NETBIRD_SETUP_KEY:-__NETBIRD_SETUP_KEY__}"
+NETBIRD_MANAGEMENT_URL="${NETBIRD_MANAGEMENT_URL:-__NETBIRD_MANAGEMENT_URL__}"
+NETBIRD_IMAGE_TAG="${NETBIRD_IMAGE_TAG:-__NETBIRD_IMAGE_TAG__}"
 
 # ── Defaults ──────────────────────────────────────────────────────────────────
 AGENT_REGISTER="${AGENT_REGISTER:-ws}"
 AGENT_PORT="${AGENT_PORT:-19823}"
+AGENT_ADVERTISE_URL="${AGENT_ADVERTISE_URL:-}"
 AGENT_LABEL="${AGENT_LABEL:-$(hostname)}"
 AGENT_MODE="${AGENT_MODE:-cdp}"
 IMAGE_TAG="${IMAGE_TAG:-__IMAGE_TAG__}"
 INSTALL_CHROME="${INSTALL_CHROME:-false}"
 INSTALL_MODE="${1:-docker}"
+
+[[ "$CENTRAL_API_URL" == "__CENTRAL_API_URL__" ]] && CENTRAL_API_URL=""
+[[ "$AGENT_API_TOKEN" == "__AGENT_API_TOKEN__" ]] && AGENT_API_TOKEN=""
+[[ "$FLEET_NETWORK_PROVIDER" == "__FLEET_NETWORK_PROVIDER__" ]] && FLEET_NETWORK_PROVIDER="lan"
+[[ "$NETBIRD_MODE" == "__NETBIRD_MODE__" ]] && NETBIRD_MODE="off"
+[[ "$NETBIRD_SETUP_KEY" == "__NETBIRD_SETUP_KEY__" ]] && NETBIRD_SETUP_KEY=""
+[[ "$NETBIRD_MANAGEMENT_URL" == "__NETBIRD_MANAGEMENT_URL__" ]] && NETBIRD_MANAGEMENT_URL=""
+[[ "$NETBIRD_IMAGE_TAG" == "__NETBIRD_IMAGE_TAG__" ]] && NETBIRD_IMAGE_TAG="latest"
+[[ "$IMAGE_TAG" == "__IMAGE_TAG__" ]] && IMAGE_TAG="latest"
+
+if [[ "$NETBIRD_MODE" == "off" && -n "$NETBIRD_SETUP_KEY" ]]; then
+  NETBIRD_MODE="host"
+fi
 
 # Parse --install-chrome flag from any positional argument
 for arg in "$@"; do
@@ -51,7 +78,7 @@ if [[ "$INSTALL_CHROME" == "true" ]]; then
 else
   CHROME_SUFFIX=""
 fi
-AGENT_IMAGE="xjh1994/opencli-admin-agent:${IMAGE_TAG}${CHROME_SUFFIX}"
+AGENT_IMAGE="${DOCKER_IMAGE_NAMESPACE:-2233admin}/opencli-admin-agent:${IMAGE_TAG}${CHROME_SUFFIX}"
 
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -64,13 +91,116 @@ die()   { printf '\e[31m[ERROR]\e[0m %s\n' "$*" >&2; exit 1; }
 info "OpenCLI Agent Installer"
 info "  Center:         $CENTRAL_API_URL"
 info "  Register:       $AGENT_REGISTER"
+info "  API Auth:       $([[ -n "$AGENT_API_TOKEN" ]] && echo configured || echo unset)"
 info "  Port:           $AGENT_PORT"
+info "  Advertise URL:  ${AGENT_ADVERTISE_URL:-auto}"
 info "  Label:          $AGENT_LABEL"
 info "  Mode:           $INSTALL_MODE"
 info "  Agent Mode:     $AGENT_MODE"
 info "  Install Chrome: $INSTALL_CHROME"
 info "  Image:          $AGENT_IMAGE"
+info "  Fleet Network:  $FLEET_NETWORK_PROVIDER"
+info "  NetBird Mode:   $NETBIRD_MODE"
 echo
+
+# ── Fleet network reachability ────────────────────────────────────────────────
+case "$FLEET_NETWORK_PROVIDER" in
+  lan|netbird|wireguard|ssh|custom) ;;
+  *) die "Unknown FLEET_NETWORK_PROVIDER '$FLEET_NETWORK_PROVIDER'. Use lan, netbird, wireguard, ssh, or custom." ;;
+esac
+
+run_netbird() {
+  if netbird "$@"; then
+    return 0
+  fi
+  if command -v sudo >/dev/null 2>&1; then
+    sudo netbird "$@"
+  else
+    return 1
+  fi
+}
+
+install_netbird_host() {
+  [[ -n "$NETBIRD_SETUP_KEY" ]] || die "NETBIRD_SETUP_KEY is required when NETBIRD_MODE=host"
+
+  if ! command -v netbird >/dev/null 2>&1; then
+    command -v curl >/dev/null 2>&1 || die "curl is required to install NetBird"
+    info "Installing NetBird client on host..."
+    if [[ "$(id -u)" == "0" ]]; then
+      curl -fsSL https://pkgs.netbird.io/install.sh | sh
+    elif command -v sudo >/dev/null 2>&1; then
+      curl -fsSL https://pkgs.netbird.io/install.sh | sudo sh
+    else
+      die "sudo is required to install NetBird on this host"
+    fi
+  fi
+
+  local up_args=(up --setup-key "$NETBIRD_SETUP_KEY")
+  [[ -n "$NETBIRD_MANAGEMENT_URL" ]] && up_args+=(--management-url "$NETBIRD_MANAGEMENT_URL")
+
+  info "Bringing NetBird up on host..."
+  run_netbird "${up_args[@]}" || die "netbird up failed"
+  run_netbird status || warn "netbird status failed; continuing after successful up"
+}
+
+install_netbird_docker() {
+  [[ -n "$NETBIRD_SETUP_KEY" ]] || die "NETBIRD_SETUP_KEY is required when NETBIRD_MODE=docker"
+  command -v docker >/dev/null 2>&1 || die "Docker is required for NETBIRD_MODE=docker"
+
+  local container_name="opencli-netbird"
+  if docker ps -a --format '{{.Names}}' | grep -qx "$container_name"; then
+    warn "Existing container '$container_name' found — removing..."
+    docker rm -f "$container_name" >/dev/null
+  fi
+
+  local netbird_env=(-e NB_SETUP_KEY="$NETBIRD_SETUP_KEY")
+  [[ -n "$NETBIRD_MANAGEMENT_URL" ]] && netbird_env+=(-e NB_MANAGEMENT_URL="$NETBIRD_MANAGEMENT_URL")
+
+  info "Starting NetBird client container '$container_name'..."
+  docker run -d \
+    --name "$container_name" \
+    --restart unless-stopped \
+    --network host \
+    --privileged \
+    "${netbird_env[@]}" \
+    -v netbird-client:/var/lib/netbird \
+    "netbirdio/netbird:${NETBIRD_IMAGE_TAG}"
+}
+
+install_netbird() {
+  case "$NETBIRD_MODE" in
+    off)
+      if [[ "$FLEET_NETWORK_PROVIDER" == "netbird" ]]; then
+        warn "FLEET_NETWORK_PROVIDER=netbird but NETBIRD_MODE=off and no setup key was provided"
+      fi
+      ;;
+    host) install_netbird_host ;;
+    docker) install_netbird_docker ;;
+    *) die "Unknown NETBIRD_MODE '$NETBIRD_MODE'. Use off, host, or docker." ;;
+  esac
+}
+
+install_fleet_network() {
+  case "$FLEET_NETWORK_PROVIDER" in
+    netbird)
+      install_netbird
+      ;;
+    lan)
+      ;;
+    wireguard)
+      info "WireGuard provider selected; assuming the WireGuard interface is already up."
+      [[ -n "$AGENT_ADVERTISE_URL" ]] || warn "Set AGENT_ADVERTISE_URL to the WireGuard-reachable agent URL when center HTTP callbacks are required."
+      ;;
+    ssh)
+      info "SSH provider selected; assuming the SSH tunnel is already established."
+      [[ -n "$AGENT_ADVERTISE_URL" ]] || warn "Set AGENT_ADVERTISE_URL to the forwarded agent URL when center HTTP callbacks are required."
+      ;;
+    custom)
+      info "Custom network provider selected; assuming reachability is managed outside this installer."
+      [[ -n "$AGENT_ADVERTISE_URL" ]] || warn "Set AGENT_ADVERTISE_URL to the center-reachable agent URL when center HTTP callbacks are required."
+      ;;
+  esac
+}
 
 # ── Docker install ─────────────────────────────────────────────────────────────
 install_docker() {
@@ -110,8 +240,10 @@ install_docker() {
     -e CENTRAL_API_URL="$DOCKER_CENTRAL_URL" \
     -e AGENT_REGISTER="$AGENT_REGISTER" \
     -e AGENT_PORT="$AGENT_PORT" \
+    -e AGENT_ADVERTISE_URL="$AGENT_ADVERTISE_URL" \
     -e AGENT_LABEL="$AGENT_LABEL" \
     -e AGENT_MODE="${AGENT_MODE}" \
+    -e AGENT_API_TOKEN="$AGENT_API_TOKEN" \
     -e AGENT_DEPLOY_TYPE="docker" \
     $PROXY_ARGS \
     -p "${AGENT_PORT}:${AGENT_PORT}" \
@@ -170,14 +302,14 @@ install_python() {
       info "opencli not found — installing via npm (non-interactive)..."
     fi
     if [[ "${_reply:-Y}" =~ ^[Yy]$ ]]; then
-      npm install -g @jackwener/opencli@1.7.4
+      npm install -g @jackwener/opencli@1.8.3
       info "opencli: $(opencli --version 2>/dev/null | head -1 || echo 'installed')"
     else
       warn "Skipped — opencli channel will be unavailable"
     fi
   else
     warn "npm not found — opencli channel will be unavailable"
-    warn "  Install Node.js 22+ from https://nodejs.org then run: npm install -g @jackwener/opencli@1.7.4"
+    warn "  Install Node.js 22+ from https://nodejs.org then run: npm install -g @jackwener/opencli@1.8.3"
   fi
 
   # ── Find Chrome binary ────────────────────────────────────────────────────
@@ -260,8 +392,10 @@ RestartSec=5
 Environment=CENTRAL_API_URL=${CENTRAL_API_URL}
 Environment=AGENT_REGISTER=${AGENT_REGISTER}
 Environment=AGENT_PORT=${AGENT_PORT}
+Environment=AGENT_ADVERTISE_URL=${AGENT_ADVERTISE_URL}
 Environment=AGENT_LABEL=${AGENT_LABEL}
 Environment=AGENT_MODE=${AGENT_MODE}
+Environment=AGENT_API_TOKEN=${AGENT_API_TOKEN}
 Environment=AGENT_DEPLOY_TYPE=shell
 $([ -n "${OPENCLI_CDP_ENDPOINT:-}" ] && echo "Environment=OPENCLI_CDP_ENDPOINT=${OPENCLI_CDP_ENDPOINT}")
 $([ -n "${HTTP_PROXY:-}" ]  && echo "Environment=HTTP_PROXY=${HTTP_PROXY}")
@@ -278,7 +412,8 @@ EOF
     info "Starting agent in background (no systemd)..."
     (
       cd "$AGENT_DIR"
-      export CENTRAL_API_URL AGENT_REGISTER AGENT_PORT AGENT_LABEL AGENT_MODE
+      export CENTRAL_API_URL AGENT_REGISTER AGENT_PORT AGENT_ADVERTISE_URL AGENT_LABEL AGENT_MODE
+      export AGENT_API_TOKEN
       export AGENT_DEPLOY_TYPE=shell
       [[ -n "${OPENCLI_CDP_ENDPOINT:-}" ]] && export OPENCLI_CDP_ENDPOINT
       [[ -n "${HTTP_PROXY:-}" ]]  && export HTTP_PROXY
@@ -292,6 +427,8 @@ EOF
 }
 
 # ── Dispatch ───────────────────────────────────────────────────────────────────
+install_fleet_network
+
 case "$INSTALL_MODE" in
   docker) install_docker ;;
   python) install_python ;;
