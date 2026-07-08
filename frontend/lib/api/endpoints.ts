@@ -3,7 +3,14 @@ import type {
   AIAgent,
   AdvisoryReport,
   ApiResponse,
+  ConnectionTestResult,
+  ModelDefaultCandidate,
+  ModelDefaultRead,
   ModelProvider,
+  ModelProviderInput,
+  ModelRole,
+  ProviderModelRead,
+  ProviderModelSyncResult,
   BrowserActPack,
   BrowserBinding,
   ChromeEndpoint,
@@ -276,14 +283,71 @@ export const listNotificationLogs = (params?: { rule_id?: string }) =>
 export const listProviders = () =>
   apiClient.get<ApiResponse<ModelProvider[]>>('/providers').then((r) => r.data)
 
-export const createProvider = (data: Partial<ModelProvider>) =>
+export const createProvider = (data: ModelProviderInput) =>
   apiClient.post<ApiResponse<ModelProvider>>('/providers', data).then((r) => r.data.data)
 
-export const updateProvider = (id: string, data: Partial<ModelProvider>) =>
+export const updateProvider = (id: string, data: ModelProviderInput) =>
   apiClient.patch<ApiResponse<ModelProvider>>(`/providers/${id}`, data).then((r) => r.data.data)
 
 export const deleteProvider = (id: string) =>
   apiClient.delete<ApiResponse<null>>(`/providers/${id}`).then((r) => r.data)
+
+// Probes the provider's live endpoint (backend/llm adapter). NEVER raises for
+// an ordinary connection failure — the failure is `ok: false` in a normal 200
+// response; it can still 404 if the provider id doesn't exist.
+export const testProvider = (id: string) =>
+  apiClient.post<ApiResponse<ConnectionTestResult>>(`/providers/${id}/test`).then((r) => r.data.data)
+
+// Discovers models via the adapter and idempotently upserts the provider's
+// catalog — 'source=manual' rows are never touched. Can 502 if discovery
+// itself fails (LlmAdapterError), surfaced via the axios interceptor's
+// normalized Error.message.
+export const syncProviderModels = (id: string) =>
+  apiClient
+    .post<ApiResponse<ProviderModelSyncResult>>(`/providers/${id}/models/sync`)
+    .then((r) => r.data.data)
+
+export const listProviderModels = (id: string) =>
+  apiClient.get<ApiResponse<ProviderModelRead[]>>(`/providers/${id}/models`).then((r) => r.data)
+
+// Manual catalog add — `source` is forced server-side to 'manual', never send it.
+export const addProviderModel = (
+  providerId: string,
+  data: {
+    model_id: string
+    model_type?: string
+    capabilities?: Record<string, unknown> | null
+    enabled?: boolean
+  },
+) =>
+  apiClient
+    .post<ApiResponse<ProviderModelRead>>(`/providers/${providerId}/models`, data)
+    .then((r) => r.data.data)
+
+export const updateProviderModel = (
+  providerId: string,
+  modelRowId: string,
+  data: { model_type?: string; capabilities?: Record<string, unknown> | null; enabled?: boolean },
+) =>
+  apiClient
+    .patch<ApiResponse<ProviderModelRead>>(`/providers/${providerId}/models/${modelRowId}`, data)
+    .then((r) => r.data.data)
+
+export const deleteProviderModel = (providerId: string, modelRowId: string) =>
+  apiClient.delete<ApiResponse<null>>(`/providers/${providerId}/models/${modelRowId}`).then((r) => r.data)
+
+// ── Model defaults (GOAL-6 — role-based failover candidate lists) ───────────────
+// A role can be entirely absent from the list on a fresh install — that's a
+// legitimate "no candidates configured yet" state, not an error.
+export const listModelDefaults = () =>
+  apiClient.get<ApiResponse<ModelDefaultRead[]>>('/model-defaults').then((r) => r.data)
+
+// role goes in the URL path, not the body. Can 400 if a candidate names a
+// nonexistent provider or a model not in that provider's catalog.
+export const putModelDefault = (role: ModelRole, candidates: ModelDefaultCandidate[]) =>
+  apiClient
+    .put<ApiResponse<ModelDefaultRead>>(`/model-defaults/${role}`, { candidates })
+    .then((r) => r.data.data)
 
 // ── Agents ─────────────────────────────────────────────────────────────────────
 export const listAgents = (params?: { enabled?: boolean }) =>

@@ -1,12 +1,93 @@
+// Self-hosted LLM-provider runtime (GOAL-6, backend/llm/, no litellm) — mirrors
+// backend.schemas.provider.ModelProviderRead.from_model exactly. The raw
+// api_key is NEVER returned by the backend (from_model explicitly masks it) —
+// only has_api_key / api_key_preview (e.g. "sk-...wxyz", null if unset) ever
+// reach the frontend. See ModelProviderInput for the write-only request body.
 export interface ModelProvider {
   id: string
   name: string
   provider_type: 'claude' | 'openai' | 'local'
+  base_url: string | null
+  has_api_key: boolean
+  api_key_preview: string | null
+  default_model: string | null
+  notes: string | null
+  enabled: boolean
+  created_at: string
+  updated_at: string
+}
+
+// Write-only request body for POST /providers and PATCH /providers/{id}
+// (ModelProviderCreate / ModelProviderUpdate on the backend share this same
+// shape, all-optional so PATCH can omit any field). `api_key` is the only
+// place a raw key is ever sent — it is never echoed back on read (see
+// ModelProvider.api_key_preview for the masked view).
+export interface ModelProviderInput {
+  name?: string
+  provider_type?: ModelProvider['provider_type']
   base_url?: string
   api_key?: string
   default_model?: string
   notes?: string
+  enabled?: boolean
+}
+
+// One row of a provider's model catalog — mirrors backend.schemas.provider.
+// ProviderModelRead. `source` distinguishes rows discovered via
+// POST /providers/{id}/models/sync from ones added manually through
+// POST /providers/{id}/models — sync is idempotent and never touches
+// 'manual' rows.
+export interface ProviderModelRead {
+  id: string
+  provider_id: string
+  model_id: string
+  model_type: string
+  capabilities: Record<string, unknown> | null
+  source: 'discovered' | 'manual'
   enabled: boolean
+  created_at: string
+}
+
+// POST /providers/{id}/models/sync response — mirrors backend.schemas.
+// provider.SyncResult. All-int and always present (unlike
+// ConnectionTestResult, which is a TypedDict with optional fields).
+export interface ProviderModelSyncResult {
+  added: number
+  updated: number
+  kept_manual: number
+  pruned: number
+}
+
+// POST /providers/{id}/test response — mirrors backend.llm's
+// ConnectionTestResult TypedDict (total=False), so every field beyond `ok`
+// is optional: an ordinary connection failure comes back as a 200 with
+// ok:false and no other fields populated, this endpoint never throws for a
+// probe failure (it can still 404 if the provider id doesn't exist).
+export interface ConnectionTestResult {
+  ok: boolean
+  latency_ms?: number | null
+  error?: string | null
+  models_sample?: string[] | null
+}
+
+// Role a model-defaults candidate list resolves for (backend.llm role
+// registry): chat = agent 坞对话模型, executor = skill_channel 执行模型
+// （轻量/低成本）, enrichment = pipeline 富化兜底模型.
+export type ModelRole = 'chat' | 'executor' | 'enrichment'
+
+export interface ModelDefaultCandidate {
+  provider_id: string
+  model_id: string
+}
+
+// GET /model-defaults / PUT /model-defaults/{role} — mirrors backend.schemas.
+// provider.ModelDefaultRead. A role can be entirely absent from the GET list
+// (fresh install, no row created yet) — render that as "no candidates
+// configured", never crash on the missing entry.
+export interface ModelDefaultRead {
+  id: string
+  role: ModelRole
+  candidates: ModelDefaultCandidate[]
   created_at: string
   updated_at: string
 }
