@@ -390,7 +390,16 @@ async def run_pipeline(
                 task_row.status = "ai_processing"
                 await session.commit()
         try:
-            await ai_processor.process_with_ai(new_records, effective_ai_config)
+            await ai_processor.process_with_ai(
+                new_records,
+                effective_ai_config,
+                source_id=source.id,
+                # GOAL-6 PR-F decision #9 dual-track resolution only applies to
+                # DataSource.ai_config; an agent_config override already went
+                # through its own (untouched) ai_agents.provider_id resolution
+                # in backend.pipeline.runner phase 2, so it's used as-is.
+                resolve_provider=agent_config is None,
+            )
             # Persist enrichments — new_records are detached after step3 session closed
             from backend.models.record import CollectedRecord
             async with AsyncSessionLocal() as session:

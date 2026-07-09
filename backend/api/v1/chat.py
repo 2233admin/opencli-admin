@@ -191,15 +191,51 @@ async def _pick_provider(db: AsyncSession, provider_id: Optional[str]) -> ModelP
     return provider
 
 
-def _build_client(provider: ModelProvider):
+async def _build_client(provider: ModelProvider):
+    """Build the agent dock's OpenAI-compatible tool-calling client.
+
+    GOAL-6 PR-E: consolidates what used to be a private ``AsyncOpenAI(...)``
+    construction here into :class:`~backend.llm.openai_compat.OpenAICompatAdapter`
+    via :func:`~backend.llm.factory.build_openai_compat_adapter` — the same
+    guarded client :class:`OpenAICompatAdapter` gives every other PR-E
+    consumer, so this file stops duplicating the SSRF-guard + DNS-rebind-
+    pinning wiring. The tool-calling loop below stays exactly as it was
+    (needs the *raw* client for ``tools=``/``tool_choice=``, which the
+    adapter's thin ``chat()`` doesn't support) — only client *construction*
+    moves.
+
+    Preserved exactly: the ``OPENAI_API_KEY`` env fallback when the selected
+    provider has no ``api_key`` configured, and this file's pre-existing
+    behavior of treating ANY selected provider (regardless of
+    ``provider_type``) as an OpenAI-compatible endpoint — ``_pick_provider``
+    never filtered by ``provider_type``, so neither does this.
+
+    Deliberate, narrow behavior change (decision #6): the previous
+    ``_build_client`` had NO SSRF guard at all. Routing through
+    ``OpenAICompatAdapter`` now validates ``provider.base_url`` before
+    attaching the api_key to a client pointed at it — closing an SSRF/key-
+    exfil gap that already existed everywhere else (openai_processor,
+    skill_channel) but not here. No existing test exercises this path (see
+    ``tests/integration/test_chat_api.py``'s docstring: "the LLM round trip
+    itself is out of scope"), so this cannot regress the test suite; a
+    provider whose base_url fails the guard now gets a clear 502 instead of
+    an unguarded outbound call.
+    """
     try:
-        from openai import AsyncOpenAI
+        from openai import AsyncOpenAI  # noqa: F401 -- import-availability probe only
     except ImportError as exc:
         raise HTTPException(status_code=500, detail="openai package not installed") from exc
     import os
 
+    from backend.llm.base import LlmAdapterError
+    from backend.llm.factory import build_openai_compat_adapter
+
     api_key = provider.api_key or os.environ.get("OPENAI_API_KEY", "")
-    return AsyncOpenAI(api_key=api_key, base_url=provider.base_url or None)
+    adapter = build_openai_compat_adapter(base_url=provider.base_url, api_key=api_key)
+    try:
+        return await adapter.get_client()
+    except LlmAdapterError as exc:
+        raise HTTPException(status_code=502, detail=f"模型调用失败: {exc}") from exc
 
 
 # ── 只读工具执行 ─────────────────────────────────────────────────────────────
@@ -312,7 +348,7 @@ async def _build_proposal(db: AsyncSession, name: str, args: dict[str, Any]) -> 
 @router.post("", response_model=ApiResponse[ChatReply])
 async def chat(body: ChatRequest, db: AsyncSession = Depends(get_db)) -> ApiResponse:
     provider = await _pick_provider(db, body.provider_id)
-    client = _build_client(provider)
+    client = await _build_client(provider)
     model = provider.default_model or "gpt-4o-mini"
 
     system = SYSTEM_PROMPT

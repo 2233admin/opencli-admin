@@ -4,12 +4,14 @@ from backend.models.browser import BrowserBinding, BrowserInstance
 from backend.models.control_action import ControlActionRecord
 from backend.models.cookie_jar import CookieJarEntry
 from backend.models.edge_node import EdgeNode, EdgeNodeEvent
+from backend.models.model_default import ModelDefault
 from backend.models.notification import NotificationLog, NotificationRule
 from backend.models.odp_system_measurement import OdpSystemMeasurement
 from backend.models.plan import Plan
 from backend.models.plan_health import PlanHealthRecord
 from backend.models.plan_source_index import PlanSourceIndex
 from backend.models.provider import ModelProvider
+from backend.models.provider_model import ProviderModel
 from backend.models.record import CollectedRecord
 from backend.models.schedule import CronSchedule
 from backend.models.skill import Skill
@@ -30,6 +32,8 @@ __all__ = [
     "EdgeNode",
     "EdgeNodeEvent",
     "ModelProvider",
+    "ProviderModel",
+    "ModelDefault",
     "Plan",
     "PlanHealthRecord",
     "PlanSourceIndex",

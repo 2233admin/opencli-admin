@@ -2,9 +2,11 @@
 
 import json
 import logging
+import os
 import re
 from typing import TYPE_CHECKING, Any
 
+from backend.llm.factory import build_anthropic_adapter
 from backend.processors.base import AbstractProcessor, ProcessingResult
 from backend.processors.registry import register_processor
 
@@ -33,46 +35,56 @@ class ClaudeProcessor(AbstractProcessor):
         config: dict[str, Any],
     ) -> ProcessingResult:
         try:
-            import anthropic
+            import anthropic  # noqa: F401 -- import-availability probe only
         except ImportError:
             return ProcessingResult(
                 success=False, error="anthropic package not installed"
             )
 
-        api_key = config.get("api_key") or __import__("os").environ.get("ANTHROPIC_API_KEY", "")
+        api_key = config.get("api_key") or os.environ.get("ANTHROPIC_API_KEY", "")
         model = config.get("model", "claude-haiku-4-5-20251001")
         max_tokens = config.get("max_tokens", 1024)
 
         logger.info("claude processor | model=%s max_tokens=%d records=%d",
                     model, max_tokens, len(records))
 
-        client = anthropic.AsyncAnthropic(api_key=api_key)
+        # GOAL-6 PR-E: client construction consolidated through
+        # backend.llm.anthropic.AnthropicAdapter (via
+        # backend.llm.factory.build_anthropic_adapter). This processor never
+        # configured a base_url (Anthropic's endpoint is effectively fixed),
+        # so this is a pure passthrough construction — no new SSRF surface,
+        # no behavior change.
+        adapter = build_anthropic_adapter(api_key=api_key)
+        client = await adapter.get_client()
         enrichments: list[dict[str, Any]] = []
 
-        for i, record in enumerate(records):
-            prompt = _render(prompt_template, record.normalized_data)
-            logger.debug("claude req [%d/%d] | prompt_preview=%s",
-                         i + 1, len(records), prompt[:200])
-            try:
-                response = await client.messages.create(
-                    model=model,
-                    max_tokens=max_tokens,
-                    messages=[{"role": "user", "content": prompt}],
-                )
-                text = response.content[0].text
-                usage = response.usage
-                logger.info("claude resp [%d/%d] | input_tokens=%d output_tokens=%d preview=%s",
-                            i + 1, len(records),
-                            usage.input_tokens, usage.output_tokens,
-                            text[:200])
+        try:
+            for i, record in enumerate(records):
+                prompt = _render(prompt_template, record.normalized_data)
+                logger.debug("claude req [%d/%d] | prompt_preview=%s",
+                             i + 1, len(records), prompt[:200])
                 try:
-                    enrichment = json.loads(text)
-                except json.JSONDecodeError:
-                    enrichment = {"analysis": text}
-                enrichments.append(enrichment)
-            except Exception as exc:
-                logger.error("claude error [%d/%d] | %s", i + 1, len(records), exc)
-                enrichments.append({"error": str(exc)})
+                    response = await client.messages.create(
+                        model=model,
+                        max_tokens=max_tokens,
+                        messages=[{"role": "user", "content": prompt}],
+                    )
+                    text = response.content[0].text
+                    usage = response.usage
+                    logger.info("claude resp [%d/%d] | input_tokens=%d output_tokens=%d preview=%s",
+                                i + 1, len(records),
+                                usage.input_tokens, usage.output_tokens,
+                                text[:200])
+                    try:
+                        enrichment = json.loads(text)
+                    except json.JSONDecodeError:
+                        enrichment = {"analysis": text}
+                    enrichments.append(enrichment)
+                except Exception as exc:
+                    logger.error("claude error [%d/%d] | %s", i + 1, len(records), exc)
+                    enrichments.append({"error": str(exc)})
+        finally:
+            await adapter.aclose()
 
         logger.info("claude processor done | success=%d errors=%d",
                     sum(1 for e in enrichments if "error" not in e),

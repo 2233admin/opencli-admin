@@ -10,6 +10,7 @@ from backend.api.v1 import (
     control,
     cookies,
     dashboard,
+    model_defaults,
     nodes,
     notifications,
     plan_ir,
@@ -37,6 +38,7 @@ v1_router.include_router(browsers.router)
 v1_router.include_router(chat.router)
 v1_router.include_router(control.router)
 v1_router.include_router(cookies.router)
+v1_router.include_router(model_defaults.router)
 v1_router.include_router(nodes.router)
 v1_router.include_router(plan_ir.router)
 v1_router.include_router(plans.router)

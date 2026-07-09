@@ -451,6 +451,90 @@ async def test_run_pipeline_with_agent_id():
     assert result["success"] is True
 
 
+@pytest.mark.asyncio
+async def test_run_pipeline_agent_processor_config_overrides_provider_base():
+    """GOAL-6 PR-E / decision #8: provider supplies BASE fields (api_key,
+    base_url) via provider_config; agent.processor_config is layered on top
+    and WINS on any overlapping key. test_run_pipeline_with_agent_id (above)
+    only asserts the pipeline succeeds — it never inspects the merged
+    agent_config dict run_pipeline actually receives, so it can't catch a
+    precedence regression. This captures that dict via a fake run_pipeline
+    and asserts the override, locking the merge order PR-E's consumer
+    refactor must not disturb."""
+    task = _make_task()
+    task.agent_id = "agent-1"
+    run = _make_run()
+
+    def capture_add(obj):
+        obj.id = "run-1"
+
+    session1 = AsyncMock()
+    session1.get = AsyncMock(return_value=task)
+    session1.add = MagicMock(side_effect=capture_add)
+    session1.flush = AsyncMock()
+    session1.commit = AsyncMock()
+
+    source = _make_source()
+    mock_agent = MagicMock()
+    mock_agent.enabled = True
+    mock_agent.provider_id = "prov-1"
+    mock_agent.processor_type = "claude"
+    mock_agent.model = "claude-3-haiku"
+    mock_agent.prompt_template = "Summarize: {{content}}"
+    # Agent overrides the provider's base_url and adds a field the provider
+    # never had; it does NOT set api_key, so the provider's key must survive.
+    mock_agent.processor_config = {
+        "base_url": "https://agent-override.example.com",
+        "max_tokens": 2048,
+    }
+
+    mock_provider = MagicMock()
+    mock_provider.enabled = True
+    mock_provider.api_key = "sk-provider-key"
+    mock_provider.base_url = "https://provider-base.example.com"
+
+    def phase2_get(model, obj_id):
+        if "DataSource" in str(model):
+            return source
+        if "AIAgent" in str(model):
+            return mock_agent
+        if "ModelProvider" in str(model):
+            return mock_provider
+        return None
+
+    session2 = AsyncMock()
+    session2.get = AsyncMock(side_effect=phase2_get)
+    session2.expunge = MagicMock()
+
+    session3 = AsyncMock()
+    session3.get = AsyncMock(return_value=run)
+    session3.commit = AsyncMock()
+
+    pipeline_result = _make_pipeline_result(success=True)
+    captured_kwargs: dict = {}
+
+    async def fake_run_pipeline(**kwargs):
+        captured_kwargs.update(kwargs)
+        return pipeline_result
+
+    with patch(
+        "backend.pipeline.runner.AsyncSessionLocal",
+        side_effect=[make_session_cm(session1), make_session_cm(session2), make_session_cm(session3)],
+    ):
+        with patch("backend.pipeline.runner.run_pipeline", side_effect=fake_run_pipeline):
+            result = await run_collection_pipeline("task-1", {})
+
+    assert result["success"] is True
+    agent_config = captured_kwargs["agent_config"]
+    # Provider supplies the base field the agent didn't override...
+    assert agent_config["api_key"] == "sk-provider-key"
+    # ...but agent.processor_config wins on any overlapping/added key.
+    assert agent_config["base_url"] == "https://agent-override.example.com"
+    assert agent_config["max_tokens"] == 2048
+    assert agent_config["processor_type"] == "claude"
+    assert agent_config["model"] == "claude-3-haiku"
+
+
 # ── GOAL-4 PR-B: retryable run_pipeline failure records then re-propagates ──────
 
 @pytest.mark.asyncio

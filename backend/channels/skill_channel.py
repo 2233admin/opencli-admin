@@ -47,12 +47,9 @@ from typing import TYPE_CHECKING, Any
 
 from backend.channels.base import AbstractChannel, Capabilities, ChannelResult
 from backend.channels.registry import register_channel
+from backend.llm.base import LlmAdapterError
+from backend.llm.factory import build_openai_compat_adapter
 from backend.pipeline import events
-from backend.security.url_guard import (
-    PinnedAsyncHTTPTransport,
-    SSRFValidationError,
-    avalidate_public_url_and_ip,
-)
 
 # risk / perception import only stdlib — safe at registry-load time. The loop is
 # imported lazily inside collect() because backend.skills.loop imports
@@ -213,6 +210,18 @@ async def _build_model_call(provider: dict[str, Any]) -> Any:
     model. ``reply`` is the raw OpenAI chat object the loop already knows how to
     normalize (both ``tool_calls`` and the Qwen XML ``<tool_use>`` path).
 
+    GOAL-6 PR-E: client construction is consolidated through
+    :class:`~backend.llm.openai_compat.OpenAICompatAdapter` (via
+    :func:`~backend.llm.factory.build_openai_compat_adapter`) — the same
+    guarded ``AsyncOpenAI`` construction ``chat.py`` and the ``openai``
+    processor now also go through, instead of this file hand-rolling its own
+    copy of the SSRF-guard + DNS-rebind-pinning wiring. Behavior preserved
+    exactly: ``provider`` is a plain ``dict`` (``channel_config.provider``)
+    with no ``provider_type`` key, so the adapter's ``allow_private`` stays
+    ``False`` — the full, unmodified SSRF guard — exactly as this file's own
+    ``avalidate_public_url_and_ip(base_url)`` call (no ``allow_private=True``)
+    already enforced before PR-E.
+
     Key-exfil guard: ``provider`` is DB/config-supplied (``channel_config.
     provider``), so its ``base_url`` is validated before the API key is ever
     attached to a client pointed at it — an unvalidated base_url would let a
@@ -228,23 +237,13 @@ async def _build_model_call(provider: dict[str, Any]) -> Any:
     base_url configured leaves ``http_client`` unset (AsyncOpenAI's own
     default client), unchanged from before.
     """
-    from openai import AsyncOpenAI
-
     api_key = provider.get("api_key") or ""
     base_url = provider.get("base_url") or None
-    pinned_http_client = None
-    if base_url:
-        try:
-            base_url, ips = await avalidate_public_url_and_ip(base_url)
-        except SSRFValidationError as exc:
-            raise ValueError(f"skill channel: provider base_url rejected: {exc}") from exc
-        from urllib.parse import urlparse as _urlparse
-
-        import httpx
-
-        hostname = _urlparse(base_url).hostname or ""
-        pinned_http_client = httpx.AsyncClient(transport=PinnedAsyncHTTPTransport(hostname, ips))
-    client = AsyncOpenAI(api_key=api_key, base_url=base_url, http_client=pinned_http_client)
+    adapter = build_openai_compat_adapter(base_url=base_url, api_key=api_key)
+    try:
+        client = await adapter.get_client()
+    except LlmAdapterError as exc:
+        raise ValueError(f"skill channel: {exc}") from exc
 
     async def model_call(
         messages: list[dict[str, Any]], *, tools: Any, model: str, xml: bool

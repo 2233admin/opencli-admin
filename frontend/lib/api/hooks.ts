@@ -1,8 +1,9 @@
 'use client'
 
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import * as api from './endpoints'
+import type { ModelDefaultCandidate, ModelProviderInput, ModelRole } from './types'
 
 export function useDashboardStats() {
   return useQuery({
@@ -149,6 +150,113 @@ export function useProviders() {
   return useQuery({
     queryKey: ['providers'],
     queryFn: () => api.listProviders(),
+  })
+}
+
+export function useProviderModels(providerId: string | null) {
+  return useQuery({
+    queryKey: ['providers', providerId, 'models'],
+    queryFn: () => api.listProviderModels(providerId as string),
+    enabled: !!providerId,
+  })
+}
+
+export function useModelDefaults() {
+  return useQuery({
+    queryKey: ['model-defaults'],
+    queryFn: () => api.listModelDefaults(),
+  })
+}
+
+export function useCreateProvider() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (data: ModelProviderInput) => api.createProvider(data),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['providers'] }),
+  })
+}
+
+export function useUpdateProvider() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: ModelProviderInput }) => api.updateProvider(id, data),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['providers'] }),
+  })
+}
+
+export function useDeleteProvider() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => api.deleteProvider(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['providers'] }),
+  })
+}
+
+// Result is intentionally NOT cached in react-query state long-term by the
+// caller — GET /providers never returns the last test outcome, so callers
+// keep it in local component state keyed by provider id for the page session.
+export function useTestProvider() {
+  return useMutation({
+    mutationFn: (id: string) => api.testProvider(id),
+  })
+}
+
+export function useSyncProviderModels() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => api.syncProviderModels(id),
+    onSuccess: (_result, id) => queryClient.invalidateQueries({ queryKey: ['providers', id, 'models'] }),
+  })
+}
+
+export function useAddProviderModel() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      providerId,
+      data,
+    }: {
+      providerId: string
+      data: Parameters<typeof api.addProviderModel>[1]
+    }) => api.addProviderModel(providerId, data),
+    onSuccess: (_result, { providerId }) =>
+      queryClient.invalidateQueries({ queryKey: ['providers', providerId, 'models'] }),
+  })
+}
+
+export function useUpdateProviderModel() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      providerId,
+      modelRowId,
+      data,
+    }: {
+      providerId: string
+      modelRowId: string
+      data: Parameters<typeof api.updateProviderModel>[2]
+    }) => api.updateProviderModel(providerId, modelRowId, data),
+    onSuccess: (_result, { providerId }) =>
+      queryClient.invalidateQueries({ queryKey: ['providers', providerId, 'models'] }),
+  })
+}
+
+export function useDeleteProviderModel() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ providerId, modelRowId }: { providerId: string; modelRowId: string }) =>
+      api.deleteProviderModel(providerId, modelRowId),
+    onSuccess: (_result, { providerId }) =>
+      queryClient.invalidateQueries({ queryKey: ['providers', providerId, 'models'] }),
+  })
+}
+
+export function usePutModelDefault() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ role, candidates }: { role: ModelRole; candidates: ModelDefaultCandidate[] }) =>
+      api.putModelDefault(role, candidates),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['model-defaults'] }),
   })
 }
 
