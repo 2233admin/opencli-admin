@@ -531,7 +531,7 @@ async def test_collect_agent_mode_http_success(channel):
 
 
 @pytest.mark.asyncio
-async def test_collect_agent_mode_ws_protocol_not_implemented(channel):
+async def test_collect_agent_mode_ws_protocol_not_implemented(channel, db_engine):
     """Agent mode with ws protocol returns fail (not yet implemented)."""
     from unittest.mock import create_autospec
 
@@ -553,6 +553,7 @@ async def test_collect_agent_mode_ws_protocol_not_implemented(channel):
     with (
         patch("backend.browser_pool.get_pool", return_value=mock_pool),
         patch("backend.config.get_settings", return_value=mock_settings),
+        patch("backend.database.AsyncSessionLocal", _sessionmaker(db_engine)),
     ):
         result = await channel.collect(
             {"site": "example.com", "command": "list"}, {}
@@ -563,7 +564,7 @@ async def test_collect_agent_mode_ws_protocol_not_implemented(channel):
 
 
 @pytest.mark.asyncio
-async def test_collect_agent_mode_unknown_protocol(channel):
+async def test_collect_agent_mode_unknown_protocol(channel, db_engine):
     """Agent mode with unknown protocol returns fail."""
     from unittest.mock import create_autospec
 
@@ -584,6 +585,7 @@ async def test_collect_agent_mode_unknown_protocol(channel):
     with (
         patch("backend.browser_pool.get_pool", return_value=mock_pool),
         patch("backend.config.get_settings", return_value=mock_settings),
+        patch("backend.database.AsyncSessionLocal", _sessionmaker(db_engine)),
     ):
         result = await channel.collect(
             {"site": "example.com", "command": "list"}, {}
