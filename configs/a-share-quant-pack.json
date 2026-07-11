@@ -1,0 +1,285 @@
+{
+  "version": 1,
+  "name": "a-share-quant-core",
+  "description": "Node-aware A-share quant collection pack for OpenCLI Admin.",
+  "node_classes": [
+    {
+      "id": "cn-public",
+      "label": "CN public web/API node",
+      "requires_login": false,
+      "channels": ["api", "rss", "web_scraper"],
+      "notes": "Use for official public pages, regulator pages, exchange public data, and RSS-like feeds."
+    },
+    {
+      "id": "cn-browser",
+      "label": "CN browser/opencli node",
+      "requires_login": false,
+      "channels": ["opencli", "web_scraper"],
+      "notes": "Use when JavaScript-heavy pages or opencli browser collection is required."
+    },
+    {
+      "id": "cn-login",
+      "label": "CN logged-in browser/opencli node",
+      "requires_login": true,
+      "channels": ["opencli"],
+      "notes": "Use for sources that require account/cookie state. Keep profile on edge node."
+    }
+  ],
+  "bindings": [
+    {
+      "site": "xueqiu",
+      "node_class": "cn-login",
+      "browser_endpoint_env": "A_SHARE_BINDING_XUEQIU_ENDPOINT",
+      "notes": "Optional logged-in Xueqiu node binding. Set env to agent endpoint before bootstrap."
+    },
+    {
+      "site": "eastmoney",
+      "node_class": "cn-public",
+      "browser_endpoint_env": "A_SHARE_BINDING_EASTMONEY_ENDPOINT",
+      "notes": "Optional Eastmoney browser node binding for JS-heavy fallback."
+    }
+  ],
+  "sources": [
+    {
+      "key": "cninfo-announcements",
+      "name": "A股-巨潮资讯-公告入口",
+      "description": "CSRC-designated disclosure platform. Use for company announcements, reports, risk warnings, and corporate actions.",
+      "node_class": "cn-public",
+      "channel_type": "web_scraper",
+      "channel_config": {
+        "url": "https://www.cninfo.com.cn/",
+        "list_selector": "a",
+        "selectors": {
+          "title": "a",
+          "text": "a"
+        },
+        "timeout": 30
+      },
+      "ai_agent": "XR Smart Default - MiniMax",
+      "tags": ["a-share", "official", "disclosure", "announcement", "cninfo"],
+      "schedules": [
+        {
+          "name": "A股-巨潮公告-交易时段轮询",
+          "cron_expression": "*/10 9-18 * * 1-5",
+          "timezone": "Asia/Shanghai",
+          "parameters": {
+            "window": "intraday"
+          },
+          "priority": 8
+        },
+        {
+          "name": "A股-巨潮公告-盘后复查",
+          "cron_expression": "30 20 * * 1-5",
+          "timezone": "Asia/Shanghai",
+          "parameters": {
+            "window": "after_close"
+          },
+          "priority": 7
+        }
+      ]
+    },
+    {
+      "key": "sse-announcements",
+      "name": "A股-上交所-上市公司最新公告",
+      "description": "SSE listed company announcement feed/page.",
+      "node_class": "cn-public",
+      "channel_type": "web_scraper",
+      "channel_config": {
+        "url": "https://www.sse.com.cn/disclosure/listedinfo/announcement/",
+        "list_selector": "li",
+        "selectors": {
+          "title": "a",
+          "date": ".date, span",
+          "text": "li"
+        },
+        "timeout": 30
+      },
+      "ai_agent": "XR Smart Default - MiniMax",
+      "tags": ["a-share", "official", "sse", "announcement"],
+      "schedules": [
+        {
+          "name": "A股-上交所公告-交易日轮询",
+          "cron_expression": "*/15 9-19 * * 1-5",
+          "timezone": "Asia/Shanghai",
+          "parameters": {},
+          "priority": 8
+        }
+      ]
+    },
+    {
+      "key": "szse-trade-public",
+      "name": "A股-深交所-竞价交易公开信息",
+      "description": "SZSE public trading disclosure, including longhubang and abnormal trading disclosures.",
+      "node_class": "cn-public",
+      "channel_type": "web_scraper",
+      "channel_config": {
+        "url": "https://www.szse.cn/disclosure/deal/public/index.html",
+        "list_selector": "li",
+        "selectors": {
+          "title": "a",
+          "date": ".date, span",
+          "text": "li"
+        },
+        "timeout": 30
+      },
+      "ai_agent": "XR Smart Default - MiniMax",
+      "tags": ["a-share", "official", "szse", "trade-public", "longhubang"],
+      "schedules": [
+        {
+          "name": "A股-深交所交易公开信息-盘后",
+          "cron_expression": "40 16 * * 1-5",
+          "timezone": "Asia/Shanghai",
+          "parameters": {},
+          "priority": 7
+        }
+      ]
+    },
+    {
+      "key": "sse-trade-public",
+      "name": "A股-上交所-交易公开信息",
+      "description": "SSE public trading disclosure and abnormal movement records.",
+      "node_class": "cn-public",
+      "channel_type": "web_scraper",
+      "channel_config": {
+        "url": "https://www.sse.com.cn/disclosure/diclosure/public/",
+        "list_selector": "li, tr",
+        "selectors": {
+          "title": "a, td",
+          "text": "li, tr"
+        },
+        "timeout": 30
+      },
+      "ai_agent": "XR Smart Default - MiniMax",
+      "tags": ["a-share", "official", "sse", "trade-public", "longhubang"],
+      "schedules": [
+        {
+          "name": "A股-上交所交易公开信息-盘后",
+          "cron_expression": "45 16 * * 1-5",
+          "timezone": "Asia/Shanghai",
+          "parameters": {},
+          "priority": 7
+        }
+      ]
+    },
+    {
+      "key": "sse-margin",
+      "name": "A股-上交所-融资融券汇总",
+      "description": "SSE margin trading summary.",
+      "node_class": "cn-public",
+      "channel_type": "web_scraper",
+      "channel_config": {
+        "url": "https://www.sse.com.cn/market/othersdata/margin/sum/",
+        "list_selector": "tr",
+        "selectors": {
+          "row": "tr",
+          "text": "tr"
+        },
+        "timeout": 30
+      },
+      "ai_agent": "XR Local Bulk",
+      "tags": ["a-share", "official", "sse", "margin"],
+      "schedules": [
+        {
+          "name": "A股-上交所融资融券-每日",
+          "cron_expression": "20 18 * * 1-5",
+          "timezone": "Asia/Shanghai",
+          "parameters": {},
+          "priority": 5
+        }
+      ]
+    },
+    {
+      "key": "csrc-policy",
+      "name": "A股-证监会-监管政策新闻",
+      "description": "CSRC policy, enforcement, rules and regulatory news.",
+      "node_class": "cn-public",
+      "channel_type": "web_scraper",
+      "channel_config": {
+        "url": "https://www.csrc.gov.cn/",
+        "list_selector": "li",
+        "selectors": {
+          "title": "a",
+          "date": ".date, span",
+          "text": "li"
+        },
+        "timeout": 30
+      },
+      "ai_agent": "XR Smart Default - MiniMax",
+      "tags": ["a-share", "official", "regulator", "csrc", "policy"],
+      "schedules": [
+        {
+          "name": "A股-证监会监管政策-轮询",
+          "cron_expression": "*/30 8-22 * * 1-5",
+          "timezone": "Asia/Shanghai",
+          "parameters": {},
+          "priority": 8
+        }
+      ]
+    },
+    {
+      "key": "chinamoney-rates",
+      "name": "A股-中国货币网-利率数据",
+      "description": "ChinaMoney rate data entry for macro and rates factors.",
+      "node_class": "cn-public",
+      "channel_type": "web_scraper",
+      "channel_config": {
+        "url": "https://www.chinamoney.com.cn/chinese/sddsint/",
+        "list_selector": "tr, li",
+        "selectors": {
+          "title": "td, a",
+          "text": "tr, li"
+        },
+        "timeout": 30
+      },
+      "ai_agent": "XR Local Bulk",
+      "tags": ["a-share", "official", "macro", "rates", "chinamoney"],
+      "schedules": [
+        {
+          "name": "A股-中国货币网利率-每日",
+          "cron_expression": "10 18 * * 1-5",
+          "timezone": "Asia/Shanghai",
+          "parameters": {},
+          "priority": 5
+        }
+      ]
+    },
+    {
+      "key": "eastmoney-longhubang",
+      "name": "A股-东方财富-龙虎榜补充",
+      "description": "Third-party longhubang cross-check source. Not source of truth.",
+      "node_class": "cn-public",
+      "channel_type": "web_scraper",
+      "channel_config": {
+        "url": "https://acttg.eastmoney.com/pub/web_dfcfsy_wzl_dhl_03_01_11_0",
+        "list_selector": "tr, li",
+        "selectors": {
+          "title": "a, td",
+          "text": "tr, li"
+        },
+        "timeout": 30
+      },
+      "ai_agent": "XR Local Bulk",
+      "tags": ["a-share", "third-party", "eastmoney", "longhubang"],
+      "schedules": [
+        {
+          "name": "A股-东方财富龙虎榜补充-盘后",
+          "cron_expression": "55 16 * * 1-5",
+          "timezone": "Asia/Shanghai",
+          "parameters": {},
+          "priority": 4
+        }
+      ]
+    }
+  ],
+  "immediate_tasks": [
+    {
+      "source": "A股-巨潮资讯-公告入口",
+      "agent": "XR Smart Default - MiniMax",
+      "parameters": {
+        "window": "smoke"
+      },
+      "priority": 8,
+      "enabled_by_default": false
+    }
+  ]
+}

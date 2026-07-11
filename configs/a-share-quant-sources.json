@@ -1,0 +1,307 @@
+[
+  {
+    "name": "A股-巨潮资讯-全市场公告",
+    "description": "CSRC指定信息披露平台之一，覆盖深市、沪市、北交所公告。用于公告事件、定期报告、临时公告、风险提示。",
+    "channel_type": "web_scraper",
+    "channel_config": {
+      "url": "https://www.cninfo.com.cn/",
+      "list_selector": "a",
+      "selectors": {
+        "title": "a",
+        "text": "a"
+      },
+      "timeout": 30
+    },
+    "tags": ["a-share", "official", "disclosure", "announcement", "cninfo"]
+  },
+  {
+    "name": "A股-上交所-上市公司最新公告",
+    "description": "上海证券交易所上市公司最新公告。",
+    "channel_type": "web_scraper",
+    "channel_config": {
+      "url": "https://www.sse.com.cn/disclosure/listedinfo/announcement/",
+      "list_selector": "li",
+      "selectors": {
+        "title": "a",
+        "date": ".date, span",
+        "text": "li"
+      },
+      "timeout": 30
+    },
+    "tags": ["a-share", "official", "sse", "announcement"]
+  },
+  {
+    "name": "A股-深交所-竞价交易公开信息",
+    "description": "深圳证券交易所竞价交易公开信息，龙虎榜/异常交易类事件入口。",
+    "channel_type": "web_scraper",
+    "channel_config": {
+      "url": "https://www.szse.cn/disclosure/deal/public/index.html",
+      "list_selector": "li",
+      "selectors": {
+        "title": "a",
+        "date": ".date, span",
+        "text": "li"
+      },
+      "timeout": 30
+    },
+    "tags": ["a-share", "official", "szse", "trade-public", "longhubang"]
+  },
+  {
+    "name": "A股-上交所-交易公开信息",
+    "description": "上海证券交易所交易公开信息，龙虎榜/异常波动类交易事件。",
+    "channel_type": "web_scraper",
+    "channel_config": {
+      "url": "https://www.sse.com.cn/disclosure/diclosure/public/",
+      "list_selector": "li, tr",
+      "selectors": {
+        "title": "a, td",
+        "text": "li, tr"
+      },
+      "timeout": 30
+    },
+    "tags": ["a-share", "official", "sse", "trade-public", "longhubang"]
+  },
+  {
+    "name": "A股-北交所-上市公司公告",
+    "description": "北京证券交易所上市公司公告入口。",
+    "channel_type": "web_scraper",
+    "channel_config": {
+      "url": "https://www.bseinfo.net/disclosure/vocational.html",
+      "list_selector": "li",
+      "selectors": {
+        "title": "a",
+        "date": ".date, span",
+        "text": "li"
+      },
+      "timeout": 30
+    },
+    "tags": ["a-share", "official", "bse", "announcement"]
+  },
+  {
+    "name": "A股-北交所-交易公开信息",
+    "description": "北京证券交易所交易公开信息入口。",
+    "channel_type": "web_scraper",
+    "channel_config": {
+      "url": "https://www.bseinfo.net/disclosure/tradepublic.html",
+      "list_selector": "li, tr",
+      "selectors": {
+        "title": "a, td",
+        "text": "li, tr"
+      },
+      "timeout": 30
+    },
+    "tags": ["a-share", "official", "bse", "trade-public"]
+  },
+  {
+    "name": "A股-上交所-融资融券汇总",
+    "description": "上海证券交易所融资融券交易汇总数据。",
+    "channel_type": "web_scraper",
+    "channel_config": {
+      "url": "https://www.sse.com.cn/market/othersdata/margin/sum/",
+      "list_selector": "tr",
+      "selectors": {
+        "row": "tr",
+        "text": "tr"
+      },
+      "timeout": 30
+    },
+    "tags": ["a-share", "official", "sse", "margin"]
+  },
+  {
+    "name": "A股-证金公司-融资融券市场历史数据",
+    "description": "中国证券金融股份有限公司融资融券市场历史数据。",
+    "channel_type": "web_scraper",
+    "channel_config": {
+      "url": "https://www.csf.com.cn/publish/main/1022/1024/1031/index.html",
+      "list_selector": "li, tr",
+      "selectors": {
+        "title": "a, td",
+        "text": "li, tr"
+      },
+      "timeout": 30
+    },
+    "tags": ["a-share", "official", "csf", "margin"]
+  },
+  {
+    "name": "A股-上交所-对外公示数据目录",
+    "description": "上交所公开数据目录，用于发现可采集的交易、期权、基金、规则、指南数据。",
+    "channel_type": "web_scraper",
+    "channel_config": {
+      "url": "https://www.sse.com.cn/market/publicdata/",
+      "list_selector": "li",
+      "selectors": {
+        "title": "a",
+        "text": "li"
+      },
+      "timeout": 30
+    },
+    "tags": ["a-share", "official", "sse", "data-directory"]
+  },
+  {
+    "name": "A股-中证指数-指数数据入口",
+    "description": "中证指数有限公司指数与指数相关数据入口，覆盖沪深300、中证500、中证1000等指数体系。",
+    "channel_type": "web_scraper",
+    "channel_config": {
+      "url": "https://www.csindex.com.cn/",
+      "list_selector": "a",
+      "selectors": {
+        "title": "a",
+        "text": "a"
+      },
+      "timeout": 30
+    },
+    "tags": ["a-share", "official", "index", "csindex"]
+  },
+  {
+    "name": "A股-国证指数-指数入口",
+    "description": "深圳证券信息有限公司国证指数入口，覆盖深证/国证系列指数。",
+    "channel_type": "web_scraper",
+    "channel_config": {
+      "url": "https://www.cnindex.com.cn/",
+      "list_selector": "a",
+      "selectors": {
+        "title": "a",
+        "text": "a"
+      },
+      "timeout": 30
+    },
+    "tags": ["a-share", "official", "index", "cnindex"]
+  },
+  {
+    "name": "A股-证监会-监管政策新闻",
+    "description": "中国证监会政策、监管、处罚、规则发布入口。",
+    "channel_type": "web_scraper",
+    "channel_config": {
+      "url": "https://www.csrc.gov.cn/",
+      "list_selector": "li",
+      "selectors": {
+        "title": "a",
+        "date": ".date, span",
+        "text": "li"
+      },
+      "timeout": 30
+    },
+    "tags": ["a-share", "official", "regulator", "csrc", "policy"]
+  },
+  {
+    "name": "A股-中国货币网-利率数据",
+    "description": "中国货币网利率数据入口，用于国债收益率、利率曲线等宏观因子。",
+    "channel_type": "web_scraper",
+    "channel_config": {
+      "url": "https://www.chinamoney.com.cn/chinese/sddsint/",
+      "list_selector": "tr, li",
+      "selectors": {
+        "title": "td, a",
+        "text": "tr, li"
+      },
+      "timeout": 30
+    },
+    "tags": ["a-share", "official", "macro", "rates", "chinamoney"]
+  },
+  {
+    "name": "A股-中债估值-收益率曲线",
+    "description": "中债收益率曲线入口，用于债券利率因子、贴现曲线、风险偏好因子。",
+    "channel_type": "web_scraper",
+    "channel_config": {
+      "url": "https://yield.chinabond.com.cn/cbweb-mn/yield_main?locale=zh_cN",
+      "list_selector": "tr, li",
+      "selectors": {
+        "title": "td, a",
+        "text": "tr, li"
+      },
+      "timeout": 30
+    },
+    "tags": ["a-share", "official", "macro", "rates", "chinabond"]
+  },
+  {
+    "name": "A股-港交所-互联互通每日数据",
+    "description": "港交所沪深港通每日数据与合资格股份入口，补充北向资金和互联互通范围。",
+    "channel_type": "web_scraper",
+    "channel_config": {
+      "url": "https://www.hkex.com.hk/news/hkex-calendar?sc_lang=zh-hk",
+      "list_selector": "a, li",
+      "selectors": {
+        "title": "a",
+        "text": "a, li"
+      },
+      "timeout": 30
+    },
+    "tags": ["a-share", "official", "northbound", "hkex", "connect"]
+  },
+  {
+    "name": "A股-东方财富-龙虎榜补充",
+    "description": "第三方数据中心龙虎榜补充源，用于与交易所公开信息交叉校验。",
+    "channel_type": "web_scraper",
+    "channel_config": {
+      "url": "https://acttg.eastmoney.com/pub/web_dfcfsy_wzl_dhl_03_01_11_0",
+      "list_selector": "tr, li",
+      "selectors": {
+        "title": "a, td",
+        "text": "tr, li"
+      },
+      "timeout": 30
+    },
+    "tags": ["a-share", "third-party", "eastmoney", "longhubang"]
+  },
+  {
+    "name": "A股-东方财富-融资融券补充",
+    "description": "第三方融资融券补充源，用于市场热度与杠杆变化交叉校验。",
+    "channel_type": "web_scraper",
+    "channel_config": {
+      "url": "https://data.eastmoney.com/rzrq/",
+      "list_selector": "tr, li",
+      "selectors": {
+        "title": "a, td",
+        "text": "tr, li"
+      },
+      "timeout": 30
+    },
+    "tags": ["a-share", "third-party", "eastmoney", "margin"]
+  },
+  {
+    "name": "A股-东方财富-指数成分补充",
+    "description": "第三方指数成分补充源，用于沪深300、上证50、中证500、科创50等指数成分交叉校验。",
+    "channel_type": "web_scraper",
+    "channel_config": {
+      "url": "https://data.eastmoney.com/other/index/",
+      "list_selector": "tr, li",
+      "selectors": {
+        "title": "a, td",
+        "text": "tr, li"
+      },
+      "timeout": 30
+    },
+    "tags": ["a-share", "third-party", "eastmoney", "index-constituents"]
+  },
+  {
+    "name": "A股-新浪财经-上市公司公告补充",
+    "description": "第三方上市公司公告聚合补充源，用于公告覆盖率监控。",
+    "channel_type": "web_scraper",
+    "channel_config": {
+      "url": "https://vip.stock.finance.sina.com.cn/corp/view/vCB_BulletinGather.php",
+      "list_selector": "tr, li",
+      "selectors": {
+        "title": "a, td",
+        "text": "tr, li"
+      },
+      "timeout": 30
+    },
+    "tags": ["a-share", "third-party", "sina", "announcement"]
+  },
+  {
+    "name": "A股-证券时报-市场新闻",
+    "description": "证券时报新闻补充源，用于市场舆情、龙虎榜解读和事件报道。",
+    "channel_type": "web_scraper",
+    "channel_config": {
+      "url": "https://www.stcn.com/",
+      "list_selector": "li, article",
+      "selectors": {
+        "title": "a, h2, h3",
+        "date": "time, .date",
+        "text": "li, article"
+      },
+      "timeout": 30
+    },
+    "tags": ["a-share", "media", "news", "stcn"]
+  }
+]
