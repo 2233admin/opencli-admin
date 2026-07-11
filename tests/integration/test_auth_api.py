@@ -9,6 +9,12 @@ change is visible immediately and undone automatically after each test.
 import pytest
 
 from backend.config import get_settings
+from backend.main import app
+from backend.security.identity import (
+    IdentitySettings,
+    get_request_identity,
+    identity_dependency,
+)
 
 TOKEN = "fleet-test-token"
 
@@ -74,13 +80,39 @@ async def test_correct_token_is_200(client, auth_enabled):
 @pytest.mark.asyncio
 async def test_correct_token_on_db_backed_route(client, auth_enabled):
     """The guard sits in front of every /api route, not just /system."""
-    response = await client.get(
-        "/api/v1/sources", headers={"Authorization": f"Bearer {TOKEN}"}
-    )
+    response = await client.get("/api/v1/sources", headers={"Authorization": f"Bearer {TOKEN}"})
     assert response.status_code == 200
 
     response = await client.get("/api/v1/sources")
     assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_fleet_token_header_leaves_authorization_for_oidc(client, auth_enabled):
+    app.dependency_overrides[get_request_identity] = identity_dependency(
+        IdentitySettings(
+            "https://id.example",
+            "opencli",
+            bootstrap_admin_token="bootstrap-token",
+        )
+    )
+
+    response = await client.get(
+        "/api/v1/auth/me",
+        headers={
+            "X-API-Token": TOKEN,
+            "Authorization": "Bearer bootstrap-token",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"] == {
+        "subject": "bootstrap-admin",
+        "email": None,
+        "name": "Bootstrap Admin",
+        "is_platform_admin": True,
+        "auth_method": "bootstrap",
+    }
 
 
 # ── exemptions ─────────────────────────────────────────────────────────────────

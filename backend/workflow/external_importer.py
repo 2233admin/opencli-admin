@@ -13,6 +13,7 @@ from backend.schemas.workflow import (
     WorkflowProjectNode,
 )
 from backend.workflow.patcher import preview_workflow_patch
+from backend.workflow.tool_capabilities import resolve_workflow_tool_capability
 
 EXTERNAL_TOOL_CAPABILITY_ID = "external.tool.capability"
 
@@ -97,9 +98,7 @@ def _to_workflow_node(
 ) -> WorkflowProjectNode:
     external_id = _node_id(external_node)
     external_type = _node_type(external_node)
-    catalog_id, kind, capability, params = _native_capability_for_external_node(
-        external_type
-    )
+    catalog_id, kind, capability, params = _native_capability_for_external_node(external_type)
     return WorkflowProjectNode(
         id=node_id,
         kind=kind,
@@ -132,7 +131,7 @@ def _to_workflow_node(
 def _tool_capability_params(external_node: dict[str, Any]) -> dict[str, Any]:
     tool_capability = external_node.get("toolCapability")
     if isinstance(tool_capability, dict):
-        return {"toolCapability": tool_capability}
+        return {"toolCapability": _pin_registered_tool_capability(tool_capability)}
 
     capability_id = _read_string(external_node.get("toolCapabilityId")) or _read_string(
         external_node.get("opencliCapabilityId")
@@ -140,7 +139,23 @@ def _tool_capability_params(external_node: dict[str, Any]) -> dict[str, Any]:
     executor = external_node.get("executor")
     if not capability_id or not isinstance(executor, dict):
         return {}
-    return {"toolCapability": {"id": capability_id, "executor": executor}}
+    return {
+        "toolCapability": _pin_registered_tool_capability(
+            {"id": capability_id, "executor": executor}
+        )
+    }
+
+
+def _pin_registered_tool_capability(binding: dict[str, Any]) -> dict[str, Any]:
+    """Materialize an exact installed pin without overriding a supplied pin."""
+
+    if "versionPin" in binding:
+        return binding
+    capability_id = _read_string(binding.get("id"))
+    tool = resolve_workflow_tool_capability(capability_id or "")
+    if tool is None:
+        return binding
+    return {**binding, "versionPin": tool.versionPin.model_dump()}
 
 
 def _native_capability_for_external_node(

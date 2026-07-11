@@ -20,6 +20,13 @@ def channel():
     return Crawl4AIChannel()
 
 
+@pytest.fixture(autouse=True)
+def _public_dns():
+    """Let mocked crawler calls pass the real SSRF validation deterministically."""
+    with patch("socket.getaddrinfo", return_value=[(None, None, None, "", ("93.184.216.34", 0))]):
+        yield
+
+
 def _make_crawler_ctx(result):
     crawler = AsyncMock()
     crawler.arun = AsyncMock(return_value=result)
@@ -53,7 +60,9 @@ async def test_validate_config_missing_selectors_and_instruction(channel):
 
 @pytest.mark.asyncio
 async def test_validate_config_valid(channel):
-    errors = await channel.validate_config({"url": "https://example.com", "selectors": {"title": "h1"}})
+    errors = await channel.validate_config(
+        {"url": "https://example.com", "selectors": {"title": "h1"}}
+    )
     assert errors == []
 
 
@@ -74,7 +83,11 @@ async def test_fetch_success_parses_extracted_items(channel):
     ctx_mgr, crawler = _make_crawler_ctx(result)
 
     ctx = FetchContext(
-        config={"url": "https://example.com", "list_selector": ".item", "selectors": {"title": "h2"}},
+        config={
+            "url": "https://example.com",
+            "list_selector": ".item",
+            "selectors": {"title": "h2"},
+        },
         params={},
     )
     with patch("crawl4ai.AsyncWebCrawler", return_value=ctx_mgr):
@@ -97,7 +110,9 @@ async def test_fetch_crawl_failure_raises_with_error_message(channel):
     result = _make_result(success=False, error_message="blocked by anti-bot")
     ctx_mgr, _crawler = _make_crawler_ctx(result)
 
-    ctx = FetchContext(config={"url": "https://example.com", "selectors": {"title": "h1"}}, params={})
+    ctx = FetchContext(
+        config={"url": "https://example.com", "selectors": {"title": "h1"}}, params={}
+    )
     with patch("crawl4ai.AsyncWebCrawler", return_value=ctx_mgr):
         with pytest.raises(ChannelFetchError, match="blocked by anti-bot"):
             await channel.fetch(ctx)
@@ -108,7 +123,9 @@ async def test_fetch_malformed_extracted_content_raises(channel):
     result = _make_result(extracted_content="not-json{{{")
     ctx_mgr, _crawler = _make_crawler_ctx(result)
 
-    ctx = FetchContext(config={"url": "https://example.com", "selectors": {"title": "h1"}}, params={})
+    ctx = FetchContext(
+        config={"url": "https://example.com", "selectors": {"title": "h1"}}, params={}
+    )
     with patch("crawl4ai.AsyncWebCrawler", return_value=ctx_mgr):
         with pytest.raises(ChannelFetchError, match="could not parse extracted_content"):
             await channel.fetch(ctx)
@@ -130,9 +147,13 @@ async def test_fetch_cookie_auth_passes_resolved_cookies_to_browser_config(chann
         params={},
     )
     fake_cookies = [{"name": "session_id", "domain": "example.com", "value": "abc"}]
-    with patch("crawl4ai.AsyncWebCrawler", return_value=ctx_mgr) as crawler_ctor, patch(
-        "backend.auth.manager.AuthManager.resolve_cookies", AsyncMock(return_value=fake_cookies)
-    ) as resolve_cookies, patch("crawl4ai.BrowserConfig") as browser_config_ctor:
+    with (
+        patch("crawl4ai.AsyncWebCrawler", return_value=ctx_mgr) as crawler_ctor,
+        patch(
+            "backend.auth.manager.AuthManager.resolve_cookies", AsyncMock(return_value=fake_cookies)
+        ) as resolve_cookies,
+        patch("crawl4ai.BrowserConfig") as browser_config_ctor,
+    ):
         await channel.fetch(ctx)
 
     resolve_cookies.assert_awaited_once_with("example.com")
@@ -160,10 +181,13 @@ async def test_fetch_llm_fallback_builds_llm_strategy_when_no_selectors(channel)
         params={},
     )
     fake_llm_config = MagicMock()
-    with patch("crawl4ai.AsyncWebCrawler", return_value=ctx_mgr), patch(
-        "backend.channels.crawl4ai_channel.Crawl4AIChannel._resolve_llm_config",
-        AsyncMock(return_value=fake_llm_config),
-    ) as resolve_llm:
+    with (
+        patch("crawl4ai.AsyncWebCrawler", return_value=ctx_mgr),
+        patch(
+            "backend.channels.crawl4ai_channel.Crawl4AIChannel._resolve_llm_config",
+            AsyncMock(return_value=fake_llm_config),
+        ) as resolve_llm,
+    ):
         fetch_result = await channel.fetch(ctx)
 
     assert fetch_result.items == [{"title": "Alpha"}]
@@ -191,10 +215,13 @@ async def test_fetch_llm_fallback_with_schema_uses_schema_extraction_type(channe
         params={},
     )
     fake_llm_config = MagicMock()
-    with patch("crawl4ai.AsyncWebCrawler", return_value=ctx_mgr), patch(
-        "backend.channels.crawl4ai_channel.Crawl4AIChannel._resolve_llm_config",
-        AsyncMock(return_value=fake_llm_config),
-    ) as resolve_llm:
+    with (
+        patch("crawl4ai.AsyncWebCrawler", return_value=ctx_mgr),
+        patch(
+            "backend.channels.crawl4ai_channel.Crawl4AIChannel._resolve_llm_config",
+            AsyncMock(return_value=fake_llm_config),
+        ) as resolve_llm,
+    ):
         fetch_result = await channel.fetch(ctx)
 
     assert fetch_result.items == [{"title": "Alpha"}]

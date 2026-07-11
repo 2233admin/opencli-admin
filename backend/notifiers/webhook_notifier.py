@@ -30,7 +30,7 @@ class WebhookNotifier(AbstractNotifier):
             # module docstring). TLS/SNI/cert verification are unaffected.
             client, url = await guarded_async_client(url, timeout=timeout)
         except SSRFValidationError:
-            return False
+            return NotificationSendResult(success=False)
 
         body = {
             "event": payload.event,

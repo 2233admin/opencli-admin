@@ -1,10 +1,7 @@
-from typing import Optional
-
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.models.task import CollectionTask, TaskRun
-from backend.schemas.task import TaskTriggerRequest
 
 
 async def create_task(
@@ -13,9 +10,10 @@ async def create_task(
     trigger_type: str,
     parameters: dict,
     priority: int = 5,
-    agent_id: Optional[str] = None,
+    agent_id: str | None = None,
+    task_id: str | None = None,
 ) -> CollectionTask:
-    task = CollectionTask(
+    values = dict(
         source_id=source_id,
         agent_id=agent_id,
         trigger_type=trigger_type,
@@ -23,23 +21,24 @@ async def create_task(
         priority=priority,
         status="pending",
     )
+    if task_id is not None:
+        values["id"] = task_id
+    task = CollectionTask(**values)
     session.add(task)
     await session.flush()
     await session.refresh(task)
     return task
 
 
-async def get_task(session: AsyncSession, task_id: str) -> Optional[CollectionTask]:
-    result = await session.execute(
-        select(CollectionTask).where(CollectionTask.id == task_id)
-    )
+async def get_task(session: AsyncSession, task_id: str) -> CollectionTask | None:
+    result = await session.execute(select(CollectionTask).where(CollectionTask.id == task_id))
     return result.scalar_one_or_none()
 
 
 async def list_tasks(
     session: AsyncSession,
-    source_id: Optional[str] = None,
-    status: Optional[str] = None,
+    source_id: str | None = None,
+    status: str | None = None,
     page: int = 1,
     limit: int = 20,
 ) -> tuple[list[CollectionTask], int]:

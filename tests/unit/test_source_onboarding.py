@@ -8,6 +8,14 @@ import pytest
 from backend.models.source import DataSource
 from backend.services import source_service
 
+
+@pytest.fixture(autouse=True)
+def _public_dns():
+    """Let mocked HTTP calls pass the real SSRF validation deterministically."""
+    with patch("socket.getaddrinfo", return_value=[(None, None, None, "", ("93.184.216.34", 0))]):
+        yield
+
+
 _HTML_WITH_FEED_LINKS = """<!doctype html><html><head>
 <link rel="alternate" type="application/rss+xml" title="Main Feed" href="/feed.xml">
 <link rel="alternate" type="application/atom+xml" title="Atom" href="https://example.com/atom.xml">
@@ -59,7 +67,9 @@ async def test_discover_feeds_finds_link_tags():
 @pytest.mark.asyncio
 async def test_discover_feeds_falls_back_to_common_paths():
     homepage = _mock_response(_HTML_NO_FEED_LINKS)
-    feed_probe = _mock_response("", status_code=200, headers={"content-type": "application/rss+xml"})
+    feed_probe = _mock_response(
+        "", status_code=200, headers={"content-type": "application/rss+xml"}
+    )
     miss_probe = _mock_response("", status_code=404)
 
     mock_client = AsyncMock()
@@ -98,7 +108,10 @@ async def test_discover_feeds_unreachable_site_returns_empty():
 def test_parse_opml_nested_folders_and_dedup():
     entries = source_service.parse_opml(_OPML)
     urls = [e["url"] for e in entries]
-    assert urls == ["https://a.example.com/rss", "https://b.example.com/rss"]  # dup within file collapsed
+    assert urls == [
+        "https://a.example.com/rss",
+        "https://b.example.com/rss",
+    ]  # dup within file collapsed
     assert entries[0]["title"] == "Feed A"
 
 
@@ -123,7 +136,9 @@ async def test_bulk_import_rss_creates_disabled_sources(db_session):
 @pytest.mark.asyncio
 async def test_bulk_import_rss_skips_already_stored_feed_url(db_session):
     existing = DataSource(
-        name="Already here", channel_type="rss", channel_config={"feed_url": "https://a.example.com/rss"}
+        name="Already here",
+        channel_type="rss",
+        channel_config={"feed_url": "https://a.example.com/rss"},
     )
     db_session.add(existing)
     await db_session.flush()

@@ -25,6 +25,9 @@ from backend.workflow.node_registry import (
     resolve_node_origin,
 )
 from backend.workflow.runtime_registry import resolve_runtime_metadata
+from backend.workflow.tool_capabilities import (
+    validate_workflow_tool_capability_version_pin,
+)
 
 INTERNAL_ID_SEPARATOR = "::"
 
@@ -261,8 +264,7 @@ def _validate_project(project: WorkflowProject) -> list[WorkflowCompileError]:
                 WorkflowCompileError(
                     code="missing_adapter_binding",
                     message=(
-                        f'Workflow node "{node.id}" references missing adapter '
-                        f'"{node.adapter}"'
+                        f'Workflow node "{node.id}" references missing adapter "{node.adapter}"'
                     ),
                     node_id=node.id,
                     path=["nodes", node.id, "adapter"],
@@ -282,10 +284,53 @@ def _validate_project(project: WorkflowProject) -> list[WorkflowCompileError]:
             errors.extend(_validate_package_internals(node, adapter_by_id))
 
         errors.extend(_validate_node_origin(node, ["nodes", node.id]))
+        errors.extend(_validate_capability_version_pin(node))
 
     errors.extend(_validate_typed_edges(project.nodes, project.edges, path_prefix=["edges"]))
     errors.extend(_cycle_errors(project))
     return errors
+
+
+def _validate_capability_version_pin(
+    node: WorkflowProjectNode,
+) -> list[WorkflowCompileError]:
+    if _read_string((node.ui or {}).get("catalogId")) != "external.tool.capability":
+        return []
+
+    tool_capability = node.params.get("toolCapability")
+    if not isinstance(tool_capability, dict):
+        return []
+    tool_id = _read_string(tool_capability.get("id"))
+    if tool_id is None:
+        return []
+
+    issue = validate_workflow_tool_capability_version_pin(
+        tool_id,
+        tool_capability.get("versionPin"),
+    )
+    if issue is None:
+        return []
+    if issue.code == "unknown_tool_capability" and isinstance(
+        node.params.get("externalWorkflow"), dict
+    ):
+        # Import is a drafting surface: preserve unknown external tools as a
+        # visible Capability Gap. Authoritative Plan validation still rejects
+        # the same unknown capability before publication or execution.
+        return []
+    return [
+        WorkflowCompileError(
+            code=issue.code,
+            message=f'Workflow node "{node.id}" {issue.message}',
+            node_id=node.id,
+            path=[
+                "nodes",
+                node.id,
+                "params",
+                "toolCapability",
+                "versionPin",
+            ],
+        )
+    ]
 
 
 def _requires_adapter(node: WorkflowProjectNode) -> bool:

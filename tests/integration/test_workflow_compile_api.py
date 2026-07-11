@@ -247,6 +247,41 @@ def _native_nodes_first_loop_project() -> dict:
     }
 
 
+def _registered_tool_project(*, version_pin: dict | None = None) -> dict:
+    tool_capability = {
+        "id": "tool.search.fixture",
+        "executor": {"mode": "fixture", "output": {"title": "Pinned result"}},
+    }
+    if version_pin is not None:
+        tool_capability["versionPin"] = version_pin
+    return {
+        "id": "wf-pinned-tool",
+        "name": "Pinned tool capability",
+        "profile": "intelligence",
+        "version": 1,
+        "nodes": [
+            {
+                "id": "search-tool",
+                "kind": "action",
+                "capability": "store",
+                "params": {"toolCapability": tool_capability},
+                "ui": {"catalogId": "external.tool.capability"},
+            }
+        ],
+        "edges": [],
+        "adapters": [],
+    }
+
+
+def _installed_tool_version_pin() -> dict:
+    return {
+        "package": "opencli-admin",
+        "packageVersion": "0.1.0",
+        "capabilityVersion": "1.0.0",
+        "provenance": "built-in",
+    }
+
+
 @pytest.mark.asyncio
 async def test_compile_valid_workflow_returns_plan_preview(client):
     response = await client.post(
@@ -271,6 +306,97 @@ async def test_compile_valid_workflow_returns_plan_preview(client):
 
 
 @pytest.mark.asyncio
+async def test_compile_rejects_registered_tool_capability_without_version_pin(client):
+    response = await client.post(
+        "/api/v1/workflows/compile",
+        json={"project": _registered_tool_project()},
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["valid"] is False
+    assert data["plan"] is None
+    assert data["errors"] == [
+        {
+            "code": "unpinned_tool_capability",
+            "message": (
+                'Workflow node "search-tool" must pin the exact package and '
+                'capability version for Tool Capability "tool.search.fixture".'
+            ),
+            "node_id": "search-tool",
+            "edge_id": None,
+            "path": ["nodes", "search-tool", "params", "toolCapability", "versionPin"],
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_compile_rejects_unknown_tool_capability_even_with_a_pin(client):
+    project = _registered_tool_project(version_pin=_installed_tool_version_pin())
+    project["nodes"][0]["params"]["toolCapability"]["id"] = "tool.unknown"
+
+    response = await client.post("/api/v1/workflows/compile", json={"project": project})
+
+    assert response.status_code == 200
+    error = response.json()["data"]["errors"][0]
+    assert error["code"] == "unknown_tool_capability"
+    assert "is not installed in the registry" in error["message"]
+
+
+@pytest.mark.asyncio
+async def test_compile_accepts_exact_installed_tool_capability_version_pin(client):
+    response = await client.post(
+        "/api/v1/workflows/compile",
+        json={"project": _registered_tool_project(version_pin=_installed_tool_version_pin())},
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["valid"] is True
+    node = data["plan"]["runtime"]["nodes"][0]
+    assert node["runtime"]["external_tool"]["versionPin"] == (_installed_tool_version_pin())
+    assert node["runtime"]["binding"]["input"]["toolCapabilityVersionPin"] == (
+        _installed_tool_version_pin()
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("version_pin", "error_code"),
+    [
+        (
+            {
+                **_installed_tool_version_pin(),
+                "capabilityVersion": "1.0.1",
+            },
+            "tool_capability_version_pin_mismatch",
+        ),
+        (
+            {
+                **_installed_tool_version_pin(),
+                "provenance": "unverified",
+            },
+            "disallowed_tool_capability_provenance",
+        ),
+    ],
+)
+async def test_compile_rejects_disallowed_tool_version_or_provenance(
+    client,
+    version_pin,
+    error_code,
+):
+    response = await client.post(
+        "/api/v1/workflows/compile",
+        json={"project": _registered_tool_project(version_pin=version_pin)},
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["valid"] is False
+    assert [error["code"] for error in data["errors"]] == [error_code]
+
+
+@pytest.mark.asyncio
 async def test_compile_resolves_opencli_source_to_iii_runtime_binding(client):
     response = await client.post(
         "/api/v1/workflows/compile",
@@ -281,15 +407,18 @@ async def test_compile_resolves_opencli_source_to_iii_runtime_binding(client):
     runtime = response.json()["data"]["plan"]["runtime"]
     source_node = runtime["nodes"][0]
     assert source_node["id"] == "source-bilibili"
-    _assert_binding_includes(source_node["runtime"]["binding"], {
-        "status": "bound",
-        "binding_id": "iii.collector-opencli.snapshot",
-        "runtime": "iii",
-        "worker": "collector-opencli",
-        "function_id": "odp.collect::opencli_snapshot",
-        "channel": "opencli",
-        "input": {"site": "bilibili", "command": "search"},
-    })
+    _assert_binding_includes(
+        source_node["runtime"]["binding"],
+        {
+            "status": "bound",
+            "binding_id": "iii.collector-opencli.snapshot",
+            "runtime": "iii",
+            "worker": "collector-opencli",
+            "function_id": "odp.collect::opencli_snapshot",
+            "channel": "opencli",
+            "input": {"site": "bilibili", "command": "search"},
+        },
+    )
 
 
 @pytest.mark.asyncio
@@ -302,9 +431,7 @@ async def test_compile_projects_native_first_loop_nodes_to_runtime_bindings(clie
     assert response.status_code == 200
     data = response.json()["data"]
     assert data["valid"] is True
-    runtime_nodes = {
-        node["id"]: node for node in data["plan"]["runtime"]["nodes"]
-    }
+    runtime_nodes = {node["id"]: node for node in data["plan"]["runtime"]["nodes"]}
 
     merge = runtime_nodes["merge-candidates"]
     assert merge["kind"] == "flow"
@@ -319,9 +446,7 @@ async def test_compile_projects_native_first_loop_nodes_to_runtime_bindings(clie
     gate = runtime_nodes["accept-records"]
     assert gate["kind"] == "control"
     assert gate["capability"] == "accept"
-    assert gate["runtime"]["binding"]["binding_id"] == (
-        "workflow.gate.record-acceptance"
-    )
+    assert gate["runtime"]["binding"]["binding_id"] == ("workflow.gate.record-acceptance")
     assert gate["runtime"]["record_acceptance"] == {
         "node_id": "accept-records",
         "candidate_port": "recordCandidate[]",
@@ -333,21 +458,15 @@ async def test_compile_projects_native_first_loop_nodes_to_runtime_bindings(clie
     assert sink["capability"] == "store"
     assert sink["runtime"]["binding"]["binding_id"] == "workflow.record-sink.records"
 
-    plan_nodes = {
-        node["id"]: node for node in data["plan"]["runtime"]["plan_ir"]["nodes"]
-    }
+    plan_nodes = {node["id"]: node for node in data["plan"]["runtime"]["plan_ir"]["nodes"]}
     assert plan_nodes["merge-candidates"]["kind"] == "merge"
     assert plan_nodes["merge-candidates"]["inputs"] == [
         {"name": "in1", "type": "recordCandidate[]"},
         {"name": "in2", "type": "recordCandidate[]"},
     ]
-    assert plan_nodes["accept-records"]["outputs"] == [
-        {"name": "records", "type": "record[]"}
-    ]
+    assert plan_nodes["accept-records"]["outputs"] == [{"name": "records", "type": "record[]"}]
     assert plan_nodes["record-sink"]["kind"] == "sink"
-    assert plan_nodes["record-sink"]["inputs"] == [
-        {"name": "records", "type": "record[]"}
-    ]
+    assert plan_nodes["record-sink"]["inputs"] == [{"name": "records", "type": "record[]"}]
 
 
 @pytest.mark.asyncio
@@ -414,18 +533,21 @@ async def test_compile_resolves_normalize_to_native_transform_binding(client):
     runtime_nodes = response.json()["data"]["plan"]["runtime"]["nodes"]
     normalize_node = runtime_nodes[1]
     assert normalize_node["id"] == "normalize-items"
-    _assert_binding_includes(normalize_node["runtime"]["binding"], {
-        "status": "bound",
-        "binding_id": "workflow.transform.normalize",
-        "runtime": "workflow",
-        "channel": "transform",
-        "input": {
-            "language": "zh-CN",
-            "preserveSourceRefs": True,
-            "inputPort": "items[]",
-            "outputPort": "recordCandidate[]",
+    _assert_binding_includes(
+        normalize_node["runtime"]["binding"],
+        {
+            "status": "bound",
+            "binding_id": "workflow.transform.normalize",
+            "runtime": "workflow",
+            "channel": "transform",
+            "input": {
+                "language": "zh-CN",
+                "preserveSourceRefs": True,
+                "inputPort": "items[]",
+                "outputPort": "recordCandidate[]",
+            },
         },
-    })
+    )
     assert normalize_node["runtime"]["normalize"] == {
         "node_id": "normalize-items",
         "candidate_port": "recordCandidate[]",
@@ -988,13 +1110,12 @@ async def test_compile_accepts_collection_need_input_node(client):
     data = response.json()["data"]
     assert data["valid"] is True
     node = next(
-        node
-        for node in data["plan"]["runtime"]["nodes"]
-        if node["id"] == "collection-need"
+        node for node in data["plan"]["runtime"]["nodes"] if node["id"] == "collection-need"
     )
     assert node["runtime"]["origin"]["catalog_id"] == "intelligence.input.collection-need"
     assert node["runtime"]["binding"]["binding_id"] == "workflow.demand-draft.patch"
     assert "missing_runtime" not in node["runtime"]
+
 
 @pytest.mark.asyncio
 async def test_compile_resolves_schedule_trigger_binding(client):
@@ -1027,23 +1148,22 @@ async def test_compile_resolves_schedule_trigger_binding(client):
     assert response.status_code == 200
     data = response.json()["data"]
     assert data["valid"] is True
-    node = next(
-        node
-        for node in data["plan"]["runtime"]["nodes"]
-        if node["id"] == "schedule-cron"
-    )
+    node = next(node for node in data["plan"]["runtime"]["nodes"] if node["id"] == "schedule-cron")
     assert node["runtime"]["origin"]["catalog_id"] == "intelligence.schedule.cron"
-    _assert_binding_includes(node["runtime"]["binding"], {
-        "status": "bound",
-        "binding_id": "workflow.trigger.schedule_tick",
-        "runtime": "workflow",
-        "channel": "schedule",
-        "input": {
-            "interval": "5m",
-            "timezone": "Asia/Shanghai",
-            "enabled": True,
+    _assert_binding_includes(
+        node["runtime"]["binding"],
+        {
+            "status": "bound",
+            "binding_id": "workflow.trigger.schedule_tick",
+            "runtime": "workflow",
+            "channel": "schedule",
+            "input": {
+                "interval": "5m",
+                "timezone": "Asia/Shanghai",
+                "enabled": True,
+            },
         },
-    })
+    )
     assert node["runtime"]["trigger"] == {
         "node_id": "schedule-cron",
         "mode": "manual_schedule_tick",

@@ -12,6 +12,13 @@ def channel():
     return RSSChannel()
 
 
+@pytest.fixture(autouse=True)
+def _public_dns():
+    """Let mocked HTTP calls pass the real SSRF validation deterministically."""
+    with patch("socket.getaddrinfo", return_value=[(None, None, None, "", ("93.184.216.34", 0))]):
+        yield
+
+
 VALID_RSS_XML = """<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">
   <channel>
@@ -30,6 +37,7 @@ VALID_RSS_XML = """<?xml version="1.0" encoding="UTF-8"?>
 
 
 # ── validate_config ────────────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_channel_type(channel):
@@ -50,6 +58,7 @@ async def test_validate_config_valid(channel):
 
 # ── collect: success ───────────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_collect_success_returns_items(channel):
     """Successful RSS fetch returns ChannelResult with parsed items."""
@@ -64,9 +73,7 @@ async def test_collect_success_returns_items(channel):
     mock_client_ctx.__aexit__ = AsyncMock(return_value=False)
 
     with patch("httpx.AsyncClient", return_value=mock_client_ctx):
-        result = await channel.collect(
-            {"feed_url": "https://example.com/rss"}, {}
-        )
+        result = await channel.collect({"feed_url": "https://example.com/rss"}, {})
 
     assert result.success is True
     assert len(result.items) == 2
@@ -110,15 +117,14 @@ async def test_collect_metadata_includes_feed_title(channel):
     mock_client_ctx.__aexit__ = AsyncMock(return_value=False)
 
     with patch("httpx.AsyncClient", return_value=mock_client_ctx):
-        result = await channel.collect(
-            {"feed_url": "https://example.com/rss"}, {}
-        )
+        result = await channel.collect({"feed_url": "https://example.com/rss"}, {})
 
     assert result.success is True
     assert result.metadata.get("feed_title") == "Test Feed"
 
 
 # ── collect: error cases ───────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_collect_timeout_returns_fail(channel):
@@ -132,9 +138,7 @@ async def test_collect_timeout_returns_fail(channel):
     mock_client_ctx.__aexit__ = AsyncMock(return_value=False)
 
     with patch("httpx.AsyncClient", return_value=mock_client_ctx):
-        result = await channel.collect(
-            {"feed_url": "https://example.com/rss"}, {}
-        )
+        result = await channel.collect({"feed_url": "https://example.com/rss"}, {})
 
     assert result.success is False
     assert "timed out" in result.error.lower()
@@ -161,9 +165,7 @@ async def test_collect_http_404_returns_fail(channel):
     mock_client_ctx.__aexit__ = AsyncMock(return_value=False)
 
     with patch("httpx.AsyncClient", return_value=mock_client_ctx):
-        result = await channel.collect(
-            {"feed_url": "https://example.com/rss"}, {}
-        )
+        result = await channel.collect({"feed_url": "https://example.com/rss"}, {})
 
     assert result.success is False
     assert "404" in result.error
@@ -179,9 +181,7 @@ async def test_collect_generic_exception_returns_fail(channel):
     mock_client_ctx.__aexit__ = AsyncMock(return_value=False)
 
     with patch("httpx.AsyncClient", return_value=mock_client_ctx):
-        result = await channel.collect(
-            {"feed_url": "https://example.com/rss"}, {}
-        )
+        result = await channel.collect({"feed_url": "https://example.com/rss"}, {})
 
     assert result.success is False
     assert "Failed to fetch" in result.error
@@ -207,9 +207,7 @@ async def test_collect_bozo_feed_no_entries_returns_fail(channel):
 
     with patch("httpx.AsyncClient", return_value=mock_client_ctx):
         with patch("feedparser.parse", return_value=fake_parsed):
-            result = await channel.collect(
-                {"feed_url": "https://example.com/rss"}, {}
-            )
+            result = await channel.collect({"feed_url": "https://example.com/rss"}, {})
 
     assert result.success is False
     assert result.error is not None
@@ -247,15 +245,14 @@ async def test_collect_bozo_feed_with_entries_succeeds(channel):
 
     with patch("httpx.AsyncClient", return_value=mock_client_ctx):
         with patch("feedparser.parse", return_value=fake_parsed):
-            result = await channel.collect(
-                {"feed_url": "https://example.com/rss"}, {}
-            )
+            result = await channel.collect({"feed_url": "https://example.com/rss"}, {})
 
     assert result.success is True
     assert len(result.items) == 1
 
 
 # ── _entry_to_dict ─────────────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_entry_to_dict(channel):
@@ -280,6 +277,7 @@ async def test_entry_to_dict(channel):
 
 def test_entry_to_dict_missing_optional_fields(channel):
     """Entry with only link should use link as id fallback."""
+
     class MinimalEntry:
         def get(self, key, default=""):
             return {"link": "https://ex.com/x"}.get(key, default)
@@ -292,6 +290,7 @@ def test_entry_to_dict_missing_optional_fields(channel):
 
 def test_entry_to_dict_all_tags(channel):
     """Multiple tags are all extracted."""
+
     class TaggedEntry:
         def get(self, key, default=""):
             return {"tags": [{"term": "a"}, {"term": "b"}, {"term": "c"}]}.get(key, default)

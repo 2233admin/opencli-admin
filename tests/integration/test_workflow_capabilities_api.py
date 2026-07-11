@@ -110,11 +110,7 @@ async def test_compile_reports_webhook_notify_contract_without_live_delivery(cli
     assert response.status_code == 200
     data = response.json()["data"]
     assert data["valid"] is True
-    node = next(
-        node
-        for node in data["plan"]["runtime"]["nodes"]
-        if node["id"] == "notify-webhook"
-    )
+    node = next(node for node in data["plan"]["runtime"]["nodes"] if node["id"] == "notify-webhook")
     assert node["runtime"]["origin"]["catalog_id"] == "intelligence.output.webhook"
     assert "binding" not in node["runtime"]
     assert node["runtime"]["notifier"]["binding_id"] == "workflow.notifier.webhook.send"
@@ -196,8 +192,7 @@ async def test_workflow_capabilities_project_real_backend_surfaces(client, monke
     assert "canFetchNetwork" in opencli_manifest["permissions"]
     assert "source_output_ingest_available" in opencli_manifest["probes"]
     assert (
-        "frontend_run_event_binding"
-        not in catalog["intelligence.source.opencli-slot"]["missing"]
+        "frontend_run_event_binding" not in catalog["intelligence.source.opencli-slot"]["missing"]
     )
     assert catalog["intelligence.source.pool"]["status"] == "runnable"
     assert catalog["intelligence.source.pool"]["backendAvailable"] is True
@@ -257,12 +252,10 @@ async def test_workflow_capabilities_project_real_backend_surfaces(client, monke
     assert "partial:outputItemCount" in external_tool_manifest["trace"]["events"]
     assert catalog["package.opencli.multi-source-hda"]["status"] == "runnable"
     assert (
-        "frontend_run_event_binding"
-        not in catalog["package.opencli.multi-source-hda"]["missing"]
+        "frontend_run_event_binding" not in catalog["package.opencli.multi-source-hda"]["missing"]
     )
     assert (
-        "typed_demand_input_envelope"
-        not in catalog["package.opencli.multi-source-hda"]["missing"]
+        "typed_demand_input_envelope" not in catalog["package.opencli.multi-source-hda"]["missing"]
     )
     assert catalog["intelligence.output.webhook"]["status"] == "blocked"
     assert catalog["intelligence.output.webhook"]["backendAvailable"] is True
@@ -328,9 +321,7 @@ async def test_workflow_capabilities_project_real_backend_surfaces(client, monke
     assert adapter_registry["backendAvailable"] is True
     assert adapter_registry["runtimeBinding"] == "iii.collector-opencli.snapshot"
     assert adapter_registry["manifest"]["canvas"]["node"] is False
-    assert adapter_registry["manifest"]["endpoint"] == (
-        "/api/v1/workflows/opencli-adapter-nodes"
-    )
+    assert adapter_registry["manifest"]["endpoint"] == ("/api/v1/workflows/opencli-adapter-nodes")
     assert adapter_registry["manifest"]["summary"]["total"] == 3
     assert adapter_registry["manifest"]["materialization"]["write"] == (
         "external.tool.capability with review"
@@ -340,10 +331,14 @@ async def test_workflow_capabilities_project_real_backend_surfaces(client, monke
     assert tool_resource["backendAvailable"] is True
     assert tool_resource["runtimeBinding"] == "workflow.external-tool.capability"
     assert tool_resource["manifest"]["toolCapability"]["id"] == "tool.search.fixture"
+    assert tool_resource["manifest"]["toolCapability"]["versionPin"] == {
+        "package": "opencli-admin",
+        "packageVersion": "0.1.0",
+        "capabilityVersion": "1.0.0",
+        "provenance": "built-in",
+    }
     assert tool_resource["manifest"]["toolCapability"]["executor"]["mode"] == "fixture"
-    realtime_resource = resources[
-        "resource.tool-capability.tool.realtime.stream.subscribe"
-    ]
+    realtime_resource = resources["resource.tool-capability.tool.realtime.stream.subscribe"]
     assert realtime_resource["status"] == "runnable"
     assert realtime_resource["runtimeBinding"] == "workflow.external-tool.capability"
     assert realtime_resource["manifest"]["toolCapability"]["id"] == (
@@ -374,18 +369,14 @@ def test_opencli_adapter_nodes_classify_manifest_entries(monkeypatch):
     assert twitter_search.status == "blocked"
     assert twitter_search.catalogId == "intelligence.source.opencli-slot"
     assert twitter_search.requiredArgs == ["query"]
-    assert twitter_search.manifest["canvas"]["materialization"] == (
-        "source_slot_requires_params"
-    )
+    assert twitter_search.manifest["canvas"]["materialization"] == ("source_slot_requires_params")
     assert twitter_search.manifest["canvas"]["positionalRequiredArgs"] == ["query"]
 
     twitter_post = nodes["opencli.adapter.twitter.post"]
     assert twitter_post.status == "blocked"
     assert twitter_post.catalogId == "external.tool.capability"
     assert twitter_post.manifest["canvas"]["node"] is False
-    assert twitter_post.manifest["canvas"]["materialization"] == (
-        "tool_capability_review_required"
-    )
+    assert twitter_post.manifest["canvas"]["materialization"] == ("tool_capability_review_required")
     assert response.summary == {
         "total": 3,
         "sites": 2,
@@ -428,11 +419,15 @@ async def test_workflow_tool_capabilities_register_opencli_tool_bindings(client)
     assert fixture_tool["status"] == "runnable"
     assert fixture_tool["provider"] == "opencli-admin"
     assert fixture_tool["executor"]["mode"] == "fixture"
+    assert fixture_tool["versionPin"] == {
+        "package": "opencli-admin",
+        "packageVersion": "0.1.0",
+        "capabilityVersion": "1.0.0",
+        "provenance": "built-in",
+    }
     assert fixture_tool["inputPorts"] == [{"name": "in", "type": "unknown"}]
     assert fixture_tool["outputPorts"] == [{"name": "out", "type": "unknown"}]
-    assert fixture_tool["manifest"]["runtime"]["binding"] == (
-        "workflow.external-tool.capability"
-    )
+    assert fixture_tool["manifest"]["runtime"]["binding"] == ("workflow.external-tool.capability")
     realtime_ids = {
         "tool.realtime.stream.subscribe",
         "tool.realtime.event.normalize",

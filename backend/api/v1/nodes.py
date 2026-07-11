@@ -447,7 +447,7 @@ def _install_script_template(
 
 set -euo pipefail
 CENTRAL_API_URL="${{CENTRAL_API_URL:-{central_url}}}"
-AGENT_API_TOKEN="${{AGENT_API_TOKEN:-{agent_api_token}}}"
+AGENT_API_TOKEN="${{AGENT_API_TOKEN:-${{API_AUTH_TOKEN:-{agent_api_token}}}}}"
 AGENT_REGISTER="${{AGENT_REGISTER:-ws}}"
 AGENT_PORT="${{AGENT_PORT:-19823}}"
 AGENT_ADVERTISE_URL="${{AGENT_ADVERTISE_URL:-}}"
@@ -474,7 +474,10 @@ info "Fleet Network: $FLEET_NETWORK_PROVIDER | NetBird: $NETBIRD_MODE"
 
 case "$FLEET_NETWORK_PROVIDER" in
   lan|netbird|wireguard|ssh|custom) ;;
-  *) die "Unknown FLEET_NETWORK_PROVIDER '$FLEET_NETWORK_PROVIDER'. Use lan, netbird, wireguard, ssh, or custom." ;;
+  *)
+    die "Unknown FLEET_NETWORK_PROVIDER '$FLEET_NETWORK_PROVIDER'. "\
+"Use lan, netbird, wireguard, ssh, or custom."
+    ;;
 esac
 
 run_netbird() {{
@@ -543,15 +546,22 @@ install_fleet_network() {{
       ;;
     wireguard)
       info "WireGuard provider selected; assuming the WireGuard interface is already up."
-      [[ -n "$AGENT_ADVERTISE_URL" ]] || warn "Set AGENT_ADVERTISE_URL to the WireGuard-reachable agent URL when center HTTP callbacks are required."
+      [[ -n "$AGENT_ADVERTISE_URL" ]] || \
+        warn "Set AGENT_ADVERTISE_URL to the WireGuard-reachable agent URL "\
+"when center HTTP callbacks are required."
       ;;
     ssh)
       info "SSH provider selected; assuming the SSH tunnel is already established."
-      [[ -n "$AGENT_ADVERTISE_URL" ]] || warn "Set AGENT_ADVERTISE_URL to the forwarded agent URL when center HTTP callbacks are required."
+      [[ -n "$AGENT_ADVERTISE_URL" ]] || \
+        warn "Set AGENT_ADVERTISE_URL to the forwarded agent URL "\
+"when center HTTP callbacks are required."
       ;;
     custom)
-      info "Custom network provider selected; assuming reachability is managed outside this installer."
-      [[ -n "$AGENT_ADVERTISE_URL" ]] || warn "Set AGENT_ADVERTISE_URL to the center-reachable agent URL when center HTTP callbacks are required."
+      info "Custom network provider selected; assuming reachability is managed "\
+"outside this installer."
+      [[ -n "$AGENT_ADVERTISE_URL" ]] || \
+        warn "Set AGENT_ADVERTISE_URL to the center-reachable agent URL "\
+"when center HTTP callbacks are required."
       ;;
   esac
 }}

@@ -10,6 +10,7 @@ import time
 import httpx
 import pytest
 
+from backend.security.url_guard import SSRFValidationError, avalidate_public_url_and_ip
 from backend.workflow.webhook_delivery import (
     WEBHOOK_DELIVERY_EVENT,
     WEBHOOK_DELIVERY_PAYLOAD_SCHEMA,
@@ -17,9 +18,7 @@ from backend.workflow.webhook_delivery import (
 )
 
 WEBHOOK_SITE_TOKEN_API = "https://webhook.site/token"
-WEBHOOK_SITE_URL_RE = re.compile(
-    r"^https://webhook\.site/(?P<token>[0-9a-fA-F-]{36})(?:[/?#].*)?$"
-)
+WEBHOOK_SITE_URL_RE = re.compile(r"^https://webhook\.site/(?P<token>[0-9a-fA-F-]{36})(?:[/?#].*)?$")
 
 
 @pytest.mark.live
@@ -73,6 +72,11 @@ async def _resolve_live_webhook_target() -> tuple[str, str | None]:
     configured_url = os.environ.get("OPENCLI_GENERIC_WEBHOOK_LIVE_URL", "").strip()
     if configured_url:
         return configured_url, _webhook_site_token_from_url(configured_url)
+
+    try:
+        await avalidate_public_url_and_ip(WEBHOOK_SITE_TOKEN_API)
+    except SSRFValidationError as exc:
+        pytest.skip(f"webhook.site is not safely reachable in this environment: {exc}")
 
     async with httpx.AsyncClient(timeout=30) as client:
         response = await client.post(WEBHOOK_SITE_TOKEN_API)

@@ -28,6 +28,7 @@ def test_all_notifiers_registered():
 
 # ── Feishu ─────────────────────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_feishu_send_success():
     from backend.notifiers.feishu_notifier import FeishuNotifier
@@ -38,8 +39,9 @@ async def test_feishu_send_success():
     mock_resp = MagicMock()
     mock_resp.json.return_value = {"code": 0}
 
-    with patch("httpx.AsyncClient") as mock_cls, patch(
-        "socket.getaddrinfo", return_value=[(None, None, None, "", ("93.184.216.34", 0))]
+    with (
+        patch("httpx.AsyncClient") as mock_cls,
+        patch("socket.getaddrinfo", return_value=[(None, None, None, "", ("93.184.216.34", 0))]),
     ):
         mock_client = AsyncMock()
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -65,8 +67,9 @@ async def test_feishu_send_failure():
     mock_resp = MagicMock()
     mock_resp.json.return_value = {"StatusCode": 400, "StatusMessage": "forbidden"}
 
-    with patch("httpx.AsyncClient") as mock_cls, patch(
-        "socket.getaddrinfo", return_value=[(None, None, None, "", ("93.184.216.34", 0))]
+    with (
+        patch("httpx.AsyncClient") as mock_cls,
+        patch("socket.getaddrinfo", return_value=[(None, None, None, "", ("93.184.216.34", 0))]),
     ):
         mock_client = AsyncMock()
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -94,8 +97,9 @@ async def test_feishu_template_rendering():
         resp.json.return_value = {"StatusCode": 0}
         return resp
 
-    with patch("httpx.AsyncClient") as mock_cls, patch(
-        "socket.getaddrinfo", return_value=[(None, None, None, "", ("93.184.216.34", 0))]
+    with (
+        patch("httpx.AsyncClient") as mock_cls,
+        patch("socket.getaddrinfo", return_value=[(None, None, None, "", ("93.184.216.34", 0))]),
     ):
         mock_client = AsyncMock()
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -132,8 +136,9 @@ async def test_feishu_template_can_render_ai_enrichment():
         resp.json.return_value = {"code": 0}
         return resp
 
-    with patch("httpx.AsyncClient") as mock_cls, patch(
-        "socket.getaddrinfo", return_value=[(None, None, None, "", ("93.184.216.34", 0))]
+    with (
+        patch("httpx.AsyncClient") as mock_cls,
+        patch("socket.getaddrinfo", return_value=[(None, None, None, "", ("93.184.216.34", 0))]),
     ):
         mock_client = AsyncMock()
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -157,6 +162,7 @@ async def test_feishu_template_can_render_ai_enrichment():
 
 
 # ── DingTalk ───────────────────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_dingtalk_send_success():
@@ -224,6 +230,7 @@ async def test_dingtalk_send_with_sign():
 
 # ── WeCom ──────────────────────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_wecom_send_success():
     from backend.notifiers.wecom_notifier import WeComNotifier
@@ -234,7 +241,10 @@ async def test_wecom_send_success():
     mock_resp = MagicMock()
     mock_resp.json.return_value = {"errcode": 0, "errmsg": "ok"}
 
-    with patch("httpx.AsyncClient") as mock_cls:
+    with (
+        patch("httpx.AsyncClient") as mock_cls,
+        patch("socket.getaddrinfo", return_value=[(None, None, None, "", ("93.184.216.34", 0))]),
+    ):
         mock_client = AsyncMock()
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
@@ -259,7 +269,10 @@ async def test_wecom_send_failure():
     mock_resp = MagicMock()
     mock_resp.json.return_value = {"errcode": 60011, "errmsg": "not allow"}
 
-    with patch("httpx.AsyncClient") as mock_cls:
+    with (
+        patch("httpx.AsyncClient") as mock_cls,
+        patch("socket.getaddrinfo", return_value=[(None, None, None, "", ("93.184.216.34", 0))]),
+    ):
         mock_client = AsyncMock()
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)

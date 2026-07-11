@@ -7,12 +7,16 @@ from backend.api.v1 import (
     browser_act,
     browsers,
     chat,
+    consumer_grants,
     control,
     cookies,
     dashboard,
+    identity,
     model_defaults,
     nodes,
     notifications,
+    operations_agents,
+    operations_inbox,
     plan_ir,
     plans,
     presets,
@@ -28,6 +32,7 @@ from backend.api.v1 import (
     webhooks,
     workers,
     workflows,
+    workspaces,
 )
 
 v1_router = APIRouter(prefix="/api/v1")
@@ -37,6 +42,7 @@ v1_router.include_router(browser_act.router)
 v1_router.include_router(browsers.router)
 v1_router.include_router(chat.router)
 v1_router.include_router(control.router)
+v1_router.include_router(consumer_grants.router)
 v1_router.include_router(cookies.router)
 v1_router.include_router(model_defaults.router)
 v1_router.include_router(nodes.router)
@@ -54,6 +60,10 @@ v1_router.include_router(skill_record.router)
 v1_router.include_router(webhooks.router)
 v1_router.include_router(workflows.router)
 v1_router.include_router(notifications.router)
+v1_router.include_router(operations_inbox.router)
+v1_router.include_router(operations_agents.router)
 v1_router.include_router(workers.router)
 v1_router.include_router(dashboard.router)
 v1_router.include_router(system.router)
+v1_router.include_router(identity.router)
+v1_router.include_router(workspaces.router)

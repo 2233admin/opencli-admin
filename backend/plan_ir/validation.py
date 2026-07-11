@@ -16,6 +16,9 @@ answers "is this PlanGraph structurally valid", returning a list of
 from dataclasses import dataclass, field
 
 from backend.schemas.plan_ir import PlanGraph, PlanNode
+from backend.workflow.tool_capabilities import (
+    validate_workflow_tool_capability_version_pin,
+)
 
 
 @dataclass
@@ -62,11 +65,38 @@ def validate_plan_graph(plan: PlanGraph) -> PlanValidationResult:
     errors.extend(_check_source_node_entity_refs(plan))
     errors.extend(_check_dangling_edges(plan, nodes_by_id))
     errors.extend(_check_missing_required_params(plan))
+    errors.extend(_check_capability_version_pins(plan))
     errors.extend(_check_orphan_merges(plan, nodes_by_id))
     errors.extend(_check_port_type_mismatches(plan, nodes_by_id))
     errors.extend(_check_cycles(plan, nodes_by_id))
 
     return PlanValidationResult(errors=errors)
+
+
+def _check_capability_version_pins(plan: PlanGraph) -> list[PlanValidationError]:
+    """Prevent persisted executable Plans from floating registered tools."""
+
+    errors: list[PlanValidationError] = []
+    for node in plan.nodes:
+        tool_capability = node.params.get("toolCapability")
+        if not isinstance(tool_capability, dict):
+            continue
+        tool_id = tool_capability.get("id")
+        if not isinstance(tool_id, str) or not tool_id.strip():
+            continue
+        issue = validate_workflow_tool_capability_version_pin(
+            tool_id.strip(),
+            tool_capability.get("versionPin"),
+        )
+        if issue is not None:
+            errors.append(
+                PlanValidationError(
+                    code=issue.code,
+                    message=f"Node {node.id!r} {issue.message}",
+                    node_id=node.id,
+                )
+            )
+    return errors
 
 
 def _check_duplicate_node_ids(plan: PlanGraph) -> list[PlanValidationError]:
@@ -261,9 +291,7 @@ def _check_port_type_mismatches(
     return errors
 
 
-def _check_cycles(
-    plan: PlanGraph, nodes_by_id: dict[str, PlanNode]
-) -> list[PlanValidationError]:
+def _check_cycles(plan: PlanGraph, nodes_by_id: dict[str, PlanNode]) -> list[PlanValidationError]:
     """DFS-based cycle detection over the directed node graph induced by
     edges. Every node on a detected cycle gets its own node-anchored error
     so a canvas can highlight the whole loop, not just one arbitrary node."""

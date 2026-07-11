@@ -34,17 +34,25 @@ class _AlertOnRetriesExhaustedTask(Task):
     it only adds a marker at the terminal-failure point.
     """
 
-    def on_failure(self, exc: BaseException, task_id: str, args: tuple, kwargs: dict, einfo: Any) -> None:
+    def on_failure(
+        self, exc: BaseException, task_id: str, args: tuple, kwargs: dict, einfo: Any
+    ) -> None:
         retries = getattr(self.request, "retries", 0)
         max_retries = self.max_retries or 0
         if retries >= max_retries:
             collection_task_id = args[0] if args else kwargs.get("task_id")
             logger.error(
                 "[task:%s] retries exhausted | celery_task_id=%s retries=%d/%d error=%s",
-                collection_task_id, task_id, retries, max_retries, exc,
+                collection_task_id,
+                task_id,
+                retries,
+                max_retries,
+                exc,
             )
             try:
-                _run_async(_mark_retries_exhausted(collection_task_id, retries, max_retries, str(exc)))
+                _run_async(
+                    _mark_retries_exhausted(collection_task_id, retries, max_retries, str(exc))
+                )
             except Exception:
                 # Best-effort signal: a failure recording the signal must not
                 # mask the original task failure or crash celery's own
@@ -89,7 +97,8 @@ async def _mark_retries_exhausted(
         await session.commit()
 
     await events.emit(
-        run_id, "complete",
+        run_id,
+        "complete",
         f"重试已耗尽 | {retries}/{max_retries} 次后仍失败: {error}",
         level="error",
         detail={"retries_exhausted": True, "retries": retries, "max_retries": max_retries},
@@ -112,19 +121,40 @@ async def _mark_retries_exhausted(
 def run_collection(self: Task, task_id: str, parameters: dict | None = None) -> dict:
     """Execute the full collection pipeline for a task."""
     from backend.pipeline.runner import run_collection_pipeline
-    return _run_async(run_collection_pipeline(
-        task_id,
-        parameters or {},
-        celery_task_id=self.request.id,
-        worker_id=self.request.hostname,
-    ))
+
+    return _run_async(
+        run_collection_pipeline(
+            task_id,
+            parameters or {},
+            celery_task_id=self.request.id,
+            worker_id=self.request.hostname,
+        )
+    )
 
 
-@celery_app.task(name="run_scheduled_collection")
-def run_scheduled_collection(schedule_id: str, source_id: str, parameters: dict | None = None) -> dict:
-    """Create a CollectionTask for a scheduled run, execute pipeline, auto-disable if one-time."""
+@celery_app.task(
+    bind=True,
+    name="run_scheduled_collection",
+    max_retries=3,
+    default_retry_delay=60,
+    autoretry_for=(Exception,),
+)
+def run_scheduled_collection(
+    self: Task, schedule_id: str, source_id: str, parameters: dict | None = None
+) -> dict:
+    """Execute one idempotently identified scheduled occurrence."""
     from backend.pipeline.runner import run_scheduled_pipeline
-    return _run_async(run_scheduled_pipeline(schedule_id, source_id, parameters or {}))
+
+    return _run_async(
+        run_scheduled_pipeline(
+            schedule_id,
+            source_id,
+            parameters or {},
+            occurrence_id=self.request.id,
+            celery_task_id=self.request.id,
+            worker_id=self.request.hostname,
+        )
+    )
 
 
 @celery_app.task(name="send_notification")

@@ -16,6 +16,7 @@ import pytest
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
+
 def _make_subprocess_mock(stdout: str = '[{"title":"result1"}]'):
     proc = MagicMock()
     proc.returncode = 0
@@ -54,6 +55,7 @@ def _captured_collect_cmd(captured: list[list], site: str) -> list:
 
 # ── fixtures ──────────────────────────────────────────────────────────────────
 
+
 @pytest.fixture
 def opencli_source_payload():
     return {
@@ -86,6 +88,7 @@ def opencli_source_no_positional():
 
 
 # ── tests ─────────────────────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_create_opencli_source_stores_positional_args(client, opencli_source_payload):
@@ -140,7 +143,7 @@ async def test_collect_builds_cmd_with_positional_args_before_named_options(
     site_idx = cmd.index("bilibili")
     assert cmd[site_idx + 1] == "search"
     assert cmd[site_idx + 2] == "AI agent", (
-        f"positional arg must immediately follow command, got: {cmd[site_idx+2:]}"
+        f"positional arg must immediately follow command, got: {cmd[site_idx + 2 :]}"
     )
     assert "--type" in cmd
     assert "--limit" in cmd
@@ -178,7 +181,7 @@ async def test_collect_without_positional_args_backward_compat(
     assert cmd[site_idx + 1] == "hot"
     # No positional args — first thing after "hot" is a named option
     assert cmd[site_idx + 2].startswith("--"), (
-        f"expected named option after command, got: {cmd[site_idx+2:]}"
+        f"expected named option after command, got: {cmd[site_idx + 2 :]}"
     )
     assert "--limit" in cmd
     assert "10" in cmd
@@ -186,7 +189,7 @@ async def test_collect_without_positional_args_backward_compat(
 
 @pytest.mark.asyncio
 async def test_collect_agent_mode_passes_positional_args_to_dispatch(
-    client, opencli_source_payload
+    client, db_session, opencli_source_payload
 ):
     """In HTTP agent mode, positional_args is forwarded to _collect_via_agent."""
     from backend.browser_pool import LocalBrowserPool
@@ -200,6 +203,7 @@ async def test_collect_agent_mode_passes_positional_args_to_dispatch(
     async def fake_collect_via_agent(agent_url, site, command, args, positional_args, fmt, mode):
         captured.append({"positional_args": positional_args, "args": args})
         from backend.channels.base import ChannelResult
+
         return ChannelResult.ok([{"title": "ok"}], site=site, command=command)
 
     agent_pool = MagicMock(spec=LocalBrowserPool)
@@ -212,11 +216,19 @@ async def test_collect_agent_mode_passes_positional_args_to_dispatch(
     ctx.__aexit__ = AsyncMock(return_value=False)
     agent_pool.acquire.return_value = ctx
 
+    class BoundSessionContext:
+        async def __aenter__(self):
+            return db_session
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
     with (
         patch(
             "backend.channels.opencli_channel._collect_via_agent",
             side_effect=fake_collect_via_agent,
         ),
+        patch("backend.database.AsyncSessionLocal", return_value=BoundSessionContext()),
         patch("backend.browser_pool.get_pool", return_value=agent_pool),
         patch("backend.config.get_settings", return_value=_settings_mock("agent")),
     ):

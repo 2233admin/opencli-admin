@@ -362,6 +362,13 @@ class WorkflowToolCapabilityExecutor(BaseModel):
     params: dict[str, Any] = Field(default_factory=dict)
 
 
+class WorkflowCapabilityVersionPin(BaseModel):
+    package: str = Field(..., min_length=1)
+    packageVersion: str = Field(..., min_length=1)
+    capabilityVersion: str = Field(..., min_length=1)
+    provenance: Literal["built-in", "verified", "unverified"]
+
+
 class WorkflowToolCapability(BaseModel):
     id: str = Field(..., min_length=1)
     label: str = Field(..., min_length=1)
@@ -371,6 +378,7 @@ class WorkflowToolCapability(BaseModel):
     inputPorts: list[WorkflowToolCapabilityPort] = Field(default_factory=list)
     outputPorts: list[WorkflowToolCapabilityPort] = Field(default_factory=list)
     executor: WorkflowToolCapabilityExecutor
+    versionPin: WorkflowCapabilityVersionPin
     tags: list[str] = Field(default_factory=list)
     manifest: dict[str, Any] = Field(default_factory=dict)
 

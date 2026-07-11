@@ -1,4 +1,4 @@
-"""Unit tests for backend/pipeline/runner.py — run_collection_pipeline and run_scheduled_pipeline."""
+"""Unit tests for collection and scheduled pipeline runners."""
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -57,6 +57,7 @@ def _make_pipeline_result(success=True, error=None):
 
 # ── task not found ─────────────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_run_pipeline_task_not_found():
     """Returns error dict when task_id does not exist in the DB."""
@@ -66,7 +67,9 @@ async def test_run_pipeline_task_not_found():
     mock_session.flush = AsyncMock()
     mock_session.commit = AsyncMock()
 
-    with patch("backend.pipeline.runner.AsyncSessionLocal", return_value=make_session_cm(mock_session)):
+    with patch(
+        "backend.pipeline.runner.AsyncSessionLocal", return_value=make_session_cm(mock_session)
+    ):
         result = await run_collection_pipeline("nonexistent-task", {})
 
     assert "error" in result
@@ -74,6 +77,7 @@ async def test_run_pipeline_task_not_found():
 
 
 # ── source not found after phase 1 ────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_run_pipeline_source_not_found():
@@ -133,6 +137,7 @@ async def test_run_pipeline_source_not_found():
 
 
 # ── successful pipeline execution ──────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_run_pipeline_success():
@@ -203,6 +208,7 @@ async def test_run_pipeline_success():
 
 # ── failed pipeline execution ──────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_run_pipeline_failure_recorded():
     """When pipeline fails, result dict has success=False and error message."""
@@ -254,14 +260,12 @@ async def test_run_pipeline_failure_recorded():
 
 # ── run_scheduled_pipeline ─────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_run_scheduled_pipeline_success():
     """run_scheduled_pipeline creates a task, runs pipeline, and returns outcome."""
-    from backend.pipeline.runner import run_scheduled_pipeline
 
     task = _make_task()
-    source = _make_source()
-    pipeline_result = _make_pipeline_result(success=True)
 
     # Mock schedule object
     mock_schedule = MagicMock()
@@ -282,21 +286,71 @@ async def test_run_scheduled_pipeline_success():
     task.id = "task-sched-1"
 
     # Phase 2: run_collection_pipeline is mocked entirely
-    with patch("backend.pipeline.runner.AsyncSessionLocal",
-               return_value=make_session_cm(session1)):
-        with patch("backend.services.task_service.create_task",
-                   new_callable=AsyncMock, return_value=task):
-            with patch("backend.pipeline.runner.run_collection_pipeline",
-                       new_callable=AsyncMock, return_value={"success": True, "task_id": "task-sched-1"}):
+    with patch("backend.pipeline.runner.AsyncSessionLocal", return_value=make_session_cm(session1)):
+        with patch(
+            "backend.services.task_service.create_task", new_callable=AsyncMock, return_value=task
+        ):
+            with patch(
+                "backend.pipeline.runner.run_collection_pipeline",
+                new_callable=AsyncMock,
+                return_value={"success": True, "task_id": "task-sched-1"},
+            ):
                 result = await run_scheduled_pipeline("sched-1", "src-1", {})
 
     assert result.get("success") is True
 
 
 @pytest.mark.asyncio
+async def test_scheduled_retry_reuses_existing_occurrence_task():
+    existing_task = _make_task()
+    existing_task.id = "occurrence-1"
+    existing_task.source_id = "src-1"
+    existing_task.trigger_type = "scheduled"
+    existing_task.status = "failed"
+
+    schedule = MagicMock(agent_id=None, is_one_time=False)
+    schedule_result = MagicMock()
+    schedule_result.scalar_one_or_none.return_value = schedule
+    session = AsyncMock()
+    session.execute.return_value = schedule_result
+    session.scalar.return_value = existing_task
+
+    with (
+        patch(
+            "backend.pipeline.runner.AsyncSessionLocal",
+            return_value=make_session_cm(session),
+        ),
+        patch(
+            "backend.services.task_service.create_task",
+            new_callable=AsyncMock,
+        ) as create_task,
+        patch(
+            "backend.pipeline.runner.run_collection_pipeline",
+            new_callable=AsyncMock,
+            return_value={"success": True},
+        ) as run_pipeline,
+    ):
+        await run_scheduled_pipeline(
+            "sched-1",
+            "src-1",
+            {},
+            occurrence_id="occurrence-1",
+            celery_task_id="occurrence-1",
+            worker_id="worker-1",
+        )
+
+    create_task.assert_not_awaited()
+    run_pipeline.assert_awaited_once_with(
+        "occurrence-1",
+        {},
+        celery_task_id="occurrence-1",
+        worker_id="worker-1",
+    )
+
+
+@pytest.mark.asyncio
 async def test_run_scheduled_pipeline_one_time_disables_schedule():
     """One-time schedule is disabled after execution."""
-    from backend.pipeline.runner import run_scheduled_pipeline
 
     task = _make_task()
     task.id = "task-sched-2"
@@ -310,41 +364,30 @@ async def test_run_scheduled_pipeline_one_time_disables_schedule():
     mock_scalar_result = MagicMock()
     mock_scalar_result.scalar_one_or_none = MagicMock(return_value=mock_schedule)
 
-    # Session for creating task and marking last_run_at
+    # Session for creating the durable occurrence and consuming the one-time schedule
     session1 = AsyncMock()
     session1.execute = AsyncMock(return_value=mock_scalar_result)
     session1.commit = AsyncMock()
 
-    # Session for disabling one-time schedule
-    session2 = AsyncMock()
-    mock_scalar_disable = MagicMock()
-    mock_schedule_copy = MagicMock()
-    mock_schedule_copy.enabled = True
-    mock_scalar_disable.scalar_one_or_none = MagicMock(return_value=mock_schedule_copy)
-    session2.execute = AsyncMock(return_value=mock_scalar_disable)
-    session2.commit = AsyncMock()
-
-    sessions = [session1, session2]
-
-    with patch("backend.pipeline.runner.AsyncSessionLocal",
-               side_effect=[make_session_cm(s) for s in sessions]):
-        with patch("backend.services.task_service.create_task",
-                   new_callable=AsyncMock, return_value=task):
-            with patch("backend.pipeline.runner.run_collection_pipeline",
-                       new_callable=AsyncMock, return_value={"success": True}):
-                result = await run_scheduled_pipeline("sched-2", "src-1", {})
+    with patch("backend.pipeline.runner.AsyncSessionLocal", return_value=make_session_cm(session1)):
+        with patch(
+            "backend.services.task_service.create_task", new_callable=AsyncMock, return_value=task
+        ):
+            with patch(
+                "backend.pipeline.runner.run_collection_pipeline",
+                new_callable=AsyncMock,
+                return_value={"success": True},
+            ):
+                await run_scheduled_pipeline("sched-2", "src-1", {})
 
     # One-time schedule should have been disabled
-    assert mock_schedule_copy.enabled is False
+    assert mock_schedule.enabled is False
 
 
 @pytest.mark.asyncio
 async def test_run_pipeline_source_not_found_marks_task_and_run():
     """When source not found, task and run records are marked failed (lines 66-70)."""
     task = _make_task()
-    run = _make_run()
-
-    added_run = run
 
     def capture_add(obj):
         obj.id = "run-1"
@@ -443,9 +486,17 @@ async def test_run_pipeline_with_agent_id():
 
     with patch(
         "backend.pipeline.runner.AsyncSessionLocal",
-        side_effect=[make_session_cm(session1), make_session_cm(session2), make_session_cm(session3)],
+        side_effect=[
+            make_session_cm(session1),
+            make_session_cm(session2),
+            make_session_cm(session3),
+        ],
     ):
-        with patch("backend.pipeline.runner.run_pipeline", new_callable=AsyncMock, return_value=pipeline_result):
+        with patch(
+            "backend.pipeline.runner.run_pipeline",
+            new_callable=AsyncMock,
+            return_value=pipeline_result,
+        ):
             result = await run_collection_pipeline("task-1", {})
 
     assert result["success"] is True
@@ -519,7 +570,11 @@ async def test_run_pipeline_agent_processor_config_overrides_provider_base():
 
     with patch(
         "backend.pipeline.runner.AsyncSessionLocal",
-        side_effect=[make_session_cm(session1), make_session_cm(session2), make_session_cm(session3)],
+        side_effect=[
+            make_session_cm(session1),
+            make_session_cm(session2),
+            make_session_cm(session3),
+        ],
     ):
         with patch("backend.pipeline.runner.run_pipeline", side_effect=fake_run_pipeline):
             result = await run_collection_pipeline("task-1", {})
@@ -536,6 +591,7 @@ async def test_run_pipeline_agent_processor_config_overrides_provider_base():
 
 
 # ── GOAL-4 PR-B: retryable run_pipeline failure records then re-propagates ──────
+
 
 @pytest.mark.asyncio
 async def test_run_pipeline_retryable_failure_marks_failed_then_reraises():

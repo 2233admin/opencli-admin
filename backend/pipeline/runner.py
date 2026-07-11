@@ -67,16 +67,23 @@ async def run_collection_pipeline(
     # Emit trigger event after committing the run row
     if run_id and source_id:
         await events.emit(
-            run_id, "trigger",
+            run_id,
+            "trigger",
             f"任务触发 | 方式={trigger_type} 数据源ID={source_id}",
             detail={"trigger_type": trigger_type, "source_id": source_id},
         )
 
-    logger.info("[task:%s] phase1 done | run_id=%s source_id=%s merged_params=%s",
-                task_id, run_id, source_id, merged_params)
+    logger.info(
+        "[task:%s] phase1 done | run_id=%s source_id=%s merged_params=%s",
+        task_id,
+        run_id,
+        source_id,
+        merged_params,
+    )
 
     # ── Phase 2: load source + agent config (read-only, no write lock) ───────
     from backend.models.source import DataSource
+
     async with AsyncSessionLocal() as session:
         source = await session.get(DataSource, source_id)
         if not source:
@@ -96,6 +103,7 @@ async def run_collection_pipeline(
         if agent_id:
             from backend.models.agent import AIAgent
             from backend.models.provider import ModelProvider
+
             agent = await session.get(AIAgent, agent_id)
             if agent and agent.enabled:
                 # Start with provider credentials (if linked), then overlay agent's own config
@@ -120,6 +128,7 @@ async def run_collection_pipeline(
         # generic enrichment prompt. So configuring a provider is enough — no per-agent setup.
         if agent_config is None:
             from backend.models.provider import ModelProvider
+
             result = await session.execute(
                 select(ModelProvider)
                 .where(ModelProvider.enabled.is_(True))
@@ -139,14 +148,22 @@ async def run_collection_pipeline(
                     "prompt_template": DEFAULT_ENRICH_PROMPT,
                     **cfg,
                 }
-                logger.info("[task:%s] auto default agent | provider=%s model=%s",
-                            task_id, provider.name, provider.default_model)
+                logger.info(
+                    "[task:%s] auto default agent | provider=%s model=%s",
+                    task_id,
+                    provider.name,
+                    provider.default_model,
+                )
 
         # Detach source from session so it can be used after session closes
         session.expunge(source)
-    logger.info("[task:%s] phase2 done | source=%s channel=%s agent_config=%s",
-                task_id, source.name, source.channel_type,
-                {k: v for k, v in (agent_config or {}).items() if k != "prompt_template"})
+    logger.info(
+        "[task:%s] phase2 done | source=%s channel=%s agent_config=%s",
+        task_id,
+        source.name,
+        source.channel_type,
+        {k: v for k, v in (agent_config or {}).items() if k != "prompt_template"},
+    )
 
     # ── Phase 3: run pipeline (no session held during collection) ─────────────
     # Hold a per-domain slot for the run so the fleet stays polite to a site even
@@ -236,9 +253,13 @@ async def run_collection_pipeline(
     logger.info(
         "[task:%s] pipeline done | success=%s collected=%d stored=%d skipped=%d "
         "ai=%d duration_ms=%d error=%s",
-        task_id, pipeline_result.success, pipeline_result.collected,
-        pipeline_result.stored, pipeline_result.skipped,
-        pipeline_result.ai_processed, pipeline_result.duration_ms,
+        task_id,
+        pipeline_result.success,
+        pipeline_result.collected,
+        pipeline_result.stored,
+        pipeline_result.skipped,
+        pipeline_result.ai_processed,
+        pipeline_result.duration_ms,
         pipeline_result.error,
     )
 
@@ -275,7 +296,8 @@ async def run_collection_pipeline(
             # that outcome, so any surprise here is logged, never raised.
             logger.exception(
                 "[task:%s] dataflow trigger raised unexpectedly | source_id=%s",
-                task_id, source_id,
+                task_id,
+                source_id,
             )
 
     return {
@@ -293,42 +315,59 @@ async def run_scheduled_pipeline(
     schedule_id: str,
     source_id: str,
     parameters: dict,
+    *,
+    occurrence_id: str | None = None,
+    celery_task_id: str | None = None,
+    worker_id: str | None = None,
 ) -> dict:
-    """Create CollectionTask for a scheduled run, run pipeline, auto-disable if one-time."""
+    """Create or resume one scheduled occurrence and run its pipeline.
+
+    Celery keeps its request ID across retries. Using it as ``occurrence_id``
+    makes task creation idempotent while allowing a new TaskRun for each
+    execution attempt.
+    """
     from backend.models.schedule import CronSchedule
     from backend.services import task_service
 
     is_one_time = False
     async with AsyncSessionLocal() as session:
-        result = await session.execute(
-            select(CronSchedule).where(CronSchedule.id == schedule_id)
-        )
+        result = await session.execute(select(CronSchedule).where(CronSchedule.id == schedule_id))
         schedule = result.scalar_one_or_none()
         schedule_agent_id = schedule.agent_id if schedule else None
 
-        task = await task_service.create_task(
-            session,
-            source_id=source_id,
-            trigger_type="scheduled",
-            parameters=parameters,
-            agent_id=schedule_agent_id,
-        )
-        if schedule:
+        task = None
+        if occurrence_id is not None:
+            task = await session.scalar(
+                select(CollectionTask).where(CollectionTask.id == occurrence_id)
+            )
+            if task is not None and (
+                task.source_id != source_id or task.trigger_type != "scheduled"
+            ):
+                raise RuntimeError("Scheduled occurrence ID is already bound to another task")
+
+        if task is None:
+            task = await task_service.create_task(
+                session,
+                source_id=source_id,
+                trigger_type="scheduled",
+                parameters=parameters,
+                agent_id=schedule_agent_id,
+                task_id=occurrence_id,
+            )
+        if schedule and task.status == "pending":
             schedule.last_run_at = datetime.now(UTC)
             is_one_time = schedule.is_one_time
+            if is_one_time:
+                # A one-time schedule is consumed when its occurrence is
+                # durably created, not after execution, so a post-run database
+                # failure cannot dispatch the same schedule again.
+                schedule.enabled = False
         await session.commit()
         task_id = task.id
 
-    outcome = await run_collection_pipeline(task_id, parameters)
-
-    if is_one_time:
-        async with AsyncSessionLocal() as session:
-            res = await session.execute(
-                select(CronSchedule).where(CronSchedule.id == schedule_id)
-            )
-            sched = res.scalar_one_or_none()
-            if sched:
-                sched.enabled = False
-                await session.commit()
-
-    return outcome
+    return await run_collection_pipeline(
+        task_id,
+        parameters,
+        celery_task_id=celery_task_id,
+        worker_id=worker_id,
+    )

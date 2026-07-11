@@ -1,8 +1,9 @@
 """Unit tests for the outbound SSRF guard (backend.security.url_guard)."""
 
 import http.server
+import ssl
 import threading
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
@@ -24,7 +25,37 @@ def _fake_getaddrinfo(ip: str):
     return [(None, None, None, "", (ip, 0))]
 
 
+class _MemoryHTTPSStream:
+    """Minimal httpcore stream for a deterministic HTTPS request."""
+
+    def __init__(self):
+        self._reads = [
+            b"HTTP/1.1 200 OK\r\nContent-Length: 9\r\nConnection: close\r\n\r\npinned-ok",
+            b"",
+        ]
+        self.server_hostname = None
+        self.ssl_context = None
+
+    async def read(self, max_bytes, timeout=None):
+        return self._reads.pop(0)
+
+    async def write(self, buffer, timeout=None):
+        pass
+
+    async def aclose(self):
+        pass
+
+    async def start_tls(self, ssl_context, server_hostname=None, timeout=None):
+        self.ssl_context = ssl_context
+        self.server_hostname = server_hostname
+        return self
+
+    def get_extra_info(self, info):
+        return None
+
+
 # ── scheme validation ────────────────────────────────────────────────────────
+
 
 def test_rejects_file_scheme():
     with pytest.raises(SSRFValidationError, match="scheme"):
@@ -57,6 +88,7 @@ def test_rejects_missing_hostname():
 
 
 # ── raw-IP hosts ─────────────────────────────────────────────────────────────
+
 
 def test_rejects_raw_loopback_ip():
     with pytest.raises(SSRFValidationError, match="non-public"):
@@ -131,6 +163,7 @@ def test_rejects_raw_unspecified_ip():
 
 # ── DNS-resolved hosts ───────────────────────────────────────────────────────
 
+
 def test_rejects_hostname_resolving_to_loopback():
     with patch("socket.getaddrinfo", return_value=_fake_getaddrinfo("127.0.0.1")):
         with pytest.raises(SSRFValidationError, match="non-public"):
@@ -182,6 +215,7 @@ def test_any_resolved_ip_being_private_blocks_multi_a_record_host():
 
 # ── validate_public_url_and_ip ───────────────────────────────────────────────
 
+
 def test_validate_public_url_and_ip_returns_ips():
     with patch("socket.getaddrinfo", return_value=_fake_getaddrinfo("93.184.216.34")):
         url, ips = validate_public_url_and_ip("https://example.com/feed")
@@ -190,6 +224,7 @@ def test_validate_public_url_and_ip_returns_ips():
 
 
 # ── is_ip_blocked ────────────────────────────────────────────────────────────
+
 
 def test_is_ip_blocked_loopback():
     import ipaddress
@@ -204,6 +239,7 @@ def test_is_ip_blocked_public():
 
 
 # ── async wrapper ────────────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_avalidate_public_url_allows_public_host():
@@ -263,7 +299,6 @@ async def test_pinned_backend_dials_validated_ip_not_hostname_dns(monkeypatch):
     server, port = _run_local_http_server()
     try:
         getaddrinfo_calls: list[str] = []
-        original_getaddrinfo = __import__("socket").getaddrinfo
 
         def _tracking_getaddrinfo(host, *args, **kwargs):
             getaddrinfo_calls.append(host)
@@ -303,12 +338,19 @@ async def test_pinned_backend_passes_through_unrelated_hosts_unpinned():
     """A host that doesn't match the pinned hostname (e.g. a proxy CONNECT
     target) is not intercepted — only the guarded hostname is pinned."""
     backend = url_guard._PinnedNetworkBackend("pinned-host.invalid", ["127.0.0.1"])
-    # A totally different, unresolvable host should fail via the *real*
-    # resolver (ConnectError/OSError), never our SSRFValidationError — proving
-    # the pinning logic only intercepts the exact guarded hostname.
-    with pytest.raises(Exception) as exc_info:
-        await backend.connect_tcp("definitely-not-pinned.invalid.example.", 80, timeout=1)
-    assert not isinstance(exc_info.value, SSRFValidationError)
+    expected_stream = object()
+    backend._delegate.connect_tcp = AsyncMock(return_value=expected_stream)
+
+    stream = await backend.connect_tcp("unrelated.example", 80, timeout=1)
+
+    assert stream is expected_stream
+    backend._delegate.connect_tcp.assert_awaited_once_with(
+        "unrelated.example",
+        80,
+        timeout=1,
+        local_address=None,
+        socket_options=None,
+    )
 
 
 @pytest.mark.asyncio
@@ -360,13 +402,27 @@ async def test_guarded_async_client_rejects_transport_kwarg():
 
 
 @pytest.mark.asyncio
-async def test_guarded_async_client_full_request_over_real_https():
-    """End-to-end proof against a real public HTTPS host: the pinned
-    transport preserves TLS SNI/cert verification (a broken pin would either
-    fail the handshake or fail cert verification) while still being pinned —
-    see PinnedAsyncHTTPTransport's docstring for why SNI/cert verification are
-    structurally independent of what IP connect_tcp actually dials."""
-    client, url = await guarded_async_client("https://example.com/", timeout=10)
+async def test_guarded_async_client_https_preserves_host_identity_without_network():
+    """Pinned HTTPS dials the validated IP but keeps hostname-based TLS settings."""
+    with patch("socket.getaddrinfo", return_value=_fake_getaddrinfo("93.184.216.34")):
+        client, url = await guarded_async_client("https://example.com/", timeout=10)
+
+    stream = _MemoryHTTPSStream()
+    backend = client._transport._pool._network_backend
+    backend._delegate.connect_tcp = AsyncMock(return_value=stream)
+
     async with client:
         resp = await client.get(url)
+
     assert resp.status_code == 200
+    assert resp.text == "pinned-ok"
+    backend._delegate.connect_tcp.assert_awaited_once_with(
+        "93.184.216.34",
+        443,
+        timeout=10,
+        local_address=None,
+        socket_options=None,
+    )
+    assert stream.server_hostname == "example.com"
+    assert stream.ssl_context.check_hostname is True
+    assert stream.ssl_context.verify_mode == ssl.CERT_REQUIRED

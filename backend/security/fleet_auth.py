@@ -54,6 +54,10 @@ Migration path (rollout is two independent, order-tolerant steps):
 The MCP server (backend/mcp_server.py) and CLI (backend/cli.py) are HTTP
 *clients* of this API running as separate processes; they read
 ``API_AUTH_TOKEN`` from their own environment and attach the same header.
+
+HTTP callers that also need an OIDC bearer token may send the fleet token in
+``X-API-Token`` and reserve ``Authorization`` for OIDC. WebSocket clients keep
+using the bearer header or query parameter described above.
 """
 
 from __future__ import annotations
@@ -174,7 +178,8 @@ class FleetAuthMiddleware:
             )
             return
 
-        credential = _bearer_credential(Headers(scope=scope))
+        headers = Headers(scope=scope)
+        credential = headers.get("x-api-token", "") or _bearer_credential(headers)
         if credential and _token_matches(credential, token):
             await self.app(scope, receive, send)
             return

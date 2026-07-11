@@ -51,3 +51,35 @@
 - **Cons:** Payload schema changes must update both request-capture assertions and expected transcript evidence.
 - **Context:** Capability/status surfaces remain blocked by default because each run still needs user configuration and upstream projection input, but the backend delivery path is now executable.
 - **Depends on / blocked by:** Future webhook payload schema or notifier security changes.
+
+## Consolidated follow-ups from completed goals
+
+### Activate or remove model-provider failover
+
+- **Status:** `ProviderResolver.resolve_with_fallback()` is implemented and tested but has no production caller.
+- **What:** Either route one explicit provider role through the resolver or remove the unused failover surface.
+- **Why:** Defaults and cooldown currently imply runtime failover that the application does not perform.
+
+### Live-test the model-provider UI
+
+- **Status:** Type checking, linting, and production build passed; create/edit/delete, sync, connection test, defaults ordering, and toast behavior were not exercised against a live backend.
+- **What:** Run one focused full-stack acceptance pass and record or fix the observed result.
+- **Why:** Compile-time checks do not validate mutation wiring or response handling.
+
+### Expand Browser Act support only from real demand
+
+- **Status:** 78 vendored packs exist, but only 2 have manifests; the interpreter does not URL-encode parameters or model arithmetic pagination.
+- **What:** Add manifests and interpreter features when onboarding a concrete pack, starting with correct URL encoding for any URL-bound parameter.
+- **Why:** Bulk-promising support for every vendored pack would overstate runtime capability; demand-led onboarding keeps each claim testable.
+
+### Execute capability probes
+
+- **Status:** Capability manifests expose probe names, but the workflow capability layer does not execute richer runtime probes.
+- **What:** Add probe execution when a concrete capability needs environment-level readiness evidence.
+- **Why:** A declared probe name alone cannot prove that a capability is runnable in the current deployment.
+
+### Add guarded production tool executors
+
+- **Status:** `workflow.external-tool.capability` accepts only the deterministic fixture executor seam.
+- **What:** Add a real executor adapter only when onboarding the first production external Tool Capability.
+- **Why:** Imported tools should remain blocked until a guarded, observable executor exists; speculative adapters are unnecessary.

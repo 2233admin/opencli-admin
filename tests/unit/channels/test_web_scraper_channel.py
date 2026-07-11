@@ -14,6 +14,13 @@ def channel():
     return WebScraperChannel()
 
 
+@pytest.fixture(autouse=True)
+def _public_dns():
+    """Let mocked HTTP calls pass the real SSRF validation deterministically."""
+    with patch("socket.getaddrinfo", return_value=[(None, None, None, "", ("93.184.216.34", 0))]):
+        yield
+
+
 SAMPLE_HTML = """
 <html>
 <body>
@@ -52,6 +59,7 @@ def _make_mock_client(response):
 
 # ── validate_config ────────────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_validate_config_missing_url(channel):
     errors = await channel.validate_config({"selectors": {"title": "h1"}})
@@ -66,10 +74,12 @@ async def test_validate_config_missing_selectors(channel):
 
 @pytest.mark.asyncio
 async def test_validate_config_valid(channel):
-    errors = await channel.validate_config({
-        "url": "https://example.com",
-        "selectors": {"title": "h1"},
-    })
+    errors = await channel.validate_config(
+        {
+            "url": "https://example.com",
+            "selectors": {"title": "h1"},
+        }
+    )
     assert errors == []
 
 
@@ -80,6 +90,7 @@ async def test_validate_config_missing_both(channel):
 
 
 # ── collect: with list_selector ────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_collect_with_list_selector(channel):
@@ -127,6 +138,7 @@ async def test_collect_list_selector_no_matches(channel):
 
 # ── collect: without list_selector ────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_collect_without_list_selector(channel):
     """Without list_selector, extracts a single item from whole page."""
@@ -168,6 +180,7 @@ async def test_collect_metadata_includes_url_and_status(channel):
 
 
 # ── collect: error cases ───────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_collect_timeout_returns_fail(channel):
@@ -238,6 +251,7 @@ async def test_collect_generic_exception_returns_fail(channel):
 
 # ── _extract_fields ────────────────────────────────────────────────────────────
 
+
 def test_extract_fields(channel):
     html = "<html><body><h1>Hello World</h1><p class='desc'>Description</p></body></html>"
     soup = BeautifulSoup(html, "lxml")
@@ -302,6 +316,7 @@ async def test_collect_custom_headers_sent(channel):
 
 # ── GOAL-4 PR-D: fetch() thick contract (ctx.http path — rate limit/retry) ──────
 
+
 @pytest.mark.asyncio
 async def test_fetch_uses_shared_client_with_per_request_headers(channel):
     """When ctx.http is present (the runner's RateLimitedClient), headers
@@ -339,7 +354,8 @@ async def test_fetch_raises_channel_fetch_error_on_timeout():
 
     ctx = FetchContext(
         config={"url": "https://example.com", "selectors": {"title": "h1"}},
-        params={}, http=shared_client,
+        params={},
+        http=shared_client,
     )
     with pytest.raises(ChannelFetchError, match="timed out"):
         await channel.fetch(ctx)
@@ -364,6 +380,7 @@ async def test_collect_still_delegates_to_fetch_without_ctx_http(channel):
 
 
 # ── health_check (GOAL-4 PR-E: real per-source probe) ───────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_health_check_no_config_is_parser_liveness_only(channel):
@@ -425,12 +442,20 @@ async def test_collect_cookie_auth_sends_synced_cookies(channel):
     response = _make_mock_response()
     mock_client_ctx = _make_mock_client(response)
 
-    with patch("httpx.AsyncClient", return_value=mock_client_ctx) as ctor, patch(
-        "backend.auth.manager.AuthManager.resolve_cookies",
-        AsyncMock(return_value=[{"name": "session_id", "value": "abc"}]),
-    ) as resolve_cookies:
+    with (
+        patch("httpx.AsyncClient", return_value=mock_client_ctx) as ctor,
+        patch(
+            "backend.auth.manager.AuthManager.resolve_cookies",
+            AsyncMock(return_value=[{"name": "session_id", "value": "abc"}]),
+        ) as resolve_cookies,
+    ):
         result = await channel.collect(
-            {"url": "https://example.com", "selectors": {"title": "h1"}, "auth": {"type": "cookie"}}, {}
+            {
+                "url": "https://example.com",
+                "selectors": {"title": "h1"},
+                "auth": {"type": "cookie"},
+            },
+            {},
         )
 
     resolve_cookies.assert_awaited_once_with("example.com")
@@ -445,9 +470,10 @@ async def test_collect_no_cookie_auth_type_never_calls_resolve_cookies(channel):
     response = _make_mock_response()
     mock_client_ctx = _make_mock_client(response)
 
-    with patch("httpx.AsyncClient", return_value=mock_client_ctx), patch(
-        "backend.auth.manager.AuthManager.resolve_cookies", AsyncMock()
-    ) as resolve_cookies:
+    with (
+        patch("httpx.AsyncClient", return_value=mock_client_ctx),
+        patch("backend.auth.manager.AuthManager.resolve_cookies", AsyncMock()) as resolve_cookies,
+    ):
         await channel.collect({"url": "https://example.com", "selectors": {"title": "h1"}}, {})
 
     resolve_cookies.assert_not_awaited()

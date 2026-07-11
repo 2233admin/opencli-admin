@@ -66,6 +66,15 @@ def _runnable_plan_graph() -> dict:
     }
 
 
+def _installed_tool_version_pin() -> dict:
+    return {
+        "package": "opencli-admin",
+        "packageVersion": "0.1.0",
+        "capabilityVersion": "1.0.0",
+        "provenance": "built-in",
+    }
+
+
 def _cyclic_plan_graph() -> dict:
     """n1 -> n1 self-loop: fails the issue-01 cycle check."""
     return {
@@ -111,6 +120,112 @@ async def test_create_plan(client):
 
 
 @pytest.mark.asyncio
+async def test_create_authoritative_plan_rejects_unpinned_tool_capability(client):
+    graph = _runnable_plan_graph()
+    graph["nodes"][1]["params"] = {
+        "toolCapability": {
+            "id": "tool.search.fixture",
+            "executor": {"mode": "fixture"},
+        }
+    }
+
+    response = await client.post(
+        "/api/v1/plans",
+        json={"name": "Unpinned tool plan", "graph": graph},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == [
+        {
+            "code": "unpinned_tool_capability",
+            "message": (
+                "Node 'n2' must pin the exact package and capability version for "
+                'Tool Capability "tool.search.fixture".'
+            ),
+            "node_id": "n2",
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_create_authoritative_plan_accepts_exact_tool_capability_pin(client):
+    graph = _runnable_plan_graph()
+    graph["nodes"][1]["params"] = {
+        "toolCapability": {
+            "id": "tool.search.fixture",
+            "versionPin": _installed_tool_version_pin(),
+            "executor": {"mode": "fixture"},
+        }
+    }
+
+    response = await client.post(
+        "/api/v1/plans",
+        json={"name": "Pinned tool plan", "graph": graph},
+    )
+
+    assert response.status_code == 201
+    assert response.json()["data"]["runnable"] is True
+
+
+@pytest.mark.asyncio
+async def test_create_authoritative_plan_rejects_unknown_tool_capability(client):
+    graph = _runnable_plan_graph()
+    graph["nodes"][1]["params"] = {
+        "toolCapability": {
+            "id": "tool.unknown",
+            "versionPin": _installed_tool_version_pin(),
+            "executor": {"mode": "fixture"},
+        }
+    }
+
+    response = await client.post(
+        "/api/v1/plans",
+        json={"name": "Unknown tool plan", "graph": graph},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"][0]["code"] == "unknown_tool_capability"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("pin_change", "error_code"),
+    [
+        (
+            {"packageVersion": "0.2.0"},
+            "tool_capability_version_pin_mismatch",
+        ),
+        (
+            {"provenance": "unverified"},
+            "disallowed_tool_capability_provenance",
+        ),
+    ],
+)
+async def test_create_authoritative_plan_rejects_disallowed_tool_pin(
+    client,
+    pin_change,
+    error_code,
+):
+    graph = _runnable_plan_graph()
+    version_pin = {**_installed_tool_version_pin(), **pin_change}
+    graph["nodes"][1]["params"] = {
+        "toolCapability": {
+            "id": "tool.search.fixture",
+            "versionPin": version_pin,
+            "executor": {"mode": "fixture"},
+        }
+    }
+
+    response = await client.post(
+        "/api/v1/plans",
+        json={"name": "Disallowed tool pin", "graph": graph},
+    )
+
+    assert response.status_code == 422
+    assert [error["code"] for error in response.json()["detail"]] == [error_code]
+
+
+@pytest.mark.asyncio
 async def test_get_plan(client):
     create_resp = await client.post(
         "/api/v1/plans", json={"name": "P1", "graph": _runnable_plan_graph()}
@@ -144,9 +259,7 @@ async def test_update_plan_name_only_does_not_bump_version(client):
 
 @pytest.mark.asyncio
 async def test_update_plan_not_found(client):
-    response = await client.patch(
-        "/api/v1/plans/nonexistent-id", json={"name": "renamed"}
-    )
+    response = await client.patch("/api/v1/plans/nonexistent-id", json={"name": "renamed"})
     assert response.status_code == 404
 
 
@@ -173,9 +286,7 @@ async def test_delete_plan_not_found(client):
 @pytest.mark.asyncio
 async def test_list_plans_pagination(client):
     for i in range(3):
-        await client.post(
-            "/api/v1/plans", json={"name": f"P{i}", "graph": _runnable_plan_graph()}
-        )
+        await client.post("/api/v1/plans", json={"name": f"P{i}", "graph": _runnable_plan_graph()})
 
     response = await client.get("/api/v1/plans?page=1&limit=2")
     assert response.status_code == 200
@@ -341,9 +452,7 @@ async def test_update_plan_with_invalid_graph_returns_422_and_does_not_mutate(cl
     )
     plan_id = create_resp.json()["data"]["id"]
 
-    response = await client.patch(
-        f"/api/v1/plans/{plan_id}", json={"graph": _cyclic_plan_graph()}
-    )
+    response = await client.patch(f"/api/v1/plans/{plan_id}", json={"graph": _cyclic_plan_graph()})
     assert response.status_code == 422
 
     unchanged = await client.get(f"/api/v1/plans/{plan_id}")
@@ -370,9 +479,7 @@ async def test_create_plan_missing_required_ir_field_returns_422(client):
 @pytest.mark.asyncio
 async def test_list_plans_filter_by_draft(client):
     await client.post("/api/v1/plans", json={"name": "Draft", "graph": _draft_plan_graph()})
-    await client.post(
-        "/api/v1/plans", json={"name": "Runnable", "graph": _runnable_plan_graph()}
-    )
+    await client.post("/api/v1/plans", json={"name": "Runnable", "graph": _runnable_plan_graph()})
 
     draft_only = await client.get("/api/v1/plans?draft=true")
     assert draft_only.json()["meta"]["total"] == 1

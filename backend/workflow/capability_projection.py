@@ -892,6 +892,7 @@ def _resource_capabilities() -> list[WorkflowRuntimeCapability]:
                 **tool.manifest,
                 "toolCapability": {
                     "id": tool.id,
+                    "versionPin": tool.versionPin.model_dump(),
                     "inputPorts": [port.model_dump() for port in tool.inputPorts],
                     "outputPorts": [port.model_dump() for port in tool.outputPorts],
                     "executor": tool.executor.model_dump(),

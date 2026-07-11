@@ -1,10 +1,10 @@
 """Unit tests for notifier base classes and webhook notifier."""
 
-import json
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from backend.notifiers.base import NotificationPayload
+import pytest
+
+from backend.notifiers.base import NotificationPayload, NotificationSendResult
 from backend.notifiers.registry import get_notifier, list_notifier_types
 from backend.notifiers.webhook_notifier import WebhookNotifier
 
@@ -21,6 +21,7 @@ def test_get_notifier_valid():
 
 def test_get_notifier_invalid():
     from backend.notifiers.registry import get_notifier
+
     with pytest.raises(ValueError):
         get_notifier("nonexistent_notifier")
 
@@ -32,6 +33,11 @@ def test_notification_payload_defaults():
     assert payload.record_id is None
     assert payload.ai_enrichment is None
     assert payload.data == {}
+
+
+def test_notification_send_result_uses_success_for_boolean_compatibility():
+    assert bool(NotificationSendResult(success=True)) is True
+    assert bool(NotificationSendResult(success=False)) is False
 
 
 @pytest.mark.asyncio
@@ -47,8 +53,9 @@ async def test_webhook_notifier_send_success():
     mock_response = MagicMock()
     mock_response.is_success = True
 
-    with patch("httpx.AsyncClient") as mock_client_class, patch(
-        "socket.getaddrinfo", return_value=[(None, None, None, "", ("93.184.216.34", 0))]
+    with (
+        patch("httpx.AsyncClient") as mock_client_class,
+        patch("socket.getaddrinfo", return_value=[(None, None, None, "", ("93.184.216.34", 0))]),
     ):
         mock_client = AsyncMock()
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -61,7 +68,7 @@ async def test_webhook_notifier_send_success():
             payload,
         )
 
-    assert result is True
+    assert result.success is True
 
 
 @pytest.mark.asyncio
@@ -77,8 +84,9 @@ async def test_webhook_notifier_send_with_signature():
         mock_resp.is_success = True
         return mock_resp
 
-    with patch("httpx.AsyncClient") as mock_client_class, patch(
-        "socket.getaddrinfo", return_value=[(None, None, None, "", ("93.184.216.34", 0))]
+    with (
+        patch("httpx.AsyncClient") as mock_client_class,
+        patch("socket.getaddrinfo", return_value=[(None, None, None, "", ("93.184.216.34", 0))]),
     ):
         mock_client = AsyncMock()
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
