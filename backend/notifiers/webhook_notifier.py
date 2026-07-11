@@ -6,7 +6,7 @@ import json
 import time
 from typing import Any
 
-from backend.notifiers.base import AbstractNotifier, NotificationPayload
+from backend.notifiers.base import AbstractNotifier, NotificationPayload, NotificationSendResult
 from backend.notifiers.registry import register_notifier
 from backend.security.url_guard import SSRFValidationError, guarded_async_client
 
@@ -15,7 +15,9 @@ from backend.security.url_guard import SSRFValidationError, guarded_async_client
 class WebhookNotifier(AbstractNotifier):
     notifier_type = "webhook"
 
-    async def send(self, config: dict[str, Any], payload: NotificationPayload) -> bool:
+    async def send(
+        self, config: dict[str, Any], payload: NotificationPayload
+    ) -> NotificationSendResult:
         url: str = config.get("url", "")
         secret: str = config.get("secret", "")
         timeout: int = config.get("timeout", 15)
@@ -33,6 +35,7 @@ class WebhookNotifier(AbstractNotifier):
         body = {
             "event": payload.event,
             "source_id": payload.source_id,
+            "delivery_id": payload.delivery_id,
             "record_id": payload.record_id,
             "data": payload.data,
             "ai_enrichment": payload.ai_enrichment,
@@ -50,4 +53,10 @@ class WebhookNotifier(AbstractNotifier):
         # loopback/fleet address (SSRF via redirect).
         async with client as opened_client:
             response = await opened_client.post(url, content=body_bytes, headers=headers)
-            return response.is_success
+            return NotificationSendResult(
+                success=response.is_success,
+                response_data={
+                    "status_code": response.status_code,
+                    "body": response.text[:1000],
+                },
+            )

@@ -5,8 +5,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.models.notification import NotificationLog, NotificationRule
 from backend.models.record import CollectedRecord
-from backend.notifiers.base import NotificationPayload
+from backend.notifiers.base import NotificationPayload, NotificationSendResult
 from backend.notifiers.registry import get_notifier
+
+
+def _ack_secret(config: dict) -> str:
+    return str(config.get("ack_secret") or "")
+
+
+def _normalize_send_result(result: bool | NotificationSendResult) -> tuple[bool, dict | None]:
+    if isinstance(result, NotificationSendResult):
+        return result.success, result.response_data
+    return bool(result), None
 
 
 async def dispatch_notifications(
@@ -36,25 +46,36 @@ async def dispatch_notifications(
             continue
 
         for record in records:
+            log = NotificationLog(
+                rule_id=rule.id,
+                record_id=record.id,
+                status="pending",
+                ack_status="not_required",
+            )
+            session.add(log)
+            await session.flush()
+
             payload = NotificationPayload(
                 event=trigger_event,
                 source_id=source_id,
+                delivery_id=log.id,
                 record_id=record.id,
                 data=record.normalized_data,
                 ai_enrichment=record.ai_enrichment,
             )
             try:
-                success = await notifier.send(rule.notifier_config, payload)
+                success, response_data = _normalize_send_result(
+                    await notifier.send(rule.notifier_config, payload)
+                )
                 status = "sent" if success else "failed"
                 error_msg = None
             except Exception as exc:
                 status = "failed"
+                response_data = None
                 error_msg = str(exc)
 
-            log = NotificationLog(
-                rule_id=rule.id,
-                record_id=record.id,
-                status=status,
-                error_message=error_msg,
-            )
-            session.add(log)
+            log.status = status
+            log.response_data = response_data
+            log.error_message = error_msg
+            if status == "sent" and _ack_secret(rule.notifier_config):
+                log.ack_status = "pending"

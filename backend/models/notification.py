@@ -1,6 +1,6 @@
-from typing import Optional
+from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, ForeignKey, String, Text
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.models.base import TimestampMixin
@@ -13,7 +13,7 @@ class NotificationRule(TimestampMixin):
 
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     # Source filter: null means all sources
-    source_id: Mapped[Optional[str]] = mapped_column(
+    source_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("data_sources.id", ondelete="SET NULL"), nullable=True
     )
     # Trigger: on_new_record | on_ai_processed | on_task_failed
@@ -22,7 +22,7 @@ class NotificationRule(TimestampMixin):
     notifier_type: Mapped[str] = mapped_column(String(50), nullable=False)
     notifier_config: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     # Optional filter conditions as JSON logic
-    filter_conditions: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    filter_conditions: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     logs: Mapped[list["NotificationLog"]] = relationship(
@@ -38,10 +38,14 @@ class NotificationLog(TimestampMixin):
     rule_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("notification_rules.id", ondelete="CASCADE"), nullable=False
     )
-    record_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    record_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     # sent | failed
     status: Mapped[str] = mapped_column(String(50), nullable=False)
-    response_data: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
-    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    response_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # not_required | pending | acked | failed
+    ack_status: Mapped[str] = mapped_column(String(50), nullable=False, default="not_required")
+    ack_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    acked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     rule: Mapped["NotificationRule"] = relationship("NotificationRule", back_populates="logs")
