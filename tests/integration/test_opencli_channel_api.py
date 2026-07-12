@@ -13,6 +13,7 @@ module-level AsyncSessionLocal), so we avoid the trigger→poll approach.
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -22,6 +23,10 @@ def _make_subprocess_mock(stdout: str = '[{"title":"result1"}]'):
     proc.communicate = AsyncMock(return_value=(stdout.encode(), b""))
     proc.kill = MagicMock()
     return proc
+
+
+def _sessionmaker(db_engine):
+    return async_sessionmaker(db_engine, class_=AsyncSession, expire_on_commit=False)
 
 
 def _pool_mock(mode: str = "bridge"):
@@ -186,7 +191,7 @@ async def test_collect_without_positional_args_backward_compat(
 
 @pytest.mark.asyncio
 async def test_collect_agent_mode_passes_positional_args_to_dispatch(
-    client, opencli_source_payload
+    client, db_engine, opencli_source_payload
 ):
     """In HTTP agent mode, positional_args is forwarded to _collect_via_agent."""
     from backend.browser_pool import LocalBrowserPool
@@ -219,6 +224,7 @@ async def test_collect_agent_mode_passes_positional_args_to_dispatch(
         ),
         patch("backend.browser_pool.get_pool", return_value=agent_pool),
         patch("backend.config.get_settings", return_value=_settings_mock("agent")),
+        patch("backend.database.AsyncSessionLocal", _sessionmaker(db_engine)),
     ):
         channel = OpenCLIChannel()
         result = await channel.collect(cfg, {})
