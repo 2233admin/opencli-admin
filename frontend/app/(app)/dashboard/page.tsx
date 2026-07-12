@@ -141,24 +141,24 @@ function SystemPulse({
   return (
     <section className="relative overflow-hidden rounded-xl border border-white/10 bg-[#0c1110] text-white">
       <div className="absolute inset-0 opacity-[0.14] [background-image:linear-gradient(rgba(255,255,255,0.12)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.12)_1px,transparent_1px)] [background-size:24px_24px]" />
-      <div className="relative grid gap-4 p-4 sm:grid-cols-[1fr_auto] sm:items-center sm:px-5">
+      <div className="relative grid gap-3 px-4 py-3.5 sm:grid-cols-[1fr_auto] sm:items-center sm:px-5 lg:grid-cols-[minmax(220px,0.8fr)_minmax(360px,1.35fr)_auto] lg:gap-5">
         <div className="min-w-0">
           <div className={`flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.18em] ${pulseState.tone}`}>
             <Radio className="size-3.5" aria-hidden />
             {pulseState.label}
           </div>
-          <p className="mt-1.5 text-xs text-white/45">
+          <p className="mt-1 text-[11px] leading-4 text-white/45">
             {pulseState.description}
           </p>
-          <div className="mt-3 flex max-w-xl divide-x divide-white/10 border-t border-white/10 pt-3">
-            <PulseMetric label="节点在线" value={`${online}/${workers.length}`} tone="text-white/90" />
-            <PulseMetric label="平均负载" value={`${averageLoad}%`} tone={averageLoad >= 75 ? 'text-amber-300' : 'text-white/90'} />
-            <PulseMetric label="待处理 / 异常" value={`${queueDepth} / ${failures.length}`} tone={failures.length ? 'text-amber-300' : 'text-white/90'} />
-          </div>
         </div>
-        <div className="min-w-[190px] justify-self-end text-right">
+        <div className="col-span-full flex min-w-0 divide-x divide-white/10 border-t border-white/10 pt-3 sm:col-span-1 sm:row-start-2 lg:col-span-1 lg:row-start-auto lg:border-l lg:border-t-0 lg:py-1 lg:pl-5">
+          <PulseMetric label="节点在线" value={`${online}/${workers.length}`} tone="text-white/90" />
+          <PulseMetric label="平均负载" value={`${averageLoad}%`} tone={averageLoad >= 75 ? 'text-amber-300' : 'text-white/90'} />
+          <PulseMetric label="待处理 / 异常" value={`${queueDepth} / ${failures.length}`} tone={failures.length ? 'text-amber-300' : 'text-white/90'} />
+        </div>
+        <div className="min-w-[230px] justify-self-end text-right sm:row-span-2 lg:row-span-1">
           <MatrixClock />
-          <div className="font-mono text-[8px] uppercase tracking-[0.2em] text-white/25">Local time</div>
+          <div className="mt-0.5 font-mono text-[8px] uppercase tracking-[0.22em] text-white/25">Local time</div>
         </div>
       </div>
     </section>
@@ -169,7 +169,7 @@ function PulseMetric({ label, value, tone }: { label: string; value: string; ton
   return (
     <div className="min-w-0 flex-1 px-3 first:pl-0 last:pr-0">
       <div className="font-mono text-[9px] uppercase tracking-[0.16em] text-white/40">{label}</div>
-      <div className={`mt-1 font-mono text-base tracking-[-0.04em] tabular-nums sm:text-lg ${tone}`}>{value}</div>
+      <div className={`mt-0.5 font-mono text-base tracking-[-0.04em] tabular-nums sm:text-lg ${tone}`}>{value}</div>
     </div>
   )
 }

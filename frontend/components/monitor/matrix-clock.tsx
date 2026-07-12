@@ -19,13 +19,13 @@ const DIGITS = [
 
 function PixelDigit({ value }: { value: number }) {
   return (
-    <span className="grid grid-cols-3 gap-0.5" aria-hidden>
+    <span className="grid grid-cols-3 gap-[3px]" aria-hidden>
       {DIGITS[value].flatMap((row, rowIndex) =>
         [...row].map((pixel, columnIndex) => (
           <span
             key={`${rowIndex}-${columnIndex}`}
             className={cn(
-              'size-[clamp(4px,0.55vw,6px)] rounded-full',
+              'size-[clamp(6px,0.7vw,8px)] rounded-full',
               pixel === '1'
                 ? 'bg-white shadow-[0_0_7px_rgba(255,255,255,0.5)]'
                 : 'bg-white/10',
@@ -39,9 +39,9 @@ function PixelDigit({ value }: { value: number }) {
 
 function Separator() {
   return (
-    <span className="flex h-full flex-col justify-center gap-1.5" aria-hidden>
-      <span className="size-1 rounded-full bg-white shadow-[0_0_6px_rgba(255,255,255,0.5)]" />
-      <span className="size-1 rounded-full bg-white shadow-[0_0_6px_rgba(255,255,255,0.5)]" />
+    <span className="flex h-full flex-col justify-center gap-2" aria-hidden>
+      <span className="size-1.5 rounded-full bg-white shadow-[0_0_7px_rgba(255,255,255,0.5)]" />
+      <span className="size-1.5 rounded-full bg-white shadow-[0_0_7px_rgba(255,255,255,0.5)]" />
     </span>
   )
 }
@@ -60,7 +60,7 @@ export function MatrixClock() {
   const digits = now ? time.replaceAll(':', '').split('').map(Number) : []
 
   return (
-    <div className="flex min-h-12 items-center gap-2" role="timer" aria-label={now ? `当前时间 ${time}` : '正在同步时间'}>
+    <div className="flex min-h-16 items-center justify-end gap-2.5" role="timer" aria-label={now ? `当前时间 ${time}` : '正在同步时间'}>
       {digits.length === 6 ? (
         digits.map((digit, index) => (
           <span key={index} className="contents">

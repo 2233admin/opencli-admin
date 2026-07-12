@@ -13,7 +13,8 @@
 
 ## Browser / Visual Checks
 
-- 1440×900: pass; strip is 1136×142 and the clock is readable at the right edge.
+- Desktop target: three-zone single-line layout activates at 1024px content width; clock pixels scale up to 8px.
+- 828px browser viewport: pass; strip is 522×147, clock is 230×64 with 6px pixels, and there is no horizontal overflow.
 - 390×844: pass; strip stacks to 358×214 with no horizontal overflow.
 - Actual state label observed: `系统运行正常`.
 - Evidence: `C:/Users/Administrator/AppData/Local/Temp/system-pulse-desktop.png`.
