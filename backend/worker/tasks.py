@@ -141,6 +141,7 @@ async def _send_notification_async(rule_id: str, record_id: str) -> dict:
     from backend.models.record import CollectedRecord
     from backend.notifiers.base import NotificationPayload
     from backend.notifiers.registry import get_notifier
+    from backend.pipeline.notifier_dispatch import _normalize_send_result
 
     async with AsyncSessionLocal() as session:
         rule_result = await session.execute(
@@ -165,5 +166,5 @@ async def _send_notification_async(rule_id: str, record_id: str) -> dict:
             data=record.normalized_data,
             ai_enrichment=record.ai_enrichment,
         )
-        success = await notifier.send(rule.notifier_config, payload)
+        success, _ = _normalize_send_result(await notifier.send(rule.notifier_config, payload))
         return {"success": success, "rule_id": rule_id, "record_id": record_id}

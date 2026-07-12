@@ -6,6 +6,7 @@ from typing import Any
 
 from backend.notifiers.base import NotificationPayload
 from backend.notifiers.registry import get_notifier
+from backend.pipeline.notifier_dispatch import _normalize_send_result
 
 WEBHOOK_DELIVERY_EVENT = "workflow.evidence_batch.ready"
 WEBHOOK_DELIVERY_PAYLOAD_SCHEMA = "workflow.webhook.evidence_batch.v1"
@@ -44,7 +45,7 @@ async def execute_workflow_webhook_delivery(
         },
     )
 
-    delivered = await get_notifier("webhook").send(config, payload)
+    delivered, _ = _normalize_send_result(await get_notifier("webhook").send(config, payload))
     if not delivered:
         raise WorkflowWebhookDeliveryError(
             code="webhook_delivery_failed",

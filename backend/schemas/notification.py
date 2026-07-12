@@ -1,37 +1,38 @@
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
+
 from backend.schemas.common import UTCModel
 
 
 class NotificationRuleCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
-    source_id: Optional[str] = None
+    source_id: str | None = None
     trigger_event: str
     notifier_type: str
     notifier_config: dict[str, Any] = Field(default_factory=dict)
-    filter_conditions: Optional[dict[str, Any]] = None
+    filter_conditions: dict[str, Any] | None = None
     enabled: bool = True
 
 
 class NotificationRuleUpdate(BaseModel):
-    name: Optional[str] = None
-    trigger_event: Optional[str] = None
-    notifier_type: Optional[str] = None
-    notifier_config: Optional[dict[str, Any]] = None
-    filter_conditions: Optional[dict[str, Any]] = None
-    enabled: Optional[bool] = None
+    name: str | None = None
+    trigger_event: str | None = None
+    notifier_type: str | None = None
+    notifier_config: dict[str, Any] | None = None
+    filter_conditions: dict[str, Any] | None = None
+    enabled: bool | None = None
 
 
 class NotificationRuleRead(UTCModel):
     id: str
     name: str
-    source_id: Optional[str]
+    source_id: str | None
     trigger_event: str
     notifier_type: str
     notifier_config: dict[str, Any]
-    filter_conditions: Optional[dict[str, Any]]
+    filter_conditions: dict[str, Any] | None
     enabled: bool
     created_at: datetime
     updated_at: datetime
@@ -42,10 +43,18 @@ class NotificationRuleRead(UTCModel):
 class NotificationLogRead(UTCModel):
     id: str
     rule_id: str
-    record_id: Optional[str]
+    record_id: str | None
     status: str
-    response_data: Optional[dict[str, Any]]
-    error_message: Optional[str]
+    response_data: dict[str, Any] | None
+    error_message: str | None
+    ack_status: str
+    ack_data: dict[str, Any] | None
+    acked_at: datetime | None
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class NotificationAckRequest(BaseModel):
+    status: Literal["acked", "failed"]
+    ack_data: dict[str, Any] = Field(default_factory=dict)
