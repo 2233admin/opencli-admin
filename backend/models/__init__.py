@@ -20,7 +20,15 @@ from backend.models.source_credential import SourceCredential
 from backend.models.source_cursor import SourceCursor
 from backend.models.source_measurement import SourceMeasurement
 from backend.models.task import CollectionTask, TaskRun, TaskRunEvent
+from backend.models.validation_run import ValidationRun
 from backend.models.worker import WorkerNode
+from backend.models.workflow_authoring import (
+    Project,
+    Workspace,
+    WorkspaceSettings,
+    WorkflowDraft,
+    WorkflowVersion,
+)
 from backend.models.workflow_run import WorkflowRun, WorkflowRunEvent
 
 __all__ = [
@@ -54,4 +62,10 @@ __all__ = [
     "WorkerNode",
     "WorkflowRun",
     "WorkflowRunEvent",
+    "Workspace",
+    "WorkspaceSettings",
+    "Project",
+    "WorkflowDraft",
+    "WorkflowVersion",
+    "ValidationRun",
 ]

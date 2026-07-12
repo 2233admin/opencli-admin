@@ -81,6 +81,29 @@ def _valid_workflow_project() -> dict:
     }
 
 
+def _nested_package_project(levels: int) -> dict:
+    def node_at(index: int) -> dict:
+        if index > levels:
+            return {
+                "id": f"leaf{index}",
+                "kind": "agent",
+                "capability": "normalize",
+                "params": {"language": "zh-CN"},
+            }
+        return {
+            "id": f"pkg{index}",
+            "kind": "agent",
+            "capability": "normalize",
+            "params": {"language": "zh-CN"},
+            "internals": {"nodes": [node_at(index + 1)], "edges": []},
+        }
+
+    project = _valid_workflow_project()
+    project["nodes"] = [node_at(1)]
+    project["edges"] = []
+    return project
+
+
 def _opencli_workflow_project() -> dict:
     project = _valid_workflow_project()
     project["nodes"][0] = {
@@ -854,6 +877,57 @@ async def test_compile_rejects_invalid_package_parameter_binding(client):
         "limit",
         "binding",
     ]
+
+
+@pytest.mark.asyncio
+async def test_compile_expands_two_level_nested_package(client):
+    project = _nested_package_project(2)
+
+    response = await client.post("/api/v1/workflows/compile", json={"project": project})
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["valid"] is True
+    runtime = data["plan"]["runtime"]
+    assert runtime["node_ids"] == ["pkg1", "pkg1::pkg2", "pkg1::pkg2::leaf3"]
+    assert runtime["edges"] == []
+    nodes_by_id = {node["id"]: node for node in runtime["nodes"]}
+    assert nodes_by_id["pkg1::pkg2"]["depends_on"] == ["pkg1"]
+    assert nodes_by_id["pkg1::pkg2::leaf3"]["depends_on"] == ["pkg1::pkg2"]
+    assert nodes_by_id["pkg1::pkg2::leaf3"]["runtime"]["package_parent_id"] == "pkg1::pkg2"
+
+
+@pytest.mark.asyncio
+async def test_compile_accepts_package_nesting_at_max_depth(client):
+    project = _nested_package_project(16)
+
+    response = await client.post("/api/v1/workflows/compile", json={"project": project})
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["valid"] is True
+    node_ids = data["plan"]["runtime"]["node_ids"]
+    assert len(node_ids) == 17
+    assert node_ids[-1] == "::".join([f"pkg{i}" for i in range(1, 17)] + ["leaf17"])
+
+
+@pytest.mark.asyncio
+async def test_compile_rejects_package_nesting_beyond_max_depth(client):
+    project = _nested_package_project(17)
+
+    response = await client.post("/api/v1/workflows/compile", json={"project": project})
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["valid"] is False
+    errors = [
+        error for error in data["errors"] if error["code"] == "package_nesting_limit_exceeded"
+    ]
+    assert len(errors) == 1
+    expected_node_id = "::".join([f"pkg{i}" for i in range(1, 18)])
+    assert errors[0]["node_id"] == expected_node_id
+    assert errors[0]["path"][:2] == ["nodes", "pkg1"]
+    assert errors[0]["path"][-1] == "internals"
 
 
 @pytest.mark.asyncio

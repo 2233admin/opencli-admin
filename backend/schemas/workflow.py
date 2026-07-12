@@ -239,7 +239,7 @@ class WorkflowDemandDraftRequest(BaseModel):
     locale: Optional[str] = None
 
 
-ExternalWorkflowRuntime = Literal["langgraph", "langchain"]
+ExternalWorkflowRuntime = Literal["langgraph", "langchain", "dify", "n8n"]
 
 
 class WorkflowExternalImportRequest(BaseModel):

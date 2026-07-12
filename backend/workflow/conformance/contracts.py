@@ -120,6 +120,20 @@ def match_expected_events(
     )
 
 
+def build_runtime_passport(
+    case_results: list[ConformanceCaseResult],
+    *,
+    status: Literal["conformant", "partial", "preview-only", "failed"] | None = None,
+) -> RuntimePassport:
+    return RuntimePassport(
+        generatedAt=datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+        status=status
+        or ("failed" if any(case.status == "failed" for case in case_results) else "partial"),
+        cases=case_results,
+        bindings=_binding_evidence(case_results),
+    )
+
+
 def write_runtime_passport(
     artifact_dir: Path,
     case_results: list[ConformanceCaseResult],
@@ -127,13 +141,7 @@ def write_runtime_passport(
     status: Literal["conformant", "partial", "preview-only", "failed"] | None = None,
 ) -> Path:
     artifact_dir.mkdir(parents=True, exist_ok=True)
-    passport = RuntimePassport(
-        generatedAt=datetime.now(UTC).isoformat().replace("+00:00", "Z"),
-        status=status
-        or ("failed" if any(case.status == "failed" for case in case_results) else "partial"),
-        cases=case_results,
-        bindings=_binding_evidence(case_results),
-    )
+    passport = build_runtime_passport(case_results, status=status)
     path = artifact_dir / "opencli-runtime-passport.json"
     path.write_text(
         json.dumps(passport.model_dump(mode="json"), indent=2, sort_keys=True) + "\n",

@@ -24,8 +24,8 @@ def import_external_workflow(body: WorkflowExternalImportRequest) -> WorkflowPat
     OpenCLI Admin catalog capabilities and never carry external executors.
     """
 
-    external_nodes = _extract_nodes(body.graph)
-    external_edges = _extract_edges(body.graph)
+    external_nodes = _extract_nodes(body.graph, body.runtime)
+    external_edges = _extract_edges(body.graph, body.runtime)
     for edge in external_edges:
         external_nodes.setdefault(edge["source"], {"id": edge["source"]})
         external_nodes.setdefault(edge["target"], {"id": edge["target"]})
@@ -36,8 +36,9 @@ def import_external_workflow(body: WorkflowExternalImportRequest) -> WorkflowPat
     imported_node_ids: dict[str, str] = {}
     merge_input_counts: dict[str, int] = {}
 
+    prefer_name = body.runtime == "n8n"
     for index, external_node in enumerate(external_nodes.values()):
-        external_id = _node_id(external_node)
+        external_id = _node_id(external_node, prefer_name=prefer_name)
         node_id = _unique_id(used_node_ids, _slug(external_id))
         imported_node_ids[external_id] = node_id
         operations.append(
@@ -95,11 +96,25 @@ def _to_workflow_node(
     graph_name: str | None,
     index: int,
 ) -> WorkflowProjectNode:
-    external_id = _node_id(external_node)
+    external_id = _node_id(external_node, prefer_name=(runtime == "n8n"))
     external_type = _node_type(external_node)
     catalog_id, kind, capability, params = _native_capability_for_external_node(
         external_type
     )
+    ui: dict[str, Any] = {
+        "catalogId": catalog_id,
+        "label": _node_label(external_node),
+        "position": {"x": 180 + (index % 4) * 260, "y": 180 + (index // 4) * 140},
+        "externalWorkflow": {
+            "runtime": runtime,
+            "graphName": graph_name,
+            "nodeId": external_id,
+            "nodeType": external_type,
+            "raw": _safe_external_snapshot(external_node),
+        },
+    }
+    if runtime == "n8n":
+        ui["n8n"] = {"source": "n8n", "nodeId": external_id, "nodeType": external_type}
     return WorkflowProjectNode(
         id=node_id,
         kind=kind,
@@ -114,18 +129,7 @@ def _to_workflow_node(
                 "nodeType": external_type,
             },
         },
-        ui={
-            "catalogId": catalog_id,
-            "label": _node_label(external_node),
-            "position": {"x": 180 + (index % 4) * 260, "y": 180 + (index // 4) * 140},
-            "externalWorkflow": {
-                "runtime": runtime,
-                "graphName": graph_name,
-                "nodeId": external_id,
-                "nodeType": external_type,
-                "raw": _safe_external_snapshot(external_node),
-            },
-        },
+        ui=ui,
     )
 
 
@@ -174,24 +178,32 @@ def _native_capability_for_external_node(
     )
 
 
-def _extract_nodes(graph: dict[str, Any]) -> dict[str, dict[str, Any]]:
+def _extract_nodes(
+    graph: dict[str, Any], runtime: str | None = None
+) -> dict[str, dict[str, Any]]:
     raw_nodes = graph.get("nodes") or graph.get("vertices") or []
+    prefer_name = runtime == "n8n"
     nodes: dict[str, dict[str, Any]] = {}
     if isinstance(raw_nodes, dict):
         for key, value in raw_nodes.items():
             node = dict(value) if isinstance(value, dict) else {"value": value}
             node.setdefault("id", str(key))
-            nodes[_node_id(node)] = node
+            nodes[_node_id(node, prefer_name=prefer_name)] = node
         return nodes
     if isinstance(raw_nodes, list):
         for index, value in enumerate(raw_nodes):
             node = dict(value) if isinstance(value, dict) else {"value": value}
             node.setdefault("id", str(index))
-            nodes[_node_id(node)] = node
+            nodes[_node_id(node, prefer_name=prefer_name)] = node
     return nodes
 
 
-def _extract_edges(graph: dict[str, Any]) -> list[dict[str, Any]]:
+def _extract_edges(graph: dict[str, Any], runtime: str | None = None) -> list[dict[str, Any]]:
+    if runtime == "n8n":
+        connections = graph.get("connections")
+        if isinstance(connections, dict):
+            return _extract_n8n_connection_edges(connections)
+
     raw_edges = graph.get("edges") or graph.get("links") or []
     edges: list[dict[str, Any]] = []
     if not isinstance(raw_edges, list):
@@ -216,6 +228,42 @@ def _extract_edges(graph: dict[str, Any]) -> list[dict[str, Any]]:
                 edge["source"] = source
                 edge["target"] = target
                 edges.append(edge)
+    return edges
+
+
+def _extract_n8n_connection_edges(connections: dict[str, Any]) -> list[dict[str, Any]]:
+    """Flatten n8n's ``{sourceName: {main: [[{node, type, index}, ...]]}}`` shape.
+
+    n8n's export keys ``connections`` by node *name* (not the node's ``id``
+    field), and each output port fans out to a list of connection chains —
+    unlike the list-of-{source,target} shape every other runtime exports.
+    """
+
+    edges: list[dict[str, Any]] = []
+    for source_name, outputs in connections.items():
+        source = _read_string(source_name)
+        if not source or not isinstance(outputs, dict):
+            continue
+        for port_name, chains in outputs.items():
+            if not isinstance(chains, list):
+                continue
+            for chain in chains:
+                if not isinstance(chain, list):
+                    continue
+                for connection in chain:
+                    if not isinstance(connection, dict):
+                        continue
+                    target = _read_string(connection.get("node"))
+                    if not target:
+                        continue
+                    edges.append(
+                        {
+                            "id": f"edge-{len(edges) + 1}",
+                            "source": source,
+                            "target": target,
+                            "sourcePort": _read_string(port_name) or "main",
+                        }
+                    )
     return edges
 
 
@@ -247,7 +295,14 @@ def _target_port(
     return "in"
 
 
-def _node_id(node: dict[str, Any]) -> str:
+def _node_id(node: dict[str, Any], *, prefer_name: bool = False) -> str:
+    if prefer_name:
+        return (
+            _read_string(node.get("name"))
+            or _read_string(node.get("id"))
+            or _read_string(node.get("key"))
+            or "external-node"
+        )
     return (
         _read_string(node.get("id"))
         or _read_string(node.get("key"))
