@@ -61,7 +61,7 @@ async def test_webhook_notifier_send_success():
             payload,
         )
 
-    assert result is True
+    assert result.success is True
 
 
 @pytest.mark.asyncio
