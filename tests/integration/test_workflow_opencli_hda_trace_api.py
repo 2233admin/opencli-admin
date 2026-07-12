@@ -153,6 +153,93 @@ def _multi_source_opencli_hda_project() -> dict:
     }
 
 
+def _compat_fixture_project(target: str) -> dict:
+    return {
+        "id": f"wf-compat-{target}",
+        "name": f"{target} compatibility fixture",
+        "profile": "intelligence",
+        "version": 1,
+        "nodes": [
+            {
+                "id": f"{target}-node",
+                "kind": "agent",
+                "capability": "summarize",
+                "params": {
+                    "compatRuntime": {
+                        "target": target,
+                        "nodeType": "fixture-node",
+                        "sourceNodeId": "source-1",
+                    }
+                },
+                "ui": {
+                    target: {
+                        "source": target,
+                        "originalId": "source-1",
+                        "originalName": "Fixture node",
+                        "type": "fixture-node",
+                        "parameters": {
+                            "fixtureOutputs": [{"value": f"{target}-result"}]
+                        },
+                    }
+                },
+            }
+        ],
+        "edges": [],
+        "adapters": [],
+        "agentPermissions": {
+            "canReadData": True,
+            "canWriteDraft": False,
+            "canPublishWorkflow": False,
+            "canSendNotifications": False,
+        },
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("target", "binding_id", "worker"),
+    [
+        ("n8n", "workflow.compat.n8n.execute", "n8n-compat"),
+        ("dify", "workflow.compat.dify.execute", "dify-compat"),
+    ],
+)
+async def test_compat_worker_executes_fixture_and_emits_dispatch_events(
+    client, target, binding_id, worker
+):
+    response = await client.post(
+        "/api/v1/workflows/runs",
+        json={
+            "project": _compat_fixture_project(target),
+            "runId": f"run-compat-{target}",
+        },
+    )
+
+    assert response.status_code == 202
+    assert response.json()["data"]["status"] == "completed"
+
+    events = (
+        await client.get(f"/api/v1/workflows/runs/run-compat-{target}/events")
+    ).json()["data"]
+    node_events = [event for event in events if event["nodeId"] == f"{target}-node"]
+    assert [event["eventType"] for event in node_events] == [
+        "queued",
+        "compat_dispatch_started",
+        "partial",
+        "compat_dispatch_completed",
+    ]
+    assert node_events[1]["details"] == {
+        "bindingId": binding_id,
+        "executionMode": "fixture",
+        "functionId": f"compat.{target}.execute_node",
+        "target": target,
+        "worker": worker,
+    }
+    assert node_events[2]["details"]["outputItemCount"] == 1
+    assert node_events[2]["details"]["sampleOutputs"] == [
+        {"value": f"{target}-result"}
+    ]
+
+
 def _native_first_loop_project() -> dict:
     return {
         "id": "wf-native-first-loop",

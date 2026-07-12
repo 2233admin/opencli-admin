@@ -15,7 +15,7 @@ type PinListItem = {
   id: React.Key;
   name: string;
   info: string;
-  icon: React.ElementType;
+  icon: React.ComponentType<{ className?: string }>;
   pinned: boolean;
 };
 

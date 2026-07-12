@@ -176,9 +176,25 @@ _Avoid_: GPU model, fixed Device, machine role
 A Workspace-owned reusable authentication or connectivity configuration, such as an API token, browser login, cookie store, or service endpoint. Sensitive material is referenced rather than copied into Sources or Workflow Nodes.
 _Avoid_: Data source, node credential, copied secret
 
+**Connection Node**:
+A Workflow Node that resolves an authorized Connection into a runtime-only credential or session reference. It may expose health and selection parameters, but never secret values in the Workflow graph, export, or Run log.
+_Avoid_: Cookie node, plaintext credential node, embedded account
+
+**Connection Version**:
+An immutable encrypted revision of a Connection's authentication material or browser session. Runtime selection may advance to a newer healthy version while retaining short-lived rollback evidence without exposing plaintext.
+_Avoid_: Cookie copy, mutable secret
+
 **Source**:
 A Project-owned collection target and scope, such as repositories, accounts, searches, sites, or streams. It references a Connection when authentication is required and is consumed by Workflow Nodes.
 _Avoid_: Connection, credential, integration
+
+**Source Group**:
+A Project-owned reusable selection of Sources processed by one Automation and Workflow Version. Per-Source cursors, Connection references, limits, retries, and outcomes remain independent inside the resulting Run.
+_Avoid_: Workflow per website, copied source list
+
+**Workflow-local Override**:
+A Draft-only derived implementation of a packaged Node that is scoped to one Workflow. It becomes reusable across Projects only when explicitly promoted to a Workspace-owned Custom Node.
+_Avoid_: Modified installed node, implicit shared node
 
 **Inbox**:
 The user-facing view of unresolved requests that require attention or approval. It does not own a separate approval state.

@@ -270,6 +270,38 @@ RUNTIME_IO_CONTRACTS: dict[str, RuntimeIOContract] = {
         event_shape=("tool_call_started", "partial:outputItemCount", "tool_call_completed"),
         fixture_coverage=("workflow-capabilities-api", "workflow-tool-capabilities-api"),
     ),
+    "workflow.compat.n8n.execute": RuntimeIOContract(
+        binding_id="workflow.compat.n8n.execute",
+        status="dispatch_only",
+        input_ports=(("in", "n8nItem[]"),),
+        output_ports=(("out", "n8nItem[]"),),
+        input_params=("target", "nodeType", "sourceNodeId", "parameters"),
+        output_artifacts=("compatibilityWorkerResult",),
+        permission_gate=("canvas_review_required",),
+        config_gate=("n8n_compat_worker",),
+        event_shape=(
+            "compat_dispatch_started",
+            "partial:outputItemCount",
+            "compat_dispatch_completed",
+        ),
+        fixture_coverage=("n8n-translated-workflow-compile",),
+    ),
+    "workflow.compat.dify.execute": RuntimeIOContract(
+        binding_id="workflow.compat.dify.execute",
+        status="dispatch_only",
+        input_ports=(("in", "difyVariableMap"),),
+        output_ports=(("out", "difyVariableMap"),),
+        input_params=("target", "nodeType", "sourceNodeId", "parameters"),
+        output_artifacts=("compatibilityWorkerResult",),
+        permission_gate=("canvas_review_required",),
+        config_gate=("dify_compat_worker",),
+        event_shape=(
+            "compat_dispatch_started",
+            "partial:outputItemCount",
+            "compat_dispatch_completed",
+        ),
+        fixture_coverage=("dify-translated-workflow-compile",),
+    ),
 }
 
 

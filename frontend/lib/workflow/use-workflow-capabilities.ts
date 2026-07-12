@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { fetchWorkflowCapabilities } from "./backend-capabilities"
 import type { WorkflowCapabilitiesResponse } from "./capabilities"
 
@@ -12,6 +12,11 @@ export function useWorkflowCapabilities(enabled = true) {
     cachedCapabilities,
   )
   const [error, setError] = useState<string | null>(null)
+  const [attempt, setAttempt] = useState(0)
+  const retry = useCallback(() => {
+    setError(null)
+    setAttempt((value) => value + 1)
+  }, [])
 
   useEffect(() => {
     if (!enabled) return
@@ -37,7 +42,7 @@ export function useWorkflowCapabilities(enabled = true) {
     return () => {
       cancelled = true
     }
-  }, [enabled])
+  }, [attempt, enabled])
 
-  return { capabilities, error }
+  return { capabilities, error, retry }
 }

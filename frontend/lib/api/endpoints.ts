@@ -43,6 +43,10 @@ import type {
   TaskRunEvent,
   WorkerNode,
   WorkspaceSummary,
+  ProjectSummary,
+  WorkflowAssetSummary,
+  WorkflowDraftRead,
+  WorkflowVersionSummary,
   OperationsWorkItem,
   ApprovalDecision,
   ApprovalDecisionResult,
@@ -51,13 +55,51 @@ import type {
   OperationsAgentProfile,
   OperationsAgentRun,
   Automation,
+  WorkspaceSettingsRead,
+  WorkspaceSettingsValues,
 } from './types'
+
+export const getWorkspaceSettings = () =>
+  apiClient.get<ApiResponse<WorkspaceSettingsRead>>('/settings').then((r) => r.data.data)
+
+export const updateWorkspaceSettings = (data: Partial<WorkspaceSettingsValues>) =>
+  apiClient.patch<ApiResponse<WorkspaceSettingsRead>>('/settings', data).then((r) => r.data.data)
+
+export const resetWorkspaceSettings = () =>
+  apiClient.delete<ApiResponse<WorkspaceSettingsRead>>('/settings').then((r) => r.data.data)
 
 export const getCurrentIdentity = () =>
   apiClient.get<ApiResponse<AuthIdentity>>('/auth/me').then((r) => r.data.data)
 
 export const listMyWorkspaces = () =>
   apiClient.get<ApiResponse<WorkspaceSummary[]>>('/workspaces').then((r) => r.data.data)
+
+export const listWorkspaceProjects = (workspaceId: string) =>
+  apiClient.get<ApiResponse<ProjectSummary[]>>(`/workspaces/${workspaceId}/projects`).then((r) => r.data.data)
+
+export const createWorkspaceProject = (workspaceId: string, data: { name: string; slug: string; description?: string }) =>
+  apiClient.post<ApiResponse<ProjectSummary>>(`/workspaces/${workspaceId}/projects`, data).then((r) => r.data.data)
+
+export const listProjectWorkflows = (workspaceId: string, projectId: string) =>
+  apiClient.get<ApiResponse<WorkflowAssetSummary[]>>(`/workspaces/${workspaceId}/projects/${projectId}/workflows`).then((r) => r.data.data)
+
+export const createProjectWorkflow = (workspaceId: string, projectId: string, data: { name: string; description?: string; graph: import('@/lib/workflow/schema').WorkflowProject }) =>
+  apiClient.post<ApiResponse<WorkflowAssetSummary>>(`/workspaces/${workspaceId}/projects/${projectId}/workflows`, data).then((r) => r.data.data)
+
+export const getProjectWorkflowDraft = (workspaceId: string, projectId: string, workflowId: string) =>
+  apiClient.get<ApiResponse<WorkflowDraftRead>>(`/workspaces/${workspaceId}/projects/${projectId}/workflows/${workflowId}/draft`).then((r) => r.data.data)
+
+export const updateProjectWorkflowDraft = (workspaceId: string, projectId: string, workflowId: string, graph: import('@/lib/workflow/schema').WorkflowProject, expectedRevision: number) =>
+  apiClient.put<ApiResponse<WorkflowDraftRead>>(`/workspaces/${workspaceId}/projects/${projectId}/workflows/${workflowId}/draft`, { graph, revision: expectedRevision }).then((r) => r.data.data)
+
+export const validateProjectWorkflowDraft = (workspaceId: string, projectId: string, workflowId: string) =>
+  apiClient.post<ApiResponse<import('@/lib/workflow/backend-runs').WorkflowRunProjection>>(`/workspaces/${workspaceId}/projects/${projectId}/workflows/${workflowId}/draft/validation-runs`, {}).then((r) => r.data.data)
+
+export const publishProjectWorkflow = (workspaceId: string, projectId: string, workflowId: string, reason: string) =>
+  apiClient.post<ApiResponse<WorkflowVersionSummary>>(`/workspaces/${workspaceId}/projects/${projectId}/workflows/${workflowId}/versions`, { reason }).then((r) => r.data.data)
+
+export const listProjectWorkflowVersions = (workspaceId: string, projectId: string, workflowId: string) =>
+  apiClient.get<ApiResponse<WorkflowVersionSummary[]>>(`/workspaces/${workspaceId}/projects/${projectId}/workflows/${workflowId}/versions`).then((r) => r.data.data)
 
 export const listOperationsInbox = (
   workspaceId: string,

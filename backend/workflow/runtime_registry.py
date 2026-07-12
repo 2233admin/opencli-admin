@@ -46,6 +46,8 @@ INBOX_STORE_BINDING_ID = "workflow.inbox.store"
 WEBHOOK_NOTIFY_BINDING_ID = "workflow.notifier.webhook.send"
 NOTIFY_SEND_BINDING_ID = "workflow.notify.send"
 EXTERNAL_TOOL_BINDING_ID = "workflow.external-tool.capability"
+N8N_COMPAT_BINDING_ID = "workflow.compat.n8n.execute"
+DIFY_COMPAT_BINDING_ID = "workflow.compat.dify.execute"
 SUPPORTED_TOOL_EXECUTOR_MODES = {"fixture", "okx_market_ticker_snapshot"}
 
 
@@ -80,7 +82,10 @@ def resolve_runtime_metadata(
     """Return runtime binding metadata for a compiled WorkflowProject node."""
 
     resolved_node_id = node_id or node.id
-    if _is_collection_need(node):
+    compat_target = _compat_runtime_target(node)
+    if compat_target:
+        metadata = _resolve_compat_runtime(node, target=compat_target, node_id=resolved_node_id)
+    elif _is_collection_need(node):
         metadata = _resolve_collection_need(node, node_id=resolved_node_id)
     elif _is_schedule_trigger(node):
         metadata = _resolve_schedule_trigger(node, node_id=resolved_node_id)
@@ -134,6 +139,49 @@ def resolve_runtime_metadata(
         adapter=adapter,
         node_id=resolved_node_id,
     )
+
+
+def _resolve_compat_runtime(
+    node: WorkflowProjectNode,
+    *,
+    target: Literal["n8n", "dify"],
+    node_id: str,
+) -> dict[str, Any]:
+    compat = _read_dict(node.params.get("compatRuntime"))
+    binding_id = N8N_COMPAT_BINDING_ID if target == "n8n" else DIFY_COMPAT_BINDING_ID
+    source = _read_dict((node.ui or {}).get(target))
+    node_type = (
+        _read_string(compat.get("nodeType"))
+        or _read_string(source.get("type"))
+        or _read_string(source.get("nodeType"))
+        or "unknown"
+    )
+    return {
+        "binding": {
+            "status": "bound",
+            "binding_id": binding_id,
+            "runtime": "compatibility_worker",
+            "worker": f"{target}-compat",
+            "function_id": f"compat.{target}.execute_node",
+            "channel": f"compat-{target}",
+            "input": {
+                "target": target,
+                "nodeId": node_id,
+                "nodeType": node_type,
+                "sourceNodeId": _read_string(compat.get("sourceNodeId"))
+                or _read_string(source.get("originalId")),
+                "sourceNodeName": _read_string(compat.get("sourceNodeName"))
+                or _read_string(source.get("originalName")),
+                "parameters": _read_dict(source.get("parameters")),
+            },
+        },
+        "compatibility_runtime": {
+            "node_id": node_id,
+            "target": target,
+            "dispatch": "compatibility_worker",
+            "worker": f"{target}-compat",
+        },
+    }
 
 
 def _resolve_opencli_source(
@@ -735,6 +783,14 @@ def _is_collection_need(node: WorkflowProjectNode) -> bool:
 
 def _is_source_pool(node: WorkflowProjectNode) -> bool:
     return _read_string((node.ui or {}).get("catalogId")) == "intelligence.source.pool"
+
+
+def _compat_runtime_target(node: WorkflowProjectNode) -> Literal["n8n", "dify"] | None:
+    compat = _read_dict(node.params.get("compatRuntime"))
+    target = _read_string(compat.get("target"))
+    if target in {"n8n", "dify"}:
+        return target
+    return None
 
 
 def _is_source_fetch_node(

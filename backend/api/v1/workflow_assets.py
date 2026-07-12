@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+from collections.abc import Iterator
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
@@ -194,8 +195,37 @@ async def create_workflow(
 
 
 @router.get(
+    "/{project_id}/workflows",
+    response_model=ApiResponse[list[WorkflowRead]],
+)
+async def list_workflows(
+    workspace_id: str,
+    project_id: str,
+    identity: RequestIdentity = Depends(get_request_identity),
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse:
+    access = await get_workspace_access(db, workspace_id, identity)
+    require_permission(access, WorkspacePermission.READ)
+    await _project(db, workspace_id, project_id)
+    workflows = (
+        (
+            await db.execute(
+                select(Workflow)
+                .where(Workflow.project_id == project_id)
+                .where(Workflow.archived.is_(False))
+                .order_by(Workflow.updated_at.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return ApiResponse.ok([WorkflowRead.model_validate(workflow) for workflow in workflows])
+
+
+@router.get(
     "/{project_id}/workflows/{workflow_id}/draft",
     response_model=ApiResponse[WorkflowDraftRead],
+    response_model_exclude_none=True,
 )
 async def get_workflow_draft(
     workspace_id: str,
@@ -216,6 +246,7 @@ async def get_workflow_draft(
 @router.put(
     "/{project_id}/workflows/{workflow_id}/draft",
     response_model=ApiResponse[WorkflowDraftRead],
+    response_model_exclude_none=True,
 )
 async def update_workflow_draft(
     workspace_id: str,
@@ -235,6 +266,14 @@ async def update_workflow_draft(
     )
     if draft is None:
         raise HTTPException(status.HTTP_409_CONFLICT, "Workflow draft is missing")
+    if draft.revision != body.revision:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail={
+                "code": "draft_revision_conflict",
+                "latestRevision": draft.revision,
+            },
+        )
     graph = body.graph.model_copy(update={"id": workflow.id}, deep=True)
     draft.revision += 1
     draft.graph = graph.model_dump(mode="json")
@@ -276,6 +315,16 @@ async def publish_workflow_version(
                 "errors": compiled.model_dump()["errors"],
             },
         )
+    if _requires_import_validation(graph) and not await _has_completed_draft_validation(
+        db, workflow.id, draft.revision
+    ):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail={
+                "message": "Imported workflow draft requires a completed validation run",
+                "draftRevision": draft.revision,
+            },
+        )
     number = (workflow.current_published_version or 0) + 1
     version = WorkflowVersion(
         workflow_id=workflow.id,
@@ -303,6 +352,110 @@ async def publish_workflow_version(
             "Workflow Version was published concurrently; retry publication",
         ) from exc
     return ApiResponse.ok(WorkflowVersionRead.model_validate(version))
+
+
+def _requires_import_validation(graph: workflow_schemas.WorkflowProject) -> bool:
+    return any(
+        isinstance(node.params.get("compatRuntime"), dict)
+        or isinstance(node.params.get("externalWorkflow"), dict)
+        or any(key in (node.ui or {}) for key in ("n8n", "dify"))
+        for node in _workflow_nodes(graph.nodes)
+    ) or any(adapter.config.get("translatedFrom") in {"n8n", "dify"} for adapter in graph.adapters)
+
+
+def _workflow_nodes(
+    nodes: list[workflow_schemas.WorkflowProjectNode],
+) -> Iterator[workflow_schemas.WorkflowProjectNode]:
+    for node in nodes:
+        yield node
+        if node.internals:
+            yield from _workflow_nodes(node.internals.nodes)
+
+
+async def _has_completed_draft_validation(
+    db: AsyncSession, workflow_id: str, draft_revision: int
+) -> bool:
+    runs = (
+        (
+            await db.execute(
+                select(WorkflowRunRow)
+                .where(WorkflowRunRow.workflow_id == workflow_id)
+                .where(WorkflowRunRow.status == "completed")
+            )
+        )
+        .scalars()
+        .all()
+    )
+    expected = {"workflowId": workflow_id, "draftRevision": draft_revision}
+    return any(run.request.get("validation") == expected for run in runs)
+
+
+@router.post(
+    "/{project_id}/workflows/{workflow_id}/draft/validation-runs",
+    response_model=ApiResponse[workflow_schemas.WorkflowRunProjection],
+    status_code=202,
+)
+async def validate_workflow_draft(
+    workspace_id: str,
+    project_id: str,
+    workflow_id: str,
+    body: WorkflowVersionRunCreate,
+    identity: RequestIdentity = Depends(get_request_identity),
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse:
+    access = await get_workspace_access(db, workspace_id, identity)
+    require_permission(access, WorkspacePermission.RUN_OPERATIONS_AGENTS)
+    workflow = await _workflow(db, workspace_id, project_id, workflow_id)
+    draft = await db.scalar(select(WorkflowDraft).where(WorkflowDraft.workflow_id == workflow.id))
+    if draft is None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Workflow draft is missing")
+    request = workflow_schemas.WorkflowRunStartRequest(
+        project=workflow_schemas.WorkflowProject.model_validate(draft.graph),
+        **body.model_dump(by_alias=True),
+    )
+    projection = await start_workflow_run(request, session=db)
+    run = await db.get(WorkflowRunRow, projection.runId)
+    if run is None:
+        raise HTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "Validation run was not persisted",
+        )
+    run.request = {
+        **run.request,
+        "validation": {"workflowId": workflow.id, "draftRevision": draft.revision},
+    }
+    await db.flush()
+    return ApiResponse.ok(projection)
+
+
+@router.get(
+    "/{project_id}/workflows/{workflow_id}/versions",
+    response_model=ApiResponse[list[WorkflowVersionRead]],
+)
+async def list_workflow_versions(
+    workspace_id: str,
+    project_id: str,
+    workflow_id: str,
+    identity: RequestIdentity = Depends(get_request_identity),
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse:
+    access = await get_workspace_access(db, workspace_id, identity)
+    require_permission(access, WorkspacePermission.READ)
+    workflow = await _workflow(db, workspace_id, project_id, workflow_id)
+    versions = (
+        (
+            await db.execute(
+                select(WorkflowVersion)
+                .where(WorkflowVersion.workflow_id == workflow.id)
+                .order_by(WorkflowVersion.version.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return ApiResponse.ok(
+        [WorkflowVersionRead.model_validate(version) for version in versions]
+    )
 
 
 @router.get(

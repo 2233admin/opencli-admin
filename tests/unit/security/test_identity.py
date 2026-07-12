@@ -49,6 +49,48 @@ def test_missing_bearer_is_rejected():
     assert response.headers["www-authenticate"] == "Bearer"
 
 
+def test_development_identity_is_allowed_only_from_loopback(monkeypatch):
+    monkeypatch.setenv("APP_ENV", "development")
+    dependency = identity_dependency(IdentitySettings("https://id.example", "api"))
+    response = TestClient(_app(dependency), client=("127.0.0.1", 50000)).get(
+        "/me", headers={"X-OpenCLI-Development-Identity": "local-development"}
+    )
+    assert response.status_code == 200
+    assert response.json()["subject"] == "bootstrap-admin"
+    assert response.json()["auth_method"] == "development"
+
+
+def test_development_identity_is_rejected_outside_development(monkeypatch):
+    monkeypatch.setenv("APP_ENV", "production")
+    dependency = identity_dependency(IdentitySettings("https://id.example", "api"))
+    response = TestClient(_app(dependency)).get(
+        "/me", headers={"X-OpenCLI-Development-Identity": "local-development"}
+    )
+    assert response.status_code == 401
+
+
+def test_development_identity_is_rejected_from_non_loopback(monkeypatch):
+    monkeypatch.setenv("APP_ENV", "development")
+    dependency = identity_dependency(IdentitySettings("https://id.example", "api"))
+    response = TestClient(_app(dependency), client=("192.0.2.1", 50000)).get(
+        "/me", headers={"X-OpenCLI-Development-Identity": "local-development"}
+    )
+    assert response.status_code == 401
+
+
+def test_development_identity_rejects_non_loopback_browser_origin(monkeypatch):
+    monkeypatch.setenv("APP_ENV", "development")
+    dependency = identity_dependency(IdentitySettings("https://id.example", "api"))
+    response = TestClient(_app(dependency), client=("127.0.0.1", 50000)).get(
+        "/me",
+        headers={
+            "X-OpenCLI-Development-Identity": "local-development",
+            "Origin": "http://192.0.2.1:3000",
+        },
+    )
+    assert response.status_code == 401
+
+
 @pytest.mark.asyncio
 async def test_oidc_verifies_issuer_audience_and_jwks(monkeypatch):
     settings = IdentitySettings("https://id.example", "opencli", "https://id.example/jwks")

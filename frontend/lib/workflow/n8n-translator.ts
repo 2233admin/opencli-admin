@@ -88,13 +88,42 @@ export function translateN8nWorkflowToWorkflowProject(input: unknown): N8nTransl
   })
 
   const { edges, unsupportedConnectionCount } = translateN8nConnections(workflow.connections, nodeLookup)
+  const packageId = uniqueSlug(`n8n-package-${workflowName}`, new Set())
   const project = parseWorkflowProject({
     id: uniqueSlug(`n8n-${workflowName}`, new Set()),
     name: workflowName,
     profile: "intelligence",
     version: 1,
-    nodes,
-    edges,
+    nodes: [
+      {
+        id: packageId,
+        kind: "action",
+        capability: "store",
+        params: {
+          packageFormat: "n8n",
+          sourceWorkflowId: readString(workflow.id),
+        },
+        internals: {
+          locked: false,
+          nodes,
+          edges,
+        },
+        ui: {
+          label: workflowName,
+          description: `n8n compatibility package · ${nodes.length} nodes`,
+          icon: "Boxes",
+          color: "var(--chart-3)",
+          catalogId: "package.compat.n8n-workflow",
+          package: {
+            format: "n8n",
+            expandable: true,
+            nodeCount: nodes.length,
+            edgeCount: edges.length,
+          },
+        },
+      },
+    ],
+    edges: [],
     adapters: dedupeAdapters(adapters),
     settings: {
       timezone: "Asia/Shanghai",
@@ -152,6 +181,12 @@ function translateN8nNode(
     parameters,
     mapping,
   })
+  compactParams.compatRuntime = {
+    target: "n8n",
+    nodeType,
+    sourceNodeId: originalId,
+    sourceNodeName: originalName,
+  }
   const credentials = summarizeCredentials(node.credentials)
   const adapter = mapping.adapter
     ? buildAdapter({

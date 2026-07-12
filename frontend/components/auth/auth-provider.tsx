@@ -32,7 +32,7 @@ type AuthContextValue = {
 const AuthContext = createContext<AuthContextValue | null>(null)
 
 const DEVELOPMENT_IDENTITY: AuthIdentity = {
-  subject: 'local-development',
+  subject: 'bootstrap-admin',
   email: null,
   name: 'Local Development',
   is_platform_admin: true,

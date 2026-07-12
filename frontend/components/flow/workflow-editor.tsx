@@ -11,6 +11,7 @@ import type { WorkflowNode, WorkflowEdge, ToolMode } from "@/lib/flow/types"
 import { CommandStrip } from "./command-strip"
 import { CommandPalette } from "./command-palette"
 import { getWorkflowNodeCatalog } from "@/lib/workflow/node-catalog"
+import type { WorkflowCapabilitiesResponse } from "@/lib/workflow/capabilities"
 import { getWorkflowPrimitives } from "@/lib/workflow/node-primitives"
 import { groupPrimitivesForNodeMenu } from "@/lib/workflow/node-menu"
 import { useWorkflowCapabilities } from "@/lib/workflow/use-workflow-capabilities"
@@ -42,7 +43,15 @@ function buildPrimitiveMenuGroups() {
   return groupPrimitivesForNodeMenu(getWorkflowPrimitives())
 }
 
-function EditorCanvas() {
+type WorkflowEditorProps = {
+  capabilities?: WorkflowCapabilitiesResponse | null
+  capabilityError?: string | null
+  retryCapabilities?: () => void
+}
+
+type EditorCanvasProps = Required<WorkflowEditorProps>
+
+function EditorCanvas({ capabilities, capabilityError, retryCapabilities }: EditorCanvasProps) {
   const {
     addNodeFromPalette,
     addPrimitiveNode,
@@ -110,17 +119,36 @@ function EditorCanvas() {
   const [zoom, setZoom] = useState(1)
   const [compactViewport, setCompactViewport] = useState(false)
   const [nodeMenu, setNodeMenu] = useState<NodeMenuState | null>(null)
-  const { capabilities } = useWorkflowCapabilities(true)
+  const unavailableCapabilities = useMemo<WorkflowCapabilitiesResponse | null>(() => {
+    if (!capabilityError) return null
+    return {
+      version: "capability_unavailable",
+      catalog: getWorkflowNodeCatalog(workflowProject.profile).map((item) => ({
+        id: item.id,
+        label: item.label,
+        surface: "catalog",
+        status: "blocked",
+        backendAvailable: false,
+        kind: item.kind,
+        capability: item.capability,
+        reason: capabilityError,
+        missing: ["capability_unavailable"],
+        tags: ["capability_unavailable"],
+      })),
+      primitives: [], channels: [], notifiers: [], triggers: [], resources: [],
+    }
+  }, [capabilityError, workflowProject.profile])
+  const effectiveCapabilities = capabilities ?? unavailableCapabilities
   const dopNodeMenuItems = useMemo(
-    () => getWorkflowNodeCatalog(workflowProject.profile, capabilities),
-    [workflowProject.profile, capabilities],
+    () => getWorkflowNodeCatalog(workflowProject.profile, effectiveCapabilities),
+    [workflowProject.profile, effectiveCapabilities],
   )
   const [primitiveMenuGroups] = useState(buildPrimitiveMenuGroups)
 
   const showToast = useCallback((msg: string) => setToast(msg), [])
   const setMiniMapVisible = useCallback((visible: boolean) => settings.set("showMiniMap", visible), [settings])
 
-  useApplyWorkflowCapabilities({ applyWorkflowCapabilities, capabilities, workflowProjectId: workflowProject.id })
+  useApplyWorkflowCapabilities({ applyWorkflowCapabilities, capabilities: effectiveCapabilities, workflowProjectId: workflowProject.id })
   useSharedWorkflowImport({ fitView, showToast })
   useAutoDismissToast(toast, setToast)
   useDismissNodeMenu(nodeMenu, setNodeMenu)
@@ -261,6 +289,12 @@ function EditorCanvas() {
         nodeManagementOpen={nodeManagementOpen}
         onToggleNodeManagement={() => setNodeManagementOpen((v) => !v)}
       />
+      {capabilityError ? (
+        <div className="flex items-center justify-between gap-3 border-b border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-900 dark:text-amber-200" role="alert">
+          <span>运行能力目录加载失败；现有画布仍可编辑。{capabilityError}</span>
+          <button className="shrink-0 underline underline-offset-2" type="button" onClick={retryCapabilities}>重试</button>
+        </div>
+      ) : null}
       <div className="flex min-h-0 flex-1">
         <WorkflowCanvasSurface
           acceptProposal={acceptProposal}
@@ -334,10 +368,15 @@ function EditorCanvas() {
   )
 }
 
-export function WorkflowEditor() {
+export function WorkflowEditor(props: WorkflowEditorProps) {
+  const fallback = useWorkflowCapabilities(true)
   return (
     <ReactFlowProvider>
-      <EditorCanvas />
+      <EditorCanvas
+        capabilities={props.capabilities === undefined ? fallback.capabilities : props.capabilities}
+        capabilityError={props.capabilityError === undefined ? fallback.error : props.capabilityError}
+        retryCapabilities={props.retryCapabilities ?? fallback.retry}
+      />
     </ReactFlowProvider>
   )
 }

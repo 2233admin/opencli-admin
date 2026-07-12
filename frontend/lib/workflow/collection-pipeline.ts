@@ -10,7 +10,7 @@
  */
 import { WORKFLOW_NODE_CATALOG, createWorkflowNodeFromCatalog, type WorkflowNodeCatalogItem } from "./node-catalog"
 import { translateN8nWorkflowToWorkflowProject } from "./n8n-translator"
-import { parseWorkflowProject, type WorkflowProject, type WorkflowProjectEdge, type WorkflowProjectNode } from "./schema"
+import { parseWorkflowProject, workflowNodeSchema, type WorkflowProject, type WorkflowProjectEdge, type WorkflowProjectNode } from "./schema"
 import n8nMissingNodes from "./n8n/collection-missing-nodes.json"
 
 const COLUMN = { trigger: 60, source: 380, process: 700, decide: 1020, deliver: 1340 } as const
@@ -31,7 +31,10 @@ function at(column: keyof typeof COLUMN, row: number): { x: number; y: number } 
 function translateMissingNodes(): { nodes: WorkflowProjectNode[]; adapters: WorkflowProject["adapters"] } {
   const result = translateN8nWorkflowToWorkflowProject(n8nMissingNodes)
   if (!result.ok) throw new Error(`[collection-pipeline] n8n translation failed: ${result.error}`)
-  return { nodes: result.project.nodes, adapters: result.project.adapters }
+  const nodes = result.project.nodes.flatMap((node) =>
+    node.internals?.nodes.map((internal) => workflowNodeSchema.parse(internal)) ?? [node],
+  )
+  return { nodes, adapters: result.project.adapters }
 }
 
 /** 把 n8n 翻译节点重新布点到我们管线的泳道。 */

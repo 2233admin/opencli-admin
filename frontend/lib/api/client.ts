@@ -23,6 +23,10 @@ const attachAuthHeaders = (config: InternalAxiosRequestConfig) => {
   if (headers['X-API-Token'] && !config.headers['X-API-Token']) {
     config.headers['X-API-Token'] = headers['X-API-Token']
   }
+  if (headers['X-OpenCLI-Development-Identity']) {
+    config.headers['X-OpenCLI-Development-Identity'] =
+      headers['X-OpenCLI-Development-Identity']
+  }
   return config
 }
 

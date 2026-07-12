@@ -2,6 +2,7 @@ const BOOTSTRAP_TOKEN_KEY = 'opencli.bootstrapIdentityToken'
 const DEVELOPMENT_SESSION_KEY = 'opencli.developmentSession'
 
 let runtimeIdentityToken = ''
+let runtimeDevelopmentSession = false
 
 function safeSessionGet(key: string): string {
   try {
@@ -45,10 +46,11 @@ export function clearIdentityToken(): void {
 }
 
 export function hasDevelopmentSession(): boolean {
-  return safeSessionGet(DEVELOPMENT_SESSION_KEY) === '1'
+  return runtimeDevelopmentSession || safeSessionGet(DEVELOPMENT_SESSION_KEY) === '1'
 }
 
 export function setDevelopmentSession(enabled: boolean): void {
+  runtimeDevelopmentSession = enabled
   safeSessionSet(DEVELOPMENT_SESSION_KEY, enabled ? '1' : '')
 }
 

@@ -15,7 +15,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <AppSidebar />
       <SidebarInset className="min-w-0">
         <AppHeader onOpenCommand={() => setCommandOpen(true)} />
-        <div className="flex-1 overflow-auto">{children}</div>
+        <div className="flex-1 overflow-auto [scrollbar-gutter:stable]">{children}</div>
       </SidebarInset>
       <CommandPalette open={commandOpen} onOpenChange={setCommandOpen} />
     </SidebarProvider>

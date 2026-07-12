@@ -31,14 +31,18 @@ export const workflowCapabilitySchema = z.enum([
 ])
 
 const jsonRecordSchema = z.record(z.string(), z.unknown())
+const apiOptional = <T extends z.ZodType>(schema: T) => z.preprocess(
+  (value) => value === null ? undefined : value,
+  schema.optional(),
+)
 
 export const sourceAnchorSchema = z.object({
   kind: z.enum(["artifact", "url", "message", "selector"]),
   label: z.string().min(1),
-  href: z.string().optional(),
-  artifactPath: z.string().optional(),
-  selector: z.string().optional(),
-  runId: z.string().optional(),
+  href: apiOptional(z.string()),
+  artifactPath: apiOptional(z.string()),
+  selector: apiOptional(z.string()),
+  runId: apiOptional(z.string()),
 })
 
 export const miniNetworkPreviewSchema = z.object({
@@ -56,8 +60,8 @@ export const topicCollapseStateSchema = z.object({
 
 export const semanticLinkSchema = z.object({
   relationship: z.enum(["related", "depends-on", "evidence", "contradicts", "implements"]),
-  reason: z.string().optional(),
-  confidence: z.number().min(0).max(1).optional(),
+  reason: apiOptional(z.string()),
+  confidence: apiOptional(z.number().min(0).max(1)),
 })
 
 export const proposalStateSchema = z.enum(["draft", "proposed", "accepted"])
@@ -71,7 +75,7 @@ export const parameterBindingSchema = z.object({
 export const parameterInterfaceGroupSchema = z.object({
   id: z.string().min(1),
   label: z.string().min(1),
-  order: z.number().optional(),
+  order: apiOptional(z.number()),
 })
 
 export const parameterInterfaceFieldSchema = z.object({
@@ -80,15 +84,15 @@ export const parameterInterfaceFieldSchema = z.object({
   groupId: z.string().min(1),
   type: z.enum(["text", "textarea", "number", "slider", "select", "boolean", "tokens"]),
   binding: parameterBindingSchema,
-  description: z.string().optional(),
-  order: z.number().optional(),
-  readonly: z.boolean().optional(),
+  description: apiOptional(z.string()),
+  order: apiOptional(z.number()),
+  readonly: apiOptional(z.boolean()),
   value: z.unknown().optional(),
-  placeholder: z.string().optional(),
-  min: z.number().optional(),
-  max: z.number().optional(),
-  step: z.number().optional(),
-  options: z.array(z.object({ value: z.string(), label: z.string() })).optional(),
+  placeholder: apiOptional(z.string()),
+  min: apiOptional(z.number()),
+  max: apiOptional(z.number()),
+  step: apiOptional(z.number()),
+  options: apiOptional(z.array(z.object({ value: z.string(), label: z.string() }))),
 })
 
 export const parameterInterfaceSchema = z.object({
@@ -100,39 +104,39 @@ export const workflowNodeSchema = z.object({
   id: z.string().min(1),
   kind: workflowNodeKindSchema,
   capability: workflowCapabilitySchema,
-  adapter: z.string().min(1).optional(),
+  adapter: apiOptional(z.string().min(1)),
   params: jsonRecordSchema.default({}),
-  sourceAnchor: sourceAnchorSchema.optional(),
-  runArtifact: z.object({
+  sourceAnchor: apiOptional(sourceAnchorSchema),
+  runArtifact: apiOptional(z.object({
     runId: z.string().min(1),
     artifactPath: z.string().min(1),
     apiPath: z.string().optional(),
-  }).optional(),
-  miniNetwork: miniNetworkPreviewSchema.optional(),
-  topicCollapse: topicCollapseStateSchema.optional(),
-  proposalState: proposalStateSchema.optional(),
-  parameterInterface: parameterInterfaceSchema.optional(),
-  internals: z.object({
+  })),
+  miniNetwork: apiOptional(miniNetworkPreviewSchema),
+  topicCollapse: apiOptional(topicCollapseStateSchema),
+  proposalState: apiOptional(proposalStateSchema),
+  parameterInterface: apiOptional(parameterInterfaceSchema),
+  internals: apiOptional(z.object({
     locked: z.boolean().optional(),
     nodes: z.array(z.unknown()).default([]),
     edges: z.array(z.unknown()).default([]),
-  }).optional(),
-  ui: jsonRecordSchema.optional(),
+  })),
+  ui: apiOptional(jsonRecordSchema),
 })
 
 export const workflowEdgeSchema = z.object({
   id: z.string().min(1),
   source: z.string().min(1),
   target: z.string().min(1),
-  sourcePort: z.string().min(1).optional(),
-  targetPort: z.string().min(1).optional(),
-  label: z.string().optional(),
-  condition: z.string().optional(),
-  semantic: semanticLinkSchema.optional(),
-  weight: z.number().min(0).max(1).optional(),
-  contractId: z.string().min(1).optional(),
-  proposalState: proposalStateSchema.optional(),
-  ui: jsonRecordSchema.optional(),
+  sourcePort: apiOptional(z.string().min(1)),
+  targetPort: apiOptional(z.string().min(1)),
+  label: apiOptional(z.string()),
+  condition: apiOptional(z.string()),
+  semantic: apiOptional(semanticLinkSchema),
+  weight: apiOptional(z.number().min(0).max(1)),
+  contractId: apiOptional(z.string().min(1)),
+  proposalState: apiOptional(proposalStateSchema),
+  ui: apiOptional(jsonRecordSchema),
 })
 
 export const workflowSettingsSchema = z.object({

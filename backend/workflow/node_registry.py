@@ -47,6 +47,8 @@ WORKFLOW_CATALOG_IDS = {
     "package.verify.regression-gate",
     "package.map.knowledge-map",
     "package.review.human-review",
+    "package.compat.n8n-workflow",
+    "package.compat.dify-workflow",
 }
 
 WORKFLOW_PRIMITIVE_IDS = {

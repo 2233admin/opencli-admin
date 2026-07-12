@@ -52,9 +52,11 @@ from backend.workflow.realtime_market_executor import (
     execute_okx_market_ticker_snapshot,
 )
 from backend.workflow.runtime_registry import (
+    DIFY_COMPAT_BINDING_ID,
     EXTERNAL_TOOL_BINDING_ID,
     INBOX_STORE_BINDING_ID,
     MERGE_BINDING_ID,
+    N8N_COMPAT_BINDING_ID,
     NORMALIZE_BINDING_ID,
     NOTIFY_SEND_BINDING_ID,
     OPENCLI_FUNCTION_ID,
@@ -288,6 +290,39 @@ async def start_workflow_run(
             )
             if package_parent_id:
                 blocked_by_package.setdefault(package_parent_id, []).append(reason)
+            continue
+
+        if _is_compatibility_worker_node(node):
+            input_items = [
+                *_upstream_outputs(node, outputs_by_node),
+                *_request_source_items(node, body.sourceOutputs),
+            ]
+            details, output_items = _execute_compatibility_fixture(
+                node, input_items, run_id=run_id
+            )
+            outputs_by_node[node.id] = output_items
+            dispatch_details = {
+                key: details[key]
+                for key in ("bindingId", "executionMode", "functionId", "target", "worker")
+            }
+            emitter.emit(
+                node,
+                "compat_dispatch_started",
+                message="Compatibility worker fixture dispatch started",
+                details=dispatch_details,
+            )
+            emitter.emit(
+                node,
+                "partial",
+                message="Compatibility worker fixture output received",
+                details=details,
+            )
+            emitter.emit(
+                node,
+                "compat_dispatch_completed",
+                message="Compatibility worker fixture dispatch completed",
+                details=dispatch_details,
+            )
             continue
 
         request_items = _request_source_items(node, body.sourceOutputs)
@@ -1167,12 +1202,14 @@ def _reason_from_compile_error(error: WorkflowCompileError) -> WorkflowRunBlockR
 
 
 def _status_after_event(event_type: WorkflowNodeRunEventType) -> WorkflowRunStatus:
-    if event_type == "started":
+    if event_type in {"started", "compat_dispatch_started"}:
         return "running"
     if event_type in {"batch_ready", "tool_call_started", "tool_call_completed"}:
         return "partial"
     if event_type == "failed":
         return "failed"
+    if event_type == "compat_dispatch_completed":
+        return "completed"
     if event_type in {"blocked", "partial", "completed", "queued"}:
         return event_type
     return "partial"
@@ -1253,6 +1290,10 @@ def _is_first_loop_native_node(node: CompiledWorkflowNode) -> bool:
         WEBHOOK_NOTIFY_BINDING_ID,
         EXTERNAL_TOOL_BINDING_ID,
     }
+
+
+def _is_compatibility_worker_node(node: CompiledWorkflowNode) -> bool:
+    return _binding_id(node) in {N8N_COMPAT_BINDING_ID, DIFY_COMPAT_BINDING_ID}
 
 
 def _fixture_source_items(node: CompiledWorkflowNode) -> list[dict[str, Any]]:
@@ -1554,6 +1595,59 @@ def _execute_external_tool_capability(
         _external_tool_output(node, output, input_items, run_id, index, binding_input)
         for index, output in enumerate(fixture_outputs)
     ]
+
+
+def _execute_compatibility_fixture(
+    node: CompiledWorkflowNode,
+    input_items: list[dict[str, Any]],
+    *,
+    run_id: str,
+) -> tuple[dict[str, object], list[dict[str, Any]]]:
+    binding = _read_dict(node.runtime.get("binding"))
+    binding_input = _read_dict(binding.get("input"))
+    parameters = _read_dict(binding_input.get("parameters"))
+    fixture_outputs = _read_dict_list(parameters.get("fixtureOutputs"))
+    fixture_output = _read_dict(parameters.get("fixtureOutput"))
+    if not fixture_outputs and fixture_output:
+        fixture_outputs = [fixture_output]
+    if not fixture_outputs:
+        fixture_outputs = [
+            _read_dict(item.get("raw")) or _read_dict(item) for item in input_items
+        ]
+
+    output_items = [
+        {
+            "raw": output,
+            "normalizedData": output,
+            "lineage": [
+                *[
+                    lineage
+                    for item in input_items
+                    for lineage in _read_dict_list(item.get("lineage"))
+                ],
+                {
+                    "nodeId": node.id,
+                    "step": "compatibility_worker_fixture",
+                    "runId": run_id,
+                    "target": binding_input.get("target"),
+                    "index": index,
+                },
+            ],
+        }
+        for index, output in enumerate(fixture_outputs)
+    ]
+    details: dict[str, object] = {
+        "bindingId": binding.get("binding_id"),
+        "executionMode": "fixture",
+        "functionId": binding.get("function_id"),
+        "target": binding_input.get("target"),
+        "worker": binding.get("worker"),
+        "inputItemCount": len(input_items),
+        "outputItemCount": len(output_items),
+        "sampleOutputs": fixture_outputs[:3],
+        "lineage": _lineage_pointer(node),
+    }
+    return details, output_items
 
 
 def _execute_okx_market_tool(binding_input: dict[str, Any]) -> dict[str, Any]:

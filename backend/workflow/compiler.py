@@ -30,6 +30,7 @@ from backend.workflow.tool_capabilities import (
 )
 
 INTERNAL_ID_SEPARATOR = "::"
+MAX_PACKAGE_DEPTH = 16
 
 
 @dataclass(frozen=True)
@@ -115,51 +116,15 @@ def compile_workflow_project(project: WorkflowProject) -> WorkflowCompileRespons
         plan_nodes.append(_to_plan_node(node))
 
         if node.internals:
-            bound_internal_nodes = _bind_internal_parameters(node)
-            internal_depends_on = _dependency_map_for_nodes(
-                bound_internal_nodes, node.internals.edges
+            _compile_package_internals(
+                node,
+                package_id=node.id,
+                adapter_by_id=adapter_by_id,
+                compiled_nodes=compiled_nodes,
+                compiled_edges=compiled_edges,
+                plan_nodes=plan_nodes,
+                plan_edges=plan_edges,
             )
-            locked = _package_locked(node)
-            for internal_node in bound_internal_nodes:
-                internal_id = _internal_id(node.id, internal_node.id)
-                internal_upstream = internal_depends_on[internal_node.id]
-                compiled_nodes.append(
-                    _compile_node(
-                        internal_node,
-                        adapter_by_id.get(internal_node.adapter or ""),
-                        [_internal_id(node.id, upstream) for upstream in internal_upstream]
-                        or [node.id],
-                        id_override=internal_id,
-                        runtime={
-                            "package_parent_id": node.id,
-                            "package_internal_id": internal_node.id,
-                            "editable": not locked,
-                        },
-                    )
-                )
-                plan_nodes.append(_to_plan_node(internal_node, id_override=internal_id))
-
-            for edge in node.internals.edges:
-                compiled_edges.append(
-                    CompiledWorkflowEdge(
-                        id=_internal_id(node.id, edge.id),
-                        source=_internal_id(node.id, edge.source),
-                        target=_internal_id(node.id, edge.target),
-                        sourcePort=edge.sourcePort or "records",
-                        targetPort=edge.targetPort or "records",
-                        contractId=edge.contractId,
-                        condition=edge.condition,
-                    )
-                )
-                plan_edges.append(
-                    PlanEdge(
-                        id=_internal_id(node.id, edge.id),
-                        source_node=_internal_id(node.id, edge.source),
-                        source_port=edge.sourcePort or "records",
-                        target_node=_internal_id(node.id, edge.target),
-                        target_port=edge.targetPort or "records",
-                    )
-                )
 
     compiled_edges = [
         CompiledWorkflowEdge(
@@ -281,7 +246,16 @@ def _validate_project(project: WorkflowProject) -> list[WorkflowCompileError]:
             )
 
         if node.internals:
-            errors.extend(_validate_package_internals(node, adapter_by_id))
+            errors.extend(
+                _validate_package_internals(
+                    node,
+                    adapter_by_id,
+                    package_id=node.id,
+                    path_prefix=["nodes", node.id],
+                    depth=1,
+                    active=set(),
+                )
+            )
 
         errors.extend(_validate_node_origin(node, ["nodes", node.id]))
         errors.extend(_validate_capability_version_pin(node))
@@ -525,19 +499,95 @@ def _internal_id(package_node_id: str, internal_node_id: str) -> str:
     return f"{package_node_id}{INTERNAL_ID_SEPARATOR}{internal_node_id}"
 
 
+def _compile_package_internals(
+    package_node: WorkflowProjectNode,
+    *,
+    package_id: str,
+    adapter_by_id: dict[str, WorkflowAdapterBinding],
+    compiled_nodes: list[CompiledWorkflowNode],
+    compiled_edges: list[CompiledWorkflowEdge],
+    plan_nodes: list[PlanNode],
+    plan_edges: list[PlanEdge],
+) -> None:
+    assert package_node.internals is not None
+    bound_nodes = _bind_internal_parameters(package_node)
+    depends_on = _dependency_map_for_nodes(bound_nodes, package_node.internals.edges)
+    locked = _package_locked(package_node)
+
+    for node in bound_nodes:
+        node_id = _internal_id(package_id, node.id)
+        upstream = [
+            _internal_id(package_id, value) for value in depends_on[node.id]
+        ] or [package_id]
+        compiled_nodes.append(
+            _compile_node(
+                node,
+                adapter_by_id.get(node.adapter or ""),
+                upstream,
+                id_override=node_id,
+                package=_package_metadata(node, package_node_id=node_id),
+                runtime={
+                    "package_parent_id": package_id,
+                    "package_internal_id": node.id,
+                    "package_path": node_id.split(INTERNAL_ID_SEPARATOR),
+                    "editable": not locked,
+                },
+            )
+        )
+        plan_nodes.append(_to_plan_node(node, id_override=node_id))
+        if node.internals:
+            _compile_package_internals(
+                node,
+                package_id=node_id,
+                adapter_by_id=adapter_by_id,
+                compiled_nodes=compiled_nodes,
+                compiled_edges=compiled_edges,
+                plan_nodes=plan_nodes,
+                plan_edges=plan_edges,
+            )
+
+    for edge in package_node.internals.edges:
+        edge_id = _internal_id(package_id, edge.id)
+        source = _internal_id(package_id, edge.source)
+        target = _internal_id(package_id, edge.target)
+        compiled_edges.append(
+            CompiledWorkflowEdge(
+                id=edge_id,
+                source=source,
+                target=target,
+                sourcePort=edge.sourcePort or "records",
+                targetPort=edge.targetPort or "records",
+                contractId=edge.contractId,
+                condition=edge.condition,
+            )
+        )
+        plan_edges.append(
+            PlanEdge(
+                id=edge_id,
+                source_node=source,
+                source_port=edge.sourcePort or "records",
+                target_node=target,
+                target_port=edge.targetPort or "records",
+            )
+        )
+
+
 def _package_locked(node: WorkflowProjectNode) -> bool:
     if node.internals and node.internals.locked is not None:
         return node.internals.locked
     return bool(node.topicCollapse and node.topicCollapse.mode == "locked")
 
 
-def _package_metadata(node: WorkflowProjectNode) -> dict[str, object] | None:
+def _package_metadata(
+    node: WorkflowProjectNode, *, package_node_id: str | None = None
+) -> dict[str, object] | None:
     if not (node.topicCollapse or node.miniNetwork or node.internals):
         return None
 
     locked = _package_locked(node)
+    scoped_id = package_node_id or node.id
     internal_node_ids = (
-        [_internal_id(node.id, internal_node.id) for internal_node in node.internals.nodes]
+        [_internal_id(scoped_id, internal_node.id) for internal_node in node.internals.nodes]
         if node.internals
         else []
     )
@@ -548,7 +598,7 @@ def _package_metadata(node: WorkflowProjectNode) -> dict[str, object] | None:
         "editable": not locked,
         "internal_node_ids": internal_node_ids,
         "internal_edge_ids": (
-            [_internal_id(node.id, edge.id) for edge in node.internals.edges]
+            [_internal_id(scoped_id, edge.id) for edge in node.internals.edges]
             if node.internals
             else []
         ),
@@ -583,9 +633,35 @@ def _bind_internal_parameters(node: WorkflowProjectNode) -> list[WorkflowProject
 def _validate_package_internals(
     node: WorkflowProjectNode,
     adapter_by_id: dict[str, WorkflowAdapterBinding],
+    *,
+    package_id: str,
+    path_prefix: list[str],
+    depth: int,
+    active: set[int],
 ) -> list[WorkflowCompileError]:
     errors: list[WorkflowCompileError] = []
     assert node.internals is not None
+
+    if depth > MAX_PACKAGE_DEPTH:
+        return [
+            WorkflowCompileError(
+                code="package_depth_exceeded",
+                message=f'Package node "{package_id}" exceeds maximum depth {MAX_PACKAGE_DEPTH}',
+                node_id=package_id,
+                path=[*path_prefix, "internals"],
+            )
+        ]
+    identity = id(node)
+    if identity in active:
+        return [
+            WorkflowCompileError(
+                code="package_reference_cycle",
+                message=f'Package node "{package_id}" recursively contains itself',
+                node_id=package_id,
+                path=[*path_prefix, "internals"],
+            )
+        ]
+    active.add(identity)
 
     internal_counts = Counter(internal_node.id for internal_node in node.internals.nodes)
     for internal_node_id, count in sorted(internal_counts.items()):
@@ -598,7 +674,7 @@ def _validate_package_internals(
                         f'"{internal_node_id}"'
                     ),
                     node_id=node.id,
-                    path=["nodes", node.id, "internals", "nodes", internal_node_id],
+                    path=[*path_prefix, "internals", "nodes", internal_node_id],
                 )
             )
 
@@ -614,7 +690,7 @@ def _validate_package_internals(
                     ),
                     node_id=node.id,
                     edge_id=edge.id,
-                    path=["nodes", node.id, "internals", "edges", edge.id, "source"],
+                    path=[*path_prefix, "internals", "edges", edge.id, "source"],
                 )
             )
         if edge.target not in internal_node_ids:
@@ -627,7 +703,7 @@ def _validate_package_internals(
                     ),
                     node_id=node.id,
                     edge_id=edge.id,
-                    path=["nodes", node.id, "internals", "edges", edge.id, "target"],
+                    path=[*path_prefix, "internals", "edges", edge.id, "target"],
                 )
             )
 
@@ -643,8 +719,7 @@ def _validate_package_internals(
                     ),
                     node_id=node.id,
                     path=[
-                        "nodes",
-                        node.id,
+                        *path_prefix,
                         "internals",
                         "nodes",
                         internal_node.id,
@@ -662,8 +737,7 @@ def _validate_package_internals(
                     ),
                     node_id=node.id,
                     path=[
-                        "nodes",
-                        node.id,
+                        *path_prefix,
                         "internals",
                         "nodes",
                         internal_node.id,
@@ -675,9 +749,22 @@ def _validate_package_internals(
         errors.extend(
             _validate_node_origin(
                 internal_node,
-                ["nodes", node.id, "internals", "nodes", internal_node.id],
+                [*path_prefix, "internals", "nodes", internal_node.id],
             )
         )
+        errors.extend(_validate_capability_version_pin(internal_node))
+        if internal_node.internals:
+            child_id = _internal_id(package_id, internal_node.id)
+            errors.extend(
+                _validate_package_internals(
+                    internal_node,
+                    adapter_by_id,
+                    package_id=child_id,
+                    path_prefix=[*path_prefix, "internals", "nodes", internal_node.id],
+                    depth=depth + 1,
+                    active=active,
+                )
+            )
 
     if node.parameterInterface:
         for field in node.parameterInterface.fields:
@@ -692,8 +779,7 @@ def _validate_package_internals(
                         ),
                         node_id=node.id,
                         path=[
-                            "nodes",
-                            node.id,
+                            *path_prefix,
                             "parameterInterface",
                             "fields",
                             field.id,
@@ -706,10 +792,18 @@ def _validate_package_internals(
         _validate_typed_edges(
             node.internals.nodes,
             node.internals.edges,
-            path_prefix=["nodes", node.id, "internals", "edges"],
+            path_prefix=[*path_prefix, "internals", "edges"],
         )
     )
-    errors.extend(_cycle_errors_for_nodes(node.id, node.internals.nodes, node.internals.edges))
+    errors.extend(
+        _cycle_errors_for_nodes(
+            package_id,
+            node.internals.nodes,
+            node.internals.edges,
+            path_prefix=path_prefix,
+        )
+    )
+    active.remove(identity)
     return errors
 
 
@@ -717,6 +811,8 @@ def _cycle_errors_for_nodes(
     package_node_id: str,
     nodes: list[WorkflowProjectNode],
     edges: list,
+    *,
+    path_prefix: list[str],
 ) -> list[WorkflowCompileError]:
     node_ids = [node.id for node in nodes]
     indegree = {node_id: 0 for node_id in node_ids}
@@ -744,7 +840,7 @@ def _cycle_errors_for_nodes(
                 f'a cycle at node "{node_id}"'
             ),
             node_id=package_node_id,
-            path=["nodes", package_node_id, "internals", "nodes", node_id],
+            path=[*path_prefix, "internals", "nodes", node_id],
         )
         for node_id in sorted(set(node_ids) - visited)
     ]

@@ -524,6 +524,8 @@ WorkflowNodeRunEventType = Literal[
     "started",
     "blocked",
     "batch_ready",
+    "compat_dispatch_started",
+    "compat_dispatch_completed",
     "tool_call_started",
     "tool_call_completed",
     "partial",

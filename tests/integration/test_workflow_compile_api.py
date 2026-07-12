@@ -712,6 +712,117 @@ async def test_compile_expands_package_internals_and_binds_public_params(client)
 
 
 @pytest.mark.asyncio
+async def test_compile_recursively_expands_nested_package_internals(client):
+    project = _valid_workflow_project()
+    project["nodes"] = [
+        {
+            "id": "outer",
+            "kind": "agent",
+            "capability": "normalize",
+            "internals": {
+                "nodes": [
+                    {
+                        "id": "inner",
+                        "kind": "agent",
+                        "capability": "normalize",
+                        "internals": {
+                            "nodes": [
+                                {
+                                    "id": "leaf",
+                                    "kind": "agent",
+                                    "capability": "normalize",
+                                }
+                            ],
+                            "edges": [],
+                        },
+                    }
+                ],
+                "edges": [],
+            },
+        }
+    ]
+    project["edges"] = []
+
+    response = await client.post("/api/v1/workflows/compile", json={"project": project})
+
+    assert response.status_code == 200
+    runtime = response.json()["data"]["plan"]["runtime"]
+    assert runtime["node_ids"] == ["outer", "outer::inner", "outer::inner::leaf"]
+    inner, leaf = runtime["nodes"][1:]
+    assert inner["package"]["internal_node_ids"] == ["outer::inner::leaf"]
+    assert leaf["depends_on"] == ["outer::inner"]
+    assert leaf["runtime"]["package_parent_id"] == "outer::inner"
+    assert leaf["runtime"]["package_path"] == ["outer", "inner", "leaf"]
+
+
+@pytest.mark.asyncio
+async def test_compile_rejects_cycle_inside_nested_package(client):
+    project = _valid_workflow_project()
+    project["nodes"] = [
+        {
+            "id": "outer",
+            "kind": "agent",
+            "capability": "normalize",
+            "internals": {
+                "nodes": [
+                    {
+                        "id": "inner",
+                        "kind": "agent",
+                        "capability": "normalize",
+                        "internals": {
+                            "nodes": [
+                                {"id": "a", "kind": "agent", "capability": "normalize"},
+                                {"id": "b", "kind": "agent", "capability": "normalize"},
+                            ],
+                            "edges": [
+                                {"id": "a-b", "source": "a", "target": "b"},
+                                {"id": "b-a", "source": "b", "target": "a"},
+                            ],
+                        },
+                    }
+                ],
+                "edges": [],
+            },
+        }
+    ]
+    project["edges"] = []
+
+    response = await client.post("/api/v1/workflows/compile", json={"project": project})
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["valid"] is False
+    assert {error["node_id"] for error in data["errors"] if error["code"] == "cycle"} == {
+        "outer::inner"
+    }
+
+
+@pytest.mark.asyncio
+async def test_compile_rejects_package_depth_over_sixteen(client):
+    nested = {"id": "leaf", "kind": "agent", "capability": "normalize"}
+    for depth in range(17, 0, -1):
+        nested = {
+            "id": f"package-{depth}",
+            "kind": "agent",
+            "capability": "normalize",
+            "internals": {"nodes": [nested], "edges": []},
+        }
+    project = _valid_workflow_project()
+    project["nodes"] = [nested]
+    project["edges"] = []
+
+    response = await client.post("/api/v1/workflows/compile", json={"project": project})
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["valid"] is False
+    depth_error = next(
+        error for error in data["errors"] if error["code"] == "package_depth_exceeded"
+    )
+    assert depth_error["node_id"].count("::") == 16
+
+
+@pytest.mark.asyncio
 async def test_compile_resolves_opencli_hda_internal_source_binding(client):
     project = _opencli_workflow_project()
     project["nodes"] = [
@@ -1009,7 +1120,15 @@ async def test_compile_accepts_n8n_translated_missing_capability(client):
             "kind": "source",
             "capability": "fetch",
             "adapter": "n8n-http-request",
-            "params": {"n8nType": "httpRequest", "method": "GET"},
+            "params": {
+                "n8nType": "httpRequest",
+                "method": "GET",
+                "compatRuntime": {
+                    "target": "n8n",
+                    "nodeType": "n8n-nodes-base.httpRequest",
+                    "sourceNodeId": "1",
+                },
+            },
             "ui": {
                 "missingCapability": "vendor.http.request",
                 "n8n": {
@@ -1041,6 +1160,51 @@ async def test_compile_accepts_n8n_translated_missing_capability(client):
     assert origin["kind"] == "n8n"
     assert origin["missing_capability"] == "vendor.http.request"
     assert origin["n8n"]["type"] == "n8n-nodes-base.httpRequest"
+    runtime = data["plan"]["runtime"]["nodes"][0]["runtime"]
+    assert runtime["binding"]["binding_id"] == "workflow.compat.n8n.execute"
+    assert runtime["binding"]["worker"] == "n8n-compat"
+    assert runtime["binding"]["input"]["nodeType"] == "n8n-nodes-base.httpRequest"
+    assert runtime["binding"]["contract"]["status"] == "dispatch_only"
+
+
+@pytest.mark.asyncio
+async def test_compile_routes_dify_translated_node_to_compat_worker(client):
+    project = _valid_workflow_project()
+    project["nodes"] = [
+        {
+            "id": "dify-llm",
+            "kind": "agent",
+            "capability": "summarize",
+            "params": {
+                "compatRuntime": {
+                    "target": "dify",
+                    "nodeType": "llm",
+                    "sourceNodeId": "llm-1",
+                }
+            },
+            "ui": {
+                "dify": {
+                    "source": "dify",
+                    "originalId": "llm-1",
+                    "originalName": "LLM",
+                    "type": "llm",
+                    "parameters": {"model": "gpt"},
+                }
+            },
+        }
+    ]
+    project["edges"] = []
+    project["adapters"] = []
+
+    response = await client.post("/api/v1/workflows/compile", json={"project": project})
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["valid"] is True
+    runtime = data["plan"]["runtime"]["nodes"][0]["runtime"]
+    assert runtime["binding"]["binding_id"] == "workflow.compat.dify.execute"
+    assert runtime["binding"]["worker"] == "dify-compat"
+    assert runtime["binding"]["input"]["parameters"] == {"model": "gpt"}
 
 
 @pytest.mark.asyncio

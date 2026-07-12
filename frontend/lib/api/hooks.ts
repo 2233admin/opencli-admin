@@ -9,6 +9,28 @@ export function useMyWorkspaces() {
   return useQuery({ queryKey: ['workspaces'], queryFn: api.listMyWorkspaces })
 }
 
+export function useWorkspaceProjects(workspaceId: string | null) {
+  return useQuery({
+    queryKey: ['workspace-projects', workspaceId],
+    queryFn: () => api.listWorkspaceProjects(workspaceId as string),
+    enabled: !!workspaceId,
+  })
+}
+
+export function useCreateWorkspaceProject() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ workspaceId, data }: { workspaceId: string; data: Parameters<typeof api.createWorkspaceProject>[1] }) => api.createWorkspaceProject(workspaceId, data),
+    onSuccess: (_project, { workspaceId }) => queryClient.invalidateQueries({ queryKey: ['workspace-projects', workspaceId] }),
+  })
+}
+
+export function useCreateProjectWorkflow() {
+  return useMutation({
+    mutationFn: ({ workspaceId, projectId, data }: { workspaceId: string; projectId: string; data: Parameters<typeof api.createProjectWorkflow>[2] }) => api.createProjectWorkflow(workspaceId, projectId, data),
+  })
+}
+
 export function useOperationsInbox(workspaceId: string | null, status?: string) {
   return useQuery({
     queryKey: ['operations-inbox', workspaceId, status],

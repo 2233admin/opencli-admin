@@ -7,7 +7,9 @@ import {
   KeyRound,
   LayoutDashboard,
   Monitor,
+  PanelsTopLeft,
   Inbox,
+  Settings,
   ShieldCheck,
   Workflow,
   type LucideIcon,
@@ -35,11 +37,12 @@ export const NAV_GROUPS: NavGroup[] = [
     label: null,
     items: [
       { href: '/dashboard', label: '概览', icon: LayoutDashboard },
+      { href: '/studio', label: '工作室', icon: PanelsTopLeft },
       { href: '/inbox', label: 'Inbox', icon: Inbox },
     ],
   },
   {
-    label: '工作室',
+    label: '构建',
     items: [
       { href: '/canvas', label: '节点工作流', icon: Workflow },
       { href: '/operations-agents', label: '自动化与智能体', icon: ShieldCheck },
@@ -67,11 +70,16 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: '/control/actions', label: '控制与审计', icon: History },
     ],
   },
+  {
+    label: null,
+    items: [{ href: '/settings', label: '设置', icon: Settings }],
+  },
 ]
 
 /** Labels for every route (incl. tab siblings) used by breadcrumbs. */
 export const ROUTE_LABELS: Record<string, string> = {
   '/dashboard': '概览',
+  '/studio': '工作室',
   '/canvas': '节点工作流',
   '/inbox': 'Inbox',
   '/operations-agents': '自动化与智能体',
@@ -86,4 +94,5 @@ export const ROUTE_LABELS: Record<string, string> = {
   '/nodes': '浏览器节点',
   '/workers': 'Worker',
   '/control/actions': '控制与审计',
+  '/settings': '设置',
 }

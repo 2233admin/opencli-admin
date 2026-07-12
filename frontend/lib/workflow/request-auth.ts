@@ -7,8 +7,12 @@ export function workflowRequestAuthHeaders(authorization?: string | null): ApiAu
 export function forwardedRequestAuthHeaders(request: Request): ApiAuthHeaders {
   const authorization = request.headers.get('authorization')
   const fleetToken = request.headers.get('x-api-token')
+  const developmentIdentity = request.headers.get('x-opencli-development-identity')
   return {
     ...(authorization ? { Authorization: authorization } : {}),
     ...(fleetToken ? { 'X-API-Token': fleetToken } : {}),
+    ...(developmentIdentity
+      ? { 'X-OpenCLI-Development-Identity': developmentIdentity }
+      : {}),
   }
 }

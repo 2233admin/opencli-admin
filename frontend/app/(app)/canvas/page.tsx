@@ -1,12 +1,11 @@
-import { ErrorBoundary } from '@/components/error-boundary'
-import { WorkflowEditor } from '@/components/flow/workflow-editor'
+import { Suspense } from 'react'
+
+import { WorkflowEditorSession } from '@/components/flow/workflow-editor-session'
 
 export default function CanvasPage() {
   return (
-    <div className="h-full w-full overflow-hidden">
-      <ErrorBoundary label="WorkflowEditor">
-        <WorkflowEditor />
-      </ErrorBoundary>
-    </div>
+    <Suspense fallback={<div className="grid h-full place-items-center text-sm text-muted-foreground">正在加载工作流…</div>}>
+      <WorkflowEditorSession />
+    </Suspense>
   )
 }

@@ -18,6 +18,7 @@ class ProjectRead(UTCModel):
     name: str
     slug: str
     description: str | None
+    created_by_user_id: str
     archived: bool
     created_at: datetime
     updated_at: datetime
@@ -45,6 +46,7 @@ class WorkflowRead(UTCModel):
 
 
 class WorkflowDraftUpdate(BaseModel):
+    revision: int = Field(ge=1)
     graph: WorkflowProject
 
 
