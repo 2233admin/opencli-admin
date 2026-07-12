@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from "react"
 import { Activity, Loader2, Play, RotateCcw } from "lucide-react"
-import { getApiAuthToken } from "@/lib/api/auth-token"
 import { useFlowStore } from "@/lib/flow/store"
 import { compileWorkflowProject, type WorkflowCompileResponse } from "@/lib/workflow/backend-compile"
 import { traceOpenCLIHDAWorkflow, type WorkflowOpenCLIHDATraceResponse } from "@/lib/workflow/backend-opencli-hda-trace"
@@ -61,13 +60,11 @@ export function RunTracePanel() {
   const runBackendWorkflow = async () => {
     setRunState((current) => ({ status: "running", projection: current.projection, events: current.events, error: null }))
     try {
-      const token = getApiAuthToken()
-      const authorization = token ? `Bearer ${token}` : null
-      const started = await startWorkflowRun(workflowProject, { authorization })
+      const started = await startWorkflowRun(workflowProject)
       applyWorkflowRunProjection(started)
       setRunState({ status: "running", projection: started, events: [], error: null })
 
-      const replay = await replayWorkflowRunEventStream(started.runId, { authorization })
+      const replay = await replayWorkflowRunEventStream(started.runId)
       for (const event of replay.events) {
         applyWorkflowNodeRunEvent(event)
       }
@@ -87,10 +84,8 @@ export function RunTracePanel() {
   const runBackendPreview = async () => {
     setBackendState((current) => ({ status: "running", compile: current.compile, trace: current.trace, error: null }))
     try {
-      const token = getApiAuthToken()
-      const authorization = token ? `Bearer ${token}` : null
-      const compile = await compileWorkflowProject(workflowProject, { authorization })
-      const trace = compile.valid ? await traceOpenCLIHDAWorkflow(workflowProject, { authorization }) : null
+      const compile = await compileWorkflowProject(workflowProject)
+      const trace = compile.valid ? await traceOpenCLIHDAWorkflow(workflowProject) : null
       const patches = buildRuntimeNodePatches({ compile, trace })
       setNodes((nodes) => applyRuntimeNodePatches(nodes, patches))
       setBackendState({

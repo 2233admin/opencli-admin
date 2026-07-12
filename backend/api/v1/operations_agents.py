@@ -38,6 +38,29 @@ router = APIRouter(
 )
 
 
+@router.get("/activity", response_model=ApiResponse[list[OperationsAgentRunRead]])
+async def list_operations_agent_activity(
+    workspace_id: str,
+    identity: RequestIdentity = Depends(get_request_identity),
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse:
+    access = await get_workspace_access(db, workspace_id, identity)
+    require_permission(access, WorkspacePermission.READ)
+    runs = (
+        (
+            await db.execute(
+                select(OperationsAgentRun)
+                .where(OperationsAgentRun.workspace_id == workspace_id)
+                .order_by(OperationsAgentRun.updated_at.desc())
+                .limit(100)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return ApiResponse.ok([OperationsAgentRunRead.model_validate(run) for run in runs])
+
+
 async def _get_agent(
     db: AsyncSession, workspace_id: str, agent_id: str, *, lock: bool = False
 ) -> OperationsAgentIdentity:

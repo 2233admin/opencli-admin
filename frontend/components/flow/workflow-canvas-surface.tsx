@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, type DragEvent, type MouseEvent as ReactMouseEvent, type RefObject } from "react"
+import { useEffect, useMemo, type DragEvent, type MouseEvent as ReactMouseEvent, type RefObject } from "react"
 import {
   Background,
   BackgroundVariant,
@@ -63,6 +63,9 @@ const edgeTypes = {
   editable: EditableEdge,
   routed: RoutedEdge,
 }
+
+const defaultEdgeOptions = { type: "workflow", animated: true } as const
+const proOptions = { hideAttribution: true } as const
 
 type PrimitiveMenuGroup = {
   category: string
@@ -265,7 +268,17 @@ function CanvasLayers({
 
 export function WorkflowCanvasSurface(props: WorkflowCanvasSurfaceProps) {
   const interactionLocked = props.isDraw || props.isScissors
-  const flowInteraction = flowInteractionProps(props.settings, interactionLocked)
+  const flowInteraction = useMemo(
+    () => flowInteractionProps(props.settings, interactionLocked),
+    [props.settings, interactionLocked],
+  )
+  const fitViewOptions = useMemo(
+    () => ({
+      padding: props.compactViewport ? 0.24 : 0.15,
+      minZoom: props.compactViewport ? 0.62 : 0.2,
+    }),
+    [props.compactViewport],
+  )
   return (
     <div
       ref={props.wrapperRef}
@@ -291,9 +304,9 @@ export function WorkflowCanvasSurface(props: WorkflowCanvasSurfaceProps) {
         onDragOver={props.onDragOver}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
-        defaultEdgeOptions={{ type: "workflow", animated: true }}
+        defaultEdgeOptions={defaultEdgeOptions}
         fitView
-        fitViewOptions={{ padding: props.compactViewport ? 0.24 : 0.15, minZoom: props.compactViewport ? 0.62 : 0.2 }}
+        fitViewOptions={fitViewOptions}
         isValidConnection={props.isValidConnection}
         onBeforeDelete={props.onBeforeDelete}
         nodesDraggable={props.settings.nodesDraggable && !interactionLocked}
@@ -306,7 +319,7 @@ export function WorkflowCanvasSurface(props: WorkflowCanvasSurfaceProps) {
         panOnDrag={flowInteraction.panOnDrag}
         selectionOnDrag={flowInteraction.selectionOnDrag}
         selectionMode={SelectionMode.Partial}
-        proOptions={{ hideAttribution: true }}
+        proOptions={proOptions}
         minZoom={0.2}
         maxZoom={2}
         className={cn("bg-background", props.isScissors && "cursor-crosshair")}

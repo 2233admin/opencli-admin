@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react"
 import { ReactFlowProvider, useReactFlow, type NodeMouseHandler } from "@xyflow/react"
+import { useShallow } from "zustand/react/shallow"
 import "@xyflow/react/dist/style.css"
 
 import { useFlowStore } from "@/lib/flow/store"
@@ -86,7 +87,7 @@ function EditorCanvas() {
     unlockNodeInternals,
     updateWorkflowProfile,
     workflowProject,
-  } = useFlowStore(selectEditorCanvasState)
+  } = useFlowStore(useShallow(selectEditorCanvasState))
 
   const settings = useSettingsStore()
 

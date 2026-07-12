@@ -1,4 +1,5 @@
 import type { WorkflowProject, WorkflowProjectEdge, WorkflowProjectNode } from "./schema"
+import { workflowRequestAuthHeaders } from "./request-auth"
 
 type ApiResponse<T> = {
   success?: boolean
@@ -42,7 +43,7 @@ export async function importExternalRuntimeWorkflow(
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      ...(options.authorization ? { Authorization: options.authorization } : {}),
+      ...workflowRequestAuthHeaders(options.authorization),
     },
     body: JSON.stringify({
       project,

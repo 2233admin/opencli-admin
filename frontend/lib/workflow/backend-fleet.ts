@@ -1,3 +1,5 @@
+import { workflowRequestAuthHeaders } from "./request-auth"
+
 type ApiResponse<T> = {
   success?: boolean
   data?: T
@@ -72,7 +74,7 @@ export async function fetchWorkflowFleetInventory(
 ): Promise<WorkflowFleetInventoryResponse> {
   const response = await fetch("/api/workflow/fleet/inventory", {
     headers: {
-      ...(options.authorization ? { Authorization: options.authorization } : {}),
+      ...workflowRequestAuthHeaders(options.authorization),
     },
     cache: "no-store",
   })
@@ -95,7 +97,7 @@ export async function matchWorkflowFleetCapability(
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      ...(options.authorization ? { Authorization: options.authorization } : {}),
+      ...workflowRequestAuthHeaders(options.authorization),
     },
     body: JSON.stringify(request),
     cache: "no-store",

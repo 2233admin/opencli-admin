@@ -33,6 +33,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -482,9 +483,11 @@ export function CommandStrip({
             <TooltipContent>自动布局</TooltipContent>
           </Tooltip>
           <DropdownMenuContent align="end">
-            <DropdownMenuLabel className="font-mono text-[10px] uppercase tracking-wider">
-              Layout Engine
-            </DropdownMenuLabel>
+            <DropdownMenuGroup>
+              <DropdownMenuLabel className="font-mono text-[10px] uppercase tracking-wider">
+                Layout Engine
+              </DropdownMenuLabel>
+            </DropdownMenuGroup>
             <DropdownMenuSeparator />
             {LAYOUTS.map((l) => (
               <DropdownMenuItem
@@ -658,9 +661,11 @@ export function CommandStrip({
             <TooltipContent>更多工具</TooltipContent>
           </Tooltip>
           <DropdownMenuContent align="end" className="w-56">
-            <DropdownMenuLabel className="font-mono text-[10px] uppercase tracking-wider">
-              Overflow Tools
-            </DropdownMenuLabel>
+            <DropdownMenuGroup>
+              <DropdownMenuLabel className="font-mono text-[10px] uppercase tracking-wider">
+                Overflow Tools
+              </DropdownMenuLabel>
+            </DropdownMenuGroup>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => void autoLayout("TB", "elk", true)}>
               <Network className="size-3.5" />

@@ -9,10 +9,24 @@ import {
   EmptyTitle,
 } from '@/components/ui/empty'
 import { Skeleton } from '@/components/ui/skeleton'
+import { loader, Matrix } from '@/components/unlumen-ui/matrix'
 
 export function LoadingState({ rows = 4 }: { rows?: number }) {
   return (
     <div className="flex flex-col gap-3">
+      <div className="flex items-center gap-3 px-1 text-xs text-muted-foreground">
+        <Matrix
+          rows={7}
+          cols={7}
+          frames={loader}
+          fps={10}
+          size={2}
+          gap={1.5}
+          palette={{ on: 'var(--color-primary)', off: 'var(--color-muted-foreground)' }}
+          ariaLabel="正在加载"
+        />
+        正在读取运行状态
+      </div>
       {Array.from({ length: rows }).map((_, i) => (
         <Skeleton key={i} className="h-16 w-full rounded-lg" />
       ))}

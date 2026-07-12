@@ -1,4 +1,5 @@
 import { apiClient, rootClient } from './client'
+import type { AuthIdentity } from '@/lib/auth/types'
 import type {
   AIAgent,
   AdvisoryReport,
@@ -41,7 +42,82 @@ import type {
   TaskRun,
   TaskRunEvent,
   WorkerNode,
+  WorkspaceSummary,
+  OperationsWorkItem,
+  ApprovalDecision,
+  ApprovalDecisionResult,
+  OperationsAgent,
+  OperationsAgentMode,
+  OperationsAgentProfile,
+  OperationsAgentRun,
+  Automation,
 } from './types'
+
+export const getCurrentIdentity = () =>
+  apiClient.get<ApiResponse<AuthIdentity>>('/auth/me').then((r) => r.data.data)
+
+export const listMyWorkspaces = () =>
+  apiClient.get<ApiResponse<WorkspaceSummary[]>>('/workspaces').then((r) => r.data.data)
+
+export const listOperationsInbox = (
+  workspaceId: string,
+  params?: { type?: string; status?: string; page?: number; limit?: number },
+) =>
+  apiClient
+    .get<ApiResponse<OperationsWorkItem[]>>(`/workspaces/${workspaceId}/operations-inbox`, { params })
+    .then((r) => r.data)
+
+export const decideOperationsApproval = (
+  workspaceId: string,
+  approvalId: string,
+  data: { decision: ApprovalDecision; reason: string },
+) =>
+  apiClient
+    .post<ApiResponse<ApprovalDecisionResult>>(
+      `/workspaces/${workspaceId}/operations-inbox/${approvalId}/decision`,
+      data,
+    )
+    .then((r) => r.data.data)
+
+export const listOperationsAgents = (workspaceId: string) =>
+  apiClient
+    .get<ApiResponse<OperationsAgent[]>>(`/workspaces/${workspaceId}/operations-agents`)
+    .then((r) => r.data.data)
+
+export const listOperationsAgentActivity = (workspaceId: string) =>
+  apiClient.get<ApiResponse<OperationsAgentRun[]>>(`/workspaces/${workspaceId}/operations-agents/activity`).then((r) => r.data.data)
+
+export const listAutomations = (workspaceId: string) =>
+  apiClient.get<ApiResponse<Automation[]>>(`/workspaces/${workspaceId}/automations`).then((r) => r.data.data)
+
+export const createAutomation = (workspaceId: string, data: Omit<Automation, 'id' | 'workspace_id' | 'created_by_user_id' | 'created_at' | 'updated_at'>) =>
+  apiClient.post<ApiResponse<Automation>>(`/workspaces/${workspaceId}/automations`, data).then((r) => r.data.data)
+
+export const patchAutomation = (workspaceId: string, automationId: string, data: Partial<Automation>) =>
+  apiClient.patch<ApiResponse<Automation>>(`/workspaces/${workspaceId}/automations/${automationId}`, data).then((r) => r.data.data)
+
+export const patchOperationsAgent = (workspaceId: string, agentId: string, disabled: boolean) =>
+  apiClient
+    .patch<ApiResponse<OperationsAgent>>(`/workspaces/${workspaceId}/operations-agents/${agentId}`, { disabled })
+    .then((r) => r.data.data)
+
+export const assignOperationsAgentProfile = (
+  workspaceId: string,
+  agentId: string,
+  data: {
+    mode: OperationsAgentMode
+    tool_scope: string[]
+    resource_scope: string[]
+    action_scope: string[]
+    reason: string
+  },
+) =>
+  apiClient
+    .post<ApiResponse<OperationsAgentProfile>>(
+      `/workspaces/${workspaceId}/operations-agents/${agentId}/profiles`,
+      data,
+    )
+    .then((r) => r.data.data)
 
 // ── Dashboard ──────────────────────────────────────────────────────────────────
 export const getDashboardStats = (params?: { range?: string; start?: string; end?: string }) =>

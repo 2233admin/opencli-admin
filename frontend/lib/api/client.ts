@@ -1,6 +1,7 @@
 import axios, { type InternalAxiosRequestConfig } from 'axios'
 
-import { getApiAuthToken } from './auth-token'
+import { getApiAuthHeaders } from './auth-headers'
+import { notifyAuthRequired } from './auth-events'
 
 export const apiClient = axios.create({
   baseURL: '/api/v1',
@@ -11,20 +12,22 @@ export const rootClient = axios.create({
   headers: { 'Content-Type': 'application/json' },
 })
 
-// Fleet auth (ADR-0005): attach the static bearer token to every API call
-// centrally — never per call site. Token source: VITE_API_AUTH_TOKEN build
-// config, overridden by localStorage 'apiAuthToken' (see lib/apiAuthToken.ts).
-// Empty token = dev posture (tokenless localhost API): no header attached.
-const attachApiAuthToken = (config: InternalAxiosRequestConfig) => {
-  const token = getApiAuthToken()
-  if (token && !config.headers.Authorization) {
-    config.headers.Authorization = `Bearer ${token}`
+// Attach user identity and fleet transport credentials centrally. With both
+// configured, Authorization carries OIDC/bootstrap identity and X-API-Token
+// carries the deployment's fleet credential (ADR-0005).
+const attachAuthHeaders = (config: InternalAxiosRequestConfig) => {
+  const headers = getApiAuthHeaders()
+  if (headers.Authorization && !config.headers.Authorization) {
+    config.headers.Authorization = headers.Authorization
+  }
+  if (headers['X-API-Token'] && !config.headers['X-API-Token']) {
+    config.headers['X-API-Token'] = headers['X-API-Token']
   }
   return config
 }
 
-apiClient.interceptors.request.use(attachApiAuthToken)
-rootClient.interceptors.request.use(attachApiAuthToken)
+apiClient.interceptors.request.use(attachAuthHeaders)
+rootClient.interceptors.request.use(attachAuthHeaders)
 
 // Plan IR issue 07: a 422 from the Plans API carries a node-anchored error
 // LIST in `detail` (backend.plan_ir.validation.PlanValidationError.to_dict()
@@ -36,6 +39,7 @@ rootClient.interceptors.request.use(attachApiAuthToken)
 // instead, additive to every existing caller that only reads `.message`.
 const normalizeApiError = (err: unknown) => {
   if (axios.isAxiosError(err)) {
+    if (err.response?.status === 401) notifyAuthRequired()
     const detail = err.response?.data?.detail
     const detailIsList = Array.isArray(detail)
     const message =

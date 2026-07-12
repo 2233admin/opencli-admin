@@ -1,3 +1,5 @@
+import { workflowRequestAuthHeaders } from "./request-auth"
+
 type ApiResponse<T> = {
   success?: boolean
   data?: T
@@ -36,7 +38,7 @@ export async function fetchWorkflowToolCapabilities(
 ): Promise<WorkflowToolCapabilitiesResponse> {
   const response = await fetch("/api/workflow/tool-capabilities", {
     headers: {
-      ...(options.authorization ? { Authorization: options.authorization } : {}),
+      ...workflowRequestAuthHeaders(options.authorization),
     },
     cache: "no-store",
   })

@@ -1,4 +1,5 @@
 from backend.models.agent import AIAgent
+from backend.models.automation import Automation
 from backend.models.base import TimestampMixin
 from backend.models.browser import BrowserBinding, BrowserInstance
 from backend.models.consumer_grant import ConsumerGrant
@@ -39,11 +40,13 @@ from backend.models.source_cursor import SourceCursor
 from backend.models.source_measurement import SourceMeasurement
 from backend.models.task import CollectionTask, TaskRun, TaskRunEvent
 from backend.models.worker import WorkerNode
+from backend.models.workflow import Project, Workflow, WorkflowDraft, WorkflowVersion
 from backend.models.workflow_run import WorkflowRun, WorkflowRunEvent
 
 __all__ = [
     "TimestampMixin",
     "AIAgent",
+    "Automation",
     "BrowserBinding",
     "BrowserInstance",
     "CookieJarEntry",
@@ -84,6 +87,10 @@ __all__ = [
     "NotificationRule",
     "NotificationLog",
     "WorkerNode",
+    "Project",
+    "Workflow",
+    "WorkflowDraft",
+    "WorkflowVersion",
     "WorkflowRun",
     "WorkflowRunEvent",
 ]

@@ -1,0 +1,18 @@
+{
+  "schema": "design-pipeline.state.v1",
+  "changeId": "compact-system-pulse",
+  "status": "complete",
+  "phase": "stage-6-gate-review",
+  "updatedAt": "2026-07-12T00:00:00+08:00",
+  "artifactRoot": "openspec/changes/compact-system-pulse",
+  "projectRoot": ".",
+  "surfaces": ["frontend/app/(app)/dashboard/page.tsx", "frontend/components/monitor/matrix-clock.tsx"],
+  "capabilities": { "missing": [], "fallbacks": [] },
+  "openSpec": { "detected": true, "changeId": "compact-system-pulse", "paths": ["openspec/changes/compact-system-pulse"] },
+  "gbrain": { "detected": false, "syncPlanned": false, "paths": [] },
+  "motion": { "required": false, "motionSpec": "", "implementationLibrary": "existing React timer", "reducedMotion": "not applicable" },
+  "qa": { "status": "pass", "evidenceRoot": "C:/Users/Administrator/AppData/Local/Temp/system-pulse-desktop.png", "scores": { "visualTaste": 4, "uxClarity": 5, "accessibility": 5, "responsiveness": 5, "motionQuality": 4, "engineeringFit": 5, "performanceRisk": 5 } },
+  "decisions": ["neutral baseline", "exception-only warning color", "state-derived copy"],
+  "blockers": [],
+  "nextActions": []
+}

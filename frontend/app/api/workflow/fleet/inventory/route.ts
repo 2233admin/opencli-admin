@@ -6,9 +6,7 @@ export async function GET(req: Request) {
   try {
     const response = await fetch(`${BACKEND_URL}/api/v1/workflows/fleet/inventory`, {
       headers: {
-        ...(req.headers.get("authorization")
-          ? { Authorization: req.headers.get("authorization") as string }
-          : {}),
+        ...forwardedRequestAuthHeaders(req),
       },
       cache: "no-store",
     })
@@ -28,3 +26,4 @@ export async function GET(req: Request) {
     )
   }
 }
+import { forwardedRequestAuthHeaders } from "@/lib/workflow/request-auth"

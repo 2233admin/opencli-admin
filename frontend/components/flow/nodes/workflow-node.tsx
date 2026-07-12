@@ -4,7 +4,6 @@ import { memo, useEffect, useState, type MouseEvent as ReactMouseEvent } from "r
 import { Handle, NodeToolbar, Position, useStore, type NodeProps } from "@xyflow/react"
 import { Loader2, Plus, Wand2 } from "lucide-react"
 import type { WorkflowNode as WorkflowNodeType } from "@/lib/flow/types"
-import { getApiAuthToken } from "@/lib/api/auth-token"
 import { useFlowStore } from "@/lib/flow/store"
 import { useSettingsStore } from "@/lib/flow/settings-store"
 import { draftWorkflowDemand } from "@/lib/workflow/backend-demand-draft"
@@ -361,9 +360,7 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<WorkflowNodeTyp
 
     try {
       updateWorkflowNodeParams(id, { text, locale, mode: "demand-draft" })
-      const token = getApiAuthToken()
-      const authorization = token ? `Bearer ${token}` : null
-      const proposal = await draftWorkflowDemand(projectForDraft, text, { authorization, locale })
+      const proposal = await draftWorkflowDemand(projectForDraft, text, { locale })
       queueAgentProposal(withDemandNodeUpdate(proposal, id, text, locale))
       setDraftStatus("idle")
     } catch (error) {

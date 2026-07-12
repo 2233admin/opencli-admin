@@ -82,6 +82,25 @@ async def test_non_platform_admin_cannot_create_workspace(db_session):
     assert response.status_code == 403
 
 
+async def test_user_lists_only_active_member_workspaces(db_session):
+    _, _, workspace = await _seed_workspace(db_session)
+    hidden = Workspace(name="Hidden", slug="hidden", active=False)
+    db_session.add(hidden)
+    await db_session.flush()
+    admin = await db_session.scalar(select(User).where(User.subject == "workspace-admin"))
+    db_session.add(
+        WorkspaceMembership(workspace_id=hidden.id, user_id=admin.id, role=WorkspaceRole.ADMIN)
+    )
+    await db_session.commit()
+
+    client = await _client(db_session, RequestIdentity(subject="workspace-admin"))
+    async with client:
+        response = await client.get("/workspaces")
+
+    assert response.status_code == 200
+    assert [row["id"] for row in response.json()["data"]] == [workspace.id]
+
+
 async def test_workspace_admin_can_assign_admin_role(db_session):
     _, _, workspace = await _seed_workspace(db_session)
     client = await _client(db_session, RequestIdentity(subject="workspace-admin"))

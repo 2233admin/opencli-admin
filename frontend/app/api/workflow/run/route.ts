@@ -1,5 +1,6 @@
 import workflowFixture from "../../../../lib/workflow/fixtures/workflow-intelligence.json"
 import { parseWorkflowProject } from "../../../../lib/workflow/schema"
+import { forwardedRequestAuthHeaders } from "@/lib/workflow/request-auth"
 
 export const dynamic = "force-dynamic"
 
@@ -13,9 +14,7 @@ export async function POST(req: Request) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(req.headers.get("authorization")
-          ? { Authorization: req.headers.get("authorization") as string }
-          : {}),
+        ...forwardedRequestAuthHeaders(req),
       },
       body: JSON.stringify({
         project,

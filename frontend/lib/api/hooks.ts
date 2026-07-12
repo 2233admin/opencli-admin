@@ -3,7 +3,118 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import * as api from './endpoints'
-import type { ModelDefaultCandidate, ModelProviderInput, ModelRole } from './types'
+import type { ApprovalDecision, Automation, ModelDefaultCandidate, ModelProviderInput, ModelRole, OperationsAgentMode } from './types'
+
+export function useMyWorkspaces() {
+  return useQuery({ queryKey: ['workspaces'], queryFn: api.listMyWorkspaces })
+}
+
+export function useOperationsInbox(workspaceId: string | null, status?: string) {
+  return useQuery({
+    queryKey: ['operations-inbox', workspaceId, status],
+    queryFn: () => api.listOperationsInbox(workspaceId as string, { status, limit: 100 }),
+    enabled: !!workspaceId,
+    refetchInterval: 15_000,
+  })
+}
+
+export function useDecideOperationsApproval() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      workspaceId,
+      approvalId,
+      decision,
+      reason,
+    }: {
+      workspaceId: string
+      approvalId: string
+      decision: ApprovalDecision
+      reason: string
+    }) => api.decideOperationsApproval(workspaceId, approvalId, { decision, reason }),
+    onSuccess: (_result, { workspaceId }) =>
+      queryClient.invalidateQueries({ queryKey: ['operations-inbox', workspaceId] }),
+  })
+}
+
+export function useOperationsAgents(workspaceId: string | null) {
+  return useQuery({
+    queryKey: ['operations-agents', workspaceId],
+    queryFn: () => api.listOperationsAgents(workspaceId as string),
+    enabled: !!workspaceId,
+    refetchInterval: 15_000,
+  })
+}
+
+export function useOperationsAgentActivity(workspaceId: string | null) {
+  return useQuery({
+    queryKey: ['operations-agent-activity', workspaceId],
+    queryFn: () => api.listOperationsAgentActivity(workspaceId as string),
+    enabled: !!workspaceId,
+    refetchInterval: 5_000,
+  })
+}
+
+export function useAutomations(workspaceId: string | null) {
+  return useQuery({ queryKey: ['automations', workspaceId], queryFn: () => api.listAutomations(workspaceId as string), enabled: !!workspaceId, refetchInterval: 15_000 })
+}
+
+export function useCreateAutomation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ workspaceId, data }: { workspaceId: string; data: Omit<Automation, 'id' | 'workspace_id' | 'created_by_user_id' | 'created_at' | 'updated_at'> }) => api.createAutomation(workspaceId, data),
+    onSuccess: (_result, { workspaceId }) => queryClient.invalidateQueries({ queryKey: ['automations', workspaceId] }),
+  })
+}
+
+export function usePatchAutomation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ workspaceId, automationId, data }: { workspaceId: string; automationId: string; data: Partial<Automation> }) => api.patchAutomation(workspaceId, automationId, data),
+    onSuccess: (_result, { workspaceId }) => queryClient.invalidateQueries({ queryKey: ['automations', workspaceId] }),
+  })
+}
+
+export function usePatchOperationsAgent() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ workspaceId, agentId, disabled }: { workspaceId: string; agentId: string; disabled: boolean }) =>
+      api.patchOperationsAgent(workspaceId, agentId, disabled),
+    onSuccess: (_result, { workspaceId }) =>
+      queryClient.invalidateQueries({ queryKey: ['operations-agents', workspaceId] }),
+  })
+}
+
+export function useAssignOperationsAgentProfile() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      workspaceId,
+      agentId,
+      mode,
+      toolScope,
+      resourceScope,
+      actionScope,
+      reason,
+    }: {
+      workspaceId: string
+      agentId: string
+      mode: OperationsAgentMode
+      toolScope: string[]
+      resourceScope: string[]
+      actionScope: string[]
+      reason: string
+    }) => api.assignOperationsAgentProfile(workspaceId, agentId, {
+      mode,
+      tool_scope: toolScope,
+      resource_scope: resourceScope,
+      action_scope: actionScope,
+      reason,
+    }),
+    onSuccess: (_result, { workspaceId }) =>
+      queryClient.invalidateQueries({ queryKey: ['operations-agents', workspaceId] }),
+  })
+}
 
 export function useDashboardStats() {
   return useQuery({

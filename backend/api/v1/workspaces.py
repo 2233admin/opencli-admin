@@ -53,6 +53,29 @@ async def _get_or_create_user(
     return user
 
 
+@router.get("/workspaces", response_model=ApiResponse[list[WorkspaceRead]])
+async def list_my_workspaces(
+    identity: RequestIdentity = Depends(get_request_identity),
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse:
+    rows = (
+        (
+            await db.execute(
+                select(Workspace)
+                .join(WorkspaceMembership, WorkspaceMembership.workspace_id == Workspace.id)
+                .join(User, User.id == WorkspaceMembership.user_id)
+                .where(User.subject == identity.subject)
+                .where(User.disabled.is_(False))
+                .where(Workspace.active.is_(True))
+                .order_by(Workspace.name)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return ApiResponse.ok([WorkspaceRead.model_validate(row) for row in rows])
+
+
 @router.post(
     "/platform/workspaces",
     response_model=ApiResponse[WorkspaceCreatedRead],

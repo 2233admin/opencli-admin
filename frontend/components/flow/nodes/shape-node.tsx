@@ -2,6 +2,7 @@
 
 import { memo } from "react"
 import { Handle, NodeResizer, Position, useStore, type NodeProps } from "@xyflow/react"
+import { shallow } from "zustand/shallow"
 import type { WorkflowNode as WorkflowNodeType } from "@/lib/flow/types"
 import type { ShapeKind } from "@/lib/flow/types"
 import { cn } from "@/lib/utils"
@@ -49,7 +50,7 @@ function ShapeNodeComponent({ id, data, selected }: NodeProps<WorkflowNodeType>)
   const dims = useStore((s) => {
     const n = s.nodeLookup.get(id)
     return { w: n?.measured?.width ?? 140, h: n?.measured?.height ?? 100 }
-  })
+  }, shallow)
   const shape = (data.shape ?? "rectangle") as ShapeKind
   // engineered monochrome: hairline stroke, white when selected
   const color = selected ? "var(--foreground)" : "#3a3d42"

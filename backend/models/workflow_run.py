@@ -10,6 +10,12 @@ class WorkflowRun(TimestampMixin):
     __tablename__ = "workflow_runs"
 
     workflow_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    workflow_version_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("workflow_versions.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
+    )
     trace_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     status: Mapped[str] = mapped_column(String(50), nullable=False)
     valid: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)

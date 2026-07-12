@@ -81,6 +81,7 @@ class _StoredWorkflowRun:
     request: WorkflowRunStartRequest
     projection: WorkflowRunProjection
     events: list[WorkflowNodeRunEvent]
+    workflow_version_id: str | None = None
 
 
 _RUNS: dict[str, _StoredWorkflowRun] = {}
@@ -181,6 +182,7 @@ async def start_workflow_run(
     *,
     session: AsyncSession | None = None,
     existing_events: list[WorkflowNodeRunEvent] | None = None,
+    workflow_version_id: str | None = None,
 ) -> WorkflowRunProjection:
     """Create a replayable workflow run projection from a compiled WorkflowProject."""
 
@@ -226,6 +228,7 @@ async def start_workflow_run(
             projection=projection,
             events=stored_events,
             session=session,
+            workflow_version_id=workflow_version_id,
         )
         return projection
 
@@ -623,6 +626,7 @@ async def start_workflow_run(
         projection=projection,
         events=events,
         session=session,
+        workflow_version_id=workflow_version_id,
     )
     return projection
 
@@ -700,6 +704,7 @@ async def continue_workflow_run_with_source_outputs(
         request,
         session=session,
         existing_events=stored.events,
+        workflow_version_id=stored.workflow_version_id,
     )
 
 
@@ -710,8 +715,9 @@ async def _store_workflow_run(
     projection: WorkflowRunProjection,
     events: list[WorkflowNodeRunEvent],
     session: AsyncSession | None,
+    workflow_version_id: str | None,
 ) -> None:
-    stored = _StoredWorkflowRun(request, projection, list(events))
+    stored = _StoredWorkflowRun(request, projection, list(events), workflow_version_id)
     _RUNS[run_id] = stored
     if session is not None:
         row = await session.get(WorkflowRunRow, run_id)
@@ -724,6 +730,7 @@ async def _store_workflow_run(
         row.status = projection.status
         row.valid = projection.valid
         row.package_node_id = projection.packageNodeId
+        row.workflow_version_id = workflow_version_id
         row.request = request.model_dump(mode="json")
         row.projection = projection.model_dump(mode="json")
 
@@ -780,6 +787,7 @@ async def _load_workflow_run(
         request=WorkflowRunStartRequest.model_validate(row.request),
         projection=WorkflowRunProjection.model_validate(row.projection),
         events=[WorkflowNodeRunEvent.model_validate(event_row.payload) for event_row in event_rows],
+        workflow_version_id=row.workflow_version_id,
     )
     _RUNS[run_id] = stored
     return stored
@@ -2143,8 +2151,7 @@ def _notify_send_block_reason(
         return WorkflowRunBlockReason(
             code=MISSING_DELIVERY_PROJECTION,
             message=(
-                "Webhook delivery is bound, but EvidenceBatch/resource "
-                "projection is not available."
+                "Webhook delivery is bound, but EvidenceBatch/resource projection is not available."
             ),
             source="workflow_webhook_delivery",
             details={

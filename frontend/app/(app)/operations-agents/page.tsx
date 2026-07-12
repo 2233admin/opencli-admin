@@ -1,0 +1,203 @@
+'use client'
+
+import { useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
+import { ArrowUp, Bell, Bot, CalendarClock, ChevronDown, CircleDot, Cloud, Code2, FileSearch, Pause, Play, Plus, Repeat2, Sparkles, Terminal } from 'lucide-react'
+import { toast } from 'sonner'
+
+import AgentAvatar from '@/components/smoothui/agent-avatar'
+import { useAutomations, useCreateAutomation, useMyWorkspaces, useOperationsAgentActivity, useOperationsAgents, usePatchAutomation } from '@/lib/api/hooks'
+import type { Automation, OperationsAgent, OperationsAgentMode } from '@/lib/api/types'
+import { cn } from '@/lib/utils'
+import { BACKEND_HINT, EmptyState, ErrorState, LoadingState } from '@/components/shell/data-states'
+import { Button, buttonVariants } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+
+const SUGGESTIONS = [
+  { name: '每日运行简报', prompt: '汇总过去一天的运行、失败和待批准事项，给出需要关注的下一步。', icon: Bell, color: 'text-indigo-400', schedule: 'daily@08:00' },
+  { name: '每周系统回顾', prompt: '回顾本周系统变化、风险、失败测试和待处理建议。', icon: Repeat2, color: 'text-violet-400', schedule: 'weekly@16:00' },
+  { name: '异常跟进监控', prompt: '检查最近的异常活动，并将有证据的问题整理为待处理建议。', icon: FileSearch, color: 'text-emerald-400', schedule: 'weekdays@09:00' },
+] as const
+
+const EXECUTORS = [
+  { id: 'codex', name: 'Codex', icon: Code2, color: 'text-sky-400' },
+  { id: 'claude', name: 'Claude', icon: Sparkles, color: 'text-orange-400' },
+  { id: 'chatcloud', name: 'ChatCloud', icon: Cloud, color: 'text-violet-400' },
+  { id: 'custom', name: '自定义', icon: Terminal, color: 'text-emerald-400' },
+] as const
+
+const APPROVALS: Array<{ id: OperationsAgentMode; label: string; detail: string }> = [
+  { id: 'observe_only', label: '仅观察', detail: '不提出或执行变更' },
+  { id: 'suggest_changes', label: '建议需批准', detail: '送入 Inbox 后由人决定' },
+  { id: 'low_risk_automatic', label: '低风险自动', detail: '白名单外仍需批准' },
+]
+
+function executorMeta(id: string) {
+  return EXECUTORS.find((item) => item.id === id) ?? EXECUTORS[3]
+}
+
+function scheduleText(value: string) {
+  const [kind, time] = value.split('@')
+  return `${kind === 'daily' ? '每天' : kind === 'weekdays' ? '工作日' : kind === 'weekly' ? '每周' : kind}${time ? ` ${time}` : ''}`
+}
+
+export default function OperationsAgentsPage() {
+  const workspaces = useMyWorkspaces()
+  const [workspaceId, setWorkspaceId] = useState<string | null>(null)
+  const [view, setView] = useState<'automations' | 'agents'>('automations')
+  const automations = useAutomations(workspaceId)
+  const agents = useOperationsAgents(workspaceId)
+  const activity = useOperationsAgentActivity(workspaceId)
+  const createAutomation = useCreateAutomation()
+  const patchAutomation = usePatchAutomation()
+  const [open, setOpen] = useState(false)
+  const [selectedAgent, setSelectedAgent] = useState<OperationsAgent | null>(null)
+  const [automationDraft, setAutomationDraft] = useState('')
+  const [name, setName] = useState('')
+  const [prompt, setPrompt] = useState('')
+  const [precheck, setPrecheck] = useState('')
+  const [executor, setExecutor] = useState('codex')
+  const [projectPath, setProjectPath] = useState('')
+  const [branch, setBranch] = useState('main')
+  const [scheduleKind, setScheduleKind] = useState('weekdays')
+  const [time, setTime] = useState('09:00')
+  const [sessionMode, setSessionMode] = useState<'fresh' | 'reuse'>('fresh')
+  const [approvalMode, setApprovalMode] = useState<OperationsAgentMode>('suggest_changes')
+
+  useEffect(() => {
+    if (!workspaceId && workspaces.data?.length) setWorkspaceId(workspaces.data[0].id)
+  }, [workspaceId, workspaces.data])
+
+  const latestRun = useMemo(() => new Map(activity.data?.map((run) => [run.operations_agent_id, run]) ?? []), [activity.data])
+
+  function startCreate(preset?: (typeof SUGGESTIONS)[number]) {
+    setName(preset?.name ?? '')
+    setPrompt(preset?.prompt ?? '')
+    if (preset) {
+      const [kind, presetTime] = preset.schedule.split('@')
+      setScheduleKind(kind)
+      setTime(presetTime)
+    }
+    setOpen(true)
+  }
+
+  function configureDraft() {
+    const draft = automationDraft.trim()
+    if (!draft) return
+    setName('')
+    setPrompt(draft)
+    setOpen(true)
+  }
+
+  async function submitCreate() {
+    if (!workspaceId) return
+    try {
+      await createAutomation.mutateAsync({ workspaceId, data: {
+        name: name.trim(), prompt: prompt.trim(), precheck: precheck.trim() || null,
+        executor, schedule: `${scheduleKind}@${time}`, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        session_mode: sessionMode, approval_mode: approvalMode,
+        project: { path: projectPath.trim() || null, branch: branch.trim() || null }, enabled: true,
+      } })
+      setOpen(false)
+      toast.success('自动化已创建')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '创建失败')
+    }
+  }
+
+  async function toggleAutomation(automation: Automation) {
+    if (!workspaceId) return
+    try {
+      await patchAutomation.mutateAsync({ workspaceId, automationId: automation.id, data: { enabled: !automation.enabled } })
+      toast.success(automation.enabled ? '自动化已暂停' : '自动化已恢复')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '操作失败')
+    }
+  }
+
+  if (workspaces.isLoading) return <div className="p-8"><LoadingState rows={3} /></div>
+  if (workspaces.isError) return <div className="p-8"><ErrorState message={(workspaces.error as Error)?.message} hint={BACKEND_HINT} /></div>
+  if (!workspaces.data?.length) return <div className="p-8"><EmptyState title="尚未加入 Workspace" description="加入 Workspace 后才能使用自动化和智能体。" /></div>
+
+  return (
+    <div className="min-h-full bg-[#0f1012] text-foreground">
+      <div className="mx-auto w-full max-w-5xl px-6 py-12 sm:px-10 lg:py-16">
+        <header className="flex flex-wrap items-start justify-between gap-5">
+          <div>
+            <h1 className="text-3xl font-normal tracking-[-0.025em] sm:text-4xl">自动化与智能体</h1>
+            <p className="mt-3 text-base text-muted-foreground">安排任务，观察智能体正在做什么</p>
+          </div>
+          <label className="relative"><select value={workspaceId ?? ''} onChange={(event) => setWorkspaceId(event.target.value)} className="h-9 appearance-none rounded-lg border bg-background py-1 pl-3 pr-8 text-xs" aria-label="选择 Workspace">{workspaces.data.map((workspace) => <option key={workspace.id} value={workspace.id}>{workspace.name}</option>)}</select><ChevronDown className="pointer-events-none absolute right-2.5 top-2.5 size-4 text-muted-foreground" /></label>
+        </header>
+
+        <div className="mt-10 flex items-center gap-1 border-b border-white/[0.08]">
+          <button type="button" onClick={() => setView('automations')} className={cn('border-b-2 px-4 py-3 text-sm transition-colors', view === 'automations' ? 'border-foreground text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground')}><CalendarClock className="mr-2 inline size-4" />自动化</button>
+          <button type="button" onClick={() => setView('agents')} className={cn('border-b-2 px-4 py-3 text-sm transition-colors', view === 'agents' ? 'border-foreground text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground')}><Bot className="mr-2 inline size-4" />智能体</button>
+        </div>
+
+        {view === 'automations' ? (
+          <div>
+            <section className="mt-10">
+              <div className="mx-auto max-w-3xl">
+                <h2 className="text-xl font-medium tracking-[-0.015em]">想让系统定期做什么？</h2>
+                <p className="mt-1 text-sm text-muted-foreground">直接描述任务，再确认日程、智能体和审批方式。</p>
+                <div className="mt-5 flex items-end gap-2 rounded-2xl border border-white/[0.1] bg-white/[0.04] p-2 pl-4 shadow-[0_14px_45px_rgba(0,0,0,.18)] focus-within:border-white/[0.2]">
+                  <Textarea value={automationDraft} onChange={(event) => setAutomationDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); configureDraft() } }} placeholder="例如：每个工作日检查失败任务，把需要处理的项目送到 Inbox" aria-label="描述自动化任务" className="min-h-12 resize-none border-0 bg-transparent px-0 py-3 shadow-none focus-visible:ring-0" />
+                  <Button size="icon" className="mb-0.5 rounded-full" aria-label="配置自动化" disabled={!automationDraft.trim()} onClick={configureDraft}><ArrowUp /></Button>
+                </div>
+                <div className="mt-7 space-y-1">{SUGGESTIONS.map((item) => { const Icon = item.icon; return <button key={item.name} type="button" onClick={() => startCreate(item)} className="group flex w-full items-start gap-4 rounded-xl px-3 py-3 text-left transition-colors hover:bg-white/[0.04]"><Icon className={`mt-0.5 size-5 ${item.color}`} /><span className="flex-1"><span className="block text-sm font-medium">{item.name} <span className="ml-2 font-normal text-muted-foreground">{scheduleText(item.schedule)}</span></span><span className="mt-1 block text-sm text-muted-foreground">{item.prompt}</span></span><Plus className="mt-2 size-4 opacity-0 transition-opacity group-hover:opacity-100" /></button> })}</div>
+              </div>
+            </section>
+            <section className="mt-12">
+              <div className="mb-4 flex items-center justify-between"><h2 className="text-sm font-medium text-muted-foreground">我的自动化</h2><Button variant="ghost" size="sm" onClick={() => startCreate()}><Plus />手动配置</Button></div>
+              {automations.isLoading ? <LoadingState rows={3} /> : automations.isError ? <ErrorState message={(automations.error as Error)?.message} hint={BACKEND_HINT} /> : !automations.data?.length ? <EmptyState title="还没有自动化" description="使用模板或创建一个新的定时任务。" /> : <div className="divide-y divide-white/[0.06]">{automations.data.map((automation) => { const meta = executorMeta(automation.executor); const Icon = meta.icon; return <div key={automation.id} className="flex items-start gap-4 rounded-lg px-3 py-4 hover:bg-white/[0.03]"><span className={cn('mt-0.5 flex size-7 items-center justify-center rounded-md bg-white/[0.05]', meta.color)}><Icon className="size-4" /></span><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-3"><span className="text-sm font-medium">{automation.name}</span><span className={cn('rounded-full px-2 py-0.5 text-[11px]', automation.enabled ? 'bg-white/[0.06] text-muted-foreground' : 'bg-amber-400/10 text-amber-300')}>{automation.enabled ? '等待首次运行' : '已暂停'}</span><span className="text-xs text-muted-foreground">{scheduleText(automation.schedule)}</span><span className="text-xs text-muted-foreground">{meta.name}</span></div><p className="mt-1 truncate text-sm text-muted-foreground">{automation.prompt}</p></div><Button size="icon-sm" variant="ghost" aria-label={automation.enabled ? `暂停 ${automation.name}` : `恢复 ${automation.name}`} onClick={() => void toggleAutomation(automation)}>{automation.enabled ? <Pause /> : <Play />}</Button></div> })}</div>}
+            </section>
+          </div>
+        ) : (
+          <section className="mt-10">
+            <div className="mb-7 flex items-start justify-between gap-4"><div><h2 className="text-xl font-medium tracking-[-0.015em]">智能体正在做什么</h2><p className="mt-1 text-sm text-muted-foreground">状态每 5 秒更新；需要你决定的动作会进入 Inbox。</p></div><Link href="/agents" className={buttonVariants()}><Plus />添加智能体</Link></div>
+            {agents.isLoading ? <LoadingState rows={3} /> : agents.isError ? <ErrorState message={(agents.error as Error)?.message} hint={BACKEND_HINT} /> : !agents.data?.length ? <EmptyState title="还没有智能体" description="添加一个智能体后，它的当前任务和最近活动会显示在这里。" /> : <div className="divide-y divide-white/[0.07] border-y border-white/[0.07]">{agents.data.map((agent) => { const run = latestRun.get(agent.id); const working = run?.status === 'running' || run?.status === 'queued'; return <article key={agent.id}><button type="button" onClick={() => setSelectedAgent(agent)} className="group flex w-full items-start gap-4 px-2 py-5 text-left transition-colors hover:bg-white/[0.025] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/30"><div className="relative size-10 shrink-0"><AgentAvatar seed={agent.id} size={40} />{working ? <span className="absolute -right-0.5 -top-0.5 size-2.5 animate-pulse rounded-full border-2 border-[#0f1012] bg-emerald-400" /> : null}</div><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-x-3 gap-y-1"><h3 className="text-sm font-medium">{agent.name}</h3><span className={cn('text-xs', working ? 'text-emerald-400' : agent.disabled ? 'text-amber-300' : 'text-muted-foreground')}>{agent.disabled ? '已停用' : working ? '工作中' : '空闲'}</span></div><p className="mt-1 text-sm text-muted-foreground">{run ? `${run.target_resource_type} · ${run.target_resource_id}` : agent.description || '等待任务'}</p>{run ? <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground"><CircleDot className="size-3" />{run.trigger_type} · {run.status}</div> : <div className="mt-3 text-xs text-muted-foreground">暂无进行中的任务</div>}</div><ChevronDown className="mt-2 size-4 -rotate-90 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" /></button></article> })}</div>}
+          </section>
+        )}
+      </div>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-4xl">
+          <DialogHeader><DialogTitle>创建自动化</DialogTitle><DialogDescription>网页和对话 AI 都通过同一个 Automation API 创建此配置。</DialogDescription></DialogHeader>
+          <div className="grid gap-5 py-2">
+            <Input value={name} onChange={(event) => setName(event.target.value)} placeholder="自动化名称" className="text-base font-medium" autoFocus />
+            <label className="space-y-1.5 text-xs text-muted-foreground">提示词<Textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="每次运行要完成什么？" className="min-h-40 resize-y text-sm" /></label>
+            <fieldset><legend className="mb-2 text-xs text-muted-foreground">选择智能体</legend><div className="grid grid-cols-2 gap-2 sm:grid-cols-4">{EXECUTORS.map((item) => { const Icon = item.icon; return <button key={item.id} type="button" aria-pressed={executor === item.id} onClick={() => setExecutor(item.id)} className={cn('flex items-center gap-2 rounded-lg border px-3 py-3 text-left text-sm', executor === item.id ? 'border-foreground bg-white/[0.06]' : 'border-white/[0.08] hover:bg-white/[0.03]')}><Icon className={cn('size-4', item.color)} />{item.name}</button> })}</div></fieldset>
+            <div className="grid gap-4 sm:grid-cols-2"><label className="space-y-1.5 text-xs text-muted-foreground">项目路径<Input value={projectPath} onChange={(event) => setProjectPath(event.target.value)} placeholder="/workspace/project" /></label><label className="space-y-1.5 text-xs text-muted-foreground">基础分支<Input value={branch} onChange={(event) => setBranch(event.target.value)} /></label></div>
+            <div className="grid gap-4 sm:grid-cols-3"><label className="space-y-1.5 text-xs text-muted-foreground">日程<select value={scheduleKind} onChange={(event) => setScheduleKind(event.target.value)} className="h-9 w-full rounded-lg border bg-background px-3 text-sm"><option value="hourly">每小时</option><option value="daily">每天</option><option value="weekdays">工作日</option><option value="weekly">每周</option></select></label><label className="space-y-1.5 text-xs text-muted-foreground">时间<Input type="time" value={time} onChange={(event) => setTime(event.target.value)} disabled={scheduleKind === 'hourly'} /></label><label className="space-y-1.5 text-xs text-muted-foreground">会话<select value={sessionMode} onChange={(event) => setSessionMode(event.target.value as 'fresh' | 'reuse')} className="h-9 w-full rounded-lg border bg-background px-3 text-sm"><option value="fresh">每次新会话</option><option value="reuse">重复利用会话</option></select></label></div>
+            <fieldset><legend className="mb-2 text-xs text-muted-foreground">审批方式</legend><div className="grid gap-2 sm:grid-cols-3">{APPROVALS.map((item) => <button key={item.id} type="button" onClick={() => setApprovalMode(item.id)} className={cn('rounded-lg border p-3 text-left', approvalMode === item.id ? 'border-foreground bg-white/[0.06]' : 'border-white/[0.08]')}><span className="block text-sm font-medium">{item.label}</span><span className="mt-1 block text-xs text-muted-foreground">{item.detail}</span></button>)}</div></fieldset>
+            <details className="rounded-lg border border-white/[0.08] px-4 py-3"><summary className="cursor-pointer text-sm text-muted-foreground">高级设置</summary><label className="mt-4 block space-y-1.5 text-xs text-muted-foreground"><Terminal className="mr-1 inline size-3" />预检查<Input value={precheck} onChange={(event) => setPrecheck(event.target.value)} placeholder="可选：运行前检查命令" className="font-mono" /></label></details>
+          </div>
+          <DialogFooter><Button variant="outline" onClick={() => setOpen(false)}>取消</Button><Button onClick={() => void submitCreate()} disabled={!name.trim() || !prompt.trim() || createAutomation.isPending}><Plus />创建</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(selectedAgent)} onOpenChange={(nextOpen) => { if (!nextOpen) setSelectedAgent(null) }}>
+        <DialogContent className="flex h-[82vh] max-h-[820px] flex-col gap-0 overflow-hidden p-0 sm:max-w-5xl">
+          {selectedAgent ? <>
+            <DialogHeader className="border-b border-white/[0.08] px-6 py-4">
+              <div className="flex items-center gap-3 pr-8"><AgentAvatar seed={selectedAgent.id} size={36} /><div className="min-w-0"><DialogTitle className="flex items-center gap-2 text-base"><span className="truncate">{selectedAgent.name}</span><span className={cn('text-xs font-normal', selectedAgent.disabled ? 'text-amber-300' : latestRun.get(selectedAgent.id)?.status === 'running' ? 'text-emerald-400' : 'text-muted-foreground')}>{selectedAgent.disabled ? '已停用' : latestRun.get(selectedAgent.id)?.status === 'running' ? '工作中' : '空闲'}</span></DialogTitle><DialogDescription className="mt-0.5">CLI Agent 会话 · {APPROVALS.find((item) => item.id === selectedAgent.current_profile.mode)?.label ?? selectedAgent.current_profile.mode}</DialogDescription></div></div>
+            </DialogHeader>
+            <div className="grid min-h-0 flex-1 md:grid-cols-[minmax(0,1fr)_250px]">
+              <div className="flex min-h-0 flex-col bg-[#090a0b]">
+                <div className="flex items-center gap-2 border-b border-white/[0.06] px-5 py-2 font-mono text-[11px] text-muted-foreground"><Terminal className="size-3" />SESSION OUTPUT</div>
+                <div className="min-h-0 flex-1 overflow-y-auto p-5 font-mono text-xs leading-6">
+                  {(activity.data ?? []).filter((run) => run.operations_agent_id === selectedAgent.id).length ? <div className="space-y-5">{(activity.data ?? []).filter((run) => run.operations_agent_id === selectedAgent.id).map((run) => <div key={run.id}><div className="text-muted-foreground"><span className="text-emerald-400">[{run.status}]</span> {new Date(run.updated_at).toLocaleString()}</div><div className="mt-1 text-white/80">{run.trigger_type} → {run.target_resource_type}/{run.target_resource_id}</div><div className="text-white/45">profile v{run.profile_version} · agent v{run.published_version}</div></div>)}</div> : <div className="flex h-full min-h-56 flex-col items-center justify-center text-center font-sans"><Terminal className="mb-3 size-6 text-white/25" /><p className="text-sm text-white/65">还没有会话输出</p><p className="mt-1 max-w-xs text-xs leading-5 text-white/35">智能体收到任务后，这里会显示真实的 CLI 活动和运行状态。</p></div>}
+                </div>
+                <div className="border-t border-white/[0.06] p-3"><div className="flex items-end gap-2 rounded-xl border border-white/[0.08] bg-white/[0.03] p-2 pl-3"><Textarea disabled placeholder="启动任务后可在这里向智能体发送指令" aria-label="向智能体发送指令" className="min-h-10 resize-none border-0 bg-transparent px-0 py-2 text-sm shadow-none focus-visible:ring-0" /><Button size="icon" disabled className="rounded-full"><ArrowUp /></Button></div></div>
+              </div>
+              <aside className="border-l border-white/[0.08] bg-white/[0.015] p-5 text-xs"><div className="text-muted-foreground">职责</div><p className="mt-2 text-sm leading-6 text-foreground">{selectedAgent.description || '尚未填写职责说明'}</p><div className="mt-6 text-muted-foreground">权限模式</div><p className="mt-2 text-sm text-foreground">{APPROVALS.find((item) => item.id === selectedAgent.current_profile.mode)?.label}</p><p className="mt-1 leading-5 text-muted-foreground">Profile v{selectedAgent.current_profile.version} · {selectedAgent.current_profile.reason}</p><Link href="/agents" className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'mt-6 w-full')}>配置智能体</Link></aside>
+            </div>
+          </> : null}
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}

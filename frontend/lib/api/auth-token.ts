@@ -1,13 +1,13 @@
 // Fleet auth token resolution (ADR-0005, closeout issue 04).
 //
-// The backend guards every /api route with a static bearer token once
-// API_AUTH_TOKEN is configured. The frontend attaches it centrally via the
-// axios request interceptors in src/api/client.ts — never per call.
+// The backend guards every /api route with a static fleet token once
+// API_AUTH_TOKEN is configured. When an OIDC identity is also present this
+// token travels in X-API-Token, leaving Authorization for the user identity.
 //
 // Token source, in priority order:
 //   1. localStorage 'apiAuthToken' — runtime override, wins so the operator
 //      can set the token once per browser without rebuilding the bundle.
-//   2. VITE_API_AUTH_TOKEN — baked in at build time.
+//   2. NEXT_PUBLIC_API_AUTH_TOKEN — baked in at build time.
 // Empty result = no header attached (dev posture: tokenless localhost API).
 
 export const API_AUTH_TOKEN_KEY = 'apiAuthToken'

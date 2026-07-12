@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react"
 import { useStore, type ReactFlowState } from "@xyflow/react"
+import { shallow } from "zustand/shallow"
 import type { HelperLines } from "@/lib/flow/helper-lines"
 
 const selector = (state: ReactFlowState) => ({
@@ -11,7 +12,7 @@ const selector = (state: ReactFlowState) => ({
 })
 
 export function HelperLinesRenderer({ lines }: { lines: HelperLines }) {
-  const { width, height, transform } = useStore(selector)
+  const { width, height, transform } = useStore(selector, shallow)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [tx, ty, scale] = transform
 

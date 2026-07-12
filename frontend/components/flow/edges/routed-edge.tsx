@@ -7,6 +7,18 @@ import { useFlowStore } from "@/lib/flow/store"
 import { routeOrthogonal, pointsToPath, type Rect } from "@/lib/flow/routing"
 import type { WorkflowEdge } from "@/lib/flow/types"
 
+function obstacleRectsEqual(left: Rect[], right: Rect[]) {
+  if (left.length !== right.length) return false
+  return left.every((rect, index) => {
+    const other = right[index]
+    return other !== undefined
+      && rect.x === other.x
+      && rect.y === other.y
+      && rect.width === other.width
+      && rect.height === other.height
+  })
+}
+
 function RoutedEdgeComponent({
   id,
   source,
@@ -33,7 +45,7 @@ function RoutedEdgeComponent({
       rects.push({ x: n.internals.positionAbsolute.x, y: n.internals.positionAbsolute.y, width: w, height: h })
     })
     return rects
-  })
+  }, obstacleRectsEqual)
 
   const path = useMemo(() => {
     const pts = routeOrthogonal({ x: sourceX, y: sourceY }, { x: targetX, y: targetY }, obstacles)

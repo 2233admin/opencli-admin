@@ -13,7 +13,7 @@ export async function fetchWorkflowCapabilities(
   const baseUrl = options.baseUrl ?? ""
   const response = await fetch(`${baseUrl}/api/workflow/capabilities`, {
     headers: {
-      ...(options.authorization ? { Authorization: options.authorization } : {}),
+      ...workflowRequestAuthHeaders(options.authorization),
     },
     cache: "no-store",
   })
@@ -23,3 +23,4 @@ export async function fetchWorkflowCapabilities(
   }
   return payload.data
 }
+import { workflowRequestAuthHeaders } from "./request-auth"

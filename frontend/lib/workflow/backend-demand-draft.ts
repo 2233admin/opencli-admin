@@ -1,4 +1,5 @@
 import type { AgentProposal, AgentProposalOperation } from "./proposal"
+import { workflowRequestAuthHeaders } from "./request-auth"
 import type { WorkflowProject, WorkflowProjectEdge, WorkflowProjectNode } from "./schema"
 
 type ApiResponse<T> = {
@@ -36,7 +37,7 @@ export async function draftWorkflowDemand(
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      ...(options.authorization ? { Authorization: options.authorization } : {}),
+      ...workflowRequestAuthHeaders(options.authorization),
     },
     body: JSON.stringify({
       project,

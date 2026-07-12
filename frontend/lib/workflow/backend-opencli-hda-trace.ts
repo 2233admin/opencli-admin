@@ -1,5 +1,6 @@
 import type { WorkflowCompileError } from "./backend-compile"
 import type { WorkflowProject } from "./schema"
+import { workflowRequestAuthHeaders } from "./request-auth"
 
 export type WorkflowOpenCLIHDATraceDispatchEnvelope = {
   function_id: string
@@ -52,7 +53,7 @@ export async function traceOpenCLIHDAWorkflow(
 ): Promise<WorkflowOpenCLIHDATraceResponse> {
   const baseUrl = options.baseUrl ?? ""
   const headers: Record<string, string> = { "Content-Type": "application/json" }
-  if (options.authorization) headers.Authorization = options.authorization
+  Object.assign(headers, workflowRequestAuthHeaders(options.authorization))
 
   const response = await fetch(`${baseUrl}/api/v1/workflows/opencli-hda/trace`, {
     method: "POST",

@@ -1,4 +1,5 @@
 import type { WorkflowProject } from "./schema"
+import { workflowRequestAuthHeaders } from "./request-auth"
 
 export type WorkflowCompileError = {
   code: string
@@ -68,7 +69,7 @@ export async function compileWorkflowProject(
 ): Promise<WorkflowCompileResponse> {
   const baseUrl = options.baseUrl ?? ""
   const headers: Record<string, string> = { "Content-Type": "application/json" }
-  if (options.authorization) headers.Authorization = options.authorization
+  Object.assign(headers, workflowRequestAuthHeaders(options.authorization))
 
   const response = await fetch(`${baseUrl}/api/v1/workflows/compile`, {
     method: "POST",
