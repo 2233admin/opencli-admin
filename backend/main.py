@@ -16,6 +16,7 @@ from backend.security.fleet_auth import (
     resolve_uvicorn_host,
 )
 
+
 def _configure_logging() -> None:
     """Restore backend.* logging after uvicorn's dictConfig disables pre-existing loggers.
 
@@ -96,10 +97,11 @@ async def lifespan(app: FastAPI):
     # Sync browser instance modes and agent_urls from DB into pool memory.
     # When using the single fallback endpoint (no AGENT_POOL_ENDPOINTS configured),
     # apply opencli_pool_mode as its default unless the DB already has a record.
+    from sqlalchemy import select
+
+    from backend.browser_pool import LocalBrowserPool
     from backend.database import AsyncSessionLocal
     from backend.models.browser import BrowserInstance
-    from backend.browser_pool import LocalBrowserPool
-    from sqlalchemy import select
     async with AsyncSessionLocal() as session:
         result = await session.execute(select(BrowserInstance))
         pool = browser_pool.get_pool()
@@ -116,8 +118,10 @@ async def lifespan(app: FastAPI):
                 pool.set_mode(inst.endpoint, inst.mode)
                 pool.set_agent_url(inst.endpoint, inst.agent_url)
                 pool.set_agent_protocol(inst.endpoint, inst.agent_protocol)
+                pool.set_profile_kind(inst.endpoint, inst.profile_kind)
             elif inst.endpoint in pool.endpoints:
                 pool.set_mode(inst.endpoint, inst.mode)
+                pool.set_profile_kind(inst.endpoint, inst.profile_kind)
 
         # The single fallback endpoint (no AGENT_POOL_ENDPOINTS) defaults to cdp mode.
         # Agent registration writes a DB record which takes priority above.
@@ -127,8 +131,9 @@ async def lifespan(app: FastAPI):
                 pool.set_mode(fallback, "cdp")
 
     # Mark stale pending/running tasks as failed (lost on previous restart)
-    from backend.models.task import CollectionTask
     from sqlalchemy import update
+
+    from backend.models.task import CollectionTask
     async with AsyncSessionLocal() as session:
         await session.execute(
             update(CollectionTask)
@@ -137,6 +142,14 @@ async def lifespan(app: FastAPI):
         )
         await session.commit()
     logger.info("Recovered stale tasks on startup")
+
+    # Managed acquisitions are durable submit-and-observe work. Unlike legacy
+    # collection tasks, accepted/queued/running records are requeued rather than
+    # declared lost when the API or worker restarts.
+    from backend.acquisition.runner import recover_acquisition_executions
+
+    recovered_acquisitions = await recover_acquisition_executions()
+    logger.info("Requeued %d managed acquisitions", len(recovered_acquisitions))
 
     use_admin_scheduler = (
         settings.collection_orchestrator == "admin"

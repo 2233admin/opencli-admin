@@ -56,7 +56,7 @@ skip_no_server = pytest.mark.skipif(
 
 skip_no_opencli = pytest.mark.skipif(
     not _opencli_installed(),
-    reason="opencli not found in PATH — run: npm install -g @jackwener/opencli@1.8.3",
+    reason="opencli not found in PATH — run: npm install -g @jackwener/opencli@1.8.5",
 )
 
 pytestmark = [pytest.mark.live, skip_no_server, skip_no_opencli]

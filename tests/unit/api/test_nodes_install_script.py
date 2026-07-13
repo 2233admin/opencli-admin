@@ -100,3 +100,43 @@ def test_inline_install_script_template_keeps_wireguard_reachability_only():
     assert "WireGuard provider selected; assuming the WireGuard interface is already up." in body
     assert "install_fleet_network" in body
     assert "install_netbird" in body
+
+
+def test_native_installer_authenticates_follow_up_downloads():
+    body = (
+        __import__("pathlib").Path(__file__).parents[3]
+        / "scripts"
+        / "install-agent.sh"
+    ).read_text(encoding="utf-8")
+
+    assert 'AUTH_HEADER=(-H "Authorization: Bearer $AGENT_API_TOKEN")' in body
+    assert 'curl -fsSL "${AUTH_HEADER[@]}"' in body
+    assert 'wget --header="Authorization: Bearer $AGENT_API_TOKEN"' in body
+    assert '[[ -e "$OHMYOPENCLI_ROOT" ]] && die' in body
+    assert 'rm -rf "$OHMYOPENCLI_ROOT"' not in body
+
+
+def test_windows_managed_installer_supports_api_auth():
+    installer = (
+        __import__("pathlib").Path(__file__).parents[3]
+        / "scripts"
+        / "install-managed-opencli.ps1"
+    ).read_text(encoding="utf-8")
+
+    assert "[string]$ApiAuthToken" in installer
+    assert 'Authorization = "Bearer $ApiAuthToken"' in installer
+    assert "-Headers $requestHeaders" in installer
+
+
+@pytest.mark.asyncio
+async def test_managed_opencli_patch_is_served_to_native_agents(client):
+    response = await client.get("/api/v1/nodes/install/patch-opencli.js")
+
+    assert response.status_code == 200
+    assert "OPENCLI_ADMIN_MANAGED_CDP_ROUTING_V2" in response.text
+    assert "fetch(probeUrl" in response.text
+    assert "OPENCLI_ADMIN_FACTORY_SELECTION_V1" in response.text
+    assert "OPENCLI_ADMIN_RUNTIME_FACTORY_V1" in response.text
+    assert "OPENCLI_ADMIN_REMOTE_DAEMON_ROUTE_V1" in response.text
+    assert "'dist', 'src', 'daemon.js'" in response.text
+    assert "'dist', 'src', 'browser', 'daemon-transport.js'" in response.text

@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -23,7 +23,7 @@ class AcquisitionSubmission(BaseModel):
     output_schema_version: str = Field(min_length=1, max_length=50)
     input: dict[str, Any]
     environment: dict[str, Any] = Field(default_factory=dict)
-    required_artifacts: list[str] = Field(default_factory=list)
+    required_artifacts: list[Literal["trace"]] = Field(default_factory=list)
     geo_refs: dict[str, str] = Field(default_factory=dict)
 
 
@@ -32,6 +32,8 @@ class CapabilityDescriptor(BaseModel):
     capability_version: str
     output_schema_version: str
     ready: bool
+    runtime: dict[str, str] = Field(default_factory=dict)
+    unavailable_reason: str | None = None
 
 
 class CapabilityList(BaseModel):

@@ -11,6 +11,12 @@ fi
 if [ "$HAVE_CHROME" = "true" ]; then
     echo "[agent] Chrome detected — starting embedded browser stack"
 
+    CHROME_PROFILE=/home/agent/.config/chromium
+    if [ "${OPENCLI_BROWSER_PROFILE_KIND:-authenticated}" = "anonymous" ]; then
+        CHROME_PROFILE="$(mktemp -d /tmp/opencli-anonymous-profile.XXXXXX)"
+        echo "[agent] Anonymous profile requested — using fresh $CHROME_PROFILE"
+    fi
+
     # ── 1. Virtual display ────────────────────────────────────────────────────
     rm -f /tmp/.X99-lock
     Xvfb :99 -screen 0 1280x900x24 -nolisten tcp &
@@ -18,7 +24,7 @@ if [ "$HAVE_CHROME" = "true" ]; then
     sleep 1
 
     # ── 2. Clean stale Chrome locks ───────────────────────────────────────────
-    find /home/agent/.config/chromium \
+    find "$CHROME_PROFILE" \
         -name 'SingletonLock' -o -name 'SingletonCookie' -o -name 'SingletonSocket' \
         2>/dev/null | xargs rm -f 2>/dev/null || true
 
@@ -37,7 +43,7 @@ if [ "$HAVE_CHROME" = "true" ]; then
 
     # ── 4. Chrome ─────────────────────────────────────────────────────────────
     start_chrome() {
-        find /home/agent/.config/chromium \
+        find "$CHROME_PROFILE" \
             -name 'SingletonLock' -o -name 'SingletonCookie' -o -name 'SingletonSocket' \
             2>/dev/null | xargs rm -f 2>/dev/null || true
         chromium \
@@ -46,7 +52,7 @@ if [ "$HAVE_CHROME" = "true" ]; then
             --remote-allow-origins='*' \
             --no-sandbox \
             --disable-dev-shm-usage \
-            --user-data-dir=/home/agent/.config/chromium \
+            --user-data-dir="$CHROME_PROFILE" \
             --load-extension=/home/agent/extension \
             --window-size=1280,900 \
             "$@"

@@ -5,8 +5,21 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-
 # ── LocalExecutor ──────────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_local_executor_dispatch_acquisition():
+    from backend.executor.local import LocalExecutor
+
+    executor = LocalExecutor()
+    with patch(
+        "backend.acquisition.runner.run_acquisition_execution",
+        new=AsyncMock(return_value=None),
+    ) as runner:
+        await executor.dispatch_acquisition("execution-1")
+        await asyncio.sleep(0)
+
+    runner.assert_awaited_once_with("execution-1")
 
 @pytest.mark.asyncio
 async def test_local_executor_dispatch_collection():
@@ -95,6 +108,19 @@ def test_get_executor_returns_local_executor():
 
 
 # ── CeleryExecutor ─────────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_celery_executor_dispatch_acquisition():
+    from backend.executor.celery_exec import CeleryExecutor
+
+    executor = CeleryExecutor()
+    task = MagicMock()
+    with patch("backend.worker.tasks.run_acquisition", task):
+        await executor.dispatch_acquisition("execution-1")
+
+    task.apply_async.assert_called_once_with(
+        kwargs={"execution_id": "execution-1"}
+    )
 
 @pytest.mark.asyncio
 async def test_celery_executor_dispatch_collection():

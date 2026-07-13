@@ -1,7 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.acquisition.capabilities import probe_capabilities
 from backend.database import get_db
+from backend.executor import get_executor
+from backend.models.acquisition import AcquisitionExecutionStatus
 from backend.schemas.acquisition import (
     AcquisitionExecutionRead,
     AcquisitionSubmission,
@@ -14,18 +17,9 @@ router = APIRouter(
     prefix="/internal/geo-acquisition", tags=["internal-geo-acquisition"]
 )
 
-_CAPABILITIES = (
-    CapabilityDescriptor(
-        capability_id="managed-acquisition.handshake",
-        capability_version="1.0.0",
-        output_schema_version="1",
-        ready=True,
-    ),
-)
-
-
-def _validate_capability(body: AcquisitionSubmission) -> None:
-    same_id = [c for c in _CAPABILITIES if c.capability_id == body.capability.id]
+async def _validate_capability(body: AcquisitionSubmission) -> CapabilityDescriptor:
+    capabilities = await probe_capabilities()
+    same_id = [c for c in capabilities if c.capability_id == body.capability.id]
     if not same_id:
         raise HTTPException(
             status_code=422,
@@ -42,9 +36,10 @@ def _validate_capability(body: AcquisitionSubmission) -> None:
                 "message": body.capability.version,
             },
         )
-    if not any(
-        c.output_schema_version == body.output_schema_version for c in same_version
-    ):
+    matching_schema = [
+        c for c in same_version if c.output_schema_version == body.output_schema_version
+    ]
+    if not matching_schema:
         raise HTTPException(
             status_code=422,
             detail={
@@ -52,11 +47,21 @@ def _validate_capability(body: AcquisitionSubmission) -> None:
                 "message": body.output_schema_version,
             },
         )
+    capability = matching_schema[0]
+    if not capability.ready:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": capability.unavailable_reason or "capability_not_usable",
+                "message": "Capability is not usable",
+            },
+        )
+    return capability
 
 
 @router.get("/capabilities", response_model=CapabilityList)
 async def list_capabilities() -> CapabilityList:
-    return CapabilityList(capabilities=list(_CAPABILITIES))
+    return CapabilityList(capabilities=await probe_capabilities())
 
 
 @router.post(
@@ -67,7 +72,7 @@ async def submit_execution(
     response: Response,
     db: AsyncSession = Depends(get_db),
 ) -> AcquisitionExecutionRead:
-    _validate_capability(body)
+    await _validate_capability(body)
     outcome = await acquisition_service.submit_execution(db, body)
     if not outcome.idempotency_match:
         raise HTTPException(
@@ -77,8 +82,21 @@ async def submit_execution(
                 "message": "The idempotency key already identifies different work",
             },
         )
-    if not outcome.created:
+    if outcome.created:
+        await acquisition_service.queue_execution(db, outcome.execution)
+    else:
         response.status_code = 200
+    if outcome.execution.status == AcquisitionExecutionStatus.QUEUED:
+        try:
+            await get_executor().dispatch_acquisition(outcome.execution.id)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "code": "acquisition_dispatch_failed",
+                    "message": str(exc),
+                },
+            ) from exc
     return AcquisitionExecutionRead.from_execution(outcome.execution)
 
 

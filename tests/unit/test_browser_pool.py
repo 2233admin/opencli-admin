@@ -230,6 +230,24 @@ async def test_acquire_unknown_endpoint_falls_back_to_any():
         assert ep == "http://chrome:9222"
 
 
+@pytest.mark.asyncio
+async def test_required_anonymous_route_never_falls_back_or_uses_authenticated():
+    from backend.browser_pool import NoCleanProfileError
+
+    p = LocalBrowserPool(["http://authenticated:9222"])
+
+    with pytest.raises(NoCleanProfileError):
+        async with p.acquire(
+            "http://missing:9222", required_profile_kind="anonymous"
+        ):
+            pass
+    with pytest.raises(NoCleanProfileError):
+        async with p.acquire(
+            "http://authenticated:9222", required_profile_kind="anonymous"
+        ):
+            pass
+
+
 # ── init_pool with Redis ──────────────────────────────────────────────────────
 
 def test_init_pool_redis(monkeypatch):
@@ -265,8 +283,9 @@ async def test_ensure_ready_redis_pool_calls_initialize():
 
 def test_redis_pool_client_returns_redis_client():
     """_client() returns an aioredis client from the configured URL."""
-    from backend.browser_pool import RedisBrowserPool
     from unittest.mock import MagicMock
+
+    from backend.browser_pool import RedisBrowserPool
 
     mock_redis_client = MagicMock()
     with patch("redis.asyncio.from_url", return_value=mock_redis_client):
@@ -281,8 +300,9 @@ def test_redis_pool_client_returns_redis_client():
 @pytest.mark.asyncio
 async def test_redis_pool_initialize():
     """initialize() populates the pool keys in Redis."""
+    from unittest.mock import AsyncMock
+
     from backend.browser_pool import RedisBrowserPool
-    from unittest.mock import AsyncMock, MagicMock
 
     mock_redis = AsyncMock()
     mock_redis.set = AsyncMock(return_value=True)
@@ -378,3 +398,27 @@ async def test_redis_pool_acquire_timeout():
         with pytest.raises(TimeoutError):
             async with pool.acquire():
                 pass
+# Managed official-site acquisition must never fall back to the operator's
+# default (potentially authenticated) browser profile.
+@pytest.mark.asyncio
+async def test_acquire_anonymous_profile_fails_closed_when_none_is_registered():
+    from backend.browser_pool import LocalBrowserPool, NoCleanProfileError
+
+    pool = LocalBrowserPool(["http://default-profile:9222"])
+
+    with pytest.raises(NoCleanProfileError, match="no_clean_profile"):
+        async with pool.acquire_anonymous():
+            pass
+
+
+@pytest.mark.asyncio
+async def test_acquire_anonymous_profile_routes_only_to_explicit_anonymous_profile():
+    from backend.browser_pool import LocalBrowserPool
+
+    pool = LocalBrowserPool(
+        ["http://signed-in-profile:9222", "http://anonymous-profile:9222"]
+    )
+    pool.set_profile_kind("http://anonymous-profile:9222", "anonymous")
+
+    async with pool.acquire_anonymous() as endpoint:
+        assert endpoint == "http://anonymous-profile:9222"

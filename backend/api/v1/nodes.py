@@ -99,7 +99,13 @@ async def _write_event(
     await db.flush()
 
 
-def _pool_add(url: str, mode: str, protocol: str, node_type: str = "chrome") -> None:
+def _pool_add(
+    url: str,
+    mode: str,
+    protocol: str,
+    node_type: str = "chrome",
+    profile_kind: str = "authenticated",
+) -> None:
     """Hot-add a node URL to the in-memory browser pool."""
     try:
         from backend.browser_pool import LocalBrowserPool, get_pool
@@ -112,6 +118,7 @@ def _pool_add(url: str, mode: str, protocol: str, node_type: str = "chrome") -> 
             pool.set_agent_url(url, url)
             pool.set_agent_protocol(url, protocol)
             pool.set_node_type(url, node_type)
+            pool.set_profile_kind(url, profile_kind)
     except Exception as exc:
         logger.warning("pool_add failed for %s: %s", url, exc)
 
@@ -148,6 +155,7 @@ class NodeRegisterRequest(BaseModel):
     label: str = ""
     agent_protocol: str = "http"
     runtimes: list[str] | None = None
+    profile_kind: str = "authenticated"
 
 
 @router.post("/register", response_model=ApiResponse[EdgeNodeRead])
@@ -172,6 +180,11 @@ async def register_node(
         raise HTTPException(status_code=400, detail="node_type must be 'docker' or 'shell'")
     if body.agent_protocol not in ("http", "ws"):
         raise HTTPException(status_code=400, detail="agent_protocol must be 'http' or 'ws'")
+    if body.profile_kind not in ("anonymous", "authenticated"):
+        raise HTTPException(
+            status_code=400,
+            detail="profile_kind must be 'anonymous' or 'authenticated'",
+        )
 
     ip = _extract_ip(request)
     node = await _upsert_node(
@@ -194,6 +207,7 @@ async def register_node(
             "node_type": body.node_type,
             "protocol": body.agent_protocol,
             "runtimes": body.runtimes,
+            "profile_kind": body.profile_kind,
         },
     )
 
@@ -204,6 +218,7 @@ async def register_node(
         inst.mode = body.mode
         inst.agent_url = url
         inst.agent_protocol = body.agent_protocol
+        inst.profile_kind = body.profile_kind
         if body.label:
             inst.label = body.label
     else:
@@ -213,13 +228,20 @@ async def register_node(
             agent_url=url,
             agent_protocol=body.agent_protocol,
             label=body.label,
+            profile_kind=body.profile_kind,
         )
         db.add(inst)
 
     await db.commit()
     await db.refresh(node)
 
-    _pool_add(url, body.mode, body.agent_protocol, body.node_type)
+    _pool_add(
+        url,
+        body.mode,
+        body.agent_protocol,
+        body.node_type,
+        body.profile_kind,
+    )
     logger.info(
         "Node registered (HTTP): %s (node_type=%s mode=%s label=%r)",
         url,
@@ -353,6 +375,22 @@ async def delete_node(node_id: str, db: AsyncSession = Depends(get_db)) -> ApiRe
 
 
 # ── Install script ────────────────────────────────────────────────────────────
+
+
+@router.get("/install/patch-opencli.js", response_class=PlainTextResponse)
+async def get_opencli_runtime_patch() -> PlainTextResponse:
+    """Serve the pinned OpenCLI 1.8.5 managed-CDP routing patch."""
+    candidates = [
+        Path(__file__).parent.parent.parent.parent / "scripts" / "patch-opencli.js",
+        Path("/app/scripts/patch-opencli.js"),
+    ]
+    for path in candidates:
+        if path.exists():
+            return PlainTextResponse(
+                path.read_text(encoding="utf-8"),
+                media_type="application/javascript",
+            )
+    raise HTTPException(status_code=404, detail="OpenCLI runtime patch not packaged")
 
 
 @router.get("/install/agent.sh", response_class=PlainTextResponse)
@@ -650,6 +688,7 @@ async def node_ws_endpoint(ws: WebSocket) -> None:
         node_type = data.get("node_type", "chrome")
         label = data.get("label", "")
         runtimes = data.get("runtimes")
+        profile_kind = data.get("profile_kind", "authenticated")
 
         if not agent_url.startswith("http"):
             await ws.close(code=1008, reason="agent_url must be an http/https URL")
@@ -664,6 +703,12 @@ async def node_ws_endpoint(ws: WebSocket) -> None:
             not isinstance(runtimes, list) or not all(isinstance(r, str) for r in runtimes)
         ):
             await ws.close(code=1008, reason="runtimes must be a list of strings")
+            return
+        if profile_kind not in ("anonymous", "authenticated"):
+            await ws.close(
+                code=1008,
+                reason="profile_kind must be 'anonymous' or 'authenticated'",
+            )
             return
 
         # ── 2. Upsert node + write event ──────────────────────────────────
@@ -682,7 +727,12 @@ async def node_ws_endpoint(ws: WebSocket) -> None:
                     db,
                     node.id,
                     "online",
-                    event_meta={"mode": mode, "node_type": node_type, "protocol": "ws"},
+                    event_meta={
+                        "mode": mode,
+                        "node_type": node_type,
+                        "protocol": "ws",
+                        "profile_kind": profile_kind,
+                    },
                 )
                 # BrowserInstance compat
                 result = await db.execute(
@@ -693,6 +743,7 @@ async def node_ws_endpoint(ws: WebSocket) -> None:
                     inst.mode = mode
                     inst.agent_url = agent_url
                     inst.agent_protocol = "ws"
+                    inst.profile_kind = profile_kind
                     if label:
                         inst.label = label
                 else:
@@ -702,13 +753,14 @@ async def node_ws_endpoint(ws: WebSocket) -> None:
                         agent_url=agent_url,
                         agent_protocol="ws",
                         label=label,
+                        profile_kind=profile_kind,
                     )
                     db.add(inst)
                 await db.commit()
         except Exception as exc:
             logger.warning("WS node %s: DB upsert failed (non-fatal): %s", agent_url, exc)
 
-        _pool_add(agent_url, mode, "ws", node_type)
+        _pool_add(agent_url, mode, "ws", node_type, profile_kind)
         ws_agent_manager.register_connection(agent_url, ws)
         await ws.send_json({"type": "registered", "agent_url": agent_url})
         logger.info(

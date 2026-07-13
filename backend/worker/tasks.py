@@ -11,6 +11,14 @@ from backend.worker.celery_app import celery_app
 logger = logging.getLogger(__name__)
 
 
+@celery_app.task(name="run_acquisition")
+def run_acquisition(execution_id: str) -> None:
+    """Execute one durable managed-acquisition record."""
+    from backend.acquisition.runner import run_acquisition_execution
+
+    _run_async(run_acquisition_execution(execution_id))
+
+
 def _run_async(coro: Any) -> Any:
     """Run an async coroutine in a Celery task."""
     loop = asyncio.new_event_loop()

@@ -10,6 +10,7 @@ from backend.channels.base import ChannelResult
 from backend.channels.opencli_channel import (
     OpenCLIChannel,
     _collect_via_agent,
+    _get_named_options,
     _parse_csv,
     _parse_json,
     _parse_markdown,
@@ -21,6 +22,36 @@ from backend.channels.opencli_channel import (
 
 def _sessionmaker(db_engine):
     return async_sessionmaker(db_engine, class_=AsyncSession, expire_on_commit=False)
+
+
+@pytest.mark.asyncio
+async def test_named_options_accept_opencli_underscore_flags():
+    process = AsyncMock()
+    process.communicate.return_value = (
+        b"--url <value> --max_text_chars [value] --trace <mode>",
+        b"",
+    )
+    with patch("asyncio.create_subprocess_exec", return_value=process):
+        options = await _get_named_options(
+            "opencli-underscore-test", "official-site", "observe"
+        )
+
+    assert options == frozenset({"url", "max_text_chars", "trace"})
+
+
+def test_managed_profile_requirement_is_not_forwarded_as_a_cli_argument():
+    from backend.channels.opencli_channel import _split_routing_parameters
+
+    routing, cli = _split_routing_parameters(
+        {
+            "chrome_endpoint": "http://clean:9222",
+            "required_profile_kind": "anonymous",
+            "url": "https://example.com",
+        }
+    )
+
+    assert routing == ("http://clean:9222", "anonymous")
+    assert cli == {"url": "https://example.com"}
 
 
 # ── Pure parser function tests ─────────────────────────────────────────────────

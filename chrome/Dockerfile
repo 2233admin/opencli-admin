@@ -6,7 +6,7 @@ RUN sed -i 's|http://deb.debian.org|http://mirrors.aliyun.com|g' /etc/apt/source
     sed -i 's|http://deb.debian.org|http://mirrors.aliyun.com|g' /etc/apt/sources.list 2>/dev/null || true
 
 # OPENCLI_VERSION: pin the opencli release; patch-opencli.js adds DAEMON_HOST/LISTEN env hooks
-ARG OPENCLI_VERSION=1.8.3
+ARG OPENCLI_VERSION=1.8.5
 COPY scripts/patch-opencli.js /tmp/patch-opencli.js
 RUN apt-get update && apt-get install -y --no-install-recommends \
     chromium x11vnc xvfb novnc websockify procps nginx \

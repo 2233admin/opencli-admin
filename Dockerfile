@@ -30,22 +30,36 @@ RUN sed -i 's|http://deb.debian.org|http://mirrors.aliyun.com|g' /etc/apt/source
 
 # Runtime system deps (psycopg2 needs libpq, opencli needs Node.js 22+)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libpq5 curl ca-certificates \
+    libpq5 curl ca-certificates git \
     && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
 
 # Install opencli globally — available as 'opencli' on PATH
-ARG OPENCLI_VERSION=1.8.3
+ARG OPENCLI_VERSION=1.8.5
 ARG IMAGE_TAG=latest
+COPY scripts/patch-opencli.js /tmp/patch-opencli.js
 RUN npm install -g @jackwener/opencli@${OPENCLI_VERSION} \
+    && node /tmp/patch-opencli.js \
+    && rm /tmp/patch-opencli.js \
     && rm -rf /root/.npm
+
+ARG OHMYOPENCLI_REPO=https://github.com/2233admin/OhMyOpenCLI.git
+ARG OHMYOPENCLI_COMMIT=8a087abe1805a9cff77b64ba80da12379afa184e
+ARG OFFICIAL_SITE_CAPABILITY_COMMIT=35b146e675a51f013f293d12d303cfedfac58495
+RUN git clone ${OHMYOPENCLI_REPO} /opt/ohmyopencli \
+    && cd /opt/ohmyopencli \
+    && git checkout --detach ${OHMYOPENCLI_COMMIT} \
+    && git merge-base --is-ancestor ${OFFICIAL_SITE_CAPABILITY_COMMIT} HEAD \
+    && npm ci \
+    && test "$(git rev-parse HEAD)" = "${OHMYOPENCLI_COMMIT}"
 
 # Copy installed packages from builder
 COPY --from=builder /install /usr/local
 
 # Copy application source
 COPY backend/ ./backend/
+COPY scripts/patch-opencli.js ./scripts/patch-opencli.js
 COPY alembic.ini .
 
 # Entrypoint handles migrations
@@ -55,12 +69,16 @@ RUN sed -i 's/\r$//' /entrypoint.sh && chmod +x /entrypoint.sh
 # Non-root user for security; pre-create /data so the SQLite volume is writable
 RUN useradd -m -u 1000 appuser && \
     mkdir -p /data && \
-    chown -R appuser:appuser /app /data
+    chown -R appuser:appuser /app /data \
+    && cd /opt/ohmyopencli \
+    && HOME=/home/appuser npm run bootstrap \
+    && chown -R appuser:appuser /home/appuser/.opencli
 USER appuser
 
 ENV PYTHONPATH=/app \
     PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    OHMYOPENCLI_ROOT=/opt/ohmyopencli
 # Bake the image tag so the system config API can serve it to clients.
 ARG IMAGE_TAG=latest
 ENV IMAGE_TAG=${IMAGE_TAG}

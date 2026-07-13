@@ -1,16 +1,16 @@
 import re
-from urllib.parse import urlparse
 from typing import Literal
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.browser_pool import get_pool
 from backend.config import get_settings
 from backend.database import get_db
 from backend.schemas.common import ApiResponse
-from backend.browser_pool import get_pool
 
 router = APIRouter(prefix="/workers", tags=["workers"])
 
@@ -81,6 +81,7 @@ async def chrome_pool_status() -> ApiResponse:
             "mode": pool.get_mode(ep),
             "agent_url": pool.get_agent_url(ep) if isinstance(pool, LocalBrowserPool) else None,
             "agent_protocol": pool.get_agent_protocol(ep) if isinstance(pool, LocalBrowserPool) else None,
+            "profile_kind": pool.get_profile_kind(ep),
         }
         for ep in pool.endpoints
     ]
@@ -103,6 +104,7 @@ async def update_endpoint_mode(
 ) -> ApiResponse:
     """Update the connection mode (bridge/cdp) for an agent pool endpoint."""
     import base64
+
     from backend.models.browser import BrowserInstance
 
     try:

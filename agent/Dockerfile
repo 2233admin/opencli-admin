@@ -7,7 +7,7 @@ RUN sed -i 's|http://deb.debian.org|http://mirrors.aliyun.com|g' /etc/apt/source
 
 # Base system deps (always installed)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl ca-certificates procps \
+    curl ca-certificates git procps \
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
@@ -25,9 +25,25 @@ RUN if [ "$INSTALL_CHROME" = "true" ]; then \
 fi
 
 # Install opencli globally — available as 'opencli' on PATH
-ARG OPENCLI_VERSION=1.8.3
+ARG OPENCLI_VERSION=1.8.5
+COPY scripts/patch-opencli.js /tmp/patch-opencli.js
 RUN npm install -g @jackwener/opencli@${OPENCLI_VERSION} \
+    && node /tmp/patch-opencli.js \
+    && rm /tmp/patch-opencli.js \
     && rm -rf /root/.npm
+
+# Project-owned capability package. Keep the repository and capability-source
+# identities separate: the latter is the behavior change, while the former is
+# the exact checkout certified by this image.
+ARG OHMYOPENCLI_REPO=https://github.com/2233admin/OhMyOpenCLI.git
+ARG OHMYOPENCLI_COMMIT=8a087abe1805a9cff77b64ba80da12379afa184e
+ARG OFFICIAL_SITE_CAPABILITY_COMMIT=35b146e675a51f013f293d12d303cfedfac58495
+RUN git clone ${OHMYOPENCLI_REPO} /opt/ohmyopencli \
+    && cd /opt/ohmyopencli \
+    && git checkout --detach ${OHMYOPENCLI_COMMIT} \
+    && git merge-base --is-ancestor ${OFFICIAL_SITE_CAPABILITY_COMMIT} HEAD \
+    && npm ci \
+    && test "$(git rev-parse HEAD)" = "${OHMYOPENCLI_COMMIT}"
 
 # Python deps for agent_server only — intentionally minimal
 RUN pip install --no-cache-dir \
@@ -56,7 +72,10 @@ RUN sed -i 's/\r$//' /entrypoint.sh && chmod +x /entrypoint.sh
 
 RUN useradd -m -u 1000 agent \
     && mkdir -p /home/agent/.config/chromium \
-    && chown -R agent:agent /home/agent /app
+    && chown -R agent:agent /home/agent /app \
+    && cd /opt/ohmyopencli \
+    && HOME=/home/agent npm run bootstrap \
+    && chown -R agent:agent /home/agent/.opencli
 
 ARG INSTALL_CHROME=false
 ENV PYTHONPATH=/app \
@@ -67,7 +86,8 @@ ENV PYTHONPATH=/app \
     # Baked at build time so agent_server knows whether Chrome is bundled.
     # true  → connect to container-local Chrome (localhost)
     # false → connect to host Chrome (host.docker.internal)
-    AGENT_HAS_CHROME=${INSTALL_CHROME}
+    AGENT_HAS_CHROME=${INSTALL_CHROME} \
+    OHMYOPENCLI_ROOT=/opt/ohmyopencli
 
 USER agent
 

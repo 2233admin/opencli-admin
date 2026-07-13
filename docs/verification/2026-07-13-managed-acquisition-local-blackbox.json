@@ -1,0 +1,65 @@
+{
+  "verification": "opencli-admin #14 local managed acquisition black-box",
+  "fixed_point": "2c06ceb1fc5283c1aab07dbbe4bf4ba37ab7ff5b",
+  "runtime": {
+    "ohmyopencli_repo_commit": "8a087abe1805a9cff77b64ba80da12379afa184e",
+    "capability_source_commit": "35b146e675a51f013f293d12d303cfedfac58495",
+    "opencli_version": "1.8.5"
+  },
+  "negative_control": {
+    "purpose": "prove stock OpenCLI 1.8.5 escaped the Admin-selected CDP endpoint",
+    "selected_endpoint": "http://127.0.0.1:9333",
+    "selected_endpoint_state": "unreachable",
+    "default_bridge_state": "available",
+    "observed_command_result": "succeeded",
+    "conclusion": "stock OpenCLI 1.8.5 ignored the selected endpoint for an ordinary web adapter and fell back to Browser Bridge",
+    "first_admin_execution": {
+      "execution_id": "b0244db9-7bac-4c56-a709-787b610daf7c",
+      "status": "succeeded",
+      "accessState": "personalized",
+      "personalizationDetected": true,
+      "personalizationMarkers": ["identity-meta", "account-control"],
+      "bodyTextLength": 1716,
+      "bodyTextTruncated": false,
+      "bodyTextSha256": "f2665168b64523857e062454a3f301c4c0be6e3a5541c781f757b6cde821d55e",
+      "domLength": 381953,
+      "domSha256": "0f0d2106b20c8cbf604327c8b18d0edc2674126bf1a9cacfb8342e4b97de1141",
+      "trace_ref": "managed-acquisition:b0244db9-7bac-4c56-a709-787b610daf7c"
+    }
+  },
+  "patched_route_negative_control": {
+    "selected_endpoint": "http://127.0.0.1:9333",
+    "selected_endpoint_state": "unreachable",
+    "default_bridge_state": "available",
+    "exit_code": 1,
+    "error": "CDP not reachable at http://127.0.0.1:9333",
+    "conclusion": "the managed OpenCLI patch failed closed and did not use the available default Bridge"
+  },
+  "positive_control": {
+    "purpose": "final V2 Admin dispatcher result through a fresh dedicated Chrome profile and patched OpenCLI 1.8.5",
+    "profile": "new temporary user-data-dir with no persisted login state",
+    "selected_endpoint": "http://127.0.0.1:9446",
+    "execution_id": "0460e61b-2fbc-4018-84d4-5ef5c7bf5ce5",
+    "status": "succeeded",
+    "capabilityId": "official-site.observe",
+    "capabilityVersion": "1.0.0",
+    "outputSchemaVersion": "1",
+    "requestedUrl": "https://github.com/",
+    "finalUrl": "https://github.com/",
+    "accessState": "accessible",
+    "accessMarkers": ["sign in"],
+    "personalizationDetected": false,
+    "personalizationMarkers": [],
+    "bodyTextLength": 5825,
+    "bodyTextTruncated": false,
+    "bodyTextSha256": "6b181412045e4b422c9971c32b6644d88d9bcb7af008e6c1f19af6558cffbbb4",
+    "domLength": 601765,
+    "domSha256": "82c497c031e2f716bbfd8a173a3e57fce5d31c2dc506c180f7d7991f440b9662",
+    "observedAt": "2026-07-13T15:18:19.401Z",
+    "trace_ref": "C:\\Users\\Administrator\\.opencli\\profiles\\ebe4wcg4\\traces\\20260713151812-99fc7b47",
+    "artifact_count": 1,
+    "artifact_kinds": ["trace"],
+    "conclusion": "the final hardened V2 route returned a 601765-byte real DOM through the Admin-selected anonymous CDP endpoint, with a retained OpenCLI trace"
+  },
+  "sensitive_data": "No cookies, tokens, response body, or DOM content retained in this artifact."
+}

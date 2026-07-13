@@ -23,6 +23,7 @@
 #   HTTP_PROXY         HTTP proxy for agent → center (optional)
 #   HTTPS_PROXY        HTTPS proxy for agent → center (optional)
 #   IMAGE_TAG          Docker image tag (default: injected by center API)
+#   OPENCLI_BROWSER_PROFILE_KIND authenticated | anonymous (default: authenticated)
 #   FLEET_NETWORK_PROVIDER lan | netbird | wireguard | ssh | custom (default: injected by center API)
 #   NETBIRD_MODE       off | host | docker (default: injected by center API)
 #   NETBIRD_SETUP_KEY  Setup key used to enroll this node into NetBird
@@ -49,6 +50,7 @@ AGENT_LABEL="${AGENT_LABEL:-$(hostname)}"
 AGENT_MODE="${AGENT_MODE:-cdp}"
 IMAGE_TAG="${IMAGE_TAG:-__IMAGE_TAG__}"
 INSTALL_CHROME="${INSTALL_CHROME:-false}"
+OPENCLI_BROWSER_PROFILE_KIND="${OPENCLI_BROWSER_PROFILE_KIND:-authenticated}"
 INSTALL_MODE="${1:-docker}"
 
 [[ "$CENTRAL_API_URL" == "__CENTRAL_API_URL__" ]] && CENTRAL_API_URL=""
@@ -87,6 +89,11 @@ warn()  { printf '\e[33m[WARN]\e[0m  %s\n' "$*"; }
 die()   { printf '\e[31m[ERROR]\e[0m %s\n' "$*" >&2; exit 1; }
 
 [[ -z "$CENTRAL_API_URL" ]] && die "CENTRAL_API_URL is required"
+
+AUTH_HEADER=()
+if [[ -n "$AGENT_API_TOKEN" ]]; then
+  AUTH_HEADER=(-H "Authorization: Bearer $AGENT_API_TOKEN")
+fi
 
 info "OpenCLI Agent Installer"
 info "  Center:         $CENTRAL_API_URL"
@@ -245,6 +252,7 @@ install_docker() {
     -e AGENT_MODE="${AGENT_MODE}" \
     -e AGENT_API_TOKEN="$AGENT_API_TOKEN" \
     -e AGENT_DEPLOY_TYPE="docker" \
+    -e OPENCLI_BROWSER_PROFILE_KIND="$OPENCLI_BROWSER_PROFILE_KIND" \
     $PROXY_ARGS \
     -p "${AGENT_PORT}:${AGENT_PORT}" \
     "$AGENT_IMAGE"
@@ -256,6 +264,7 @@ install_docker() {
   else
     die "Container failed to start. Check: docker logs $CONTAINER_NAME"
   fi
+
 }
 
 # ── Python/pip install ─────────────────────────────────────────────────────────
@@ -268,11 +277,18 @@ install_python() {
   # ── Download agent_server.py from center ──────────────────────────────────
   info "Downloading agent_server.py from center..."
   if command -v curl >/dev/null 2>&1; then
-    curl -fsSL "$CENTRAL_API_URL/api/v1/nodes/install/agent_server.py" \
+    curl -fsSL "${AUTH_HEADER[@]}" \
+      "$CENTRAL_API_URL/api/v1/nodes/install/agent_server.py" \
       -o "$AGENT_DIR/backend/agent_server.py"
   elif command -v wget >/dev/null 2>&1; then
-    wget -qO "$AGENT_DIR/backend/agent_server.py" \
-      "$CENTRAL_API_URL/api/v1/nodes/install/agent_server.py"
+    if [[ -n "$AGENT_API_TOKEN" ]]; then
+      wget --header="Authorization: Bearer $AGENT_API_TOKEN" \
+        -qO "$AGENT_DIR/backend/agent_server.py" \
+        "$CENTRAL_API_URL/api/v1/nodes/install/agent_server.py"
+    else
+      wget -qO "$AGENT_DIR/backend/agent_server.py" \
+        "$CENTRAL_API_URL/api/v1/nodes/install/agent_server.py"
+    fi
   else
     die "Neither curl nor wget found — cannot download agent_server.py"
   fi
@@ -292,25 +308,40 @@ install_python() {
   fi
 
   # ── Check / install opencli ───────────────────────────────────────────────
-  if command -v opencli >/dev/null 2>&1; then
-    info "opencli: $(opencli --version 2>/dev/null | head -1 || echo 'found')"
-  elif command -v npm >/dev/null 2>&1; then
+  if command -v npm >/dev/null 2>&1; then
     if [ -t 0 ]; then
-      read -r -p "opencli not found. Install now via npm? [Y/n] " _reply </dev/tty || _reply="Y"
+      read -r -p "Install or upgrade managed OpenCLI 1.8.5 via npm? [Y/n] " _reply </dev/tty || _reply="Y"
     else
       _reply="Y"
-      info "opencli not found — installing via npm (non-interactive)..."
+      info "Installing pinned OpenCLI 1.8.5 via npm (non-interactive)..."
     fi
     if [[ "${_reply:-Y}" =~ ^[Yy]$ ]]; then
-      npm install -g @jackwener/opencli@1.8.3
+      npm install -g @jackwener/opencli@1.8.5
+      PATCH_FILE="$AGENT_DIR/patch-opencli.js"
+      curl -fsSL "${AUTH_HEADER[@]}" \
+        "$CENTRAL_API_URL/api/v1/nodes/install/patch-opencli.js" -o "$PATCH_FILE"
+      node "$PATCH_FILE"
       info "opencli: $(opencli --version 2>/dev/null | head -1 || echo 'installed')"
     else
       warn "Skipped — opencli channel will be unavailable"
     fi
   else
     warn "npm not found — opencli channel will be unavailable"
-    warn "  Install Node.js 22+ from https://nodejs.org then run: npm install -g @jackwener/opencli@1.8.3"
+    warn "  Install Node.js 22+ from https://nodejs.org then run: npm install -g @jackwener/opencli@1.8.5"
   fi
+
+  # Install the exact project-owned managed-acquisition capability package.
+  OHMYOPENCLI_ROOT="$AGENT_DIR/ohmyopencli"
+  OHMYOPENCLI_COMMIT="8a087abe1805a9cff77b64ba80da12379afa184e"
+  OFFICIAL_SITE_CAPABILITY_COMMIT="35b146e675a51f013f293d12d303cfedfac58495"
+  command -v git >/dev/null 2>&1 || die "git is required to install OhMyOpenCLI"
+  [[ -e "$OHMYOPENCLI_ROOT" ]] && die \
+    "Managed OhMyOpenCLI target already exists; archive it explicitly before reinstalling: $OHMYOPENCLI_ROOT"
+  git clone https://github.com/2233admin/OhMyOpenCLI.git "$OHMYOPENCLI_ROOT"
+  git -C "$OHMYOPENCLI_ROOT" checkout --detach "$OHMYOPENCLI_COMMIT"
+  git -C "$OHMYOPENCLI_ROOT" merge-base --is-ancestor \
+    "$OFFICIAL_SITE_CAPABILITY_COMMIT" HEAD
+  (cd "$OHMYOPENCLI_ROOT" && npm ci && npm run bootstrap)
 
   # ── Find Chrome binary ────────────────────────────────────────────────────
   find_chrome() {
@@ -331,6 +362,9 @@ install_python() {
   # ── Start Chrome in CDP mode ──────────────────────────────────────────────
   CDP_PORT="${CDP_PORT:-9222}"
   CHROME_PROFILE="$AGENT_DIR/chrome-profile"
+  if [[ "$OPENCLI_BROWSER_PROFILE_KIND" == "anonymous" ]]; then
+    CHROME_PROFILE="$(mktemp -d /tmp/opencli-anonymous-profile.XXXXXX)"
+  fi
 
   if [[ "${AGENT_MODE}" == "cdp" ]]; then
     if CHROME_BIN="$(find_chrome)"; then
@@ -397,6 +431,8 @@ Environment=AGENT_LABEL=${AGENT_LABEL}
 Environment=AGENT_MODE=${AGENT_MODE}
 Environment=AGENT_API_TOKEN=${AGENT_API_TOKEN}
 Environment=AGENT_DEPLOY_TYPE=shell
+Environment=OHMYOPENCLI_ROOT=${OHMYOPENCLI_ROOT}
+Environment=OPENCLI_BROWSER_PROFILE_KIND=${OPENCLI_BROWSER_PROFILE_KIND}
 $([ -n "${OPENCLI_CDP_ENDPOINT:-}" ] && echo "Environment=OPENCLI_CDP_ENDPOINT=${OPENCLI_CDP_ENDPOINT}")
 $([ -n "${HTTP_PROXY:-}" ]  && echo "Environment=HTTP_PROXY=${HTTP_PROXY}")
 $([ -n "${HTTPS_PROXY:-}" ] && echo "Environment=HTTPS_PROXY=${HTTPS_PROXY}")
@@ -415,6 +451,7 @@ EOF
       export CENTRAL_API_URL AGENT_REGISTER AGENT_PORT AGENT_ADVERTISE_URL AGENT_LABEL AGENT_MODE
       export AGENT_API_TOKEN
       export AGENT_DEPLOY_TYPE=shell
+      export OHMYOPENCLI_ROOT OPENCLI_BROWSER_PROFILE_KIND
       [[ -n "${OPENCLI_CDP_ENDPOINT:-}" ]] && export OPENCLI_CDP_ENDPOINT
       [[ -n "${HTTP_PROXY:-}" ]]  && export HTTP_PROXY
       [[ -n "${HTTPS_PROXY:-}" ]] && export HTTPS_PROXY

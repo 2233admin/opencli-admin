@@ -95,3 +95,13 @@ async def cancel_execution(
         await db.commit()
         await db.refresh(execution)
     return execution
+
+
+async def queue_execution(
+    db: AsyncSession, execution: AcquisitionExecution
+) -> AcquisitionExecution:
+    if execution.status == AcquisitionExecutionStatus.ACCEPTED:
+        execution.status = AcquisitionExecutionStatus.QUEUED
+        await db.commit()
+        await db.refresh(execution)
+    return execution

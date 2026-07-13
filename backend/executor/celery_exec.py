@@ -8,6 +8,11 @@ logger = logging.getLogger(__name__)
 
 
 class CeleryExecutor(AbstractExecutor):
+    async def dispatch_acquisition(self, execution_id: str) -> None:
+        from backend.worker.tasks import run_acquisition
+
+        run_acquisition.apply_async(kwargs={"execution_id": execution_id})
+
     async def dispatch_collection(self, task_id: str, parameters: dict) -> dict:
         from backend.worker.tasks import run_collection
         result = run_collection.apply_async(

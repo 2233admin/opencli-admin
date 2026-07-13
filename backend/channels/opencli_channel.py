@@ -6,7 +6,7 @@ import io
 import json
 import logging
 import os
-import shutil
+import re
 from typing import Any
 from urllib.parse import urlparse
 
@@ -14,16 +14,31 @@ import yaml
 
 from backend.channels.base import AbstractChannel, Capabilities, ChannelResult
 from backend.channels.registry import register_channel
+from backend.opencli_runtime import configured_opencli_bin, resolve_opencli_bin
 
 logger = logging.getLogger(__name__)
 
 _DAEMON_PORT = 19825
 # Binary to invoke. Override with OPENCLI_BIN env var if needed.
-_OPENCLI_BIN = os.environ.get("OPENCLI_BIN") or "opencli"
+_OPENCLI_BIN = configured_opencli_bin()
 
 # Cache: (bin, site, command) → frozenset of accepted --option names (excluding builtins)
 _help_cache: dict[tuple[str, str, str], frozenset[str]] = {}
 _browser_requirement_cache: dict[tuple[str, str, str], bool] = {}
+
+
+def _split_routing_parameters(
+    parameters: dict[str, Any],
+) -> tuple[tuple[str | None, str | None], dict[str, Any]]:
+    """Separate Admin-only browser routing controls from capability arguments."""
+    chrome_endpoint = parameters.get("chrome_endpoint") or None
+    required_profile_kind = parameters.get("required_profile_kind") or None
+    cli_parameters = {
+        key: value
+        for key, value in parameters.items()
+        if key not in {"chrome_endpoint", "required_profile_kind"}
+    }
+    return (chrome_endpoint, required_profile_kind), cli_parameters
 
 
 async def _site_bound_agent_endpoint(pool: Any, site: str) -> str | None:
@@ -95,7 +110,7 @@ async def _get_named_options(bin_path: str, site: str, command: str) -> frozense
         stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=10)
         text = stdout.decode(errors="replace")
         # Extract every --flag name; strip built-ins that aren't user-facing options
-        names = frozenset(re.findall(r"--([a-zA-Z][a-zA-Z0-9-]*)", text)) - {
+        names = frozenset(re.findall(r"--([a-zA-Z][a-zA-Z0-9_-]*)", text)) - {
             "format", "verbose", "help"
         }
     except Exception as exc:
@@ -144,8 +159,7 @@ async def _command_requires_browser(bin_path: str, site: str, command: str) -> b
 
 
 def _resolve_bin(mode: str) -> str:  # noqa: ARG001 — mode unused, kept for call-site compat
-    configured = _OPENCLI_BIN or "opencli"
-    return shutil.which(configured) or configured
+    return resolve_opencli_bin()
 
 
 def _parse_json(raw: str) -> list[dict]:
@@ -467,6 +481,9 @@ async def _collect_with_opencli_subprocess(
     metadata = {"site": site, "command": command}
     if chrome_mode:
         metadata["chrome_mode"] = chrome_mode
+    trace_match = re.search(r"OpenCLI trace artifact:\s*([^\r\n]+)", stderr_text)
+    if trace_match:
+        metadata["trace_artifact"] = trace_match.group(1).strip()
     return ChannelResult.ok(items, **metadata)
 
 
@@ -486,8 +503,9 @@ class OpenCLIChannel(AbstractChannel):
         command = config.get("command", "")
         output_format = config.get("format", "json")
 
-        chrome_endpoint: str | None = parameters.get("chrome_endpoint") or None
-        cli_params = {k: v for k, v in parameters.items() if k != "chrome_endpoint"}
+        (chrome_endpoint, required_profile_kind), cli_params = (
+            _split_routing_parameters(parameters)
+        )
         raw_args: dict = {**config.get("args", {}), **cli_params}
         positional_args: list[str] = [str(v) for v in config.get("positional_args", [])]
 
@@ -553,7 +571,10 @@ class OpenCLIChannel(AbstractChannel):
                     "No registered agent nodes available. Please add an agent node first."
                 )
 
-        async with pool.acquire(endpoint=_acquire_endpoint) as cdp_endpoint:
+        acquire_kwargs: dict[str, Any] = {"endpoint": _acquire_endpoint}
+        if required_profile_kind:
+            acquire_kwargs["required_profile_kind"] = required_profile_kind
+        async with pool.acquire(**acquire_kwargs) as cdp_endpoint:
             mode = pool.get_mode(cdp_endpoint)
             # Agent mode: dispatch to remote edge node
             if settings.collection_mode == "agent":
@@ -653,7 +674,8 @@ class OpenCLIChannel(AbstractChannel):
         does before collect()), the probe targets that bound endpoint
         instead of an arbitrary pool member, so multi-endpoint pools give a
         result that reflects this source's actual endpoint."""
-        if not (shutil.which(_OPENCLI_BIN) or os.path.isfile(_OPENCLI_BIN)):
+        resolved_bin = resolve_opencli_bin()
+        if not os.path.isfile(resolved_bin) and resolved_bin == configured_opencli_bin():
             return False
 
         from backend.config import get_settings

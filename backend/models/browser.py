@@ -32,3 +32,8 @@ class BrowserInstance(TimestampMixin):
     # "http" — center HTTP POSTs /collect to agent_url (LAN / proxy-reachable)
     # "ws"   — agent opens a reverse WS channel to center (NAT / unreachable, Phase 2)
     agent_protocol: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    # Dedicated profile intent. Defaults to authenticated so legacy/default
+    # browsers are never silently used for anonymous official-site capture.
+    profile_kind: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="authenticated"
+    )

@@ -18,10 +18,19 @@ a specific site (e.g. only chrome-2 is logged into Twitter).
 
 import asyncio
 import logging
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import AsyncIterator
 
 logger = logging.getLogger(__name__)
+
+
+class NoCleanProfileError(RuntimeError):
+    """No explicitly anonymous browser profile is available for acquisition."""
+
+    code = "no_clean_profile"
+
+    def __init__(self) -> None:
+        super().__init__(self.code)
 
 
 class LocalBrowserPool:
@@ -51,6 +60,11 @@ class LocalBrowserPool:
         self._agent_protocols: dict[str, str | None] = {ep: None for ep in endpoints}
         # node_type per endpoint: "docker" (started in container) | "shell" (native process)
         self._node_types: dict[str, str] = {ep: "docker" for ep in endpoints}
+        # Fail closed: an endpoint is potentially personalized until an agent
+        # or operator explicitly registers it as a dedicated anonymous profile.
+        self._profile_kinds: dict[str, str] = {
+            ep: "authenticated" for ep in endpoints
+        }
         logger.info(
             "BrowserPool (local): %d Chrome instance(s): %s",
             self._total,
@@ -58,7 +72,18 @@ class LocalBrowserPool:
         )
 
     @asynccontextmanager
-    async def acquire(self, endpoint: str | None = None) -> AsyncIterator[str]:
+    async def acquire(
+        self,
+        endpoint: str | None = None,
+        *,
+        required_profile_kind: str | None = None,
+    ) -> AsyncIterator[str]:
+        if required_profile_kind and (
+            endpoint is None
+            or endpoint not in self._slots
+            or self.get_profile_kind(endpoint) != required_profile_kind
+        ):
+            raise NoCleanProfileError()
         if endpoint:
             if endpoint not in self._slots:
                 # Requested endpoint not in pool — fall back to any available
@@ -73,11 +98,55 @@ class LocalBrowserPool:
         else:
             ep = await self._acquire_any()
 
+        if required_profile_kind and self.get_profile_kind(ep) != required_profile_kind:
+            self._slots[ep].put_nowait(ep)
+            raise NoCleanProfileError()
+
         try:
             yield ep
         finally:
             self._slots[ep].put_nowait(ep)
             logger.debug("Chrome released: %s", ep)
+
+    @asynccontextmanager
+    async def acquire_anonymous(self) -> AsyncIterator[str]:
+        candidates = self.anonymous_endpoints()
+
+        tasks: dict[asyncio.Task[str], str] = {
+            asyncio.get_event_loop().create_task(self._slots[endpoint].get()): endpoint
+            for endpoint in candidates
+        }
+        done, pending = await asyncio.wait(
+            tasks.keys(), return_when=asyncio.FIRST_COMPLETED
+        )
+        for task in pending:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+        endpoint = tasks[next(iter(done))]
+        try:
+            yield endpoint
+        finally:
+            self._slots[endpoint].put_nowait(endpoint)
+
+    def anonymous_endpoints(self) -> list[str]:
+        candidates = [
+            endpoint
+            for endpoint in self.endpoints
+            if self.get_profile_kind(endpoint) == "anonymous"
+        ]
+        if not candidates:
+            raise NoCleanProfileError()
+        return candidates
+
+    def select_anonymous_endpoint(self) -> str:
+        candidates = self.anonymous_endpoints()
+        return next(
+            (endpoint for endpoint in candidates if self.available_for(endpoint)),
+            candidates[0],
+        )
 
     async def _acquire_any(self) -> str:
         """Wait for whichever endpoint slot becomes free first."""
@@ -154,6 +223,19 @@ class LocalBrowserPool:
         self._node_types[endpoint] = node_type
         logger.info("BrowserPool: endpoint %s node_type set to %s", endpoint, node_type)
 
+    def get_profile_kind(self, endpoint: str) -> str:
+        return self._profile_kinds.get(endpoint, "authenticated")
+
+    def set_profile_kind(self, endpoint: str, profile_kind: str) -> None:
+        if profile_kind not in {"anonymous", "authenticated"}:
+            raise ValueError("profile_kind must be 'anonymous' or 'authenticated'")
+        self._profile_kinds[endpoint] = profile_kind
+        logger.info(
+            "BrowserPool: endpoint %s profile_kind set to %s",
+            endpoint,
+            profile_kind,
+        )
+
     def add_endpoint(self, endpoint: str) -> None:
         """Hot-add a new Chrome instance to the pool without restarting."""
         if endpoint in self._slots:
@@ -165,6 +247,7 @@ class LocalBrowserPool:
         self._agent_urls.setdefault(endpoint, None)
         self._agent_protocols.setdefault(endpoint, None)
         self._node_types.setdefault(endpoint, "docker")
+        self._profile_kinds.setdefault(endpoint, "authenticated")
         self._total += 1
         logger.info("BrowserPool: added endpoint %s (total: %d)", endpoint, self._total)
 
@@ -177,6 +260,7 @@ class LocalBrowserPool:
         self._agent_urls.pop(endpoint, None)
         self._agent_protocols.pop(endpoint, None)
         self._node_types.pop(endpoint, None)
+        self._profile_kinds.pop(endpoint, None)
         self._total -= 1
         logger.info("BrowserPool: removed endpoint %s (total: %d)", endpoint, self._total)
 
@@ -210,6 +294,10 @@ class RedisBrowserPool:
         self._endpoints = list(endpoints)
         self._redis_url = redis_url
         self._total = len(endpoints)
+        self._modes: dict[str, str] = {ep: "bridge" for ep in endpoints}
+        self._profile_kinds: dict[str, str] = {
+            ep: "authenticated" for ep in endpoints
+        }
 
     def _client(self):
         import redis.asyncio as aioredis  # type: ignore[import]
@@ -240,7 +328,18 @@ class RedisBrowserPool:
             )
 
     @asynccontextmanager
-    async def acquire(self, endpoint: str | None = None) -> AsyncIterator[str]:
+    async def acquire(
+        self,
+        endpoint: str | None = None,
+        *,
+        required_profile_kind: str | None = None,
+    ) -> AsyncIterator[str]:
+        if required_profile_kind and (
+            endpoint is None
+            or endpoint not in self._endpoints
+            or self.get_profile_kind(endpoint) != required_profile_kind
+        ):
+            raise NoCleanProfileError()
         if endpoint:
             key = self._ep_key(endpoint)
             async with self._client() as r:
@@ -261,6 +360,12 @@ class RedisBrowserPool:
                 )
             _, ep = result
             logger.debug("Chrome acquired (any, Redis): %s", ep)
+
+        if required_profile_kind and self.get_profile_kind(ep) != required_profile_kind:
+            release_key = self._ep_key(ep) if endpoint else self._POOL_KEY
+            async with self._client() as r:
+                await r.rpush(release_key, ep)
+            raise NoCleanProfileError()
 
         try:
             yield ep
@@ -287,6 +392,33 @@ class RedisBrowserPool:
 
     def available_for(self, endpoint: str) -> bool:
         return endpoint in self._endpoints  # approximate; real check would need Redis
+
+    def get_mode(self, endpoint: str) -> str:
+        return self._modes.get(endpoint, "bridge")
+
+    def set_mode(self, endpoint: str, mode: str) -> None:
+        self._modes[endpoint] = mode
+
+    def get_profile_kind(self, endpoint: str) -> str:
+        return self._profile_kinds.get(endpoint, "authenticated")
+
+    def set_profile_kind(self, endpoint: str, profile_kind: str) -> None:
+        if profile_kind not in {"anonymous", "authenticated"}:
+            raise ValueError("profile_kind must be 'anonymous' or 'authenticated'")
+        self._profile_kinds[endpoint] = profile_kind
+
+    def anonymous_endpoints(self) -> list[str]:
+        candidates = [
+            endpoint
+            for endpoint in self.endpoints
+            if self.get_profile_kind(endpoint) == "anonymous"
+        ]
+        if not candidates:
+            raise NoCleanProfileError()
+        return candidates
+
+    def select_anonymous_endpoint(self) -> str:
+        return self.anonymous_endpoints()[0]
 
 
 # ── Module-level singleton ────────────────────────────────────────────────────

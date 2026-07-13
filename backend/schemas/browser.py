@@ -27,6 +27,7 @@ class BrowserInstanceRead(BaseModel):
     agent_url: str | None
     agent_protocol: str | None
     label: str
+    profile_kind: str
     created_at: datetime
     updated_at: datetime
 

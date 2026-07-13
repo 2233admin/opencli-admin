@@ -86,6 +86,9 @@ def _resolve_bin(mode: str) -> str:  # noqa: ARG001
                 return resolved
     return shutil.which(configured) or configured
 _DEFAULT_CDP = os.environ.get("OPENCLI_CDP_ENDPOINT", "http://localhost:19222")
+_BROWSER_PROFILE_KIND = os.environ.get(
+    "OPENCLI_BROWSER_PROFILE_KIND", "authenticated"
+)
 _DAEMON_PORT = int(os.environ.get("OPENCLI_DAEMON_PORT", "19825"))
 _AGENT_PORT = int(os.environ.get("AGENT_PORT", "19823"))
 _CENTRAL_API_URL = os.environ.get("CENTRAL_API_URL", "").rstrip("/")
@@ -163,6 +166,7 @@ async def _register_with_center(advertise_url: str) -> None:
         "label": _AGENT_LABEL,
         "agent_protocol": "http",
         "runtimes": available_runtimes(),
+        "profile_kind": _BROWSER_PROFILE_KIND,
     }
     proxies = _build_proxies()
 
@@ -351,6 +355,7 @@ async def _register_via_ws(advertise_url: str) -> None:
         "node_type": _AGENT_DEPLOY_TYPE,
         "label": _AGENT_LABEL,
         "runtimes": available_runtimes(),
+        "profile_kind": _BROWSER_PROFILE_KIND,
     })
 
     attempt = 0

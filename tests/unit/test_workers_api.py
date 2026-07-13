@@ -1,8 +1,8 @@
 """Unit tests for backend/api/v1/workers.py helper functions."""
 
-import pytest
 from unittest.mock import MagicMock, patch
 
+import pytest
 
 # ── _novnc_port ────────────────────────────────────────────────────────────────
 
@@ -72,7 +72,7 @@ def test_container_status_import_error():
 @pytest.mark.asyncio
 async def test_chrome_pool_status(client):
     """chrome-pool endpoint returns pool status dict."""
-    from backend.browser_pool import LocalBrowserPool, init_pool
+    from backend.browser_pool import init_pool
 
     # Initialize with a real pool so the endpoint works
     init_pool(["http://chrome:9222"], use_redis=False)
@@ -101,7 +101,8 @@ async def test_update_endpoint_mode_invalid_encoding(client):
 async def test_update_endpoint_mode_not_in_pool(client):
     """PATCH with valid base64 but unknown endpoint returns 404."""
     import base64
-    from backend.browser_pool import LocalBrowserPool, init_pool
+
+    from backend.browser_pool import init_pool
 
     init_pool(["http://chrome:9222"], use_redis=False)
 
@@ -117,7 +118,8 @@ async def test_update_endpoint_mode_not_in_pool(client):
 async def test_update_endpoint_mode_success(client, db_session):
     """PATCH updates mode for a known endpoint."""
     import base64
-    from backend.browser_pool import LocalBrowserPool, init_pool
+
+    from backend.browser_pool import init_pool
 
     init_pool(["http://chrome:9222"], use_redis=False)
 
@@ -130,3 +132,42 @@ async def test_update_endpoint_mode_success(client, db_session):
     data = response.json()["data"]
     assert data["mode"] == "cdp"
     assert data["endpoint"] == "http://chrome:9222"
+
+
+@pytest.mark.asyncio
+async def test_registered_anonymous_profile_is_visible_in_pool_inventory(client):
+    """Agent registration is the authoritative public profile-routing seam."""
+    from backend.browser_pool import init_pool
+
+    init_pool([], use_redis=False)
+    registered = await client.post(
+        "/api/v1/nodes/register",
+        json={
+            "agent_url": "http://clean-agent:19823",
+            "mode": "cdp",
+            "node_type": "docker",
+            "agent_protocol": "http",
+            "profile_kind": "anonymous",
+        },
+    )
+    assert registered.status_code == 200
+
+    with patch("backend.api.v1.workers._container_status", return_value="running"):
+        inventory = await client.get("/api/v1/workers/chrome-pool")
+
+    assert inventory.status_code == 200
+    assert inventory.json()["data"]["endpoints"] == [
+        {
+            "url": "http://clean-agent:19823",
+            "available": True,
+            "novnc_port": 3010,
+            "container_status": "running",
+            "mode": "cdp",
+            "agent_url": "http://clean-agent:19823",
+            "agent_protocol": "http",
+            "profile_kind": "anonymous",
+        }
+    ]
+    # Module-level pool is shared across tests; restore its conservative bridge
+    # default so this API contract test does not leak a live CDP probe target.
+    init_pool(["http://localhost:9222"], use_redis=False)
