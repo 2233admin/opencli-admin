@@ -95,8 +95,13 @@ export const updateProjectWorkflowDraft = (workspaceId: string, projectId: strin
 export const validateProjectWorkflowDraft = (workspaceId: string, projectId: string, workflowId: string) =>
   apiClient.post<ApiResponse<import('@/lib/workflow/backend-runs').WorkflowRunProjection>>(`/workspaces/${workspaceId}/projects/${projectId}/workflows/${workflowId}/draft/validation-runs`, {}).then((r) => r.data.data)
 
-export const publishProjectWorkflow = (workspaceId: string, projectId: string, workflowId: string, reason: string) =>
-  apiClient.post<ApiResponse<WorkflowVersionSummary>>(`/workspaces/${workspaceId}/projects/${projectId}/workflows/${workflowId}/versions`, { reason }).then((r) => r.data.data)
+export const publishProjectWorkflow = (
+  workspaceId: string,
+  projectId: string,
+  workflowId: string,
+  data: { reason: string; expectedRevision: number; validationRunId: string },
+) =>
+  apiClient.post<ApiResponse<WorkflowVersionSummary>>(`/workspaces/${workspaceId}/projects/${projectId}/workflows/${workflowId}/versions`, data).then((r) => r.data.data)
 
 export const listProjectWorkflowVersions = (workspaceId: string, projectId: string, workflowId: string) =>
   apiClient.get<ApiResponse<WorkflowVersionSummary[]>>(`/workspaces/${workspaceId}/projects/${projectId}/workflows/${workflowId}/versions`).then((r) => r.data.data)

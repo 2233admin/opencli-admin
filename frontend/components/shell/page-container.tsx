@@ -27,7 +27,7 @@ export function PageContainer({
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div className="flex flex-col gap-1.5">
             {eyebrow ? <span className="eyebrow-mono">{eyebrow}</span> : null}
-            <h1 className="text-3xl font-normal tracking-[-0.02em] text-balance">{title}</h1>
+            <h1 className="type-headline-medium text-balance">{title}</h1>
             {description ? (
               <p className="text-sm text-muted-foreground text-pretty">{description}</p>
             ) : null}

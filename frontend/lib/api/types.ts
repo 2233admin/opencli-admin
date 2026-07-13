@@ -1,3 +1,26 @@
+export interface WorkspaceSettingsValues {
+  theme: 'system' | 'dark' | 'light'
+  motion_enabled: boolean
+  sidebar_mode: 'expanded' | 'icon' | 'collapsed'
+  timezone: string
+  landing_page: '/dashboard' | '/canvas' | '/inbox'
+  default_concurrency: number
+  automatic_retries: boolean
+  retain_raw_data: boolean
+  retention_days: 7 | 30 | 90 | 365
+  inbox_alerts: boolean
+  failure_alerts: boolean
+  agent_alerts: boolean
+}
+
+export interface WorkspaceSettingsRead {
+  values: WorkspaceSettingsValues
+  sources: Record<keyof WorkspaceSettingsValues, 'default' | 'override'>
+  apply_modes: Record<keyof WorkspaceSettingsValues, 'immediate' | 'next_run'>
+  revision: number
+  updated_at: string | null
+}
+
 // Self-hosted LLM-provider runtime (GOAL-6, backend/llm/, no litellm) — mirrors
 // backend.schemas.provider.ModelProviderRead.from_model exactly. The raw
 // api_key is NEVER returned by the backend (from_model explicitly masks it) —
@@ -833,4 +856,145 @@ export interface BrowserActPack {
     default?: string | null
     enum?: string[] | null
   }>
+}
+
+export interface WorkspaceSummary {
+  id: string
+  name: string
+  slug: string
+  active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface ProjectSummary {
+  id: string
+  workspace_id: string
+  name: string
+  slug: string
+  description: string | null
+  created_by_user_id: string
+  archived: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface WorkflowAssetSummary {
+  id: string
+  project_id: string
+  name: string
+  description: string | null
+  current_published_version: number | null
+  archived: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface WorkflowDraftRead {
+  revision: number
+  graph: import('@/lib/workflow/schema').WorkflowProject
+  updated_by_user_id: string
+  updated_at: string
+}
+
+export interface WorkflowVersionSummary {
+  id: string
+  workflow_id: string
+  version: number
+  draft_revision: number
+  graph: import('@/lib/workflow/schema').WorkflowProject
+  compile_version: string
+  published_by_user_id: string
+  reason: string
+  created_at: string
+}
+
+export type OperationsWorkItemType = 'incident' | 'approval' | 'change_proposal' | 'review'
+export type OperationsWorkItemStatus = 'open' | 'in_progress' | 'resolved' | 'closed' | 'dismissed'
+
+export interface OperationsWorkItem {
+  id: string
+  workspace_id: string
+  type: OperationsWorkItemType
+  status: OperationsWorkItemStatus
+  severity: string
+  priority: string
+  owning_team_id: string | null
+  assignee_id: string | null
+  author_actor_type: string | null
+  author_actor_id: string | null
+  evidence: Record<string, unknown>
+  reason: string | null
+  parent_id: string | null
+  proposal_id: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type ApprovalDecision = 'approve' | 'reject' | 'request_changes'
+
+export interface ApprovalDecisionResult {
+  approval: OperationsWorkItem
+  proposal: OperationsWorkItem
+  execution_state: 'awaiting_additional_approval' | 'awaiting_actuator' | 'changes_requested' | 'denied'
+}
+
+export type OperationsAgentMode = 'observe_only' | 'suggest_changes' | 'low_risk_automatic'
+
+export interface OperationsAgentProfile {
+  version: number
+  mode: OperationsAgentMode
+  tool_scope: string[]
+  resource_scope: string[]
+  action_scope: string[]
+  assigned_by_user_id: string
+  reason: string
+  created_at: string
+}
+
+export interface OperationsAgent {
+  id: string
+  workspace_id: string
+  owning_team_id: string
+  name: string
+  description: string | null
+  disabled: boolean
+  current_profile: OperationsAgentProfile
+  effective_profile: OperationsAgentProfile | null
+  created_at: string
+  updated_at: string
+}
+
+export interface OperationsAgentRun {
+  id: string
+  workspace_id: string
+  operations_agent_id: string
+  published_version: number
+  profile_version: number
+  trigger_type: string
+  trigger_reference: string | null
+  target_resource_type: string
+  target_resource_id: string
+  status: 'queued' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled'
+  started_by_user_id: string
+  created_at: string
+  updated_at: string
+}
+
+export interface Automation {
+  id: string
+  workspace_id: string
+  name: string
+  prompt: string
+  precheck: string | null
+  executor: string
+  schedule: string
+  timezone: string
+  session_mode: 'fresh' | 'reuse'
+  approval_mode: OperationsAgentMode
+  project: Record<string, unknown>
+  enabled: boolean
+  created_by_user_id: string
+  created_at: string
+  updated_at: string
 }

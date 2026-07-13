@@ -4,7 +4,7 @@ import { reactFlowToWorkflowProject } from "./from-react-flow"
 import { exportWorkflowProjectToMermaid, importWorkflowProjectFromMermaid } from "./mermaid"
 import type { WorkflowProject } from "./schema"
 import { workflowProjectToReactFlow } from "./to-react-flow"
-import type { N8nTranslationReport } from "./n8n-translator"
+import type { WorkflowDslFormat, WorkflowTranslationReport } from "./codec"
 import {
   exportReactFlowToKnowledgeMarkdown,
   exportReactFlowToObsidianCanvas,
@@ -24,7 +24,7 @@ export function exportReactFlowToWorkflowJson(
 }
 
 export function importWorkflowJsonToReactFlow(json: string):
-  | { ok: true; project: WorkflowProject; flow: ReactFlowProjection; format: "canonical" | "n8n"; report?: N8nTranslationReport }
+  | { ok: true; project: WorkflowProject; flow: ReactFlowProjection; format: WorkflowDslFormat; report?: WorkflowTranslationReport }
   | { ok: false; error: string } {
   const imported = importWorkflowProjectFromJson(json)
   if (!imported.ok) return imported

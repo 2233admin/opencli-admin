@@ -5,6 +5,7 @@ import type {
   WorkflowNodeRunEvent,
   WorkflowRunNodeState,
 } from "@/lib/workflow/backend-runs"
+import type { WorkflowCapability, WorkflowNodeKind } from "@/lib/workflow/schema"
 
 export type NodeCategory = "trigger" | "action" | "logic" | "data" | "annotation" | "shape"
 
@@ -107,6 +108,14 @@ export interface WorkflowNodeData extends Record<string, unknown> {
   collapsed?: boolean
   expandedHeight?: number
   color?: string
+  internalStepId?: string
+  canonical?: {
+    kind: WorkflowNodeKind
+    capability: WorkflowCapability
+    adapter?: string
+    params?: Record<string, unknown>
+    catalogId?: string
+  }
   /** for shape nodes */
   shape?: ShapeKind
   /** source anchor / jump-back evidence binding */

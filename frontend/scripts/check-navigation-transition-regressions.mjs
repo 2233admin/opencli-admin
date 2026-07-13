@@ -1,0 +1,53 @@
+import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
+import { test } from 'node:test'
+
+const read = (path) => readFile(new URL(`../${path}`, import.meta.url), 'utf8')
+
+test('Next View Transition integration is enabled and stays locally opt-in', async () => {
+  const [config, localTransition, shell, routeTransition] = await Promise.all([
+    read('next.config.mjs'),
+    read('components/motion/local-view-transition.tsx'),
+    read('components/shell/app-shell.tsx'),
+    read('components/motion/app-route-transition.tsx'),
+  ])
+
+  assert.match(config, /viewTransition:\s*VIEW_TRANSITIONS_ENABLED/)
+  assert.match(localTransition, /<ViewTransition name=\{name\}>/)
+  assert.doesNotMatch(shell, /<ViewTransition\b/)
+  assert.doesNotMatch(routeTransition, /<ViewTransition\b/)
+})
+
+test('persistent application chrome stays outside the routed animation boundary', async () => {
+  const shell = await read('components/shell/app-shell.tsx')
+  const sidebarIndex = shell.indexOf('<AppSidebar />')
+  const headerIndex = shell.indexOf('<AppHeader ')
+  const transitionIndex = shell.indexOf('<AppRouteTransition>')
+
+  assert.ok(sidebarIndex >= 0, 'AppSidebar should remain mounted')
+  assert.ok(headerIndex >= 0, 'AppHeader should remain mounted')
+  assert.ok(transitionIndex > sidebarIndex, 'route animation must not wrap the sidebar')
+  assert.ok(transitionIndex > headerIndex, 'route animation must not wrap the header')
+  assert.match(shell, /<AppRouteTransition>\{children\}<\/AppRouteTransition>/)
+  assert.match(shell, /className="[^"]*relative[^"]*z-0[^"]*overflow-x-clip[^"]*bg-background[^"]*"/)
+})
+
+test('SSGOI boundary is pathname-keyed, interruptible, and reduced-motion safe', async () => {
+  const transition = await read('components/motion/app-route-transition.tsx')
+
+  assert.match(transition, /const pathname = usePathname\(\)/)
+  assert.match(transition, /key=\{pathname\}/)
+  assert.match(transition, /data-ssgoi-transition=\{pathname\}/)
+  assert.match(transition, /axis\(\{ paths: APP_ROUTES, type: 'x', variant: 'snappy' \}\)/)
+  assert.match(transition, /prefersReducedMotion \? STATIC_CONFIG : MOTION_CONFIG/)
+})
+
+test('route-level loading and recovery boundaries remain available', async () => {
+  const [loading, error] = await Promise.all([
+    read('app/(app)/loading.tsx'),
+    read('app/(app)/error.tsx'),
+  ])
+
+  assert.match(loading, /<LoadingState rows=\{5\}/)
+  assert.match(error, /<Button onClick=\{reset\}>重试当前视图<\/Button>/)
+})

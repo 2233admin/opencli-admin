@@ -20,7 +20,15 @@ export function LoadingState({ rows = 4 }: { rows?: number }) {
   )
 }
 
-export function ErrorState({ message, hint }: { message?: string; hint?: string }) {
+export function ErrorState({
+  message,
+  hint,
+  action,
+}: {
+  message?: string
+  hint?: string
+  action?: React.ReactNode
+}) {
   return (
     <Empty className="border border-dashed">
       <EmptyHeader>
@@ -30,7 +38,12 @@ export function ErrorState({ message, hint }: { message?: string; hint?: string 
         <EmptyTitle>加载失败</EmptyTitle>
         <EmptyDescription>{message ?? '无法连接后端服务。'}</EmptyDescription>
       </EmptyHeader>
-      {hint ? <EmptyContent className="text-xs text-muted-foreground">{hint}</EmptyContent> : null}
+      {hint || action ? (
+        <EmptyContent className="flex flex-col items-center gap-3 text-xs text-muted-foreground">
+          {hint ? <span>{hint}</span> : null}
+          {action}
+        </EmptyContent>
+      ) : null}
     </Empty>
   )
 }
