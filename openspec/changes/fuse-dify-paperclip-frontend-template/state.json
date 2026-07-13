@@ -1,0 +1,18 @@
+{
+  "schema": "design-pipeline.state.v1",
+  "changeId": "fuse-dify-paperclip-frontend-template",
+  "status": "complete",
+  "phase": "stage-7-complete",
+  "updatedAt": "2026-07-14T00:32:39+08:00",
+  "artifactRoot": "openspec/changes/fuse-dify-paperclip-frontend-template",
+  "projectRoot": "D:/projects/opencli-admin",
+  "surfaces": ["/prototype/product-shell"],
+  "capabilities": { "missing": [], "fallbacks": ["GBrain not enabled; keep decisions in OpenSpec"] },
+  "openSpec": { "detected": true, "changeId": "fuse-dify-paperclip-frontend-template", "paths": ["openspec/changes/fuse-dify-paperclip-frontend-template"] },
+  "gbrain": { "detected": false, "syncPlanned": false, "paths": [] },
+  "motion": { "required": true, "motionSpec": "motion.md", "implementationLibrary": "existing CSS transitions", "reducedMotion": "specified" },
+  "qa": { "status": "passed", "evidenceRoot": "openspec/changes/fuse-dify-paperclip-frontend-template/qa.md", "scores": { "visualTaste": 8.4, "uxClarity": 8.8, "accessibility": 8.0, "responsiveness": 8.5, "motion": 8.5, "engineeringFit": 9.3, "performanceRisk": 9.2 } },
+  "decisions": ["Use a development-only static prototype", "Compare builder-first, control-plane-first, and unified-loop structures", "Recommend Unified Loop as the baseline", "Keep data pipelines, schedules, and runtime data as first-class navigation domains", "Separate debug from production and draft from published versions"],
+  "blockers": [],
+  "nextActions": ["Review A/B/C with product stakeholders", "Select the production baseline", "Map the selected shell onto existing routes, types, and API contracts"]
+}
