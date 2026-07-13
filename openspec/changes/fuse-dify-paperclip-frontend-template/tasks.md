@@ -46,3 +46,14 @@ and Paperclip work.
 - [x] Represent acquisition, cleaning, knowledge, workflow, and delivery as sibling project types.
 - [x] Bind orchestrate, debug, publish, monitor, runs, and versions to the active project.
 - [x] Re-run static checks, desktop browser QA, and an independent hierarchy review.
+
+## Workspace/editor screen-boundary correction
+
+- [x] Make Direction C default to a dedicated workspace project index.
+- [x] Reuse the existing Studio information structure: project filters, cards, create/import, and templates.
+- [x] Open the node editor only after a project-card action.
+- [x] Add an explicit return to the workspace index.
+- [x] Remove the persistent sibling-project navigator from the project editor.
+- [x] Re-run static checks, browser QA, and production isolation.
+- [x] Complete an independent screen-boundary and project-context review; remediate the initial
+  shared-profile and fixed AttentionRail findings before submission.

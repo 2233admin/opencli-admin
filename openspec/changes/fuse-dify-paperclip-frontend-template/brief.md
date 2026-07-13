@@ -42,6 +42,10 @@ visualization, evidence, and attention signals.
   approval, and activity.
 - The existing Studio remains the workspace project index; opening a project leads to its
   node editor and orchestrate/debug/publish/monitor lifecycle.
+- Direction C defaults to the workspace project index. Its project editor is a separate
+  screen reached by opening a project, with an explicit return path to the index.
+- The project editor does not retain a permanent sibling-project navigator; project switching
+  belongs to the workspace index.
 - A workspace is a project and shared-resource boundary, not one giant navigation tree.
 - Independent acquisition, knowledge, cleaning, workflow, and delivery concerns can be
   separate projects inside the workspace.
