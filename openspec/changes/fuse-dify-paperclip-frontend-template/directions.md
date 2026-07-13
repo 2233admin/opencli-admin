@@ -31,10 +31,10 @@ an attachment.
 
 Visual thesis: preserve OpenCLI's existing Dify-like two-step entry. The workspace is a
 portfolio of projects and shared capabilities. Opening one project enters a project-specific
-node cockpit with orchestration, debug, publish, and monitor modes. The project navigator
-shows sibling projects rather than cramming data, schedules, runs, versions, and plugins into
-one workspace menu. Linear-style work items and a Paperclip-style live attention/visualization
-rail support the active project.
+node cockpit with orchestration, debug, publish, and monitor modes. These are two distinct
+screens: the workspace index shows project cards, filters, templates, and create/import actions;
+the project cockpit shows only the active project's nodes and lifecycle. Linear-style work items
+and a Paperclip-style live attention/visualization rail support the active project.
 
 Interaction thesis: users enter `/studio`, select a workspace, create or open a project, then
 work with that project's nodes. A source collector, knowledge base, cleaning pipeline, or

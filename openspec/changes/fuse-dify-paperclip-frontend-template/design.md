@@ -15,15 +15,17 @@ black/white tokens, Noto Sans SC, IBM Plex Mono, and operator-first brand constr
 
 ## Signature
 
-The memorable element is the **node project cockpit**: the workflow graph remains central,
-the left panel keeps the active project in a workspace-level sibling project list, and the
-right rail explains what currently needs human attention.
+The memorable sequence is **workspace portfolio → node project cockpit**. The workspace page
+is a calm project index; after entry, the workflow graph becomes central and the right rail
+explains what currently needs human attention. Sibling projects are not permanently repeated
+inside the active project editor.
 
 ## Layout
 
 - Target canvas: `min-h-dvh`, desktop-first.
-- Desktop: 196-220px global navigation, 220-256px project navigator, flexible node surface,
-  and an optional 288-320px live rail.
+- Workspace desktop: 196-220px global navigation plus a responsive project-card index.
+- Project desktop: 196-220px global navigation, flexible node surface, and an optional
+  288-320px live rail.
 - Tablet: collapse one contextual rail into a horizontal strip.
 - Mobile: one content column; primary modes become a horizontally scrollable tab row;
   rails become stacked sections.
@@ -44,7 +46,8 @@ right rail explains what currently needs human attention.
 - Prototype shell and variant switcher.
 - Global shell with Overview, Inbox, Workspaces, platform resources, and settings.
 - Existing Studio workspace index with project cards, type filters, templates, and DSL import.
-- Project navigator with sibling workflow, acquisition, cleaning, knowledge, and delivery projects.
+- Workspace project cards for workflow, acquisition, cleaning, knowledge, and delivery projects.
+- Explicit workspace-index to project-editor transition and return action.
 - Project lifecycle header: Overview, Orchestrate, Debug, Publish, Monitor.
 - Work-item summary and state control.
 - Workflow graph with sources, transforms, agents, review, and delivery nodes.

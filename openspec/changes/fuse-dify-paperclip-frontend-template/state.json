@@ -3,7 +3,7 @@
   "changeId": "fuse-dify-paperclip-frontend-template",
   "status": "complete",
   "phase": "stage-7-complete",
-  "updatedAt": "2026-07-14T01:41:21+08:00",
+  "updatedAt": "2026-07-14T02:25:16+08:00",
   "artifactRoot": "openspec/changes/fuse-dify-paperclip-frontend-template",
   "projectRoot": "D:/projects/opencli-admin",
   "surfaces": ["/prototype/product-shell"],
@@ -11,8 +11,8 @@
   "openSpec": { "detected": true, "changeId": "fuse-dify-paperclip-frontend-template", "paths": ["openspec/changes/fuse-dify-paperclip-frontend-template"] },
   "gbrain": { "detected": false, "syncPlanned": false, "paths": [] },
   "motion": { "required": true, "motionSpec": "motion.md", "implementationLibrary": "existing CSS transitions", "reducedMotion": "specified" },
-  "qa": { "status": "passed-with-mobile-automation-gap", "evidenceRoot": "openspec/changes/fuse-dify-paperclip-frontend-template/qa.md", "scores": { "visualTaste": 8.7, "uxClarity": 9.4, "accessibility": 8.2, "responsiveness": 8.3, "motion": 8.5, "engineeringFit": 9.4, "performanceRisk": 9.2 } },
-  "decisions": ["Use a development-only static prototype", "Keep nodes and workflows as the system foundation", "Reuse the existing Studio as the workspace and project index", "Use Dify's project lifecycle after a project is opened", "Treat acquisition, cleaning, knowledge, workflow, and delivery as separate projects when they have independent lifecycles", "Use Linear for project work-item interaction", "Use Paperclip for operational visualization, evidence, approvals, and attention", "Separate debug from production and draft from published versions"],
+  "qa": { "status": "passed-with-mobile-automation-gap", "evidenceRoot": "openspec/changes/fuse-dify-paperclip-frontend-template/qa.md", "scores": { "visualTaste": 8.7, "uxClarity": 9.6, "accessibility": 8.2, "responsiveness": 8.3, "motion": 8.5, "engineeringFit": 9.4, "performanceRisk": 9.2 } },
+  "decisions": ["Use a development-only static prototype", "Keep nodes and workflows as the system foundation", "Reuse the existing Studio as the workspace and project index", "Render the workspace index and active project editor as separate screens", "Do not retain sibling project navigation inside the active project editor", "Use Dify's project lifecycle after a project is opened", "Treat acquisition, cleaning, knowledge, workflow, and delivery as separate projects when they have independent lifecycles", "Use Linear for project work-item interaction", "Use Paperclip for operational visualization, evidence, approvals, and attention", "Separate debug from production and draft from published versions"],
   "blockers": ["Fresh 390 px automation is blocked because the selected browser has no viewport emulation and rejected the isolated harness"],
-  "nextActions": ["Review the corrected workspace-to-project C direction", "Map only the approved project context additions onto the existing Studio and WorkflowEditorSession", "Re-run 390 px metrics when the environment supports them"]
+  "nextActions": ["Review the corrected workspace-index-to-project-editor C direction", "Map only approved additions onto the existing Studio and WorkflowEditorSession", "Re-run 390 px metrics when the environment supports them"]
 }

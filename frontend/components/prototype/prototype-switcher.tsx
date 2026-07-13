@@ -13,7 +13,7 @@ const variants: Array<{
 }> = [
   { id: "A", name: "编排优先", shortName: "Builder" },
   { id: "B", name: "控制面优先", shortName: "Control" },
-  { id: "C", name: "工作区 → 项目", shortName: "W→P" },
+  { id: "C", name: "工作区 / 项目", shortName: "W/P" },
 ]
 
 type PrototypeSwitcherProps = {
