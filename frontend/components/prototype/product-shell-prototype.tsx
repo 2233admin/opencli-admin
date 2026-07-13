@@ -2,13 +2,11 @@
 
 import { useEffect, useState, type ComponentType } from "react"
 import {
-  Activity,
   AlertTriangle,
   ArrowRight,
   Bot,
   Boxes,
   Braces,
-  CalendarClock,
   Check,
   ChevronDown,
   ChevronRight,
@@ -71,7 +69,7 @@ const navGroups: Array<{
 ]
 
 const lifecycleTabs = ["总览", "工作项", "编排", "调试运行", "版本", "成果与审计"]
-const workspaceLifecycleTabs = ["工作区概览", "编排", "调试", "发布", "监测"]
+const projectLifecycleTabs = ["项目概览", "编排", "调试", "发布", "监测"]
 
 const runs = [
   { id: "RUN-1842", label: "调试运行", status: "失败", time: "10:42", tone: "danger" },
@@ -261,7 +259,7 @@ function PrototypeNotice({ variant }: { variant: PrototypeVariant }) {
   const direction = {
     A: "A · 编排优先",
     B: "B · 控制面优先",
-    C: "C · Dify 工作区融合（选定）",
+    C: "C · 工作区 → 项目 → 节点（选定）",
   }[variant]
 
   return (
@@ -278,22 +276,26 @@ function LifecycleHeader({
   compact = false,
   tabs = lifecycleTabs,
   contextLabel = "项目",
+  title = "品牌风险雷达",
+  eyebrow = "持续舆情交付 / 品牌风险雷达",
 }: {
   active: string
   compact?: boolean
   tabs?: string[]
   contextLabel?: string
+  title?: string
+  eyebrow?: string
 }) {
   return (
     <header className="min-w-0 border-b border-border bg-background">
       <div className={cn("flex min-w-0 flex-wrap items-start justify-between gap-4 px-4", compact ? "py-3" : "py-4")}>
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <Eyebrow>持续舆情交付 / 品牌风险雷达</Eyebrow>
+            <Eyebrow>{eyebrow}</Eyebrow>
             <Pill tone="success"><StatusDot tone="success" />生产中</Pill>
           </div>
           <div className="mt-1.5 flex min-w-0 items-center gap-2">
-            <h1 className={cn("truncate font-semibold tracking-tight", compact ? "text-base" : "text-lg")}>品牌风险雷达</h1>
+            <h1 className={cn("truncate font-semibold tracking-tight", compact ? "text-base" : "text-lg")}>{title}</h1>
             <Pill>{contextLabel}</Pill>
           </div>
         </div>
@@ -693,33 +695,30 @@ function VariantB() {
   )
 }
 
-function WorkspacePanel() {
-  const workspaceGroups: Array<{
+function ProjectNavigator() {
+  const projectGroups: Array<{
     label: string
-    items: Array<{ label: string; icon: Icon; count?: string; active?: boolean; alert?: boolean }>
+    items: Array<{ label: string; icon: Icon; meta: string; active?: boolean }>
   }> = [
     {
-      label: "Build",
+      label: "工作流项目",
       items: [
-        { label: "工作区概览", icon: LayoutDashboard },
-        { label: "工作流", icon: Workflow, count: "6", active: true },
-        { label: "数据链路", icon: Database, count: "5" },
-        { label: "触发与调度", icon: CalendarClock, count: "8" },
+        { label: "舆情采集与研判", icon: Workflow, meta: "7 节点 · 草稿 v19", active: true },
+        { label: "风险周报生成", icon: Workflow, meta: "5 节点 · 生产中" },
+        { label: "高风险升级通知", icon: Workflow, meta: "4 节点 · 生产中" },
       ],
     },
     {
-      label: "Operate",
+      label: "数据项目",
       items: [
-        { label: "运行数据", icon: Activity, count: "48", alert: true },
-        { label: "版本与发布", icon: Rocket, count: "v18" },
-        { label: "监测与告警", icon: Radio, count: "3", alert: true },
+        { label: "多平台内容采集", icon: Database, meta: "5 数据源 · 每 30 分钟" },
+        { label: "品牌数据清洗", icon: Braces, meta: "schema v4 · 运行中" },
       ],
     },
     {
-      label: "Extend",
+      label: "知识项目",
       items: [
-        { label: "插件", icon: Plug, count: "24" },
-        { label: "环境变量", icon: Braces, count: "12" },
+        { label: "品牌别名与研判规则", icon: Bot, meta: "1,842 条 · 今天更新" },
       ],
     },
   ]
@@ -727,15 +726,18 @@ function WorkspacePanel() {
   return (
     <aside className="hidden min-h-0 border-r border-border bg-sidebar xl:flex xl:flex-col">
       <div className="border-b border-border p-3">
-        <button type="button" className="flex w-full items-center gap-2 rounded-lg p-1 text-left hover:bg-muted">
+        <button type="button" className="mb-2 flex h-8 w-full items-center gap-2 rounded-lg px-2 text-[10px] text-muted-foreground hover:bg-muted hover:text-foreground">
+          <ArrowRight className="size-3.5 rotate-180" aria-hidden="true" />返回工作区项目列表
+        </button>
+        <button type="button" className="flex w-full items-center gap-2 rounded-lg border border-border bg-background p-2 text-left hover:border-foreground/25">
           <span className="grid size-8 shrink-0 place-items-center rounded-lg border border-border bg-background"><Boxes className="size-4" aria-hidden="true" /></span>
-          <span className="min-w-0 flex-1"><span className="block truncate text-xs font-semibold">品牌风险雷达</span><span className="mt-0.5 block font-mono text-[9px] text-muted-foreground">WORKSPACE · PRODUCTION</span></span>
+          <span className="min-w-0 flex-1"><span className="block truncate text-xs font-semibold">品牌风险工作区</span><span className="mt-0.5 block font-mono text-[9px] text-muted-foreground">6 PROJECTS · 12 MEMBERS</span></span>
           <ChevronDown className="size-3.5 text-muted-foreground" aria-hidden="true" />
         </button>
       </div>
 
-      <nav className="min-h-0 flex-1 overflow-y-auto p-3" aria-label="工作区导航">
-        {workspaceGroups.map((group) => (
+      <nav className="min-h-0 flex-1 overflow-y-auto p-3" aria-label="工作区项目">
+        {projectGroups.map((group) => (
           <div key={group.label} className="mb-5">
             <Eyebrow className="px-2">{group.label}</Eyebrow>
             <div className="mt-1.5 space-y-0.5">
@@ -746,36 +748,26 @@ function WorkspacePanel() {
                     key={item.label}
                     type="button"
                     className={cn(
-                      "flex h-8 w-full items-center gap-2 rounded-lg px-2 text-left text-[10px] text-muted-foreground hover:bg-muted hover:text-foreground",
+                      "flex w-full items-start gap-2 rounded-lg px-2 py-2 text-left text-[10px] text-muted-foreground hover:bg-muted hover:text-foreground",
                       item.active && "bg-foreground text-background hover:bg-foreground hover:text-background",
                     )}
                   >
-                    <ItemIcon className="size-3.5 shrink-0" aria-hidden={true} />
-                    <span className="min-w-0 flex-1 truncate">{item.label}</span>
-                    {item.alert ? <StatusDot tone="warning" /> : null}
-                    {item.count ? <span className={cn("font-mono text-[9px]", item.active ? "text-background/60" : "text-muted-foreground")}>{item.count}</span> : null}
+                    <ItemIcon className="mt-0.5 size-3.5 shrink-0" aria-hidden={true} />
+                    <span className="min-w-0 flex-1"><span className="block truncate font-medium">{item.label}</span><span className={cn("mt-0.5 block truncate font-mono text-[9px]", item.active ? "text-background/60" : "text-muted-foreground")}>{item.meta}</span></span>
                   </button>
                 )
               })}
             </div>
           </div>
         ))}
-
-        <div>
-          <div className="flex items-center justify-between px-2"><Eyebrow>Workflows</Eyebrow><button type="button" className="font-mono text-[9px] text-muted-foreground hover:text-foreground">+ 新建</button></div>
-          <div className="mt-1.5 space-y-0.5">
-            <button type="button" className="flex w-full items-center gap-2 rounded-lg bg-muted px-2 py-2 text-left text-[10px]"><CircleDot className="size-3 text-success" aria-hidden="true" /><span className="min-w-0 flex-1 truncate">舆情采集与研判</span><Pill>v19</Pill></button>
-            <button type="button" className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-[10px] text-muted-foreground hover:bg-muted hover:text-foreground"><CircleDot className="size-3" aria-hidden="true" /><span className="min-w-0 flex-1 truncate">风险周报生成</span></button>
-            <button type="button" className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-[10px] text-muted-foreground hover:bg-muted hover:text-foreground"><CircleDot className="size-3" aria-hidden="true" /><span className="min-w-0 flex-1 truncate">高风险升级通知</span></button>
-          </div>
-        </div>
       </nav>
 
       <div className="border-t border-border p-3">
-        <div className="flex items-center justify-between"><Eyebrow>Node capability</Eyebrow><span className="font-mono text-[9px] text-muted-foreground">8 已启用</span></div>
+        <div className="flex items-center justify-between"><Eyebrow>共享能力</Eyebrow><span className="font-mono text-[9px] text-muted-foreground">8 可用</span></div>
         <div className="mt-2 flex gap-1.5">
           {[Database, Bot, Braces, Plug].map((CapabilityIcon, index) => <span key={index} className="grid size-7 place-items-center rounded-lg border border-border bg-background"><CapabilityIcon className="size-3.5" aria-hidden={true} /></span>)}
         </div>
+        <p className="mt-2 text-[9px] leading-4 text-muted-foreground">模型、插件、成员与连接由工作区共享；数据处理按项目拆分。</p>
       </div>
     </aside>
   )
@@ -786,7 +778,7 @@ function RuntimeVisualization() {
 
   return (
     <section className="rounded-xl border border-border p-3">
-      <SectionTitle eyebrow="Paperclip pattern · runtime" title="生产运行表现" action={<Pill tone="success">94.2%</Pill>} />
+      <SectionTitle eyebrow="Paperclip pattern · runtime" title="本项目生产表现" action={<Pill tone="success">94.2%</Pill>} />
       <div className="mt-4 flex h-24 items-end gap-1.5" aria-label="最近 12 个运行时段成功率柱状图">
         {bars.map((height, index) => (
           <div key={index} className="group flex h-full min-w-0 flex-1 items-end">
@@ -807,10 +799,10 @@ function RuntimeVisualization() {
   )
 }
 
-function WorkspaceWorkQueue() {
+function ProjectWorkQueue() {
   return (
     <section className="rounded-xl border border-border p-3">
-      <SectionTitle eyebrow="Linear pattern · work items" title="当前工作项" action={<button type="button" className="text-[10px] text-muted-foreground hover:text-foreground">查看全部 12</button>} />
+      <SectionTitle eyebrow="Linear pattern · work items" title="本项目工作项" action={<button type="button" className="text-[10px] text-muted-foreground hover:text-foreground">查看全部 12</button>} />
       <div className="mt-3 divide-y divide-border">
         {workItems.slice(0, 3).map((item) => (
           <button key={item.id} type="button" className="flex w-full items-center gap-2 py-2.5 text-left hover:bg-muted/40">
@@ -832,15 +824,22 @@ function VariantC() {
       <div className="min-w-0 flex-1">
         <MobileHeader />
         <PrototypeNotice variant="C" />
-        <LifecycleHeader active="编排" compact tabs={workspaceLifecycleTabs} contextLabel="工作区" />
+        <LifecycleHeader
+          active="编排"
+          compact
+          tabs={projectLifecycleTabs}
+          contextLabel="项目"
+          title="舆情采集与研判"
+          eyebrow="品牌风险工作区 / 工作流项目"
+        />
         <div className="grid min-h-[760px] min-w-0 grid-cols-[minmax(0,1fr)] xl:grid-cols-[232px_minmax(480px,1fr)_300px]">
-          <WorkspacePanel />
+          <ProjectNavigator />
           <main id="prototype-content" className="min-w-0 p-3 sm:p-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2"><Eyebrow>Node workspace / orchestrate</Eyebrow><Pill><Workflow className="size-2.5" aria-hidden="true" />7 节点</Pill></div>
-                <h2 className="mt-1 truncate text-base font-semibold">舆情采集与研判主流程</h2>
-                <p className="mt-1 text-[10px] text-muted-foreground">数据源、转换、Agent、复核与交付均由节点和插件能力组成</p>
+                <div className="flex flex-wrap items-center gap-2"><Eyebrow>Workspace / project / node graph</Eyebrow><Pill><Workflow className="size-2.5" aria-hidden="true" />7 节点</Pill></div>
+                <h2 className="mt-1 truncate text-base font-semibold">舆情采集与研判</h2>
+                <p className="mt-1 text-[10px] text-muted-foreground">当前打开的是一个工作流项目；采集、清洗和知识库由左侧独立项目提供能力</p>
               </div>
               <div className="flex items-center gap-2"><Pill tone="success">生产 v18</Pill><Pill tone="warning">草稿 v19 · 4 改动</Pill></div>
             </div>
@@ -849,7 +848,7 @@ function VariantC() {
               <Metric label="24h runs" value="48" detail="3 次调试 / 45 次生产" tone="success" />
               <Metric label="Success" value="94.2" detail="较昨日 -2.1%" tone="success" />
               <Metric label="Inbox" value="05" detail="失败 1 · 复核 2 · 审批 2" tone="warning" />
-              <Metric label="Plugins" value="08" detail="当前工作流已启用" tone="success" />
+              <Metric label="Nodes" value="07" detail="2 个插件节点" tone="success" />
             </div>
 
             <section className="mt-3">
@@ -859,19 +858,19 @@ function VariantC() {
                   <button type="button" className="rounded-md px-2.5 py-1.5 text-[10px] text-muted-foreground hover:bg-muted">变量</button>
                   <button type="button" className="rounded-md px-2.5 py-1.5 text-[10px] text-muted-foreground hover:bg-muted">调试记录</button>
                 </div>
-                <div className="flex items-center gap-2"><Pill><Plug className="size-2.5" aria-hidden="true" />插件节点</Pill><Pill><Database className="size-2.5" aria-hidden="true" />数据链路 5</Pill></div>
+                <div className="flex items-center gap-2"><Pill><Plug className="size-2.5" aria-hidden="true" />2 个插件节点</Pill><Pill><Database className="size-2.5" aria-hidden="true" />引用 3 个项目</Pill></div>
               </div>
               <BuilderCanvas />
             </section>
 
             <div className="mt-3 grid gap-3 lg:grid-cols-2">
-              <WorkspaceWorkQueue />
+              <ProjectWorkQueue />
               <RuntimeVisualization />
             </div>
 
             <section className="mt-3 grid gap-3 sm:grid-cols-2">
               <div className="rounded-xl border border-warning/30 bg-warning/5 p-3"><div className="flex items-center gap-2"><Code2 className="size-3.5 text-warning" aria-hidden="true" /><span className="text-xs font-medium">调试空间</span><Pill tone="warning" className="ml-auto">草稿 v19</Pill></div><p className="mt-2 text-[10px] leading-4 text-muted-foreground">单节点运行、变量检查、样本回放与失败恢复，不计入生产指标。</p></div>
-              <div className="rounded-xl border border-success/30 bg-success/5 p-3"><div className="flex items-center gap-2"><Radio className="size-3.5 text-success" aria-hidden="true" /><span className="text-xs font-medium">生产空间</span><Pill tone="success" className="ml-auto">已发布 v18</Pill></div><p className="mt-2 text-[10px] leading-4 text-muted-foreground">由工作区内的触发与调度启动，写入运行数据、监测和审计记录。</p></div>
+              <div className="rounded-xl border border-success/30 bg-success/5 p-3"><div className="flex items-center gap-2"><Radio className="size-3.5 text-success" aria-hidden="true" /><span className="text-xs font-medium">生产空间</span><Pill tone="success" className="ml-auto">已发布 v18</Pill></div><p className="mt-2 text-[10px] leading-4 text-muted-foreground">由本项目的触发节点或调度启动，只写入本项目的运行、监测和审计记录。</p></div>
             </section>
           </main>
           <AttentionRail />
