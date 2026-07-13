@@ -40,7 +40,7 @@ export function RouteTabs({ tabs, className }: { tabs: RouteTab[]; className?: s
               <motion.span
                 layoutId="route-tab-pill"
                 className="absolute inset-0 rounded-full bg-primary"
-                transition={{ duration: 0.3, ease: [0.2, 0, 0, 1] }}
+                transition={{ type: 'spring', stiffness: 460, damping: 38, mass: 0.6 }}
               />
             ) : null}
             <span className="relative">{tab.label}</span>
@@ -53,12 +53,6 @@ export function RouteTabs({ tabs, className }: { tabs: RouteTab[]; className?: s
 }
 
 /** Shared tab sets for related views. */
-export const RUN_CENTER_TABS: RouteTab[] = [
-  { href: '/tasks', label: '任务' },
-  { href: '/records', label: '记录' },
-  { href: '/notifications', label: '通知' },
-]
-
 export const CAPABILITY_TABS: RouteTab[] = [
   { href: '/agents', label: '智能体' },
   { href: '/skills', label: '技能' },

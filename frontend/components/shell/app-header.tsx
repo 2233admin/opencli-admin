@@ -1,7 +1,8 @@
 'use client'
 
 import { LogOut, Search } from 'lucide-react'
-import { usePathname, useRouter } from 'next/navigation'
+import Link from 'next/link'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 
 import { useAuth } from '@/components/auth/auth-provider'
 import { ROUTE_LABELS } from '@/lib/navigation'
@@ -10,6 +11,7 @@ import { Button } from '@/components/ui/button'
 import {
   Breadcrumb,
   BreadcrumbItem,
+  BreadcrumbLink,
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
@@ -37,9 +39,13 @@ function resolveLabel(pathname: string): string | null {
 
 export function AppHeader({ onOpenCommand }: { onOpenCommand?: () => void }) {
   const pathname = usePathname()
+  const searchParams = useSearchParams()
   const router = useRouter()
   const { identity, signOut } = useAuth()
-  const label = resolveLabel(pathname)
+  const label = pathname === '/studio' && searchParams.get('type') === 'process'
+    ? '清洗与转换'
+    : resolveLabel(pathname)
+  const isStudioChild = pathname.startsWith('/studio/')
   const displayName = identity?.name || identity?.email || identity?.subject || 'User'
   const initials = displayName.slice(0, 2).toUpperCase()
 
@@ -57,6 +63,14 @@ export function AppHeader({ onOpenCommand }: { onOpenCommand?: () => void }) {
           <BreadcrumbItem>
             <BreadcrumbPage className="text-muted-foreground">主页</BreadcrumbPage>
           </BreadcrumbItem>
+          {isStudioChild ? (
+            <>
+              <BreadcrumbSeparator />
+              <BreadcrumbItem>
+                <BreadcrumbLink render={<Link href="/studio" />}>工作室</BreadcrumbLink>
+              </BreadcrumbItem>
+            </>
+          ) : null}
           {label ? (
             <>
               <BreadcrumbSeparator />

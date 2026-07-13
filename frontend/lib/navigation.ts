@@ -1,5 +1,7 @@
 import {
   Activity,
+  BellRing,
+  Blocks,
   Bot,
   Clock,
   Database,
@@ -11,7 +13,7 @@ import {
   Inbox,
   Settings,
   ShieldCheck,
-  Workflow,
+  TableProperties,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -21,6 +23,10 @@ export type NavItem = {
   icon: LucideIcon
   /** extra path prefixes that keep this item highlighted (sibling tab routes) */
   match?: string[]
+  /** query values required for the item to be active; null means absent */
+  query?: Record<string, string | null>
+  /** query values that explicitly prevent the item from being active */
+  excludeQuery?: Record<string, string>
 }
 
 export type NavGroup = {
@@ -30,42 +36,49 @@ export type NavGroup = {
 
 /**
  * Data-node IDE IA. Routes stay stable while the shell groups them by the
- * operator's work: build workflows, move data, then observe the runtime.
+ * operator's work: build, move and refine data, run it, then govern runtime.
  */
 export const NAV_GROUPS: NavGroup[] = [
   {
     label: null,
     items: [
       { href: '/dashboard', label: '概览', icon: LayoutDashboard },
-      { href: '/studio', label: '工作室', icon: PanelsTopLeft },
       { href: '/inbox', label: 'Inbox', icon: Inbox },
     ],
   },
   {
     label: '构建',
     items: [
-      { href: '/canvas', label: '节点工作流', icon: Workflow },
+      { href: '/studio', label: '节点工作室', icon: PanelsTopLeft, match: ['/studio'], excludeQuery: { type: 'process' } },
       { href: '/operations-agents', label: '自动化与智能体', icon: ShieldCheck },
     ],
   },
   {
-    label: '数据链路',
+    label: '数据',
     items: [
       { href: '/sources', label: '采集来源', icon: Database },
-      { href: '/schedules', label: '触发与调度', icon: Clock },
-      {
-        href: '/tasks',
-        label: '运行与数据',
-        icon: Activity,
-        match: ['/tasks', '/records', '/notifications'],
-      },
+      { href: '/studio?type=process', label: '清洗与转换', icon: Blocks, query: { type: 'process' } },
+      { href: '/records', label: '数据记录', icon: TableProperties },
     ],
   },
   {
-    label: '集成与运行时',
+    label: '运行',
+    items: [
+      { href: '/tasks', label: '运行任务', icon: Activity },
+      { href: '/schedules', label: '触发与调度', icon: Clock },
+      { href: '/notifications', label: '通知规则', icon: BellRing },
+    ],
+  },
+  {
+    label: '集成',
     items: [
       { href: '/agents', label: '智能体与技能', icon: Bot, match: ['/agents', '/skills'] },
       { href: '/providers', label: '模型与连接', icon: KeyRound },
+    ],
+  },
+  {
+    label: '运行时与治理',
+    items: [
       { href: '/nodes', label: '节点与 Worker', icon: Monitor, match: ['/nodes', '/workers'] },
       { href: '/control/actions', label: '控制与审计', icon: History },
     ],
@@ -80,7 +93,8 @@ export const NAV_GROUPS: NavGroup[] = [
 export const ROUTE_LABELS: Record<string, string> = {
   '/dashboard': '概览',
   '/studio': '工作室',
-  '/canvas': '节点工作流',
+  '/studio/workflow': '节点工作流',
+  '/canvas': '节点工作流（兼容入口）',
   '/inbox': 'Inbox',
   '/operations-agents': '自动化与智能体',
   '/sources': '采集来源',

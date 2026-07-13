@@ -60,7 +60,11 @@ class WorkflowDraftRead(UTCModel):
 
 
 class WorkflowPublish(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     reason: str = Field(min_length=1, max_length=2000)
+    expected_revision: int = Field(ge=1, alias="expectedRevision")
+    validation_run_id: str = Field(min_length=1, alias="validationRunId")
 
 
 class WorkflowVersionRead(UTCModel):

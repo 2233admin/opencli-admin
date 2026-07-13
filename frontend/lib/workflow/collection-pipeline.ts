@@ -127,4 +127,58 @@ export function buildCollectionWorkflowProject(): WorkflowProject {
   })
 }
 
+/**
+ * 顶层 DOP 网络只展示已经封装好的工具；双击封包后才进入内部节点。
+ * scoped id 由 flow store 负责递归展开，因此内部 package 仍可继续下钻。
+ */
+export function buildPackagedWorkflowProject(): WorkflowProject {
+  const packageSpecs = [
+    ["package.opencli.multi-source-hda", "source-package", "多源采集封包"],
+    ["package.intelligence.pipeline", "intelligence-package", "情报处理封包"],
+    ["package.review.human-review", "review-package", "人工复核封包"],
+    ["package.dispatch.fanout", "dispatch-package", "分发交付封包"],
+  ] as const
+
+  const nodes = packageSpecs.map(([catalogId, id, label], index) => {
+    const node = createWorkflowNodeFromCatalog(catalogItem(catalogId), id, { x: 120 + index * 360, y: 240 })
+    return {
+      ...node,
+      ui: {
+        ...node.ui,
+        label,
+        description: `${node.ui?.description ?? "已封装工具"}；双击进入内部网络`,
+        networkRole: "package",
+      },
+    }
+  })
+
+  const edges = nodes.slice(0, -1).map((node, index) =>
+    edge(`e-package-${index + 1}`, node.id, nodes[index + 1].id),
+  )
+  const adapters = packageSpecs.flatMap(([catalogId]) => catalogItem(catalogId).requiredAdapters ?? [])
+  const adapterById = new Map(adapters.map((adapter) => [adapter.id, adapter]))
+
+  return parseWorkflowProject({
+    id: "workflow-packaged-intelligence",
+    name: "OpenCLI 情报生产系统",
+    profile: "intelligence",
+    version: 1,
+    nodes,
+    edges,
+    adapters: Array.from(adapterById.values()),
+    settings: {
+      timezone: "Asia/Shanghai",
+      deterministicSimulation: true,
+      maxItemsPerRun: 50,
+    },
+    agentPermissions: {
+      canFetchNetwork: true,
+      canSendNotifications: false,
+      canWriteInbox: true,
+      allowedDomains: ["jin10.com", "bilibili.com", "xiaohongshu.com"],
+    },
+  })
+}
+
+export const PACKAGED_WORKFLOW_PROJECT = buildPackagedWorkflowProject()
 export const COLLECTION_WORKFLOW_PROJECT = buildCollectionWorkflowProject()

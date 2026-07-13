@@ -35,6 +35,8 @@ export function WorkflowEditorSession() {
   const projectId = params.get('project')
   const requestedWorkflowId = params.get('workflow')
   const workflowProject = useFlowStore((state) => state.workflowProject)
+  const workflowProjectRef = useRef(workflowProject)
+  workflowProjectRef.current = workflowProject
   const importWorkflowProject = useFlowStore((state) => state.importWorkflowProject)
   const [workflowId, setWorkflowId] = useState<string | null>(null)
   const [documentState, setDocumentState] = useState<'loading' | 'saving' | 'saved' | 'error' | 'conflict'>('loading')
@@ -46,6 +48,9 @@ export function WorkflowEditorSession() {
   const lastSavedFingerprint = useRef<string | null>(null)
   const saveQueuePromise = useRef<Promise<void> | null>(null)
   const saveBlocked = useRef(false)
+  const validatedRevision = useRef<number | null>(null)
+  const validationRunId = useRef<string | null>(null)
+  const validatedFingerprint = useRef<string | null>(null)
   const { capabilities, error: capabilityError, retry: retryCapabilities } = useWorkflowCapabilities(true)
 
   const saveDraft = useCallback((graph: typeof workflowProject) => {
@@ -118,7 +123,12 @@ export function WorkflowEditorSession() {
   }, [projectId, saveDraft, workflowId, workflowProject, workspaceId])
 
   useEffect(() => {
-    if (loaded.current) setReleaseState('idle')
+    if (loaded.current) {
+      validatedRevision.current = null
+      validationRunId.current = null
+      validatedFingerprint.current = null
+      setReleaseState('idle')
+    }
   }, [workflowProject])
 
   async function validateDraft() {
@@ -130,8 +140,22 @@ export function WorkflowEditorSession() {
     setReleaseState('validating')
     try {
       await saveDraft(workflowProject)
+      const candidateRevision = revision.current
+      const candidateFingerprint = projectFingerprint(workflowProject)
       const run = await validateProjectWorkflowDraft(workspaceId, projectId, workflowId)
       if (run.status !== 'completed') throw new Error(`验证 Run 状态：${run.status}`)
+      if (
+        candidateRevision === null
+        || revision.current !== candidateRevision
+        || projectFingerprint(workflowProjectRef.current) !== candidateFingerprint
+      ) {
+        setReleaseState('idle')
+        toast.info('验证期间 Draft 已变化，请重新验证当前版本')
+        return
+      }
+      validatedRevision.current = candidateRevision
+      validationRunId.current = run.runId
+      validatedFingerprint.current = candidateFingerprint
       setReleaseState('validated')
       toast.success('验证 Run 已通过，可以发布')
     } catch (reason) {
@@ -142,12 +166,40 @@ export function WorkflowEditorSession() {
 
   async function publishDraft() {
     if (!workspaceId || !projectId || !workflowId) return
+    if (
+      validatedRevision.current === null
+      || validationRunId.current === null
+      || validatedFingerprint.current !== projectFingerprint(workflowProjectRef.current)
+    ) {
+      validatedRevision.current = null
+      validationRunId.current = null
+      validatedFingerprint.current = null
+      setReleaseState('idle')
+      toast.error('请先验证当前保存版本')
+      return
+    }
     setReleaseState('publishing')
     try {
-      const version = await publishProjectWorkflow(workspaceId, projectId, workflowId, '通过工作区画布发布')
+      const version = await publishProjectWorkflow(workspaceId, projectId, workflowId, {
+        reason: '通过工作区画布发布',
+        expectedRevision: validatedRevision.current,
+        validationRunId: validationRunId.current,
+      })
+      validatedRevision.current = null
+      validationRunId.current = null
+      validatedFingerprint.current = null
       setReleaseState('idle')
       toast.success(`Workflow Version ${version.version} 已发布`)
     } catch (reason) {
+      const status = (reason as Error & { status?: number }).status
+      if (status === 409) {
+        validatedRevision.current = null
+        validationRunId.current = null
+        validatedFingerprint.current = null
+        setReleaseState('idle')
+        toast.error('Draft 或验证结果已过期，请重新验证')
+        return
+      }
       setReleaseState('validated')
       toast.error(reason instanceof Error ? reason.message : '发布失败')
     }

@@ -2,7 +2,7 @@
 
 import { Blocks, Bot, ChevronDown, Database, FileUp, FolderKanban, Plus, Search, Send, Sparkles } from 'lucide-react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
@@ -17,7 +17,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dock } from '@/components/unlumen-ui/dock'
 import { useCreateProjectWorkflow, useCreateWorkspaceProject, useMyWorkspaces, useWorkspaceProjects } from '@/lib/api/hooks'
-import { COLLECTION_WORKFLOW_PROJECT } from '@/lib/workflow/collection-pipeline'
+import { PACKAGED_WORKFLOW_PROJECT } from '@/lib/workflow/collection-pipeline'
 import { translateWorkflowDsl, type WorkflowImportResult } from '@/lib/workflow/codec'
 import { parseWorkflowProject } from '@/lib/workflow/schema'
 
@@ -30,6 +30,7 @@ const TEMPLATES = [
 
 export default function StudioPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const workspaces = useMyWorkspaces()
   const [workspaceId, setWorkspaceId] = useState<string | null>(null)
   const [search, setSearch] = useState('')
@@ -50,6 +51,20 @@ export default function StudioPage() {
   useEffect(() => {
     if (!workspaceId && workspaces.data?.length) setWorkspaceId(workspaces.data[0].id)
   }, [workspaceId, workspaces.data])
+
+  useEffect(() => {
+    const requestedType = searchParams.get('type')
+    setType(requestedType && TYPE_LABELS[requestedType] ? requestedType : 'all')
+  }, [searchParams])
+
+  function selectType(nextType: string) {
+    setType(nextType)
+    const nextParams = new URLSearchParams(searchParams.toString())
+    if (nextType === 'all') nextParams.delete('type')
+    else nextParams.set('type', nextType)
+    const query = nextParams.toString()
+    router.replace(query ? `/studio?${query}` : '/studio', { scroll: false })
+  }
 
   const visibleProjects = useMemo(() => {
     const query = search.trim().toLowerCase()
@@ -87,7 +102,7 @@ export default function StudioPage() {
       })
       setCreateTemplate(null)
       toast.success('项目与工作流已创建')
-      router.push(`/canvas?workspace=${workspaceId}&project=${project.id}&workflow=${workflow.id}`)
+      router.push(`/studio/workflow?workspace=${workspaceId}&project=${project.id}&workflow=${workflow.id}`)
     } catch (reason) {
       toast.error(reason instanceof Error ? reason.message : '创建失败')
     }
@@ -128,7 +143,7 @@ export default function StudioPage() {
       })
       toast.success(`已创建 ${pendingImport.format} WorkflowDraft`)
       setPendingImport(null)
-      router.push(`/canvas?workspace=${workspaceId}&project=${projectId}&workflow=${workflow.id}`)
+      router.push(`/studio/workflow?workspace=${workspaceId}&project=${projectId}&workflow=${workflow.id}`)
     } catch (reason) {
       toast.error(reason instanceof Error ? reason.message : 'DSL 导入失败')
     }
@@ -160,11 +175,11 @@ export default function StudioPage() {
           distance={70}
           borderRadius={10}
           items={[
-            { label: '全部类型', icon: <FolderKanban />, active: type === 'all', onClick: () => setType('all') },
-            { label: '采集', icon: <Database />, active: type === 'collect', onClick: () => setType('collect') },
-            { label: '处理', icon: <Blocks />, active: type === 'process', onClick: () => setType('process') },
-            { label: '发送', icon: <Send />, active: type === 'deliver', onClick: () => setType('deliver') },
-            { label: '完整链路', icon: <Sparkles />, active: type === 'full', onClick: () => setType('full'), separator: true },
+            { label: '全部类型', icon: <FolderKanban />, active: type === 'all', onClick: () => selectType('all') },
+            { label: '采集', icon: <Database />, active: type === 'collect', onClick: () => selectType('collect') },
+            { label: '处理', icon: <Blocks />, active: type === 'process', onClick: () => selectType('process') },
+            { label: '发送', icon: <Send />, active: type === 'deliver', onClick: () => selectType('deliver') },
+            { label: '完整链路', icon: <Sparkles />, active: type === 'full', onClick: () => selectType('full'), separator: true },
           ]}
         />
         <Select value={workspaceId ?? ''} onValueChange={(value) => setWorkspaceId(value || null)}>
@@ -202,7 +217,7 @@ export default function StudioPage() {
       ) : visibleProjects.length ? (
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           {visibleProjects.map((project) => (
-            <Link key={project.id} href={`/canvas?workspace=${workspaceId}&project=${project.id}`} className="group rounded-xl border bg-card p-4 transition-[border-color,transform] hover:-translate-y-0.5 hover:border-foreground/20">
+            <Link key={project.id} href={`/studio/workflow?workspace=${workspaceId}&project=${project.id}`} className="group rounded-xl border bg-card p-4 transition-[border-color,transform] hover:-translate-y-0.5 hover:border-foreground/20">
               <div className="flex items-start justify-between gap-3"><div className="grid size-10 place-items-center rounded-lg bg-primary/10 text-primary"><FolderKanban className="size-5" /></div><Badge variant="outline">{project.slug}</Badge></div>
               <h2 className="mt-5 truncate text-sm font-medium">{project.name}</h2>
               <p className="mt-1 line-clamp-2 min-h-10 text-xs leading-5 text-muted-foreground">{project.description || '数据节点项目'}</p>
@@ -309,7 +324,7 @@ function slugify(value: string) {
 }
 
 function graphForTemplate(template: string, name: string) {
-  const base = COLLECTION_WORKFLOW_PROJECT
+  const base = PACKAGED_WORKFLOW_PROJECT
   const nodes = template === 'blank' ? base.nodes.slice(0, 1) : base.nodes.filter((node) => {
     const x = (node.ui?.position as { x?: number } | undefined)?.x ?? 0
     if (template === 'collect') return x <= 400

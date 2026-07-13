@@ -88,10 +88,12 @@ _PORT_CONTRACTS: dict[str, tuple[list[_PortContract], list[_PortContract]]] = {
 }
 
 
-def compile_workflow_project(project: WorkflowProject) -> WorkflowCompileResponse:
+def compile_workflow_project(
+    project: WorkflowProject, *, trust_frozen_templates: bool = False
+) -> WorkflowCompileResponse:
     """Validate and compile a WorkflowProject without dispatching execution."""
 
-    project = materialize_hda_templates(project)
+    project = materialize_hda_templates(project, trust_frozen=trust_frozen_templates)
     errors = _validate_project(project)
     if errors:
         return WorkflowCompileResponse(valid=False, errors=errors, plan=None)

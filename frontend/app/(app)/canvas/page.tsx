@@ -1,11 +1,15 @@
-import { Suspense } from 'react'
+import { redirect } from 'next/navigation'
 
-import { WorkflowEditorSession } from '@/components/flow/workflow-editor-session'
+type CanvasRedirectProps = {
+  searchParams: Promise<Record<string, string | string[] | undefined>>
+}
 
-export default function CanvasPage() {
-  return (
-    <Suspense fallback={<div className="grid h-full place-items-center text-sm text-muted-foreground">正在加载工作流…</div>}>
-      <WorkflowEditorSession />
-    </Suspense>
-  )
+export default async function CanvasRedirectPage({ searchParams }: CanvasRedirectProps) {
+  const query = new URLSearchParams()
+  for (const [key, value] of Object.entries(await searchParams)) {
+    if (Array.isArray(value)) value.forEach((item) => query.append(key, item))
+    else if (value !== undefined) query.set(key, value)
+  }
+  const suffix = query.toString()
+  redirect(`/studio/workflow${suffix ? `?${suffix}` : ''}`)
 }

@@ -106,8 +106,10 @@ type WorkflowCanvasSurfaceProps = {
   onDrop: (event: DragEvent) => void
   onEdgesChange: OnEdgesChange<WorkflowEdge>
   onMouseMove: (event: ReactMouseEvent<HTMLDivElement>) => void
+  onNodeClick: NodeMouseHandler<WorkflowNode>
   onNodeContextMenu: NodeMouseHandler<WorkflowNode>
   onNodeDoubleClick: NodeMouseHandler<WorkflowNode>
+  onPaneContextMenu: (event: ReactMouseEvent<Element> | MouseEvent) => void
   onNodeDrag: OnNodeDrag<WorkflowNode>
   onNodeDragStop: OnNodeDrag<WorkflowNode>
   onNodesChange: OnNodesChange<WorkflowNode>
@@ -298,8 +300,10 @@ export function WorkflowCanvasSurface(props: WorkflowCanvasSurfaceProps) {
         onNodeDragStart={props.takeSnapshot}
         onNodeDrag={props.onNodeDrag}
         onNodeDragStop={props.onNodeDragStop}
+        onNodeClick={props.onNodeClick}
         onNodeDoubleClick={props.onNodeDoubleClick}
         onNodeContextMenu={props.onNodeContextMenu}
+        onPaneContextMenu={props.onPaneContextMenu}
         onDrop={props.onDrop}
         onDragOver={props.onDragOver}
         nodeTypes={nodeTypes}

@@ -1,3 +1,9 @@
+"use client"
+
+import { useLayoutEffect, useMemo, useRef } from "react"
+import gsap from "gsap"
+import { Flip } from "gsap/Flip"
+
 import { Inspector } from "./inspector"
 import { InteractionSettingsPanel } from "./interaction-settings-panel"
 import { ProjectSettingsPanel } from "./project-settings-panel"
@@ -6,6 +12,8 @@ import { NodeManagementPanel } from "./node-management-panel"
 import { cn } from "@/lib/utils"
 import type { CanvasPoint } from "./workflow-canvas-geometry"
 import type { WorkflowProfile } from "@/lib/workflow/schema"
+
+gsap.registerPlugin(Flip)
 
 type NetworkStackEntry = { nodeId: string; label: string }
 
@@ -46,9 +54,57 @@ export function NetworkBreadcrumb({
   networkStack: NetworkStackEntry[]
   onExit: () => void
 }) {
+  const rootRef = useRef<HTMLDivElement>(null)
+  const previousState = useRef<ReturnType<typeof Flip.getState> | null>(null)
+  const previousKeys = useRef<Set<string>>(new Set())
+  const pathKey = useMemo(
+    () => networkStack.map((entry) => entry.nodeId).join("/"),
+    [networkStack],
+  )
+
+  useLayoutEffect(() => {
+    const root = rootRef.current
+    if (!root) {
+      previousState.current = null
+      previousKeys.current = new Set()
+      return
+    }
+
+    const targets = Array.from(root.querySelectorAll<HTMLElement>("[data-network-flip-key]"))
+    const nextState = Flip.getState(targets)
+    const currentKeys = new Set(targets.map((target) => target.dataset.networkFlipKey ?? ""))
+    const entered = targets.filter(
+      (target) => !previousKeys.current.has(target.dataset.networkFlipKey ?? ""),
+    )
+    const context = gsap.context(() => {
+      if (previousState.current) {
+        Flip.from(previousState.current, {
+          targets,
+          duration: 0.28,
+          ease: "power2.inOut",
+          nested: true,
+          simple: true,
+        })
+      } else {
+        gsap.fromTo(root, { autoAlpha: 0, y: -8 }, { autoAlpha: 1, y: 0, duration: 0.22 })
+      }
+      if (previousState.current && entered.length > 0) {
+        gsap.fromTo(
+          entered,
+          { autoAlpha: 0, x: -5 },
+          { autoAlpha: 1, x: 0, duration: 0.18, stagger: 0.025, ease: "power2.out" },
+        )
+      }
+    }, root)
+
+    previousState.current = nextState
+    previousKeys.current = currentKeys
+    return () => context.revert()
+  }, [locked, pathKey])
+
   if (networkStack.length === 0) return null
   return (
-    <div className="workflow-floating-panel absolute left-3 top-3 z-40 flex items-center gap-2 rounded-md border bg-popover px-2.5 py-2 font-mono text-[10px] uppercase tracking-[0.12em] shadow-lg">
+    <div ref={rootRef} data-network-flip-key="panel" className="workflow-floating-panel absolute left-3 top-3 z-40 flex items-center gap-2 rounded-md border bg-popover px-2.5 py-2 font-mono text-[10px] uppercase tracking-[0.12em] shadow-lg">
       <button
         type="button"
         className="rounded-sm border border-border bg-background px-2 py-1 text-foreground transition-colors hover:bg-accent"
@@ -59,7 +115,7 @@ export function NetworkBreadcrumb({
       <span className="text-muted-foreground/60">/</span>
       <span className="text-muted-foreground">obj</span>
       {networkStack.map((entry) => (
-        <span key={entry.nodeId} className="flex items-center gap-1">
+        <span key={entry.nodeId} data-network-flip-key={entry.nodeId} className="flex items-center gap-1">
           <span className="text-muted-foreground/60">/</span>
           <span className="text-foreground">{entry.label}</span>
         </span>

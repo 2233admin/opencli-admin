@@ -1,7 +1,8 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useSearchParams } from 'next/navigation'
+import { motion } from 'motion/react'
 
 import { NAV_GROUPS, type NavItem } from '@/lib/navigation'
 import { Ripple } from '@/components/motion/ripple'
@@ -18,14 +19,26 @@ import {
   SidebarRail,
 } from '@/components/ui/sidebar'
 
-function isActivePath(pathname: string, item: NavItem) {
-  const prefixes = item.match ?? [item.href]
-  if (item.href === '/dashboard') return pathname === item.href
-  return prefixes.some((p) => pathname === p || pathname.startsWith(`${p}/`))
+function isActivePath(pathname: string, searchParams: URLSearchParams, item: NavItem) {
+  const itemPath = item.href.split('?')[0]
+  const prefixes = item.match ?? [itemPath]
+  const pathMatches = itemPath === '/dashboard'
+    ? pathname === itemPath
+    : prefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))
+
+  if (!pathMatches) return false
+  if (item.query && !Object.entries(item.query).every(([key, value]) => (
+    value === null ? !searchParams.has(key) : searchParams.get(key) === value
+  ))) return false
+  if (item.excludeQuery && Object.entries(item.excludeQuery).some(([key, value]) => (
+    searchParams.get(key) === value
+  ))) return false
+  return true
 }
 
 export function AppSidebar() {
   const pathname = usePathname()
+  const searchParams = useSearchParams()
 
   return (
     <Sidebar collapsible="icon">
@@ -48,7 +61,7 @@ export function AppSidebar() {
             <SidebarGroupContent>
               <SidebarMenu>
                 {group.items.map((item) => {
-                  const active = isActivePath(pathname, item)
+                  const active = isActivePath(pathname, searchParams, item)
                   const Icon = item.icon
                   return (
                     <SidebarMenuItem key={item.href}>
@@ -58,6 +71,14 @@ export function AppSidebar() {
                         className="relative h-8 overflow-hidden text-[13px]"
                         render={<Link href={item.href} />}
                       >
+                        {active ? (
+                          <motion.span
+                            layoutId="sidebar-active-telemetry"
+                            aria-hidden="true"
+                            className="nav-telemetry-rail absolute inset-y-1.5 left-0.5 w-0.5"
+                            transition={{ type: 'spring', stiffness: 520, damping: 42, mass: 0.55 }}
+                          />
+                        ) : null}
                         <Icon />
                         <span className="flex-1 truncate">{item.label}</span>
                         <Ripple />

@@ -3,7 +3,6 @@
 import { useNotificationRules } from '@/lib/api/hooks'
 import { BACKEND_HINT, EmptyState, ErrorState, LoadingState } from '@/components/shell/data-states'
 import { PageContainer } from '@/components/shell/page-container'
-import { RouteTabs, RUN_CENTER_TABS } from '@/components/shell/route-tabs'
 import { StatusBadge } from '@/components/shell/status-badge'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
@@ -32,7 +31,6 @@ export default function NotificationsPage() {
     <PageContainer
       title="运行中心"
       description="采集事件触发的通知规则"
-      tabs={<RouteTabs tabs={RUN_CENTER_TABS} />}
     >
       {isLoading ? (
         <LoadingState />

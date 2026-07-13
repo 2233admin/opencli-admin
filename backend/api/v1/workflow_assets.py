@@ -2,7 +2,6 @@
 
 import hashlib
 import json
-from collections.abc import Iterator
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
@@ -33,6 +32,7 @@ from backend.security.workspace_rbac import (
     require_permission,
 )
 from backend.workflow.compiler import compile_workflow_project
+from backend.workflow.hda_templates import freeze_hda_templates
 from backend.workflow.opencli_hda_tracer import (
     continue_workflow_run_with_source_outputs,
     get_workflow_run_projection,
@@ -305,24 +305,42 @@ async def publish_workflow_version(
     )
     if draft is None:
         raise HTTPException(status.HTTP_409_CONFLICT, "Workflow draft is missing")
-    graph = workflow_schemas.WorkflowProject.model_validate(draft.graph)
-    compiled = compile_workflow_project(graph)
+    if draft.revision != body.expected_revision:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail={
+                "code": "stale_validation",
+                "message": "Workflow Draft changed after validation",
+                "expectedRevision": body.expected_revision,
+                "latestRevision": draft.revision,
+            },
+        )
+    validation_run = await _completed_draft_validation(
+        db,
+        workflow_id=workflow.id,
+        draft_revision=draft.revision,
+        validation_run_id=body.validation_run_id,
+    )
+    if validation_run is None:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail={
+                "code": "stale_validation",
+                "message": "Publish requires a completed Validation Run for this Draft revision",
+                "draftRevision": draft.revision,
+                "validationRunId": body.validation_run_id,
+            },
+        )
+    graph = workflow_schemas.WorkflowRunStartRequest.model_validate(
+        validation_run.request
+    ).project
+    compiled = compile_workflow_project(graph, trust_frozen_templates=True)
     if not compiled.valid:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail={
                 "message": "Workflow draft is invalid",
                 "errors": compiled.model_dump()["errors"],
-            },
-        )
-    if _requires_import_validation(graph) and not await _has_completed_draft_validation(
-        db, workflow.id, draft.revision
-    ):
-        raise HTTPException(
-            status.HTTP_409_CONFLICT,
-            detail={
-                "message": "Imported workflow draft requires a completed validation run",
-                "draftRevision": draft.revision,
             },
         )
     number = (workflow.current_published_version or 0) + 1
@@ -354,40 +372,18 @@ async def publish_workflow_version(
     return ApiResponse.ok(WorkflowVersionRead.model_validate(version))
 
 
-def _requires_import_validation(graph: workflow_schemas.WorkflowProject) -> bool:
-    return any(
-        isinstance(node.params.get("compatRuntime"), dict)
-        or isinstance(node.params.get("externalWorkflow"), dict)
-        or any(key in (node.ui or {}) for key in ("n8n", "dify"))
-        for node in _workflow_nodes(graph.nodes)
-    ) or any(adapter.config.get("translatedFrom") in {"n8n", "dify"} for adapter in graph.adapters)
-
-
-def _workflow_nodes(
-    nodes: list[workflow_schemas.WorkflowProjectNode],
-) -> Iterator[workflow_schemas.WorkflowProjectNode]:
-    for node in nodes:
-        yield node
-        if node.internals:
-            yield from _workflow_nodes(node.internals.nodes)
-
-
-async def _has_completed_draft_validation(
-    db: AsyncSession, workflow_id: str, draft_revision: int
-) -> bool:
-    runs = (
-        (
-            await db.execute(
-                select(WorkflowRunRow)
-                .where(WorkflowRunRow.workflow_id == workflow_id)
-                .where(WorkflowRunRow.status == "completed")
-            )
-        )
-        .scalars()
-        .all()
-    )
+async def _completed_draft_validation(
+    db: AsyncSession,
+    *,
+    workflow_id: str,
+    draft_revision: int,
+    validation_run_id: str,
+) -> WorkflowRunRow | None:
+    run = await db.get(WorkflowRunRow, validation_run_id)
+    if run is None or run.workflow_id != workflow_id or run.status != "completed" or not run.valid:
+        return None
     expected = {"workflowId": workflow_id, "draftRevision": draft_revision}
-    return any(run.request.get("validation") == expected for run in runs)
+    return run if run.request.get("validation") == expected else None
 
 
 @router.post(
@@ -410,7 +406,9 @@ async def validate_workflow_draft(
     if draft is None:
         raise HTTPException(status.HTTP_409_CONFLICT, "Workflow draft is missing")
     request = workflow_schemas.WorkflowRunStartRequest(
-        project=workflow_schemas.WorkflowProject.model_validate(draft.graph),
+        project=freeze_hda_templates(
+            workflow_schemas.WorkflowProject.model_validate(draft.graph)
+        ),
         **body.model_dump(by_alias=True),
     )
     projection = await start_workflow_run(request, session=db)

@@ -28,7 +28,6 @@ import {
   MoreHorizontal,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Separator } from "@/components/ui/separator"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import {
   DropdownMenu,
@@ -154,6 +153,8 @@ export function CommandStrip({
   const canRedo = useFlowStore((s) => s.future.length > 0)
   const nodeCount = useFlowStore((s) => s.nodes.length)
   const edgeCount = useFlowStore((s) => s.edges.length)
+  const workflowProjectName = useFlowStore((s) => s.workflowProject.name)
+  const networkDepth = useFlowStore((s) => s.networkStack.length)
   const selectedNodeId = useFlowStore((s) => s.nodes.find((node) => node.selected)?.id)
   const selectedNodeCount = useFlowStore((s) => s.nodes.reduce((count, node) => count + (node.selected ? 1 : 0), 0))
   const selectedEdgeCount = useFlowStore((s) => s.edges.reduce((count, edge) => count + (edge.selected ? 1 : 0), 0))
@@ -343,9 +344,12 @@ export function CommandStrip({
           K
         </span>
         <div className="min-w-0">
-          <div className="truncate font-mono text-[11px] font-semibold text-foreground">order-pipeline</div>
-          <div className="hidden truncate font-mono text-[9px] uppercase tracking-[0.14em] text-muted-foreground lg:block">
-            / workflows
+          <div className="truncate text-xs font-semibold text-foreground">{workflowProjectName}</div>
+          <div
+            className="hidden truncate text-[10px] text-muted-foreground lg:block"
+            title={networkDepth > 0 ? "封包内部网络 · 添加和连接内部节点" : "顶层封包网络 · 双击封包进入内部"}
+          >
+            {networkDepth > 0 ? "封包内部网络 · 添加和连接内部节点" : "顶层封包网络 · 双击封包进入内部"}
           </div>
         </div>
       </nav>
@@ -429,12 +433,12 @@ export function CommandStrip({
         <button
           type="button"
           onClick={onOpenPalette}
-          className="flex h-8 min-w-10 shrink-0 items-center justify-center gap-2 rounded-sm border border-border bg-card px-2 font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground min-[1281px]:px-2.5"
-          aria-label="Add Operator"
-          title="Add Operator (Command Palette)"
+          className="flex h-8 min-w-10 shrink-0 items-center justify-center gap-2 rounded-sm border border-border bg-card px-2 text-xs text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground min-[1281px]:px-2.5"
+          aria-label="添加节点"
+          title="添加节点（也可以在空白画布右键）"
         >
-          <kbd className="text-foreground">⌘K</kbd>
-          <span className="hidden truncate min-[1281px]:inline">Add Operator</span>
+          <span className="text-sm text-foreground">＋</span>
+          <span className="hidden truncate min-[1281px]:inline">添加节点</span>
         </button>
       </div>
 
@@ -594,12 +598,12 @@ export function CommandStrip({
             <DropdownMenuItem
               onClick={() => {
                 reset()
-                onExported?.("已重置为示例")
+                onExported?.("已恢复默认封包网络")
               }}
               variant="destructive"
             >
               <RotateCcw className="size-3.5" />
-              重置为示例
+              恢复默认封包网络
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

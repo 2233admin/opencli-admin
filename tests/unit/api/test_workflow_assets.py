@@ -9,6 +9,7 @@ from backend.models.identity import User, Workspace, WorkspaceMembership, Worksp
 from backend.models.workflow import WorkflowVersion
 from backend.models.workflow_run import WorkflowRun
 from backend.security.identity import RequestIdentity, get_request_identity
+from backend.workflow import hda_templates
 
 
 def _graph(label: str) -> dict:
@@ -53,6 +54,25 @@ def _imported_graph(label: str) -> dict:
     return graph
 
 
+def _template_graph() -> dict:
+    graph = _graph("template")
+    graph["nodes"] = [
+        {
+            "id": "multi-source",
+            "kind": "agent",
+            "capability": "normalize",
+            "params": {
+                "template": "opencli-multi-source",
+                "sources": [
+                    {"id": "bilibili", "site": "bilibili", "command": "search"}
+                ],
+            },
+            "ui": {"catalogId": "package.opencli.multi-source-hda"},
+        }
+    ]
+    return graph
+
+
 async def _seed_member(db_session):
     user = User(subject="workflow-maintainer")
     workspace = Workspace(name="Workflow Lab", slug="workflow-lab")
@@ -85,6 +105,31 @@ async def _client(db_session) -> AsyncClient:
     return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
 
 
+async def _validate(client: AsyncClient, workflow_base: str) -> str:
+    response = await client.post(f"{workflow_base}/draft/validation-runs", json={})
+    assert response.status_code == 202
+    assert response.json()["data"]["status"] == "completed"
+    return response.json()["data"]["runId"]
+
+
+async def _publish(
+    client: AsyncClient,
+    workflow_base: str,
+    *,
+    reason: str,
+    revision: int,
+    validation_run_id: str,
+):
+    return await client.post(
+        f"{workflow_base}/versions",
+        json={
+            "reason": reason,
+            "expectedRevision": revision,
+            "validationRunId": validation_run_id,
+        },
+    )
+
+
 async def test_published_workflow_is_immutable_and_run_pins_version(db_session):
     workspace = await _seed_member(db_session)
     client = await _client(db_session)
@@ -110,9 +155,13 @@ async def test_published_workflow_is_immutable_and_run_pins_version(db_session):
         assert listed.status_code == 200
         assert [item["id"] for item in listed.json()["data"]] == [workflow_id]
 
-        published = await client.post(
-            f"{workflow_base}/versions",
-            json={"reason": "First stable graph"},
+        validation_run_id = await _validate(client, workflow_base)
+        published = await _publish(
+            client,
+            workflow_base,
+            reason="First stable graph",
+            revision=1,
+            validation_run_id=validation_run_id,
         )
         assert published.status_code == 201
         version_one = published.json()["data"]
@@ -184,18 +233,24 @@ async def test_imported_draft_requires_completed_validation_for_same_revision(db
         workflow_id = workflow.json()["data"]["id"]
         workflow_base = f"{base}/{project_id}/workflows/{workflow_id}"
 
-        blocked = await client.post(
-            f"{workflow_base}/versions", json={"reason": "Unvalidated import"}
+        blocked = await _publish(
+            client,
+            workflow_base,
+            reason="Unvalidated import",
+            revision=1,
+            validation_run_id="missing-validation-run",
         )
         assert blocked.status_code == 409
         assert blocked.json()["detail"]["draftRevision"] == 1
 
-        validation = await client.post(f"{workflow_base}/draft/validation-runs", json={})
-        assert validation.status_code == 202
-        assert validation.json()["data"]["status"] == "completed"
+        validation_run_id = await _validate(client, workflow_base)
 
-        published = await client.post(
-            f"{workflow_base}/versions", json={"reason": "Validated import"}
+        published = await _publish(
+            client,
+            workflow_base,
+            reason="Validated import",
+            revision=1,
+            validation_run_id=validation_run_id,
         )
         assert published.status_code == 201
 
@@ -208,11 +263,72 @@ async def test_imported_draft_requires_completed_validation_for_same_revision(db
             json={"revision": 1, "graph": _imported_graph("v2")},
         )
         assert updated.json()["data"]["revision"] == 2
-        stale_validation = await client.post(
-            f"{workflow_base}/versions", json={"reason": "Stale validation"}
+        old_run_for_current_revision = await _publish(
+            client,
+            workflow_base,
+            reason="Old run for current revision",
+            revision=2,
+            validation_run_id=validation_run_id,
+        )
+        assert old_run_for_current_revision.status_code == 409
+        assert old_run_for_current_revision.json()["detail"]["draftRevision"] == 2
+        stale_validation = await _publish(
+            client,
+            workflow_base,
+            reason="Stale validation",
+            revision=1,
+            validation_run_id=validation_run_id,
         )
         assert stale_validation.status_code == 409
-        assert stale_validation.json()["detail"]["draftRevision"] == 2
+        assert stale_validation.json()["detail"] == {
+            "code": "stale_validation",
+            "message": "Workflow Draft changed after validation",
+            "expectedRevision": 1,
+            "latestRevision": 2,
+        }
+
+
+async def test_publish_uses_exact_template_expansion_captured_by_validation(
+    db_session, monkeypatch
+):
+    workspace = await _seed_member(db_session)
+    client = await _client(db_session)
+    base = f"/workspaces/{workspace.id}/projects"
+
+    async with client:
+        project = await client.post(base, json={"name": "Templates", "slug": "templates"})
+        project_id = project.json()["data"]["id"]
+        workflow = await client.post(
+            f"{base}/{project_id}/workflows",
+            json={"name": "Frozen package", "graph": _template_graph()},
+        )
+        workflow_id = workflow.json()["data"]["id"]
+        workflow_base = f"{base}/{project_id}/workflows/{workflow_id}"
+
+        validation_run_id = await _validate(client, workflow_base)
+        validation_run = await db_session.get(WorkflowRun, validation_run_id)
+        validated_package = validation_run.request["project"]["nodes"][0]
+        assert validated_package["params"]["templateFrozen"] is True
+        assert validated_package["internals"]["nodes"]
+
+        def changed_template(_sources):
+            raise AssertionError("publish must use the expansion captured by validation")
+
+        monkeypatch.setattr(hda_templates, "_opencli_multi_source_internals", changed_template)
+        published = await _publish(
+            client,
+            workflow_base,
+            reason="Validated frozen package",
+            revision=1,
+            validation_run_id=validation_run_id,
+        )
+        version_run = await client.post(f"{workflow_base}/versions/1/runs", json={})
+
+    assert published.status_code == 201
+    assert version_run.status_code == 202
+    assert version_run.json()["data"]["status"] == "completed"
+    published_package = published.json()["data"]["graph"]["nodes"][0]
+    assert published_package["internals"] == validated_package["internals"]
 
 
 async def test_stale_draft_revision_returns_conflict_without_overwrite(db_session):

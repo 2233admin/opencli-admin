@@ -7,7 +7,6 @@ import { useRecords } from '@/lib/api/hooks'
 import { formatRelative } from '@/lib/format'
 import { BACKEND_HINT, EmptyState, ErrorState, LoadingState } from '@/components/shell/data-states'
 import { PageContainer } from '@/components/shell/page-container'
-import { RouteTabs, RUN_CENTER_TABS } from '@/components/shell/route-tabs'
 import { StatusBadge } from '@/components/shell/status-badge'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -36,7 +35,6 @@ export default function RecordsPage() {
     <PageContainer
       title="运行中心"
       description="采集入库的结构化数据记录"
-      tabs={<RouteTabs tabs={RUN_CENTER_TABS} />}
       actions={
         <div className="relative w-64">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />

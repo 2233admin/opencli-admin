@@ -19,9 +19,12 @@ OPENCLI_SOURCE_POOL_CATALOG_ID = "intelligence.source.pool"
 OPENCLI_SOURCE_SLOT_CATALOG_ID = "intelligence.source.opencli-slot"
 OPENCLI_COLLECTION_OUTPUT_CATALOG_ID = "intelligence.output.collection-result"
 OPENCLI_HDA_CATALOG_ID = "package.opencli.multi-source-hda"
+FROZEN_TEMPLATE_PARAM = "templateFrozen"
 
 
-def materialize_hda_templates(project: WorkflowProject) -> WorkflowProject:
+def materialize_hda_templates(
+    project: WorkflowProject, *, trust_frozen: bool = False
+) -> WorkflowProject:
     """Expand known package templates before validation/compile.
 
     The frontend and AI clients should treat HDA internals as derived from
@@ -29,24 +32,63 @@ def materialize_hda_templates(project: WorkflowProject) -> WorkflowProject:
     from inventing raw internal primitive graphs.
     """
 
-    nodes = [_materialize_node(node) for node in project.nodes]
+    nodes = [_materialize_node(node, trust_frozen=trust_frozen) for node in project.nodes]
     adapters = _merge_adapters(project.adapters, nodes)
     return project.model_copy(update={"nodes": nodes, "adapters": adapters})
 
 
-def _materialize_node(node: WorkflowProjectNode) -> WorkflowProjectNode:
+def freeze_hda_templates(project: WorkflowProject) -> WorkflowProject:
+    """Return a self-contained graph whose derived package internals are immutable.
+
+    Drafts keep template parameters compact and can be rematerialized as the built-in
+    catalog evolves. Validation and published versions retain one exact expansion, so
+    versioned runs never depend on later template code.
+    """
+
+    materialized = materialize_hda_templates(project, trust_frozen=False)
+    return materialized.model_copy(
+        update={"nodes": [_freeze_materialized_node(node) for node in materialized.nodes]}
+    )
+
+
+def _materialize_node(
+    node: WorkflowProjectNode, *, trust_frozen: bool
+) -> WorkflowProjectNode:
+    if (
+        trust_frozen
+        and node.internals
+        and node.params.get(FROZEN_TEMPLATE_PARAM) is True
+    ):
+        return node
+    if node.internals:
+        node = node.model_copy(
+            update={
+                "internals": node.internals.model_copy(
+                    update={
+                        "nodes": [
+                            _materialize_node(child, trust_frozen=trust_frozen)
+                            for child in node.internals.nodes
+                        ]
+                    }
+                )
+            }
+        )
     if not _is_opencli_multi_source_hda(node):
         return node
 
     sources = _source_slots(node.params.get("sources"))
     if not sources:
-        return node
+        params = {key: value for key, value in node.params.items() if key != FROZEN_TEMPLATE_PARAM}
+        return node.model_copy(update={"params": params, "internals": None})
 
     internals = _opencli_multi_source_internals(sources)
     topic = _topic_collapse(node, len(internals.nodes))
     requested_execution = _read_dict(node.params.get("execution"))
+    public_params = {
+        key: value for key, value in node.params.items() if key != FROZEN_TEMPLATE_PARAM
+    }
     params = {
-        **node.params,
+        **public_params,
         "template": OPENCLI_MULTI_SOURCE_TEMPLATE,
         "runtime": node.params.get("runtime", "iii"),
         "lockedInternals": node.params.get("lockedInternals", True),
@@ -64,6 +106,24 @@ def _materialize_node(node: WorkflowProjectNode) -> WorkflowProjectNode:
             "topicCollapse": topic,
             "internals": internals,
             "ui": ui,
+        }
+    )
+
+
+def _freeze_materialized_node(node: WorkflowProjectNode) -> WorkflowProjectNode:
+    internals = node.internals
+    if internals:
+        internals = internals.model_copy(
+            update={
+                "nodes": [_freeze_materialized_node(child) for child in internals.nodes]
+            }
+        )
+    if not internals or not _is_opencli_multi_source_hda(node):
+        return node.model_copy(update={"internals": internals}) if internals else node
+    return node.model_copy(
+        update={
+            "params": {**node.params, FROZEN_TEMPLATE_PARAM: True},
+            "internals": internals,
         }
     )
 
@@ -250,9 +310,7 @@ def _merge_adapters(
     nodes: list[WorkflowProjectNode],
 ) -> list[WorkflowAdapterBinding]:
     adapter_by_id = {adapter.id: adapter for adapter in existing}
-    for node in nodes:
-        if not _is_opencli_multi_source_hda(node) or not node.internals:
-            continue
+    for node in _hda_nodes(nodes):
         for internal_node in node.internals.nodes:
             if internal_node.kind != "source" or not internal_node.adapter:
                 continue
@@ -267,6 +325,14 @@ def _merge_adapters(
                 ),
             )
     return list(adapter_by_id.values())
+
+
+def _hda_nodes(nodes: list[WorkflowProjectNode]):
+    for node in nodes:
+        if _is_opencli_multi_source_hda(node) and node.internals:
+            yield node
+        if node.internals:
+            yield from _hda_nodes(node.internals.nodes)
 
 
 def _adapter_id(source: dict[str, Any]) -> str:

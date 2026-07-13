@@ -2,7 +2,7 @@
 
 // Throwaway prototype: evolve the existing dashboard and canvas instead of redrawing them.
 
-import { useState } from 'react'
+import { Suspense, useState } from 'react'
 import { Activity, LayoutDashboard, Workflow } from 'lucide-react'
 
 import DashboardPage from '@/app/(app)/dashboard/page'
@@ -19,8 +19,9 @@ export default function WorkflowStudioPrototype() {
   const [scale, setScale] = useState(100)
 
   return (
-    <AppShell>
-      <div className="flex min-h-full flex-col bg-background">
+    <Suspense fallback={<div className="min-h-dvh bg-background" />}>
+      <AppShell>
+        <div className="flex min-h-full flex-col bg-background">
         <div className="sticky top-0 z-40 flex min-h-12 flex-wrap items-center justify-between gap-2 border-b bg-background/95 px-4 py-2 backdrop-blur">
           <div className="flex items-center gap-2">
             <Badge variant="outline" className="hidden sm:inline-flex">Workflow Studio prototype</Badge>
@@ -67,8 +68,9 @@ export default function WorkflowStudioPrototype() {
             {surface === 'overview' ? <DashboardPage /> : <WorkflowEditor />}
           </div>
         </div>
-      </div>
-    </AppShell>
+        </div>
+      </AppShell>
+    </Suspense>
   )
 }
 

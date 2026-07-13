@@ -6,7 +6,6 @@ import { useTasks } from '@/lib/api/hooks'
 import { formatRelative } from '@/lib/format'
 import { BACKEND_HINT, EmptyState, ErrorState, LoadingState } from '@/components/shell/data-states'
 import { PageContainer } from '@/components/shell/page-container'
-import { RouteTabs, RUN_CENTER_TABS } from '@/components/shell/route-tabs'
 import { StatusBadge } from '@/components/shell/status-badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -36,7 +35,6 @@ export default function TasksPage() {
     <PageContainer
       title="运行中心"
       description="采集任务执行队列与运行状态"
-      tabs={<RouteTabs tabs={RUN_CENTER_TABS} />}
       actions={
         <div className="flex items-center gap-1 rounded-md border p-0.5">
           {STATUS_FILTERS.map((f) => (

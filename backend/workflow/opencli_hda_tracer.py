@@ -95,12 +95,16 @@ def build_opencli_hda_trace(
     package_node_id: str | None = None,
     run_id: str | None = None,
     trace_id: str | None = None,
+    trust_frozen_templates: bool = False,
 ) -> WorkflowOpenCLIHDATraceResponse:
     """Compile a WorkflowProject and return OpenCLI HDA fanout trigger envelopes."""
 
     resolved_run_id = run_id or str(uuid.uuid4())
     resolved_trace_id = trace_id or str(uuid.uuid4())
-    compile_result = compile_workflow_project(project)
+    compile_result = compile_workflow_project(
+        project,
+        trust_frozen_templates=trust_frozen_templates,
+    )
     if not compile_result.valid or compile_result.plan is None:
         return WorkflowOpenCLIHDATraceResponse(
             valid=False,
@@ -192,7 +196,10 @@ async def start_workflow_run(
     trace_id = body.traceId or str(uuid.uuid4())
     started_at = _utcnow()
     prior_events = list(existing_events or [])
-    compile_result = compile_workflow_project(body.project)
+    compile_result = compile_workflow_project(
+        body.project,
+        trust_frozen_templates=workflow_version_id is not None,
+    )
 
     if not compile_result.valid or compile_result.plan is None:
         events = _compile_failure_events(
@@ -251,6 +258,7 @@ async def start_workflow_run(
             package_node_id=body.packageNodeId,
             run_id=run_id,
             trace_id=trace_id,
+            trust_frozen_templates=workflow_version_id is not None,
         )
         if should_trace_opencli
         else None
