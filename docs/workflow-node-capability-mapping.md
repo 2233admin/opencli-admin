@@ -14,6 +14,9 @@ Implementation slice:
 - `intelligence.schedule.cron` now compiles/runs as a workflow schedule tick binding for Canvas Run; automatic scheduler-to-run creation remains a separate scheduler integration.
 - This does not execute blocked nodes. It makes runtime truth visible and runs the narrow OpenCLI node/package proof path; full result/resource workbench wiring is still pending.
 - `intelligence.output.webhook` now exposes the `workflow.notifier.webhook.send` notifier contract, but Canvas live delivery remains blocked until EvidenceBatch projection, notification permission, and webhook URL resources are connected.
+- Webhook input primitives now compile to `workflow.trigger.webhook_input`. `POST /api/v1/workflows/{workflow_id}/webhooks/{trigger_node_id}` validates the node contract, creates an idempotent workflow run, and emits typed workflow/run/node/source event identifiers. This remains separate from the data-source `/api/v1/webhooks/{source_id}` route.
+- EvidenceBatch list/detail/projection APIs expose stable, replay-deduplicated run outputs to the Build workspace without streaming raw records.
+- Workflow authoring and runtime inspection live under the Build product boundary at `/build/workflow`; `/canvas` and `/studio` are compatibility redirects rather than primary navigation entries.
 - The durable backend reuse map is `docs/opencli-admin-backend-system-map.md`; check it before adding workflow/runtime surfaces.
 
 ## Hard conclusion

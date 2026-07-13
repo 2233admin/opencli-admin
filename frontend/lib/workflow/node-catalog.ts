@@ -11,7 +11,10 @@ import { getNodeInternals } from "./node-internals"
 import { createParameterInterfaceFromInternals } from "./parameter-interface"
 import {
   catalogRuntimeCapability,
+  projectedCatalogRuntimeCapability,
+  runtimeContractForCapability,
   type WorkflowCapabilitiesResponse,
+  type WorkflowRuntimeIOContract,
   type WorkflowRuntimeCapability,
 } from "./capabilities"
 
@@ -43,6 +46,7 @@ export type WorkflowNodeCatalogItem = {
   topicCollapse?: WorkflowProjectNode["topicCollapse"]
   internals?: WorkflowProjectNode["internals"]
   runtimeCapability?: WorkflowRuntimeCapability
+  runtimeContract?: WorkflowRuntimeIOContract
   keywords: string[]
 }
 
@@ -717,10 +721,18 @@ export function getWorkflowNodeCatalog(
   profile: WorkflowProfile,
   capabilities?: WorkflowCapabilitiesResponse | null,
 ): WorkflowNodeCatalogItem[] {
-  return WORKFLOW_NODE_CATALOG.filter((item) => item.profile === profile).map((item) => ({
-    ...item,
-    runtimeCapability: catalogRuntimeCapability(capabilities, item.id),
-  }))
+  return WORKFLOW_NODE_CATALOG.filter((item) => item.profile === profile).map((item) => {
+    const runtimeCapability = projectedCatalogRuntimeCapability(
+      catalogRuntimeCapability(capabilities, item.id),
+      item,
+      Boolean(capabilities),
+    )
+    return {
+      ...item,
+      runtimeCapability,
+      runtimeContract: runtimeContractForCapability(runtimeCapability),
+    }
+  })
 }
 
 export function createWorkflowNodeFromCatalog(
@@ -757,6 +769,7 @@ export function createWorkflowNodeFromCatalog(
       position,
       catalogId: item.id,
       runtimeCapability: cloneCatalogValue(item.runtimeCapability),
+      runtimeContract: cloneCatalogValue(item.runtimeContract),
     },
   }
 }

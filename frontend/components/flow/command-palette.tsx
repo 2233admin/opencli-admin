@@ -7,6 +7,7 @@ import { NODE_PALETTE } from "@/lib/flow/palette"
 import type { PaletteItem } from "@/lib/flow/types"
 import { getWorkflowNodeCatalog, type WorkflowNodeCatalogItem } from "@/lib/workflow/node-catalog"
 import { getWorkflowPrimitives, type WorkflowPrimitive } from "@/lib/workflow/node-primitives"
+import { groupPrimitivesForNodeMenu } from "@/lib/workflow/node-menu"
 import { getIcon } from "@/lib/flow/icons"
 import { useFlowStore } from "@/lib/flow/store"
 import { useSettingsStore } from "@/lib/flow/settings-store"
@@ -115,8 +116,8 @@ export function CommandPalette({
       const status = item.runtimeCapability?.status
       onMessage?.(
         status && status !== "runnable"
-          ? `已添加原子节点：${text.label} (${runtimeStatusLabel(status)})`
-          : `已添加原子节点：${text.label}`,
+          ? `已添加封包节点：${text.label} (${runtimeStatusLabel(status)})`
+          : `已添加封包节点：${text.label}`,
       )
       onClose()
     },
@@ -220,7 +221,9 @@ export function CommandPalette({
   )
 
   const q = query.trim().toLowerCase()
-  const catalogOperators = getWorkflowNodeCatalog(workflowProfile, capabilities)
+  const catalogOperators = inNodeNetwork
+    ? []
+    : getWorkflowNodeCatalog(workflowProfile, capabilities).filter((item) => item.category === "package")
   const filteredCatalogOperators = q
     ? catalogOperators.filter(
         (item) => {
@@ -236,7 +239,7 @@ export function CommandPalette({
         },
       )
     : catalogOperators
-  const primitiveOperators = getWorkflowPrimitives().filter((item) => {
+  const primitiveOperators = (inNodeNetwork ? getWorkflowPrimitives() : []).filter((item) => {
     if (!q) return true
     const text = localizeNodeText(item.id, { label: item.label, description: item.description }, language)
     return (
@@ -247,12 +250,16 @@ export function CommandPalette({
       item.keywords.some((keyword) => keyword.toLowerCase().includes(q))
     )
   })
+  const primitiveGroups = groupPrimitivesForNodeMenu(primitiveOperators)
+  const auxiliaryOperators = NODE_PALETTE.filter(
+    (item) => item.category === "annotation" || item.category === "shape",
+  )
   const filteredOperators = q
-    ? NODE_PALETTE.filter(
+    ? auxiliaryOperators.filter(
         (i) => i.label.toLowerCase().includes(q) || i.nodeType.toLowerCase().includes(q),
       )
-    : NODE_PALETTE
-  const filteredCommands = q ? commands.filter((c) => c.label.toLowerCase().includes(q)) : commands
+    : auxiliaryOperators
+  const filteredCommands = q ? commands.filter((c) => c.label.toLowerCase().includes(q)) : []
 
   if (!open) return null
 
@@ -265,7 +272,7 @@ export function CommandPalette({
       }}
       role="dialog"
       aria-modal="true"
-      aria-label="命令面板"
+      aria-label="节点选择器"
     >
       <div
         className="w-[36rem] max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border bg-popover shadow-2xl"
@@ -283,20 +290,20 @@ export function CommandPalette({
                 onChange={(e) => setQuery(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.nativeEvent.isComposing) {
-                    const first = filteredCommands[0]
-                    if (first) {
-                      if (first.id === "ai") setAiMode(true)
-                      else first.run?.()
-                    } else if (filteredCatalogOperators[0]) {
+                    if (filteredCatalogOperators[0]) {
                       addCatalogOperator(filteredCatalogOperators[0])
                     } else if (primitiveOperators[0]) {
                       addPrimitive(primitiveOperators[0])
                     } else if (filteredOperators[0]) {
                       addOperator(filteredOperators[0])
+                    } else if (filteredCommands[0]) {
+                      const first = filteredCommands[0]
+                      if (first.id === "ai") setAiMode(true)
+                      else first.run?.()
                     }
                   }
                 }}
-                placeholder="Add operator, run command..."
+                placeholder="搜索节点或操作…"
                 className="w-full bg-transparent text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none"
                 aria-label="搜索命令或节点"
               />
@@ -309,7 +316,7 @@ export function CommandPalette({
               {filteredCommands.length > 0 ? (
                 <>
                   <p className="px-4 py-1 font-mono text-[9px] uppercase tracking-[0.2em] text-muted-foreground/60">
-                    Commands
+                    快捷操作
                   </p>
                   {filteredCommands.map((cmd) => {
                     const Icon = cmdIcons[cmd.icon]
@@ -340,7 +347,7 @@ export function CommandPalette({
               {filteredCatalogOperators.length > 0 ? (
                 <>
                   <p className="px-4 pb-1 pt-3 font-mono text-[9px] uppercase tracking-[0.2em] text-muted-foreground/60">
-                    Package Operators
+                    封包节点
                   </p>
                   {filteredCatalogOperators.map((item) => {
                     const Icon = getIcon(item.icon)
@@ -372,40 +379,47 @@ export function CommandPalette({
               {primitiveOperators.length > 0 ? (
                 <>
                   <p className="px-4 pb-1 pt-3 font-mono text-[9px] uppercase tracking-[0.2em] text-muted-foreground/60">
-                    Internal Primitive Components{inNodeNetwork ? " · Current Network" : ""}
+                    内部节点 · 当前封包
                   </p>
-                  {primitiveOperators.map((item) => {
-                    const Icon = getIcon(item.icon)
-                    const text = localizeNodeText(item.id, { label: item.label, description: item.description }, language)
-                    const runtimeCapability = primitiveRuntimeCapability(capabilities, item.id)
-                    return (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onClick={() => addPrimitive(item)}
-                        className="flex w-full items-center gap-3 px-4 py-2 text-left transition-colors hover:bg-accent"
-                      >
-                        <Icon className="size-3.5 text-muted-foreground" />
-                        <span className="min-w-0 flex-1 truncate text-sm">{text.label}</span>
-                        <span
-                          className={cn(
-                            "rounded-[3px] border px-1 py-0.5 font-mono text-[8px] uppercase tracking-wider",
-                            runtimeStatusTone(runtimeCapability?.status ?? "design_only"),
-                          )}
-                          title={runtimeCapability?.reason ?? item.category}
-                        >
-                          {runtimeStatusLabel(runtimeCapability?.status ?? "design_only")}
-                        </span>
-                      </button>
-                    )
-                  })}
+                  {primitiveGroups.map((group) => (
+                    <div key={group.category}>
+                      <p className="border-y border-border/60 bg-muted/30 px-4 py-1.5 text-[11px] font-medium text-muted-foreground">
+                        {group.label}
+                      </p>
+                      {group.items.map((item) => {
+                        const Icon = getIcon(item.icon)
+                        const text = localizeNodeText(item.id, { label: item.label, description: item.description }, language)
+                        const runtimeCapability = primitiveRuntimeCapability(capabilities, item.id)
+                        return (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => addPrimitive(item)}
+                            className="flex w-full items-center gap-3 px-4 py-2 text-left transition-colors hover:bg-accent"
+                          >
+                            <Icon className="size-3.5 text-muted-foreground" />
+                            <span className="min-w-0 flex-1 truncate text-sm">{text.label}</span>
+                            <span
+                              className={cn(
+                                "rounded-[3px] border px-1 py-0.5 font-mono text-[8px] uppercase tracking-wider",
+                                runtimeStatusTone(runtimeCapability?.status ?? "design_only"),
+                              )}
+                              title={runtimeCapability?.reason ?? item.category}
+                            >
+                              {runtimeStatusLabel(runtimeCapability?.status ?? "design_only")}
+                            </span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  ))}
                 </>
               ) : null}
 
               {filteredOperators.length > 0 ? (
                 <>
                   <p className="px-4 pb-1 pt-3 font-mono text-[9px] uppercase tracking-[0.2em] text-muted-foreground/60">
-                    Canvas Blocks
+                    注释与辅助
                   </p>
                   {filteredOperators.map((item) => {
                     const Icon = getIcon(item.icon)
@@ -429,7 +443,7 @@ export function CommandPalette({
 
               {filteredCommands.length === 0 && filteredCatalogOperators.length === 0 && primitiveOperators.length === 0 && filteredOperators.length === 0 ? (
                 <p className="px-4 py-6 text-center font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-                  No results
+                  没有匹配的节点或操作
                 </p>
               ) : null}
             </div>
@@ -482,7 +496,7 @@ export function CommandPalette({
               ))}
             </div>
             <p className="mt-3 font-mono text-[9px] uppercase tracking-wider text-muted-foreground/50">
-              ⌘+Enter to generate · ESC to go back
+              ⌘+Enter 生成 · ESC 返回
             </p>
           </div>
         )}

@@ -91,6 +91,7 @@ export function workflowNodeToReactFlow(node: WorkflowProjectNode, index: number
     sourceAnchor: node.sourceAnchor,
     runArtifact: node.runArtifact,
     runtimeCapability: readRuntimeCapability(ui),
+    runtimeContract: readRuntimeContract(ui),
     runtimeRunState,
     runtimeLatestEvent: readRuntimeLatestEvent(ui),
     miniNetwork: node.miniNetwork,
@@ -139,6 +140,14 @@ function readRuntimeCapability(ui: Record<string, unknown>): WorkflowRuntimeCapa
     return undefined
   }
   return value as WorkflowRuntimeCapability
+}
+
+function readRuntimeContract(ui: Record<string, unknown>): WorkflowNodeData["runtimeContract"] {
+  const value = ui.runtimeContract
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined
+  const record = value as Record<string, unknown>
+  if (typeof record.bindingId !== "string" || typeof record.status !== "string") return undefined
+  return value as WorkflowNodeData["runtimeContract"]
 }
 
 function readRuntimeRunState(ui: Record<string, unknown>): WorkflowRunNodeState | undefined {

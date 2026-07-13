@@ -27,6 +27,31 @@ export type WorkflowRuntimeCapability = {
   manifest?: Record<string, unknown>
 }
 
+export type WorkflowRuntimeContractStatus =
+  | "executable"
+  | "dispatch_only"
+  | "projection_only"
+  | "blocked_until_preconditions"
+
+export type WorkflowRuntimeContractPort = {
+  name: string
+  type: string
+}
+
+export type WorkflowRuntimeIOContract = {
+  schemaVersion: number
+  bindingId: string
+  status: WorkflowRuntimeContractStatus
+  inputShape: { ports: WorkflowRuntimeContractPort[]; params: string[] }
+  outputShape: { ports: WorkflowRuntimeContractPort[]; artifacts: string[] }
+  permissionGate: { required: string[] }
+  configGate: { required: string[] }
+  eventShape: { events: string[] }
+  fixtureCoverage: { cases: string[] }
+  certification: { realNodeIoContract: boolean; realWebhookDelivery: boolean }
+  canvas: { exposeResourceInternals: boolean }
+}
+
 export type WorkflowCapabilitiesResponse = {
   version: string
   catalog: WorkflowRuntimeCapability[]
@@ -80,6 +105,73 @@ export function primitiveRuntimeCapability(
   primitiveId: string,
 ): WorkflowRuntimeCapability | undefined {
   return indexWorkflowCapabilities(capabilities).primitives.get(primitiveId)
+}
+
+export function projectedCatalogRuntimeCapability(
+  capability: WorkflowRuntimeCapability | undefined,
+  fallback: { id: string; label: string; kind?: string; capability?: string },
+  projectionLoaded: boolean,
+): WorkflowRuntimeCapability | undefined {
+  if (capability) return capability
+  if (!projectionLoaded) return undefined
+  return {
+    id: fallback.id,
+    label: fallback.label,
+    surface: "catalog",
+    status: "design_only",
+    backendAvailable: false,
+    kind: fallback.kind,
+    capability: fallback.capability,
+    reason: "No backend catalog/runtime contract is projected for this Canvas node.",
+    missing: ["backend_runtime_contract"],
+    tags: ["canvas", "unsupported"],
+    source: "frontend.catalog.fallback",
+  }
+}
+
+export function runtimeContractForCapability(
+  capability: WorkflowRuntimeCapability | null | undefined,
+): WorkflowRuntimeIOContract | undefined {
+  const manifest = readRecord(capability?.manifest)
+  const contract = readRecord(manifest?.contract)
+  if (!contract) return undefined
+  const status = readString(contract.status)
+  const bindingId = readString(contract.bindingId)
+  if (!bindingId || !isRuntimeContractStatus(status)) return undefined
+  const inputShape = readRecord(contract.inputShape)
+  const outputShape = readRecord(contract.outputShape)
+  const permissionGate = readRecord(contract.permissionGate)
+  const configGate = readRecord(contract.configGate)
+  const eventShape = readRecord(contract.eventShape)
+  const fixtureCoverage = readRecord(contract.fixtureCoverage)
+  const certification = readRecord(contract.certification)
+  const canvas = readRecord(contract.canvas)
+  return {
+    schemaVersion: typeof contract.schemaVersion === "number" ? contract.schemaVersion : 1,
+    bindingId,
+    status,
+    inputShape: {
+      ports: readPorts(inputShape?.ports),
+      params: readStrings(inputShape?.params),
+    },
+    outputShape: {
+      ports: readPorts(outputShape?.ports),
+      artifacts: readStrings(outputShape?.artifacts),
+    },
+    permissionGate: { required: readStrings(permissionGate?.required) },
+    configGate: { required: readStrings(configGate?.required) },
+    eventShape: { events: readStrings(eventShape?.events) },
+    fixtureCoverage: { cases: readStrings(fixtureCoverage?.cases) },
+    certification: {
+      realNodeIoContract: certification?.realNodeIoContract === true,
+      realWebhookDelivery: certification?.realWebhookDelivery === true,
+    },
+    canvas: { exposeResourceInternals: canvas?.exposeResourceInternals === true },
+  }
+}
+
+export function isUserFacingRuntimeParam(value: string): boolean {
+  return !/(cookie|profile|session|worker|command)/i.test(value)
 }
 
 export function runtimeStatusLabel(status: WorkflowCapabilityStatus | undefined): string {
@@ -180,6 +272,40 @@ function sanitizeResourceText(value: string): string {
   return value
     .replace(/\bcookies?\b/gi, "runtime session")
     .replace(/\bprofiles?\b/gi, "runtime identity")
+    .replace(/\bsessions?\b/gi, "runtime state")
     .replace(/\bworkers?\b/gi, "runtime capacity")
+    .replace(/\bcommands?\b/gi, "runtime operation")
     .replace(/\bheadless\b/gi, "runtime")
+}
+
+function isRuntimeContractStatus(value: string | undefined): value is WorkflowRuntimeContractStatus {
+  return (
+    value === "executable" ||
+    value === "dispatch_only" ||
+    value === "projection_only" ||
+    value === "blocked_until_preconditions"
+  )
+}
+
+function readRecord(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined
+  return value as Record<string, unknown>
+}
+
+function readString(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined
+}
+
+function readStrings(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []
+}
+
+function readPorts(value: unknown): WorkflowRuntimeContractPort[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((item) => {
+    const record = readRecord(item)
+    const name = readString(record?.name)
+    const type = readString(record?.type)
+    return name && type ? [{ name, type }] : []
+  })
 }

@@ -36,11 +36,6 @@ _TOP_LEVEL_PARAM_KEYS = {
     "format",
     "mode",
     "sourceGroup",
-    "profileId",
-    "profileBinding",
-    "sessionPolicy",
-    "workerTags",
-    "resourceTags",
 }
 
 

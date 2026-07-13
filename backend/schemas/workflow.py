@@ -511,6 +511,9 @@ class WorkflowOpenCLIHDATraceResponse(BaseModel):
 
 
 WorkflowRunStatus = Literal["queued", "running", "partial", "blocked", "completed", "failed"]
+WorkflowRunTriggerKind = Literal["manual", "ai", "schedule", "webhook"]
+WorkflowRunInputSource = Literal["operator", "agent", "external"]
+WorkflowRunResponseMode = Literal["async", "sync-short-wait", "callback"]
 WorkflowNodeRunEventType = Literal[
     "queued",
     "started",
@@ -524,12 +527,42 @@ WorkflowNodeRunEventType = Literal[
 ]
 
 
+class WorkflowRunTrigger(BaseModel):
+    kind: WorkflowRunTriggerKind = "manual"
+    triggerNodeId: Optional[str] = None
+    requestId: Optional[str] = None
+    idempotencyKey: Optional[str] = None
+
+
+class WorkflowRunInput(BaseModel):
+    payload: dict[str, Any] = Field(default_factory=dict)
+    headers: dict[str, str] = Field(default_factory=dict)
+    query: dict[str, str] = Field(default_factory=dict)
+    source: WorkflowRunInputSource = "operator"
+    sourceId: Optional[str] = None
+
+
 class WorkflowRunStartRequest(BaseModel):
     project: WorkflowProject
     packageNodeId: Optional[str] = None
     runId: Optional[str] = None
     traceId: Optional[str] = None
     sourceOutputs: dict[str, list[dict[str, Any]]] = Field(default_factory=dict)
+    trigger: WorkflowRunTrigger = Field(default_factory=WorkflowRunTrigger)
+    input: WorkflowRunInput = Field(default_factory=WorkflowRunInput)
+    responseMode: WorkflowRunResponseMode = "async"
+
+
+class WorkflowWebhookIngressRequest(BaseModel):
+    workflowProject: WorkflowProject
+    input: WorkflowRunInput = Field(
+        default_factory=lambda: WorkflowRunInput(source="external")
+    )
+    requestId: Optional[str] = None
+    idempotencyKey: Optional[str] = None
+    runId: Optional[str] = None
+    traceId: Optional[str] = None
+    responseMode: WorkflowRunResponseMode = "async"
 
 
 class WorkflowRunSourceOutputsRequest(BaseModel):
@@ -541,6 +574,27 @@ class WorkflowRunBlockReason(BaseModel):
     message: str = Field(..., min_length=1)
     source: Optional[str] = None
     details: dict[str, Any] = Field(default_factory=dict)
+
+
+class WorkflowRuntimeResourceRequirement(BaseModel):
+    nodeId: str = Field(..., min_length=1)
+    sourceGroup: str = Field(..., min_length=1)
+    site: str = Field(..., min_length=1)
+    mutationMode: Literal["read", "write"]
+    requestedCapability: str = Field(..., min_length=1)
+    adapterNodeId: Optional[str] = None
+
+
+class WorkflowRuntimeResourceResolution(BaseModel):
+    status: Literal["resolved", "blocked"]
+    adapterNodeId: Optional[str] = None
+    command: Optional[str] = None
+    workerSlotId: Optional[str] = None
+    profileBindingId: Optional[str] = None
+    sessionSnapshotId: Optional[str] = None
+    lockId: Optional[str] = None
+    concurrencyLimit: Optional[int] = Field(default=None, ge=1)
+    blockReason: Optional[WorkflowRunBlockReason] = None
 
 
 class WorkflowRunBatchReference(BaseModel):
@@ -560,6 +614,7 @@ class WorkflowNodeRunEvent(BaseModel):
     workflowRunId: str = Field(..., min_length=1)
     traceId: str = Field(..., min_length=1)
     nodeId: str = Field(..., min_length=1)
+    sourceId: Optional[str] = None
     eventType: WorkflowNodeRunEventType
     createdAt: str = Field(..., min_length=1)
     packageNodeId: Optional[str] = None
@@ -595,6 +650,95 @@ class WorkflowRunProjection(BaseModel):
     eventCount: int = Field(..., ge=0)
     nodeStates: list[WorkflowRunNodeState] = Field(default_factory=list)
     errors: list[WorkflowCompileError] = Field(default_factory=list)
+
+
+class EvidenceBatchSummary(BaseModel):
+    runId: str = Field(..., min_length=1)
+    nodeId: str = Field(..., min_length=1)
+    packageNodeId: Optional[str] = None
+    internalNodeId: Optional[str] = None
+    sourceGroup: Optional[str] = None
+    adapterTaskId: Optional[str] = None
+    traceId: str = Field(..., min_length=1)
+    batchId: str = Field(..., min_length=1)
+    manifestUri: Optional[str] = None
+    odpRef: Optional[str] = None
+    itemCount: int = Field(..., ge=0)
+    recordCount: int = Field(..., ge=0)
+    status: WorkflowRunStatus
+
+
+class WorkflowEvidenceBatchListResponse(BaseModel):
+    runId: str = Field(..., min_length=1)
+    batches: list[EvidenceBatchSummary] = Field(default_factory=list)
+    nextCursor: Optional[str] = None
+
+
+class WorkflowSourceCoverage(BaseModel):
+    sourceGroup: Optional[str] = None
+    status: WorkflowRunStatus
+    batchCount: int = Field(..., ge=0)
+    itemCount: int = Field(..., ge=0)
+    recordCount: int = Field(..., ge=0)
+
+
+class WorkflowEvidenceBatchDetail(BaseModel):
+    runId: str = Field(..., min_length=1)
+    batch: EvidenceBatchSummary
+    manifestUri: Optional[str] = None
+    odpRef: Optional[str] = None
+    recordCount: int = Field(..., ge=0)
+    itemCount: int = Field(..., ge=0)
+    sourceCoverage: WorkflowSourceCoverage
+
+
+class WorkflowMissingSource(BaseModel):
+    nodeId: str = Field(..., min_length=1)
+    sourceGroup: Optional[str] = None
+    status: WorkflowRunStatus
+    reasons: list[WorkflowRunBlockReason] = Field(default_factory=list)
+
+
+class WorkflowEvidenceSummary(BaseModel):
+    summaryId: str = Field(..., min_length=1)
+    sourceGroup: Optional[str] = None
+    status: WorkflowRunStatus
+    batchIds: list[str] = Field(default_factory=list)
+    itemCount: int = Field(..., ge=0)
+    recordCount: int = Field(..., ge=0)
+
+
+class WorkflowProjectionArtifact(BaseModel):
+    artifactId: str = Field(..., min_length=1)
+    batchId: str = Field(..., min_length=1)
+    nodeId: str = Field(..., min_length=1)
+    manifestUri: Optional[str] = None
+    odpRef: Optional[str] = None
+
+
+class WorkflowEvidenceProjection(BaseModel):
+    runId: str = Field(..., min_length=1)
+    traceId: str = Field(..., min_length=1)
+    status: WorkflowRunStatus
+    nodes: list[WorkflowRunNodeState] = Field(default_factory=list)
+    clusters: list[dict[str, Any]] = Field(default_factory=list)
+    missingSources: list[WorkflowMissingSource] = Field(default_factory=list)
+    summaries: list[WorkflowEvidenceSummary] = Field(default_factory=list)
+    conflicts: list[dict[str, Any]] = Field(default_factory=list)
+    artifacts: list[WorkflowProjectionArtifact] = Field(default_factory=list)
+
+
+class WorkflowWebhookIngressResponse(BaseModel):
+    workflowId: str
+    runId: str
+    traceId: str
+    triggerNodeId: str
+    requestId: str
+    sourceId: Optional[str] = None
+    idempotencyKey: Optional[str] = None
+    projectionPath: str
+    eventsPath: str
+    projection: WorkflowRunProjection
 
 
 class WorkflowRunCheckpoint(BaseModel):

@@ -5,6 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "check:workflow-regressions": "node --test scripts/check-workflow-regressions.mjs",
+    "test:workflow-contracts": "node scripts/assert-workflow-contracts.mjs",
     "start": "next start",
     "lint": "eslint ."
   },
@@ -32,6 +34,7 @@
     "nanoid": "^5.1.16",
     "next": "16.2.6",
     "next-themes": "^0.4.6",
+    "oidc-client-ts": "^3.5.0",
     "perfect-freehand": "^1.2.3",
     "react": "^19",
     "react-dom": "^19",

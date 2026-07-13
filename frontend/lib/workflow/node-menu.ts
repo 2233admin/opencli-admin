@@ -15,17 +15,17 @@ export const PRIMITIVE_MENU_ORDER: WorkflowPrimitiveCategory[] = [
 ]
 
 export const PRIMITIVE_MENU_LABELS: Record<WorkflowPrimitiveCategory, string> = {
-  input: "Input",
-  transform: "Transform",
+  input: "输入",
+  transform: "数据处理",
   ai: "AI",
-  logic: "Logic",
-  state: "State",
-  output: "Output",
-  verify: "Verify",
-  business: "Business",
-  ops: "Ops",
-  core: "Core",
-  map: "Map",
+  logic: "逻辑",
+  state: "状态",
+  output: "输出",
+  verify: "验证",
+  business: "业务",
+  ops: "运维",
+  core: "核心",
+  map: "知识映射",
 }
 
 export type PrimitiveMenuGroup = {

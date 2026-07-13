@@ -1,5 +1,31 @@
 ## ADDED Requirements
 
+### Requirement: Existing product shell owns the workflow surface
+The application SHALL preserve Dashboard, Workspace, data-chain, runtime, and settings navigation; node workflow SHALL be a nested Workspace view at `/studio/workflow`, not a separate primary module.
+
+#### Scenario: User opens workflow construction
+- **WHEN** a user opens or creates a Workspace project
+- **THEN** the application opens `/studio/workflow` and renders the workflow editor, result workbench, and trace surfaces inside Workspace.
+
+#### Scenario: User opens Studio
+- **WHEN** a user opens `/studio`
+- **THEN** the application shows workspace project creation and import instead of redirecting away.
+
+#### Scenario: User follows the legacy Canvas URL
+- **WHEN** a user opens `/canvas` with or without project query parameters
+- **THEN** the application redirects to `/studio/workflow` while preserving those parameters.
+
+### Requirement: Canvas supports packaged hierarchical networks
+Canvas SHALL present packaged tools on the top network and SHALL allow users to enter nested package networks without flattening their implementation nodes onto the parent canvas.
+
+#### Scenario: User opens a new workflow
+- **WHEN** a user opens the default Build workflow without importing or restoring a project
+- **THEN** Canvas shows connected package nodes for collection, processing, review, and delivery, with no primitive Start/Output skeleton.
+
+#### Scenario: User enters nested package networks
+- **WHEN** a user double-clicks a package node, including a package inside another package network
+- **THEN** Canvas resolves the scoped node id, opens that package's internal network, and preserves a breadcrumb path back to every parent network.
+
 ### Requirement: Canvas nodes are projected from real catalog contracts
 Canvas SHALL render workflow nodes from backend catalog, contract, visual, template, and runtime projection data instead of hard-coded placeholder forms.
 

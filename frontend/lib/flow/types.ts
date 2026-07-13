@@ -1,6 +1,10 @@
 import type { Node, Edge, XYPosition } from "@xyflow/react"
-import type { WorkflowRuntimeCapability } from "@/lib/workflow/capabilities"
-import type { WorkflowNodeRunEvent, WorkflowRunNodeState } from "@/lib/workflow/backend-runs"
+import type { WorkflowRuntimeCapability, WorkflowRuntimeIOContract } from "@/lib/workflow/capabilities"
+import type {
+  WorkflowEvidenceBatchSummary,
+  WorkflowNodeRunEvent,
+  WorkflowRunNodeState,
+} from "@/lib/workflow/backend-runs"
 
 export type NodeCategory = "trigger" | "action" | "logic" | "data" | "annotation" | "shape"
 
@@ -124,8 +128,10 @@ export interface WorkflowNodeData extends Record<string, unknown> {
     diagnostic?: string
   }
   runtimeCapability?: WorkflowRuntimeCapability
+  runtimeContract?: WorkflowRuntimeIOContract
   runtimeRunState?: WorkflowRunNodeState
   runtimeLatestEvent?: WorkflowNodeRunEvent
+  runtimeEvidenceBatches?: WorkflowEvidenceBatchSummary[]
   /** node-internal mini network preview */
   miniNetwork?: MiniNetworkPreview
   /** topic collapse as package internals */
@@ -152,6 +158,13 @@ export interface WorkflowEdgeData extends Record<string, unknown> {
   waypoints?: XYPosition[]
   /** enable smart orthogonal routing that avoids nodes */
   routed?: boolean
+  runtimeEvidenceBatch?: {
+    runId: string
+    status: "queued" | "running" | "partial" | "blocked" | "completed" | "failed"
+    batchIds: string[]
+    itemCount: number
+    recordCount: number
+  }
 }
 
 export type WorkflowEdge = Edge<WorkflowEdgeData>

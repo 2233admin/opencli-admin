@@ -6,7 +6,11 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from backend.schemas.workflow import WorkflowAdapterBinding, WorkflowProjectNode
+from backend.schemas.workflow import (
+    WorkflowAdapterBinding,
+    WorkflowProjectNode,
+    WorkflowRuntimeResourceRequirement,
+)
 from backend.workflow.block_reasons import (
     MISSING_DELIVERY_PROJECTION,
     MISSING_RUNTIME_BINDING,
@@ -34,6 +38,7 @@ OPENCLI_WORKER = "collector-opencli"
 OPENCLI_FUNCTION_ID = "odp.collect::opencli_snapshot"
 DEMAND_DRAFT_BINDING_ID = "workflow.demand-draft.patch"
 SCHEDULE_TRIGGER_BINDING_ID = "workflow.trigger.schedule_tick"
+WEBHOOK_TRIGGER_BINDING_ID = "workflow.trigger.webhook_input"
 SOURCE_FETCH_BINDING_ID = "workflow.source.fetch"
 SOURCE_POOL_BINDING_ID = "workflow.source-pool.parallel-fanout"
 COLLECTION_OUTPUT_BINDING_ID = "workflow.collection-output.items"
@@ -82,6 +87,8 @@ def resolve_runtime_metadata(
     resolved_node_id = node_id or node.id
     if _is_collection_need(node):
         metadata = _resolve_collection_need(node, node_id=resolved_node_id)
+    elif _is_webhook_trigger(node):
+        metadata = _resolve_webhook_trigger(node, node_id=resolved_node_id)
     elif _is_schedule_trigger(node):
         metadata = _resolve_schedule_trigger(node, node_id=resolved_node_id)
     elif _is_source_pool(node):
@@ -176,7 +183,19 @@ def _resolve_opencli_source(
             function_id=OPENCLI_FUNCTION_ID,
             channel="opencli",
             input={"site": site, "command": command},
-        ).model_dump()
+        ).model_dump(),
+        "resource_requirement": WorkflowRuntimeResourceRequirement(
+            nodeId=node_id,
+            sourceGroup=(
+                _read_string(node.params.get("sourceGroup"))
+                or _read_string(node.params.get("source_group"))
+                or node_id
+            ),
+            site=site,
+            mutationMode="read",
+            requestedCapability=f"opencli.{site}.{command}",
+            adapterNodeId=_read_string(node.params.get("opencliAdapterNodeId")),
+        ).model_dump(mode="json", exclude_none=True),
     }
 
 
@@ -603,6 +622,28 @@ def _resolve_schedule_trigger(node: WorkflowProjectNode, *, node_id: str) -> dic
     }
 
 
+def _resolve_webhook_trigger(node: WorkflowProjectNode, *, node_id: str) -> dict[str, Any]:
+    method = (_read_string(node.params.get("method")) or "POST").upper()
+    path = _read_string(node.params.get("path")) or "/hook"
+    return {
+        "binding": {
+            "status": "bound",
+            "binding_id": WEBHOOK_TRIGGER_BINDING_ID,
+            "runtime": "workflow",
+            "channel": "webhook-input",
+            "input": {
+                "method": method,
+                "path": path,
+            },
+        },
+        "trigger": {
+            "node_id": node_id,
+            "mode": "webhook_input",
+            "envelope": "runtimeInputEnvelope",
+        },
+    }
+
+
 def _resolve_webhook_notifier(
     node: WorkflowProjectNode,
     adapter: WorkflowAdapterBinding | None,
@@ -795,6 +836,17 @@ def _is_external_tool_capability(node: WorkflowProjectNode) -> bool:
 
 def _is_schedule_trigger(node: WorkflowProjectNode) -> bool:
     return node.kind == "schedule" and node.capability == "trigger"
+
+
+def _is_webhook_trigger(node: WorkflowProjectNode) -> bool:
+    ui = node.ui or {}
+    node_library_id = _read_string(ui.get("primitiveId")) or _read_string(
+        ui.get("catalogId")
+    )
+    return node_library_id in {
+        "primitive.core.webhook-trigger",
+        "primitive.ops.trigger-webhook",
+    }
 
 
 def _is_opencli_source(

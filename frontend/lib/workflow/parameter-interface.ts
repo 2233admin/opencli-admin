@@ -7,6 +7,7 @@ import type {
 import type { AdapterBinding, WorkflowProjectNode } from "./schema"
 import { getNodeInternals, type NodeInternals } from "./node-internals"
 import { getNodeTemplate, readTemplateFieldValue, type NodeTemplate, type NodeTemplateField } from "./node-templates"
+import { isUserFacingRuntimeParam } from "./capabilities"
 
 export type ParameterInterfaceMode = "template" | "exposed" | "summary"
 
@@ -27,22 +28,25 @@ export function buildParameterInterfaceView({
   node,
   adapter,
   nodes = [],
+  allowedParamIds,
 }: {
   node: WorkflowProjectNode | undefined
   adapter?: AdapterBinding
   nodes?: WorkflowNode[]
+  allowedParamIds?: string[]
 }): ParameterInterfaceView | undefined {
   if (!node) return undefined
+  const restrict = (view: ParameterInterfaceView) => restrictParameterInterface(view, allowedParamIds)
   const template = getNodeTemplate(node)
   if (template && prefersTemplateInterface(node)) {
-    return templateInterfaceView(node, adapter, template)
+    return restrict(templateInterfaceView(node, adapter, template))
   }
 
   const parameterInterface = node.parameterInterface ?? createParameterInterfaceFromInternals(node.id, getNodeInternals(node))
 
   if (parameterInterface && parameterInterface.fields.length > 0) {
     const isPackage = typeof node.ui?.catalogId === "string" && node.ui.catalogId.startsWith("package.")
-    return {
+    return restrict({
       mode: "exposed",
       title: isPackage ? "Package Parameters" : "Node Parameters",
       summary: "Public parameters promoted from node internals.",
@@ -54,16 +58,27 @@ export function buildParameterInterfaceView({
           value: readParameterFieldValue(node, field, adapter, nodes),
         }))
         .sort(compareFields),
-    }
+    })
   }
 
   if (template) {
-    return templateInterfaceView(node, adapter, template)
+    return restrict(templateInterfaceView(node, adapter, template))
   }
 
   const internals = getNodeInternals(node)
   if (!internals) return undefined
-  return internalsSummaryView(node, internals)
+  return restrict(internalsSummaryView(node, internals))
+}
+
+function restrictParameterInterface(
+  view: ParameterInterfaceView,
+  allowedParamIds: string[] | undefined,
+): ParameterInterfaceView {
+  const allowed = allowedParamIds ? new Set(allowedParamIds.filter(isUserFacingRuntimeParam)) : null
+  return {
+    ...view,
+    fields: view.fields.filter((field) => isUserFacingRuntimeParam(field.id) && (!allowed || allowed.has(field.id))),
+  }
 }
 
 function prefersTemplateInterface(node: WorkflowProjectNode): boolean {

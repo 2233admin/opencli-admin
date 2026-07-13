@@ -232,6 +232,7 @@ def _score_browser_candidate(
         reasons.append("browser_endpoint_available")
     else:
         reasons.append("browser_endpoint_may_wait_for_slot")
+        missing.append("profile_lock" if adapter.access == "write" else "worker_capacity")
 
     if agent.agentProtocol == "ws":
         score += 8

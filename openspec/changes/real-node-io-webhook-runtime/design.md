@@ -39,6 +39,14 @@ The Code Intel Pipeline run for this repo completed in normal mode and recommend
    - Rationale: Canvas must show real queued/running/blocked/succeeded/failed/result-ready state, and the inspector must bind to the selected node's schema.
    - Alternative considered: keep local fixture state for demos. Rejected because the next work requires real runtime collection and capture.
 
+5. Keep node workflow inside the Workspace product boundary.
+   - Rationale: Dashboard, Workspace, Inbox, data-chain pages, runtime pages, and settings are existing product surfaces. Project management lives at `/studio`, and workflow authoring is its nested `/studio/workflow` view.
+   - Compatibility: `/canvas` preserves query parameters and redirects to `/studio/workflow`; it is not a primary navigation entry.
+
+6. Model the default Canvas as a Houdini-style packaged network.
+   - Rationale: the top network should connect business-level packaged tools rather than exposing primitive implementation nodes. Double-click enters a package's internal network, and scoped node ids allow a package inside that network to open another nested network.
+   - Compatibility: the complete flat collection pipeline remains available as an explicit example; runtime, EvidenceBatch, trace, import/export, and collaboration tools remain available from the same editor.
+
 ## Risks / Trade-offs
 
 - [Risk] Existing adapter metadata may not contain enough resource hints for every source.

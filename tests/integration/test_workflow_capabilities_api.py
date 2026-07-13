@@ -307,11 +307,24 @@ async def test_workflow_capabilities_project_real_backend_surfaces(client, monke
     primitives = {item["id"]: item for item in data["primitives"]}
     assert primitives["primitive.ops.trigger-webhook"]["status"] == "blocked"
     assert primitives["primitive.ops.trigger-webhook"]["backendAvailable"] is True
+    assert primitives["primitive.ops.trigger-webhook"]["runtimeBinding"] == (
+        "workflow.trigger.webhook_input"
+    )
+    assert primitives["primitive.ops.trigger-webhook"]["manifest"]["contract"][
+        "outputShape"
+    ]["ports"] == [{"name": "request", "type": "webhookRequest"}]
+    assert primitives["primitive.ops.trigger-webhook"]["missing"] == [
+        "workflow_webhook_ingress"
+    ]
 
     triggers = {item["id"]: item for item in data["triggers"]}
     assert triggers["trigger.manual"]["status"] == "runnable"
     assert triggers["trigger.manual"]["missing"] == []
     assert triggers["trigger.webhook"]["status"] == "blocked"
+    assert triggers["trigger.webhook"]["runtimeBinding"] == "workflow.trigger.webhook_input"
+    assert triggers["trigger.webhook"]["manifest"]["contract"]["status"] == (
+        "dispatch_only"
+    )
 
     resources = {item["id"]: item for item in data["resources"]}
     fleet_resource = resources["resource.workflow-fleet-runtime"]

@@ -1,6 +1,7 @@
-import type { WorkflowNode, WorkflowNodeData } from "@/lib/flow/types"
+import type { WorkflowEdge, WorkflowNode, WorkflowNodeData } from "@/lib/flow/types"
 import type { WorkflowCompileError, WorkflowCompileResponse } from "./backend-compile"
 import type { WorkflowOpenCLIHDATraceDispatchItem, WorkflowOpenCLIHDATraceResponse } from "./backend-opencli-hda-trace"
+import type { WorkflowEvidenceBatchProjection, WorkflowEvidenceBatchSummary } from "./backend-runs"
 
 export type WorkflowRuntimeBridgePreview = {
   compile?: WorkflowCompileResponse | null
@@ -121,6 +122,67 @@ export function applyRuntimeNodePatches(nodes: WorkflowNode[], patches: Workflow
   })
 }
 
+export function applyEvidenceBatchRuntimePatches(
+  nodes: WorkflowNode[],
+  edges: WorkflowEdge[],
+  projection: WorkflowEvidenceBatchProjection,
+  batches: WorkflowEvidenceBatchSummary[],
+): { nodes: WorkflowNode[]; edges: WorkflowEdge[] } {
+  const batchesByNodeId = new Map<string, WorkflowEvidenceBatchSummary[]>()
+  for (const batch of batches) {
+    const nodeId = batch.packageNodeId ?? visibleRuntimeNodeId(batch.nodeId)
+    batchesByNodeId.set(nodeId, [...(batchesByNodeId.get(nodeId) ?? []), batch])
+  }
+
+  const nextNodes = nodes.map((node) => {
+    const batches = batchesByNodeId.get(node.id) ?? batchesByNodeId.get(node.id.replace("__", "::"))
+    if (!batches) return node
+    const status = evidenceBatchStatus(batches)
+    const nodeStatus: WorkflowNodeData["status"] =
+      status === "completed" ? "success" : status === "blocked" || status === "failed" ? "error" : "running"
+    return {
+      ...node,
+      data: {
+        ...node.data,
+        status: nodeStatus,
+        runtimeEvidenceBatches: batches,
+        runtimePreview: {
+          ...node.data.runtimePreview,
+          status: `evidence-${status}`,
+          runId: projection.runId,
+          traceId: projection.traceId,
+          diagnostic:
+            projection.missingSources
+              .filter((source) => visibleRuntimeNodeId(source.nodeId) === node.id)
+              .flatMap((source) => source.reasons)
+              .at(-1)?.message ?? node.data.runtimePreview?.diagnostic,
+        },
+      },
+    }
+  })
+
+  const nextEdges = edges.map((edge) => {
+    const batches = batchesByNodeId.get(edge.source) ?? batchesByNodeId.get(edge.source.replace("__", "::"))
+    if (!batches) return edge
+    return {
+      ...edge,
+      animated: evidenceBatchStatus(batches) === "partial",
+      data: {
+        ...edge.data,
+        runtimeEvidenceBatch: {
+          runId: projection.runId,
+          status: evidenceBatchStatus(batches),
+          batchIds: batches.map((batch) => batch.batchId),
+          itemCount: batches.reduce((sum, batch) => sum + batch.itemCount, 0),
+          recordCount: batches.reduce((sum, batch) => sum + batch.recordCount, 0),
+        },
+      },
+    }
+  })
+
+  return { nodes: nextNodes, edges: nextEdges }
+}
+
 function errorPatch(error: WorkflowCompileError): Partial<WorkflowNodeData> {
   return {
     status: "error",
@@ -135,6 +197,19 @@ function packageIdFromInternalNode(nodeId: string): string | null {
   const separatorIndex = nodeId.indexOf("::")
   if (separatorIndex <= 0) return null
   return nodeId.slice(0, separatorIndex)
+}
+
+function visibleRuntimeNodeId(nodeId: string): string {
+  return packageIdFromInternalNode(nodeId) ?? nodeId
+}
+
+function evidenceBatchStatus(batches: WorkflowEvidenceBatchSummary[]): WorkflowEvidenceBatchSummary["status"] {
+  if (batches.some((batch) => batch.status === "blocked")) return "blocked"
+  if (batches.some((batch) => batch.status === "failed")) return "failed"
+  if (batches.some((batch) => batch.status === "partial")) return "partial"
+  if (batches.some((batch) => batch.status === "running")) return "running"
+  if (batches.some((batch) => batch.status === "queued")) return "queued"
+  return "completed"
 }
 
 function readRecord(value: unknown): Record<string, unknown> | null {

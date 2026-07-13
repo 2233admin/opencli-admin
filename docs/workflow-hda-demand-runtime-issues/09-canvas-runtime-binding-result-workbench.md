@@ -9,6 +9,8 @@ Wire the frontend Canvas to the real workflow runtime. The user should be able t
 
 This slice should reuse existing WorkflowProject, React Flow, Zustand node data, RunTrace-style panel, sourceAnchor, and runArtifact surfaces. The Canvas must remain the workflow spine; this is not a separate monitoring graph.
 
+The product shell for this spine is Build. `/build/workflow` is the canonical route; primary navigation exposes only Build, while `/canvas` and `/studio` are compatibility redirects. ResultWorkbench and Run Trace stay inside the same WorkflowEditor tree rather than becoming independent pages.
+
 ## Contract
 
 The Canvas input point is a real node, not a side panel prompt. `intelligence.input.collection-need` must remain visible and editable as the user demand entrypoint. A user text such as "抓小红书热帖" is the business need; it must call demand-draft and assemble existing catalog/runtime nodes. It must not ask the user to fill OpenCLI command strings, cookie material, concrete profile ids, or worker policy.
@@ -51,3 +53,13 @@ Result workbench behavior:
 - 03 — AI WorkflowProject patch API
 - 06 — Node run event stream
 - 07 — EvidenceBatch and projection API
+
+## Runtime verification
+
+```powershell
+npm run typecheck:frontend
+npm run lint:frontend
+npm run build:frontend
+```
+
+Route smoke checks must prove `/build/workflow` renders the editor and `/canvas`, `/studio`, and `/` redirect to it. Frontend assertions must also cover event-to-node and projection-to-node/edge patching, EvidenceBatch result summaries, blocked/missing reasons, and the absence of separate Workflow/Canvas primary navigation entries.

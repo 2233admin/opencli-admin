@@ -64,7 +64,9 @@ from backend.workflow.runtime_registry import (
     ROUTER_ROUTE_BINDING_ID,
     SOURCE_FETCH_BINDING_ID,
     WEBHOOK_NOTIFY_BINDING_ID,
+    WEBHOOK_TRIGGER_BINDING_ID,
 )
+from backend.workflow.runtime_resources import resolve_runtime_resources
 from backend.workflow.turbopush_executor import (
     TurboPushPublishError,
     execute_turbopush_publish,
@@ -233,6 +235,11 @@ async def start_workflow_run(
         workflow_id=body.project.id,
         run_id=run_id,
         trace_id=trace_id,
+        source_id=(
+            body.input.sourceId or body.input.source
+            if body.trigger.kind == "webhook"
+            else None
+        ),
         initial_sequence=len(prior_events),
     )
     runtime_nodes = compile_result.plan.runtime.nodes
@@ -287,6 +294,41 @@ async def start_workflow_run(
                 blocked_by_package.setdefault(package_parent_id, []).append(reason)
             continue
 
+        if _binding_id(node) == WEBHOOK_TRIGGER_BINDING_ID:
+            if body.trigger.kind != "webhook" or body.trigger.triggerNodeId != node.id:
+                reason = WorkflowRunBlockReason(
+                    code="workflow_webhook_input_required",
+                    message="Webhook trigger requires workflow webhook ingress input.",
+                    source="workflow_webhook_ingress",
+                    details={
+                        "nodeId": node.id,
+                        "bindingId": WEBHOOK_TRIGGER_BINDING_ID,
+                    },
+                )
+                emitter.emit(node, "blocked", message=reason.message, block_reason=reason)
+                continue
+
+            envelope = _webhook_runtime_input_envelope(body, node)
+            outputs_by_node[node.id] = [envelope]
+            emitter.emit(node, "started", message="Workflow webhook input accepted")
+            emitter.emit(
+                node,
+                "partial",
+                message="Webhook request projected as runtime input",
+                details={
+                    "bindingId": WEBHOOK_TRIGGER_BINDING_ID,
+                    "outputPort": "request",
+                    "workflowId": body.project.id,
+                    "runId": run_id,
+                    "nodeId": node.id,
+                    "sourceId": body.input.sourceId or body.input.source,
+                    "requestId": body.trigger.requestId,
+                    "runtimeInputEnvelope": envelope,
+                },
+            )
+            emitter.emit(node, "completed", message="Workflow webhook input completed")
+            continue
+
         request_items = _request_source_items(node, body.sourceOutputs)
         if request_items:
             outputs_by_node[node.id] = request_items
@@ -295,6 +337,12 @@ async def start_workflow_run(
                 node,
                 "partial",
                 message="Runtime source output loaded as workflow items",
+                batch=_node_batch_reference(
+                    body.project.id,
+                    run_id,
+                    node,
+                    item_count=len(request_items),
+                ),
                 details={
                     "itemCount": len(request_items),
                     "outputPort": "items[]",
@@ -312,6 +360,12 @@ async def start_workflow_run(
                 node,
                 "partial",
                 message="Fixture source items ready",
+                batch=_node_batch_reference(
+                    body.project.id,
+                    run_id,
+                    node,
+                    item_count=len(fixture_items),
+                ),
                 details={
                     "itemCount": len(fixture_items),
                     "outputPort": "items[]",
@@ -329,6 +383,14 @@ async def start_workflow_run(
                 node,
                 "partial",
                 message="Bound source records loaded as workflow items",
+                batch=_node_batch_reference(
+                    body.project.id,
+                    run_id,
+                    node,
+                    item_count=len(persisted_items),
+                    record_count=len(persisted_items),
+                    adapter_task_id=_bound_task_id(node),
+                ),
                 details={
                     "itemCount": len(persisted_items),
                     "outputPort": "items[]",
@@ -462,6 +524,17 @@ async def start_workflow_run(
                 node,
                 "partial",
                 message=_native_node_partial_message(node),
+                batch=(
+                    _node_batch_reference(
+                        body.project.id,
+                        run_id,
+                        node,
+                        item_count=int(details.get("inputItemCount", 0)),
+                        record_count=len(output_items),
+                    )
+                    if _binding_id(node) == NORMALIZE_BINDING_ID
+                    else None
+                ),
                 details=details,
             )
             if _binding_id(node) == EXTERNAL_TOOL_BINDING_ID:
@@ -488,8 +561,39 @@ async def start_workflow_run(
             session=session,
         )
         fleet_match_details = _fleet_match_trace_details(fleet_match)
+        resource_requirement, resource_resolution = resolve_runtime_resources(
+            dispatch,
+            node,
+            fleet_match,
+        )
+        resource_details = {
+            "resourceRequirement": resource_requirement.model_dump(
+                mode="json",
+                exclude_none=True,
+            ),
+            "resourceResolution": resource_resolution.model_dump(
+                mode="json",
+                exclude_none=True,
+            ),
+        }
         if fleet_match_details:
             emitter.events[-1].details["fleetMatch"] = fleet_match_details
+        emitter.events[-1].details.update(resource_details)
+
+        if resource_resolution.status == "blocked":
+            reason = resource_resolution.blockReason
+            assert reason is not None
+            emitter.emit(
+                node,
+                "blocked",
+                message=reason.message,
+                block_reason=reason,
+                details=resource_details,
+            )
+            if package_parent_id:
+                blocked_by_package.setdefault(package_parent_id, []).append(reason)
+            outputs_by_node[node.id] = []
+            continue
 
         output_items, agent_dispatch_details = await _dispatch_opencli_source_to_fleet(
             dispatch,
@@ -500,6 +604,7 @@ async def start_workflow_run(
             batch = batch.model_copy(update={"itemCount": len(output_items)})
         dispatch_trace_details = {
             **({"fleetMatch": fleet_match_details} if fleet_match_details else {}),
+            **resource_details,
             **({"agentDispatch": agent_dispatch_details} if agent_dispatch_details else {}),
         }
         emitter.emit(
@@ -851,11 +956,13 @@ class _WorkflowRunEventEmitter:
         workflow_id: str,
         run_id: str,
         trace_id: str,
+        source_id: str | None = None,
         initial_sequence: int = 0,
     ) -> None:
         self._workflow_id = workflow_id
         self._run_id = run_id
         self._trace_id = trace_id
+        self._source_id = source_id
         self._initial_sequence = initial_sequence
         self.events: list[WorkflowNodeRunEvent] = []
 
@@ -886,6 +993,7 @@ class _WorkflowRunEventEmitter:
                 workflowRunId=self._run_id,
                 traceId=self._trace_id,
                 nodeId=node.id,
+                sourceId=self._source_id,
                 eventType=event_type,
                 createdAt=_utcnow(),
                 packageNodeId=package_node_id,
@@ -942,7 +1050,8 @@ def _build_projection(
         if event.blockReason:
             state.blockReasons.append(event.blockReason)
         if event.batch:
-            state.batches.append(event.batch)
+            if all(batch.batchId != event.batch.batchId for batch in state.batches):
+                state.batches.append(event.batch)
 
     node_states = [states[node_id] for node_id in ordered_ids]
     status = _run_status(node_states, valid)
@@ -1016,7 +1125,37 @@ def _batch_reference(
             f"odp://workflow-runs/{run_id}/nodes/{dispatch.nodeId}"
             f"/sources/{dispatch.sourceGroup}/batches/{batch_id}"
         ),
-        manifestUri=f"/api/v1/workflows/runs/{run_id}/batches/{batch_id}",
+        manifestUri=f"/api/v1/workflows/runs/{run_id}/evidence-batches/{batch_id}",
+    )
+
+
+def _node_batch_reference(
+    workflow_id: str,
+    run_id: str,
+    node: CompiledWorkflowNode,
+    *,
+    item_count: int,
+    record_count: int = 0,
+    adapter_task_id: str | None = None,
+) -> WorkflowRunBatchReference:
+    source_group = _source_group(node, node.id)
+    batch_id = str(
+        uuid.uuid5(
+            uuid.NAMESPACE_URL,
+            f"opencli-admin/workflow/{workflow_id}/run/{run_id}/batch/{node.id}",
+        )
+    )
+    return WorkflowRunBatchReference(
+        batchId=batch_id,
+        itemCount=item_count,
+        recordCount=record_count,
+        sourceGroup=source_group,
+        adapterTaskId=adapter_task_id,
+        odpRef=(
+            f"odp://workflow-runs/{run_id}/nodes/{node.id}"
+            f"/sources/{source_group}/batches/{batch_id}"
+        ),
+        manifestUri=f"/api/v1/workflows/runs/{run_id}/evidence-batches/{batch_id}",
     )
 
 
@@ -2234,6 +2373,33 @@ def _lineage_pointer(node: CompiledWorkflowNode) -> dict[str, object]:
         "dependsOn": node.depends_on,
         "packageParentId": node.runtime.get("package_parent_id"),
         "packageInternalId": node.runtime.get("package_internal_id"),
+    }
+
+
+def _webhook_runtime_input_envelope(
+    body: WorkflowRunStartRequest,
+    node: CompiledWorkflowNode,
+) -> dict[str, Any]:
+    binding = _read_dict(node.runtime.get("binding"))
+    binding_input = _read_dict(binding.get("input"))
+    return {
+        "workflowId": body.project.id,
+        "trigger": {
+            "kind": "webhook",
+            "triggerNodeId": node.id,
+            "requestId": body.trigger.requestId,
+            "idempotencyKey": body.trigger.idempotencyKey,
+        },
+        "request": {
+            "method": _read_string(binding_input.get("method")) or "POST",
+            "path": _read_string(binding_input.get("path")) or "/hook",
+            "payload": body.input.payload,
+            "headers": body.input.headers,
+            "query": body.input.query,
+            "source": body.input.source,
+            "sourceId": body.input.sourceId or body.input.source,
+        },
+        "responseMode": body.responseMode,
     }
 
 

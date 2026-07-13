@@ -249,7 +249,6 @@ def _source_slots_for_need(text: str) -> list[dict[str, Any]]:
                 "site": "xiaohongshu",
                 "command": "search",
                 "args": {"keyword": keyword},
-                "resourceTags": ["browser-session:xiaohongshu"],
             }
         )
 
@@ -262,7 +261,6 @@ def _source_slots_for_need(text: str) -> list[dict[str, Any]]:
                 "site": "bilibili",
                 "command": "search",
                 "args": {"keyword": keyword},
-                "resourceTags": ["browser-session:bilibili"],
             }
         )
 

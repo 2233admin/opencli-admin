@@ -275,22 +275,7 @@ const NODE_TEMPLATES: NodeTemplate[] = [
 export function getNodeTemplate(node: WorkflowProjectNode | undefined): NodeTemplate | undefined {
   const catalogId = node?.ui?.catalogId
   if (typeof catalogId === "string") return NODE_TEMPLATES.find((template) => template.id === catalogId)
-
-  if (!node) return undefined
-  return NODE_TEMPLATES.find((template) => {
-    if (template.id === "intelligence.input.collection-need") {
-      return isCollectionNeedNode(node)
-    }
-    if (template.id === "intelligence.schedule.cron") return node.kind === "schedule" && node.capability === "trigger"
-    if (template.id === "intelligence.source.jin10") return node.kind === "source" && node.adapter === "jin10-kuaixun"
-    if (template.id === "intelligence.source.opencli-slot") return node.kind === "source" && Boolean(node.adapter?.startsWith("opencli-"))
-    if (template.id === "intelligence.agent.summary") return node.kind === "agent" && node.capability === "summarize"
-    if (template.id === "intelligence.agent.score") return node.kind === "agent" && node.capability === "score"
-    if (template.id === "intelligence.router.importance") return node.kind === "router" && node.capability === "route"
-    if (template.id === "intelligence.output.turbopush-publish") return node.kind === "notify" && Boolean(node.adapter?.startsWith("turbopush"))
-    if (template.id === "intelligence.output.webhook") return node.kind === "notify"
-    return false
-  })
+  return undefined
 }
 
 export function readTemplateFieldValue(
@@ -344,19 +329,4 @@ function turboPushPlatformOptions() {
     { value: "weishi", label: "weishi" },
     { value: "baijiahao", label: "baijiahao" },
   ]
-}
-
-function isCollectionNeedNode(node: WorkflowProjectNode): boolean {
-  if (node.ui?.catalogId === "intelligence.input.collection-need") return true
-  if (node.kind !== "schedule" || node.capability !== "trigger") return false
-  if (node.params.mode === "demand-draft") return true
-  return hasNeedShape(node.params) && !hasScheduleShape(node.params)
-}
-
-function hasNeedShape(params: Record<string, unknown>): boolean {
-  return typeof params.text === "string" || typeof params.locale === "string"
-}
-
-function hasScheduleShape(params: Record<string, unknown>): boolean {
-  return typeof params.interval === "string" || typeof params.timezone === "string"
 }
