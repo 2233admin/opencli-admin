@@ -2,9 +2,10 @@
 
 ## Goal
 
-Create a static, clickable frontend template that lets the team evaluate how Dify's
-workflow-building lifecycle and Paperclip's task/governance lifecycle should coexist in
-OpenCLI.
+Create a static, clickable frontend template for a **node-based OpenCLI workspace** where
+Dify owns the primary workspace and governance model, Linear contributes the work-item
+interaction pattern, and Paperclip contributes operational visualization, evidence, and
+attention signals.
 
 ## Audience
 
@@ -37,10 +38,14 @@ OpenCLI.
 ## Acceptance checks
 
 - The three variants disagree about product structure, not just color.
-- Each variant visibly contains: project context, work item, workflow, run, evidence,
+- Each variant visibly contains: workspace, workflow, nodes, work item, run, evidence,
   approval, and activity.
-- Dify's debug/publish lifecycle and Paperclip's task/run distinction are legible.
-- Data chain, schedule, and runtime data remain discoverable.
+- Dify's orchestrate/debug/publish/monitor lifecycle is the dominant product language.
+- Linear-style work items are a supporting operating surface, not the product root.
+- Paperclip-style attention, run, evidence, and visualization patterns enrich the workspace
+  without importing its company/agent hierarchy.
+- Data pipelines, triggers/schedules, runtime data, versions, and plugins live inside the
+  active workspace rather than as global product domains.
 - Variant selection is URL-stable and keyboard accessible.
 - Typecheck and production build pass; the prototype is visually checked at desktop and
   mobile widths.

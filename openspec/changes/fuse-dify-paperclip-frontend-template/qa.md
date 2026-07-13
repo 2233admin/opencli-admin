@@ -13,15 +13,16 @@
 
 - Lint: passed — targeted ESLint returned zero warnings and zero errors
 - Typecheck: passed — `pnpm exec tsc --noEmit`
+- Independent product-boundary review: passed after moving the global Inbox explanation out of the Linear work-item card and naming the right attention rail `Inbox · 需要处理`
 - Tests: prototype intentionally has no behavioral test suite
-- Build: passed — `pnpm build` with Next.js 16.2.6
-- Production isolation: passed — `/prototype/product-shell?variant=C` returned 404 and did not contain prototype markup; `/dashboard` returned 200 on the same production server
+- Build: revision attempt blocked — two fresh `pnpm build` runs reached Next.js compilation, then failed only while downloading IBM Plex Mono and Noto Sans SC from Google Fonts
+- Production isolation: previously passed for the unchanged route gate — `/prototype/product-shell?variant=C` returned 404 and `/dashboard` returned 200; no fresh production server could start after the external font failure
 
 ## Browser / visual checks
 
-- 390x812: passed for Direction C using device metrics override; `innerWidth`, document scroll width, and body scroll width all measured 390 px
-- 500x812: passed as a narrow-stack visual check
-- 1280x720: passed for A/B/C in the in-app browser
+- 390x812: passed for the earlier C structure; fresh revised-C metrics are an explicit gap because the selected browser exposes no viewport resize and rejected the isolated harness under its security policy
+- 500x812: passed for the earlier C structure as a narrow-stack visual check
+- 1280x720: passed for revised C in the in-app browser; `innerWidth=1280`, document/body scroll width `1265`, no horizontal overflow
 - 768x1024: static breakpoint inspection only; no separate screenshot retained
 - 1920x1080: optional
 
@@ -29,13 +30,19 @@ Observed desktop captures:
 
 - A keeps the workflow graph and debug trace dominant while retaining work, run, evidence, and approval context.
 - B makes the project queue and selected work item cockpit dominant; the workflow becomes execution context.
-- C expresses one object chain from goal through workflow, work item, run, evidence, review, and approval.
+- C is now Dify-led: the active workspace owns workflows, data pipelines, triggers/schedules,
+  runtime data, versions/publish, monitoring, plugins, and variables; the node canvas remains the
+  primary surface.
+- Linear-style work items sit below the canvas and Paperclip-style attention, evidence, approval,
+  activity, and runtime visualization stay contextual rather than becoming the product hierarchy.
+- A/B remain available as builder-first and control-plane-first comparison extremes.
 
 Observed mobile capture:
 
-- C collapses to one column, hides the persistent workspace tree, and moves the attention rail below the main surface.
+- The revised structure still uses the same one-column base grid and hides both persistent side
+  panels below their desktop breakpoints, but fresh 390 px automation remains pending.
 - The lifecycle navigation remains horizontally scrollable and the prototype switcher remains URL-stable.
-- The first narrow-width pass exposed horizontal overflow; base grids were corrected to `minmax(0, 1fr)` and the final 390 px metrics showed no overflow.
+- The earlier narrow-width pass exposed horizontal overflow; base grids were corrected to `minmax(0, 1fr)` and its final 390 px metrics showed no overflow.
 
 ## Motion checks
 
@@ -72,12 +79,12 @@ Observed mobile capture:
 
 | Dimension | Score | Notes |
 | --- | ---: | --- |
-| Visual taste | 8.4/10 | Dense, quiet, and consistent with the current OpenCLI console rather than importing Dify/Paperclip styling |
-| UX clarity | 8.8/10 | C makes the operating loop explicit; A and B remain useful comparison anchors |
-| Accessibility | 8.0/10 | Good semantics and naming; production mobile touch targets still need a dedicated pass |
-| Responsiveness | 8.5/10 | C has no horizontal overflow at 390 px and collapses deliberately |
+| Visual taste | 8.6/10 | Dense, quiet, and consistent with OpenCLI while giving the node workspace a clear center of gravity |
+| UX clarity | 9.1/10 | Dify owns the workspace lifecycle; Linear and Paperclip now have explicit subordinate roles |
+| Accessibility | 8.1/10 | Good semantics and dynamic workspace lifecycle naming; mobile touch targets still need a production pass |
+| Responsiveness | 8.2/10 | Desktop has no overflow and the responsive structure is deliberate; revised 390 px automation is pending |
 | Motion quality | 8.5/10 | Restrained interaction feedback with shared reduced-motion behavior |
-| Engineering fit | 9.3/10 | No dependency or API expansion; production route is inert |
+| Engineering fit | 9.1/10 | No dependency or API expansion; fresh build is blocked only by external font retrieval |
 | Performance risk | 9.2/10 | Static data and CSS layout only; no editor/runtime payload added to product routes |
 
 ## Decision audit
@@ -86,10 +93,10 @@ Observed mobile capture:
 | --- | --- | --- | --- |
 | Prototype before integration | Validate structure before data contracts | Three switchable static directions | Prototype must not leak to production |
 | Existing tokens and components | Preserve product identity | No new design system or dependency | Existing token inconsistencies remain outside scope |
-| Unified Loop as baseline | Keep build and operate in one context | Direction C is recommended | Three-pane density must be tested on mobile |
+| Dify-led node workspace as baseline | Keep build and operate in one familiar workspace | Direction C is selected | Three-pane density still needs fresh mobile metrics |
 
 ## Final verdict
 
-- Verdict: ready for product review; Direction C is the recommended integration baseline
-- Blocking issues: none for the static-template goal
-- Follow-up: choose the winning direction, then map its objects and routes onto existing OpenCLI contracts before connecting data
+- Verdict: ready for product review; Direction C is the selected integration baseline
+- Blocking issues: none for the static-template implementation; fresh production build and 390 px automation remain environment-gated QA gaps
+- Follow-up: map the selected workspace objects and lifecycle onto existing OpenCLI routes and contracts before connecting data

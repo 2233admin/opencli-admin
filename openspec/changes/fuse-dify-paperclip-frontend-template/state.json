@@ -3,7 +3,7 @@
   "changeId": "fuse-dify-paperclip-frontend-template",
   "status": "complete",
   "phase": "stage-7-complete",
-  "updatedAt": "2026-07-14T00:32:39+08:00",
+  "updatedAt": "2026-07-14T01:03:41+08:00",
   "artifactRoot": "openspec/changes/fuse-dify-paperclip-frontend-template",
   "projectRoot": "D:/projects/opencli-admin",
   "surfaces": ["/prototype/product-shell"],
@@ -11,8 +11,8 @@
   "openSpec": { "detected": true, "changeId": "fuse-dify-paperclip-frontend-template", "paths": ["openspec/changes/fuse-dify-paperclip-frontend-template"] },
   "gbrain": { "detected": false, "syncPlanned": false, "paths": [] },
   "motion": { "required": true, "motionSpec": "motion.md", "implementationLibrary": "existing CSS transitions", "reducedMotion": "specified" },
-  "qa": { "status": "passed", "evidenceRoot": "openspec/changes/fuse-dify-paperclip-frontend-template/qa.md", "scores": { "visualTaste": 8.4, "uxClarity": 8.8, "accessibility": 8.0, "responsiveness": 8.5, "motion": 8.5, "engineeringFit": 9.3, "performanceRisk": 9.2 } },
-  "decisions": ["Use a development-only static prototype", "Compare builder-first, control-plane-first, and unified-loop structures", "Recommend Unified Loop as the baseline", "Keep data pipelines, schedules, and runtime data as first-class navigation domains", "Separate debug from production and draft from published versions"],
-  "blockers": [],
-  "nextActions": ["Review A/B/C with product stakeholders", "Select the production baseline", "Map the selected shell onto existing routes, types, and API contracts"]
+  "qa": { "status": "passed-with-environment-gaps", "evidenceRoot": "openspec/changes/fuse-dify-paperclip-frontend-template/qa.md", "scores": { "visualTaste": 8.6, "uxClarity": 9.1, "accessibility": 8.1, "responsiveness": 8.2, "motion": 8.5, "engineeringFit": 9.1, "performanceRisk": 9.2 } },
+  "decisions": ["Use a development-only static prototype", "Keep nodes and workflows as the system foundation", "Use Dify as the dominant workspace and governance model", "Use Linear for work-item interaction", "Use Paperclip for operational visualization, evidence, approvals, and attention", "Keep data pipelines, schedules, runtime data, versions, and plugins inside the active workspace", "Separate debug from production and draft from published versions"],
+  "blockers": ["Fresh production build is blocked by Google Fonts download failures", "Fresh 390 px automation is blocked because the selected browser has no viewport emulation and rejected the isolated harness"],
+  "nextActions": ["Review the selected Dify-led C direction with product stakeholders", "Map the selected workspace shell onto existing routes, types, and API contracts", "Re-run production build and 390 px metrics when the environment supports them"]
 }
