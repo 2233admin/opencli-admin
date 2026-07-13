@@ -1,3 +1,4 @@
+from backend.models.acquisition import AcquisitionExecution, AcquisitionExecutionStatus
 from backend.models.agent import AIAgent
 from backend.models.base import TimestampMixin
 from backend.models.browser import BrowserBinding, BrowserInstance
@@ -25,6 +26,8 @@ from backend.models.workflow_run import WorkflowRun, WorkflowRunEvent
 
 __all__ = [
     "TimestampMixin",
+    "AcquisitionExecution",
+    "AcquisitionExecutionStatus",
     "AIAgent",
     "BrowserBinding",
     "BrowserInstance",

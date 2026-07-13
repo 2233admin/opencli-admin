@@ -10,6 +10,7 @@ from backend.api.v1 import (
     control,
     cookies,
     dashboard,
+    geo_acquisition,
     model_defaults,
     nodes,
     notifications,
@@ -33,6 +34,7 @@ from backend.api.v1 import (
 v1_router = APIRouter(prefix="/api/v1")
 
 v1_router.include_router(agents.router)
+v1_router.include_router(geo_acquisition.router)
 v1_router.include_router(browser_act.router)
 v1_router.include_router(browsers.router)
 v1_router.include_router(chat.router)
