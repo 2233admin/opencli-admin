@@ -10,8 +10,8 @@ their branches have diverged.
 
 | Source | Branch/base | What it currently contains |
 | --- | --- | --- |
-| `D:\projects\opencli-admin` | `main` at `6e09973` before the WIP branch | EvidenceBatch projection, runtime resource resolution, webhook ingress, Canvas runtime binding, auth shell, `/studio/workflow`, and targeted tests |
-| Repowise worktree | `codex/notification-ack` at `6de36cb` before the WIP branch | Workflow authoring UI foundation, fonts, SSGOI route transitions, and the frontend currently served on port 3000 |
+| `D:\projects\opencli-admin` | `codex/real-node-runtime-wip` at `7983e68` | EvidenceBatch projection, runtime resource resolution, webhook ingress, Canvas runtime binding, auth shell, `/studio/workflow`, and targeted tests |
+| Repowise worktree | `codex/workflow-studio-motion-wip` at `3622aac` | Workflow authoring UI foundation, fonts, SSGOI route transitions, and the frontend currently served on port 3000 |
 | `origin/feat/workflow-persistence-closed-loop` | `c326a2a` | Workflow/workspace persistence, Dify/n8n import, recursive packages, validation runs, and integration tests |
 
 Neither dirty worktree is a complete release candidate by itself. The next
@@ -71,6 +71,17 @@ slices above as reviewable commits.
    into WorkflowProject or explicitly retire the old Plan Canvas UI roadmap.
 4. Complete browser-level rapid-navigation regression coverage for the SSGOI
    transition so a blank intermediate frame is tested, not inferred.
+5. Remove silent fixture fallback from `/api/workflow/run` and external-runtime
+   import. Missing or invalid workflow input must return a clear client error.
+6. Close one real product loop before widening the catalog. A runtime capability
+   probe found 30 catalog nodes but only 12 runnable; dedupe, LLM summary,
+   scoring, tagging, routing, Inbox, and most package nodes remain blocked or
+   simulated.
+7. Model project type/template intent explicitly. Studio currently infers
+   categories from names/descriptions and splits template networks using node
+   x-coordinate ranges, which is not a stable domain contract.
+8. Decide whether Dashboard's explicitly labelled demo fallback remains a
+   supported preview mode or becomes a connection error state.
 
 ### P2 — later platform work
 
@@ -87,6 +98,8 @@ slices above as reviewable commits.
 - Workflow frontend source assertions: `8 passed`; contract assertions passed.
 - OpenSpec: `real-node-io-webhook-runtime` strict validation passed.
 - `git diff --check`: passed.
+- Studio/motion branch pre-push gate: Node lint/typecheck/build passed; Python
+  suite passed with `1749 passed`, `11 skipped`, and 90.21% coverage.
 - Frontend TypeScript: failed because the D: runtime slice references types and
   components that exist only in the other feature slices.
 - Repository-wide ESLint: failed mainly because `frontend/dist` generated Vite
