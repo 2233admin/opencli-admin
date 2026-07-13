@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
 import { ErrorBoundary } from '@/components/error-boundary'
+import { loader, Matrix } from '@/components/unlumen-ui/matrix'
 import { getProjectWorkflowDraft, listProjectWorkflows, publishProjectWorkflow, updateProjectWorkflowDraft, validateProjectWorkflowDraft } from '@/lib/api/endpoints'
 import { useFlowStore } from '@/lib/flow/store'
 import { useWorkflowCapabilities } from '@/lib/workflow/use-workflow-capabilities'
@@ -172,7 +173,21 @@ export function WorkflowEditorSession() {
       {standalone ? (
         <ErrorBoundary label="WorkflowEditor"><WorkflowEditor /></ErrorBoundary>
       ) : documentState === 'loading' ? (
-        <div className="grid h-full place-items-center bg-muted/10" aria-busy="true"><div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" />正在加载工作流…</div></div>
+        <div className="grid h-full place-items-center bg-muted/10" aria-busy="true">
+          <div className="flex flex-col items-center gap-4 text-sm text-muted-foreground" role="status">
+            <Matrix
+              rows={7}
+              cols={7}
+              frames={loader}
+              fps={10}
+              size={5}
+              gap={2}
+              palette={{ on: 'var(--color-primary)', off: 'var(--color-muted-foreground)' }}
+              ariaLabel="正在加载工作流"
+            />
+            <span>正在加载工作流…</span>
+          </div>
+        </div>
       ) : !loaded.current ? (
         <div className="grid h-full place-items-center"><div className="space-y-3 text-center"><p className="text-sm text-destructive">工作流加载失败</p><Button variant="outline" onClick={() => window.location.reload()}><RefreshCw className="size-3.5" />重新加载</Button></div></div>
       ) : (

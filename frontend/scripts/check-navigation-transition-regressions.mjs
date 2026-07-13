@@ -43,12 +43,21 @@ test('SSGOI boundary is pathname-keyed, interruptible, and reduced-motion safe',
   assert.match(transition, /prefersReducedMotion \? STATIC_CONFIG : MOTION_CONFIG/)
 })
 
-test('route-level loading and recovery boundaries remain available', async () => {
-  const [loading, error] = await Promise.all([
+test('route-level loading, pixel indicators, and recovery boundaries remain available', async () => {
+  const [loading, error, dataStates, matrix, authGate, workflowSession] = await Promise.all([
     read('app/(app)/loading.tsx'),
     read('app/(app)/error.tsx'),
+    read('components/shell/data-states.tsx'),
+    read('components/unlumen-ui/matrix.tsx'),
+    read('components/auth/auth-gate.tsx'),
+    read('components/flow/workflow-editor-session.tsx'),
   ])
 
   assert.match(loading, /<LoadingState rows=\{5\}/)
   assert.match(error, /<Button onClick=\{reset\}>重试当前视图<\/Button>/)
+  assert.match(matrix, /export const loader:/)
+  assert.match(dataStates, /frames=\{loader\}/)
+  assert.match(dataStates, /size=\{5\}/)
+  assert.match(authGate, /frames=\{loader\}/)
+  assert.match(workflowSession, /ariaLabel="正在加载工作流"/)
 })
