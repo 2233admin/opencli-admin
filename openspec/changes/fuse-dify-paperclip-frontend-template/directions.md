@@ -27,22 +27,25 @@ Fit: best for multi-person operations and review-heavy work.
 Risk: makes OpenCLI's strongest differentiator, the executable node workflow, feel like
 an attachment.
 
-## C. Unified Loop (recommended baseline)
+## C. Dify-led Node Workspace (selected direction)
 
-Visual thesis: a persistent workspace tree on the left, a single object/lifecycle header,
-an adaptable central work surface, and a live context rail on the right. The central mode
-switches between Overview, Design, Run, Evidence, and Review without losing project or
-work-item context.
+Visual thesis: a Dify-like workspace panel owns the product. The active workspace contains
+workflow orchestration, data pipelines, triggers/schedules, runs/logs, versions/publishing,
+monitoring, and plugins. A node canvas remains the central source of truth. Linear-style
+work items and a Paperclip-style live attention/visualization rail support that canvas.
 
-Interaction thesis: the user always knows the current goal, project, work item, workflow,
-release state, and next human action. Build and operate are two modes of the same loop.
+Interaction thesis: users enter a workspace, select or create a workflow, compose nodes,
+debug the draft, publish a version, and monitor production. Inbox is the global “待我处理”
+surface; selecting an item deep-links back into the relevant workspace, workflow, run, node,
+evidence batch, or approval.
 
-Fit: preserves Dify's builder quality while adopting Paperclip's control-plane model.
+Fit: matches OpenCLI's node foundation and uses a workflow mental model that Dify and n8n
+users already understand, while preserving the team's existing Linear-like operating logic.
 
-Risk: the three-pane shell can become visually dense; progressive disclosure and a clear
-mobile collapse are mandatory.
+Risk: too much workspace navigation can crowd the canvas. Work items and analytics must
+remain contextual, collapsible, and secondary to node composition.
 
 ## Selection rule
 
-Use C as the initial recommendation, but keep A and B available in the prototype so the
-team can explicitly choose which product center should dominate.
+C is now the selected synthesis. Keep A and B available as comparison references: A shows
+the pure builder extreme; B shows the pure task-control-plane extreme.

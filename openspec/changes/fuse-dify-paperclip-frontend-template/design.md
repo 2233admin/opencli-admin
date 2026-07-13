@@ -3,8 +3,9 @@
 ## Design read
 
 Desktop operations product for technical operators and builders, using OpenCLI's existing
-dark, high-density, precise console language. Dify contributes the build lifecycle;
-Paperclip contributes the work/governance lifecycle.
+dark, high-density, precise console language. Dify owns the workspace structure and
+orchestrate/debug/publish/monitor lifecycle. Linear contributes work-item interaction.
+Paperclip contributes attention, run visualization, evidence, and audit cues.
 
 Design dials: variance 5/10, motion 3/10, density 8/10.
 
@@ -14,14 +15,15 @@ black/white tokens, Noto Sans SC, IBM Plex Mono, and operator-first brand constr
 
 ## Signature
 
-The memorable element is the **execution spine**: every variant keeps a visible path from
-goal and project through workflow, run, evidence, and review. It is structural navigation,
-not decoration.
+The memorable element is the **node workspace cockpit**: the workflow graph remains central,
+while the left workspace panel explains where data, triggers, versions, runs, and plugins
+belong and the right rail explains what currently needs human attention.
 
 ## Layout
 
 - Target canvas: `min-h-dvh`, desktop-first.
-- Desktop: 224-264px navigation/context rail, flexible main surface, 288-336px live rail.
+- Desktop: 196-220px global navigation, 220-256px workspace panel, flexible node surface,
+  and an optional 288-320px live rail.
 - Tablet: collapse one contextual rail into a horizontal strip.
 - Mobile: one content column; primary modes become a horizontally scrollable tab row;
   rails become stacked sections.
@@ -40,19 +42,23 @@ not decoration.
 ## Component inventory
 
 - Prototype shell and variant switcher.
-- Workspace/project tree.
-- Project lifecycle header.
+- Global shell with Overview, Inbox, Workspaces, platform resources, and settings.
+- Dify-like workspace panel with Overview, Workflows, Data Pipelines, Triggers & Schedules,
+  Runs & Logs, Versions & Publish, Monitoring, and Plugins.
+- Workspace lifecycle header: Orchestrate, Debug, Publish, Monitor.
 - Work-item summary and state control.
-- Workflow graph preview with real domain node names.
+- Workflow graph with sources, transforms, agents, review, and delivery nodes.
 - Run timeline and environment indicator.
-- Evidence/approval/activity context rail.
-- Data-chain, schedule, and runtime quick domains.
+- Paperclip-inspired operational visualization, evidence, approval, and activity rail.
+- Linear-style Inbox and workspace work-item list.
 
 ## States
 
 - Static template badge is always visible.
 - Work state and run state must be shown separately.
 - Draft, validated, published, and production states must not collapse into “saved”.
+- Plugins are workspace node capabilities and integrations, not a separate company model.
+- Inbox items deep-link to a workspace object; they do not become an alternative hierarchy.
 - Empty/error/loading examples appear as compact structural examples, not fake backend
   behavior.
 

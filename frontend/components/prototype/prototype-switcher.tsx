@@ -13,7 +13,7 @@ const variants: Array<{
 }> = [
   { id: "A", name: "编排优先", shortName: "Builder" },
   { id: "B", name: "控制面优先", shortName: "Control" },
-  { id: "C", name: "统一闭环", shortName: "Unified" },
+  { id: "C", name: "Dify 工作区融合", shortName: "Dify+" },
 ]
 
 type PrototypeSwitcherProps = {
