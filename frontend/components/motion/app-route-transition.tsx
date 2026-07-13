@@ -41,7 +41,7 @@ export function AppRouteTransition({ children }: { children: React.ReactNode }) 
 
   return (
     <Ssgoi config={prefersReducedMotion ? STATIC_CONFIG : MOTION_CONFIG}>
-      <div key={pathname} data-ssgoi-transition={pathname} className="min-h-full bg-background">
+      <div key={pathname} data-ssgoi-transition={pathname} className="h-full min-h-full bg-background">
         {children}
       </div>
     </Ssgoi>
