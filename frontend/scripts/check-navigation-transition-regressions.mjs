@@ -38,6 +38,7 @@ test('SSGOI boundary is pathname-keyed, interruptible, and reduced-motion safe',
   assert.match(transition, /const pathname = usePathname\(\)/)
   assert.match(transition, /key=\{pathname\}/)
   assert.match(transition, /data-ssgoi-transition=\{pathname\}/)
+  assert.match(transition, /className="[^"]*h-full[^"]*min-h-full[^"]*"/)
   assert.match(transition, /axis\(\{ paths: APP_ROUTES, type: 'x', variant: 'snappy' \}\)/)
   assert.match(transition, /prefersReducedMotion \? STATIC_CONFIG : MOTION_CONFIG/)
 })
