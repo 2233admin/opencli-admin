@@ -2,8 +2,9 @@
 
 import { Moon, Sun } from 'lucide-react'
 import { useTheme } from 'next-themes'
-import { useEffect, useState } from 'react'
+import { startTransition, useEffect, useState } from 'react'
 
+import { LocalViewTransition } from '@/components/motion/local-view-transition'
 import { Button } from '@/components/ui/button'
 
 export function ThemeToggle() {
@@ -19,9 +20,13 @@ export function ThemeToggle() {
       variant="ghost"
       size="icon"
       aria-label="切换主题"
-      onClick={() => setTheme(isDark ? 'light' : 'dark')}
+      onClick={() => startTransition(() => setTheme(isDark ? 'light' : 'dark'))}
     >
-      {mounted && isDark ? <Sun /> : <Moon />}
+      <LocalViewTransition name="theme-icon">
+        <span className="grid size-4 place-items-center" aria-hidden>
+          {mounted && isDark ? <Sun /> : <Moon />}
+        </span>
+      </LocalViewTransition>
     </Button>
   )
 }

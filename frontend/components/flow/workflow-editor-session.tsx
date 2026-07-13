@@ -39,6 +39,7 @@ export function WorkflowEditorSession() {
   const [workflowId, setWorkflowId] = useState<string | null>(null)
   const [documentState, setDocumentState] = useState<'loading' | 'saving' | 'saved' | 'error' | 'conflict'>('loading')
   const [savedRevision, setSavedRevision] = useState<number | null>(null)
+  const [validationRunId, setValidationRunId] = useState<string | null>(null)
   const [releaseState, setReleaseState] = useState<'idle' | 'validating' | 'validated' | 'publishing'>('idle')
   const loaded = useRef(false)
   const revision = useRef<number | null>(null)
@@ -46,7 +47,7 @@ export function WorkflowEditorSession() {
   const lastSavedFingerprint = useRef<string | null>(null)
   const saveQueuePromise = useRef<Promise<void> | null>(null)
   const saveBlocked = useRef(false)
-  const { capabilities, error: capabilityError, retry: retryCapabilities } = useWorkflowCapabilities(true)
+  const { error: capabilityError } = useWorkflowCapabilities(true)
   const standalone = !workspaceId || !projectId
 
   const saveDraft = useCallback((graph: typeof workflowProject) => {
@@ -119,7 +120,10 @@ export function WorkflowEditorSession() {
   }, [projectId, saveDraft, workflowId, workflowProject, workspaceId])
 
   useEffect(() => {
-    if (loaded.current) setReleaseState('idle')
+    if (loaded.current) {
+      setReleaseState('idle')
+      setValidationRunId(null)
+    }
   }, [workflowProject])
 
   async function validateDraft() {
@@ -133,6 +137,7 @@ export function WorkflowEditorSession() {
       await saveDraft(workflowProject)
       const run = await validateProjectWorkflowDraft(workspaceId, projectId, workflowId)
       if (run.status !== 'completed') throw new Error(`验证 Run 状态：${run.status}`)
+      setValidationRunId(run.runId)
       setReleaseState('validated')
       toast.success('验证 Run 已通过，可以发布')
     } catch (reason) {
@@ -143,9 +148,17 @@ export function WorkflowEditorSession() {
 
   async function publishDraft() {
     if (!workspaceId || !projectId || !workflowId) return
+    if (revision.current === null || !validationRunId) {
+      toast.error('请先完成当前 revision 的验证 Run')
+      return
+    }
     setReleaseState('publishing')
     try {
-      const version = await publishProjectWorkflow(workspaceId, projectId, workflowId, '通过工作区画布发布')
+      const version = await publishProjectWorkflow(workspaceId, projectId, workflowId, {
+        reason: '通过工作区画布发布',
+        expectedRevision: revision.current,
+        validationRunId,
+      })
       setReleaseState('idle')
       toast.success(`Workflow Version ${version.version} 已发布`)
     } catch (reason) {
@@ -157,13 +170,13 @@ export function WorkflowEditorSession() {
   return (
     <div className="relative h-full w-full overflow-hidden">
       {standalone ? (
-        <ErrorBoundary label="WorkflowEditor"><WorkflowEditor capabilities={capabilities} capabilityError={capabilityError} retryCapabilities={retryCapabilities} /></ErrorBoundary>
+        <ErrorBoundary label="WorkflowEditor"><WorkflowEditor /></ErrorBoundary>
       ) : documentState === 'loading' ? (
         <div className="grid h-full place-items-center bg-muted/10" aria-busy="true"><div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" />正在加载工作流…</div></div>
       ) : !loaded.current ? (
         <div className="grid h-full place-items-center"><div className="space-y-3 text-center"><p className="text-sm text-destructive">工作流加载失败</p><Button variant="outline" onClick={() => window.location.reload()}><RefreshCw className="size-3.5" />重新加载</Button></div></div>
       ) : (
-        <ErrorBoundary label="WorkflowEditor"><WorkflowEditor capabilities={capabilities} capabilityError={capabilityError} retryCapabilities={retryCapabilities} /></ErrorBoundary>
+        <ErrorBoundary label="WorkflowEditor"><WorkflowEditor /></ErrorBoundary>
       )}
       {workspaceId && projectId && workflowId ? (
         <div className="absolute bottom-3 right-3 z-40 flex items-center gap-2 rounded-xl border bg-background/90 p-1.5 shadow-lg backdrop-blur-xl">

@@ -8,9 +8,6 @@ import {
   LayoutDashboard,
   Monitor,
   PanelsTopLeft,
-  Inbox,
-  Settings,
-  ShieldCheck,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -36,12 +33,7 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: '/dashboard', label: '概览', icon: LayoutDashboard },
       { href: '/studio', label: '工作区', icon: PanelsTopLeft },
-      { href: '/inbox', label: 'Inbox', icon: Inbox },
     ],
-  },
-  {
-    label: '构建',
-    items: [{ href: '/operations-agents', label: '自动化与智能体', icon: ShieldCheck }],
   },
   {
     label: '数据链路',
@@ -65,10 +57,6 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: '/control/actions', label: '控制与审计', icon: History },
     ],
   },
-  {
-    label: null,
-    items: [{ href: '/settings', label: '设置', icon: Settings }],
-  },
 ]
 
 /** Labels for every route (incl. tab siblings) used by breadcrumbs. */
@@ -77,8 +65,6 @@ export const ROUTE_LABELS: Record<string, string> = {
   '/studio': '工作区',
   '/studio/workflow': '节点工作流',
   '/canvas': '节点工作流（兼容入口）',
-  '/inbox': 'Inbox',
-  '/operations-agents': '自动化与智能体',
   '/sources': '采集来源',
   '/schedules': '触发与调度',
   '/tasks': '任务',
@@ -90,5 +76,4 @@ export const ROUTE_LABELS: Record<string, string> = {
   '/nodes': '浏览器节点',
   '/workers': 'Worker',
   '/control/actions': '控制与审计',
-  '/settings': '设置',
 }

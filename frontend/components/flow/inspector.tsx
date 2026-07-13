@@ -528,7 +528,7 @@ export function Inspector() {
           </div>
         ) : (
           <>
-        {blockedAction && !beginnerNode ? (
+        {blockedAction ? (
           <div className="overflow-hidden rounded-[3px] border border-[#7f1d1d]/60 bg-[#180b0b]/70">
             <div className="flex items-center justify-between gap-3 border-b border-[#7f1d1d]/50 bg-[#2a1010]/72 px-3 py-2">
               <div className="flex min-w-0 items-center gap-2">

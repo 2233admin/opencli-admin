@@ -1,20 +1,22 @@
 import { Analytics } from '@vercel/analytics/next'
 import type { Metadata, Viewport } from 'next'
-import { Geist_Mono, Inter } from 'next/font/google'
+import { IBM_Plex_Mono, Noto_Sans_SC } from 'next/font/google'
 
 import { Providers } from '@/components/providers'
 import { Toaster } from '@/components/ui/sonner'
 import './globals.css'
 
-const inter = Inter({
+const notoSansSC = Noto_Sans_SC({
   subsets: ['latin'],
-  variable: '--font-inter',
+  variable: '--font-noto-sans-sc',
+  weight: 'variable',
   display: 'swap',
 })
 
-const geistMono = Geist_Mono({
+const ibmPlexMono = IBM_Plex_Mono({
   subsets: ['latin'],
-  variable: '--font-geist-mono',
+  variable: '--font-ibm-plex-mono',
+  weight: ['400', '500', '600', '700'],
   display: 'swap',
 })
 
@@ -38,7 +40,7 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="zh-CN" suppressHydrationWarning className={`${inter.variable} ${geistMono.variable} bg-background`}>
+    <html lang="zh-CN" suppressHydrationWarning className={`${notoSansSC.variable} ${ibmPlexMono.variable} bg-background`}>
       <body className="font-sans antialiased bg-background text-foreground">
         <Providers>{children}</Providers>
         <Toaster />

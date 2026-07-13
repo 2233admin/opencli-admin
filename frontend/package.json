@@ -6,6 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "check:workflow-regressions": "node --test scripts/check-workflow-regressions.mjs",
+    "check:navigation-transitions": "node --test scripts/check-navigation-transition-regressions.mjs",
     "test:workflow-contracts": "node scripts/assert-workflow-contracts.mjs",
     "start": "next start",
     "lint": "eslint ."
@@ -13,6 +14,7 @@
   "dependencies": {
     "@base-ui/react": "^1.5.0",
     "@dagrejs/dagre": "^3.0.0",
+    "@ssgoi/react": "6.6.6",
     "@tanstack/react-query": "^5.101.2",
     "@vercel/analytics": "1.6.1",
     "@xyflow/react": "^12.11.1",
@@ -46,6 +48,7 @@
     "y-protocols": "^1.0.7",
     "y-websocket": "^3.0.0",
     "yjs": "^13.6.31",
+    "yaml": "^2.9.0",
     "zod": "^4.4.3",
     "zustand": "^5.0.14"
   },
@@ -63,10 +66,5 @@
     "postcss": "^8.5",
     "tailwindcss": "^4.2.0",
     "typescript": "5.7.3"
-  },
-  "pnpm": {
-    "overrides": {
-      "hono": "4.12.25"
-    }
   }
 }

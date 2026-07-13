@@ -6,8 +6,8 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
-  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-sans: var(--font-ui);
+  --font-mono: var(--font-code);
 
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
@@ -64,6 +64,9 @@
  */
 :root {
   color-scheme: light;
+  --font-ui: var(--font-noto-sans-sc), "Source Han Sans SC", "Noto Sans CJK SC", "Microsoft YaHei UI", ui-sans-serif, system-ui, sans-serif;
+  --font-code: var(--font-ibm-plex-mono), var(--font-noto-sans-sc), "Noto Sans Mono CJK SC", ui-monospace, SFMono-Regular, Consolas, monospace;
+  --font-data: var(--font-ibm-plex-mono), ui-monospace, SFMono-Regular, Consolas, monospace;
   --background: #ffffff;
   --foreground: #0a0a0a;
   --card: #f7f7f5;
@@ -112,6 +115,14 @@
   --m3-duration-short: 150ms;
   --m3-duration-medium: 250ms;
   --m3-duration-long: 400ms;
+
+  /* Physical response: quick compression, weighted travel, soft release. */
+  --motion-ease-force-in: cubic-bezier(0.4, 0, 1, 1);
+  --motion-ease-spatial: cubic-bezier(0.32, 0.72, 0, 1);
+  --motion-ease-settle: cubic-bezier(0.34, 1.36, 0.64, 1);
+  --motion-duration-press: 70ms;
+  --motion-duration-response: 180ms;
+  --motion-duration-spatial: 320ms;
 }
 
 .dark {
@@ -162,6 +173,15 @@
   }
   body {
     @apply bg-background text-foreground;
+    font-synthesis: none;
+    font-kerning: normal;
+    text-rendering: optimizeLegibility;
+  }
+  .font-mono,
+  code,
+  kbd,
+  pre {
+    font-variant-numeric: tabular-nums;
   }
 }
 
@@ -181,8 +201,8 @@
   [data-slot='switch'],
   [data-slot='badge'] {
     transition-property: color, background-color, border-color, transform, opacity;
-    transition-timing-function: var(--m3-ease-standard);
-    transition-duration: var(--m3-duration-short);
+    transition-timing-function: var(--motion-ease-spatial);
+    transition-duration: var(--motion-duration-response);
   }
 
   /* Press feedback: subtle scale-down on active */
@@ -190,13 +210,15 @@
   [role='button']:active,
   [data-slot='sidebar-menu-button']:active,
   [data-slot='tabs-trigger']:active {
-    transform: scale(0.97);
-    transition-duration: 100ms;
+    transform: translateY(1px) scale(0.965);
+    transition-duration: var(--motion-duration-press);
+    transition-timing-function: var(--motion-ease-force-in);
   }
 
-  /* Every button is a pill — the brand's universal interactive shape */
+  /* Geometry stays owned by the design system; the shared layer owns feel. */
   [data-slot='button'] {
-    border-radius: 9999px;
+    transform-origin: center;
+    transition-timing-function: var(--motion-ease-settle);
   }
 
   /* Outline buttons hover: border brightens, no fill shift */
@@ -207,10 +229,14 @@
   /* Cards: hairline chrome only — no shadows at any state */
   [data-slot='card'] {
     box-shadow: none;
-    transition: border-color var(--m3-duration-short) var(--m3-ease-standard);
+    transform: translateZ(0);
+    transition:
+      transform var(--motion-duration-response) var(--motion-ease-settle),
+      border-color var(--motion-duration-response) var(--motion-ease-spatial);
   }
   [data-slot='card']:hover {
     border-color: color-mix(in srgb, var(--foreground) 20%, transparent);
+    transform: translate3d(0, -1px, 0);
   }
 
   /* Sidebar items: pill rows */
@@ -237,16 +263,39 @@
     color: var(--muted-foreground);
   }
 
-  /* Display typography: weight 400 + negative tracking is the signature */
+  /* Legacy headings stay readable until they adopt an explicit type role. */
   h1,
   h2,
   h3 {
-    font-weight: 400;
-    letter-spacing: -0.02em;
+    font-weight: 500;
+    text-wrap: balance;
   }
 }
 
 @layer utilities {
+  .font-ui { font-family: var(--font-ui); }
+  .font-code { font-family: var(--font-code); }
+  .font-data {
+    font-family: var(--font-data);
+    font-variant-numeric: tabular-nums slashed-zero;
+  }
+
+  :where(.type-display-large) { font-size: 3.5625rem; line-height: 1.1228; letter-spacing: -0.0044em; font-weight: 400; }
+  :where(.type-display-medium) { font-size: 2.8125rem; line-height: 1.1556; letter-spacing: 0; font-weight: 400; }
+  :where(.type-display-small) { font-size: 2.25rem; line-height: 1.2222; letter-spacing: 0; font-weight: 400; }
+  :where(.type-headline-large) { font-size: 2rem; line-height: 1.25; letter-spacing: 0; font-weight: 500; }
+  :where(.type-headline-medium) { font-size: 1.75rem; line-height: 1.2857; letter-spacing: 0; font-weight: 500; }
+  :where(.type-headline-small) { font-size: 1.5rem; line-height: 1.3333; letter-spacing: 0; font-weight: 500; }
+  :where(.type-title-large) { font-size: 1.375rem; line-height: 1.2727; letter-spacing: 0; font-weight: 500; }
+  :where(.type-title-medium) { font-size: 1rem; line-height: 1.5; letter-spacing: 0.0094em; font-weight: 500; }
+  :where(.type-title-small) { font-size: 0.875rem; line-height: 1.4286; letter-spacing: 0.0071em; font-weight: 500; }
+  :where(.type-body-large) { font-size: 1rem; line-height: 1.5; letter-spacing: 0.03125em; font-weight: 400; }
+  :where(.type-body-medium) { font-size: 0.875rem; line-height: 1.4286; letter-spacing: 0.0179em; font-weight: 400; }
+  :where(.type-body-small) { font-size: 0.75rem; line-height: 1.3333; letter-spacing: 0.0333em; font-weight: 400; }
+  :where(.type-label-large) { font-size: 0.875rem; line-height: 1.4286; letter-spacing: 0.0071em; font-weight: 500; }
+  :where(.type-label-medium) { font-size: 0.75rem; line-height: 1.3333; letter-spacing: 0.0417em; font-weight: 500; }
+  :where(.type-label-small) { font-size: 0.6875rem; line-height: 1.4545; letter-spacing: 0.0455em; font-weight: 500; }
+
   /* Uppercase tracked mono eyebrow — the brand's signature label style */
   .eyebrow-mono {
     font-family: var(--font-mono);
@@ -256,6 +305,16 @@
     letter-spacing: 0.12em;
     color: var(--muted-foreground);
   }
+}
+
+.nav-telemetry-rail {
+  color: var(--foreground);
+  background: repeating-linear-gradient(to bottom, currentColor 0 2px, transparent 2px 3px);
+}
+
+::view-transition-group(theme-icon) {
+  animation-duration: var(--motion-duration-response);
+  animation-timing-function: var(--motion-ease-settle);
 }
 
 @layer utilities {
@@ -300,6 +359,12 @@
   *::before,
   *::after {
     transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
+
+  ::view-transition-group(*) {
     animation-duration: 0.01ms !important;
   }
 }
