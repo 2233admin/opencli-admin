@@ -1,5 +1,7 @@
 'use client'
 
+import { ArrowUpRight } from 'lucide-react'
+import Link from 'next/link'
 import { useState } from 'react'
 
 import { useTasks } from '@/lib/api/hooks'
@@ -34,8 +36,9 @@ export default function TasksPage() {
 
   return (
     <PageContainer
-      title="运行中心"
-      description="采集任务执行队列与运行状态"
+      eyebrow="Work"
+      title="工作项"
+      description="每个工作项都关联来源、执行运行与最终数据成果。"
       tabs={<RouteTabs tabs={RUN_CENTER_TABS} />}
       actions={
         <div className="flex items-center gap-1 rounded-md border p-0.5">
@@ -73,8 +76,13 @@ export default function TasksPage() {
             </TableHeader>
             <TableBody>
               {tasks.map((t) => (
-                <TableRow key={t.id}>
-                  <TableCell className="font-medium">{t.source_name ?? t.source_id}</TableCell>
+                <TableRow key={t.id} className="group">
+                  <TableCell className="font-medium">
+                    <Link href={`/tasks/${t.id}`} className="flex items-center gap-2 hover:underline">
+                      <span>{t.source_name ?? t.source_id}</span>
+                      <ArrowUpRight className="size-3.5 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+                    </Link>
+                  </TableCell>
                   <TableCell className="text-muted-foreground">{t.trigger_type}</TableCell>
                   <TableCell className="tabular-nums text-muted-foreground">{t.priority}</TableCell>
                   <TableCell>

@@ -26,7 +26,7 @@ test('node workflow lives inside workspace while the legacy canvas route redirec
     readSource('app/page.tsx'),
   ])
 
-  for (const label of ['概览', '工作区', '采集来源', '运行与数据', '节点与 Worker']) {
+  for (const label of ['概览', '工作区', '自动化', '工作项', '执行资源']) {
     assert.match(navigation, new RegExp(`label:\\s*['"]${label}['"]`))
   }
   assert.doesNotMatch(navigation, /href:\s*['"]\/canvas['"][\s\S]{0,80}label:\s*['"]节点工作流['"]/) 

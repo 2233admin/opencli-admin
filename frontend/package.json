@@ -8,6 +8,7 @@
     "check:login-themes": "node --test scripts/check-login-theme-regressions.mjs",
     "check:workflow-regressions": "node --test scripts/check-workflow-regressions.mjs",
     "check:navigation-transitions": "node --test scripts/check-navigation-transition-regressions.mjs",
+    "check:control-plane": "node --test scripts/check-control-plane-regressions.mjs scripts/check-dashboard-regressions.mjs scripts/check-inbox-regressions.mjs",
     "test:workflow-contracts": "node scripts/assert-workflow-contracts.mjs",
     "start": "next start",
     "lint": "eslint ."
