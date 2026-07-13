@@ -3,8 +3,8 @@
 ## Design read
 
 Desktop operations product for technical operators and builders, using OpenCLI's existing
-dark, high-density, precise console language. Dify owns the workspace structure and
-orchestrate/debug/publish/monitor lifecycle. Linear contributes work-item interaction.
+dark, high-density, precise console language. The existing Studio owns workspace and project
+discovery; Dify contributes the project lifecycle after entry. Linear contributes work-item interaction.
 Paperclip contributes attention, run visualization, evidence, and audit cues.
 
 Design dials: variance 5/10, motion 3/10, density 8/10.
@@ -15,14 +15,14 @@ black/white tokens, Noto Sans SC, IBM Plex Mono, and operator-first brand constr
 
 ## Signature
 
-The memorable element is the **node workspace cockpit**: the workflow graph remains central,
-while the left workspace panel explains where data, triggers, versions, runs, and plugins
-belong and the right rail explains what currently needs human attention.
+The memorable element is the **node project cockpit**: the workflow graph remains central,
+the left panel keeps the active project in a workspace-level sibling project list, and the
+right rail explains what currently needs human attention.
 
 ## Layout
 
 - Target canvas: `min-h-dvh`, desktop-first.
-- Desktop: 196-220px global navigation, 220-256px workspace panel, flexible node surface,
+- Desktop: 196-220px global navigation, 220-256px project navigator, flexible node surface,
   and an optional 288-320px live rail.
 - Tablet: collapse one contextual rail into a horizontal strip.
 - Mobile: one content column; primary modes become a horizontally scrollable tab row;
@@ -43,22 +43,22 @@ belong and the right rail explains what currently needs human attention.
 
 - Prototype shell and variant switcher.
 - Global shell with Overview, Inbox, Workspaces, platform resources, and settings.
-- Dify-like workspace panel with Overview, Workflows, Data Pipelines, Triggers & Schedules,
-  Runs & Logs, Versions & Publish, Monitoring, and Plugins.
-- Workspace lifecycle header: Orchestrate, Debug, Publish, Monitor.
+- Existing Studio workspace index with project cards, type filters, templates, and DSL import.
+- Project navigator with sibling workflow, acquisition, cleaning, knowledge, and delivery projects.
+- Project lifecycle header: Overview, Orchestrate, Debug, Publish, Monitor.
 - Work-item summary and state control.
 - Workflow graph with sources, transforms, agents, review, and delivery nodes.
 - Run timeline and environment indicator.
 - Paperclip-inspired operational visualization, evidence, approval, and activity rail.
-- Linear-style Inbox and workspace work-item list.
+- Linear-style project work-item list and global Inbox deep links.
 
 ## States
 
 - Static template badge is always visible.
 - Work state and run state must be shown separately.
 - Draft, validated, published, and production states must not collapse into “saved”.
-- Plugins are workspace node capabilities and integrations, not a separate company model.
-- Inbox items deep-link to a workspace object; they do not become an alternative hierarchy.
+- Plugins are shared capabilities consumed by project nodes, not a replacement project hierarchy.
+- Inbox items deep-link to a project object; they do not become an alternative hierarchy.
 - Empty/error/loading examples appear as compact structural examples, not fake backend
   behavior.
 
@@ -75,5 +75,6 @@ belong and the right rail explains what currently needs human attention.
 
 - The route is development-only and returns 404 in production.
 - The prototype is read-only and contains no API hooks.
-- The selected structural decision will be rewritten into production components rather
-  than promoting prototype code as-is.
+- Production work must reuse the existing `/studio` workspace/project index and
+  `/studio/workflow?workspace=&project=&workflow=` session rather than promoting or rewriting
+  prototype code as a second implementation.

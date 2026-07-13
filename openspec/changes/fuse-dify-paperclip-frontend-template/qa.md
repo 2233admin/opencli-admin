@@ -14,15 +14,17 @@
 - Lint: passed — targeted ESLint returned zero warnings and zero errors
 - Typecheck: passed — `pnpm exec tsc --noEmit`
 - Independent product-boundary review: passed after moving the global Inbox explanation out of the Linear work-item card and naming the right attention rail `Inbox · 需要处理`
+- Independent hierarchy review: passed with no P0/P1/P2 findings for Workspace → Project → Node ownership
 - Tests: prototype intentionally has no behavioral test suite
-- Build: revision attempt blocked — two fresh `pnpm build` runs reached Next.js compilation, then failed only while downloading IBM Plex Mono and Noto Sans SC from Google Fonts
-- Production isolation: previously passed for the unchanged route gate — `/prototype/product-shell?variant=C` returned 404 and `/dashboard` returned 200; no fresh production server could start after the external font failure
+- Build: passed — `pnpm build` completed with Next.js 16.2.6
+- Production isolation: passed — the fresh production server returned 404 for `/prototype/product-shell?variant=C`, contained no prototype marker, and returned 200 for `/dashboard`
 
 ## Browser / visual checks
 
 - 390x812: passed for the earlier C structure; fresh revised-C metrics are an explicit gap because the selected browser exposes no viewport resize and rejected the isolated harness under its security policy
 - 500x812: passed for the earlier C structure as a narrow-stack visual check
 - 1280x720: passed for revised C in the in-app browser; `innerWidth=1280`, document/body scroll width `1265`, no horizontal overflow
+- Hierarchy semantics: passed in the DOM snapshot — workspace project list, sibling project types, active project lifecycle, project work items, project runs, and global Inbox were distinct named regions
 - 768x1024: static breakpoint inspection only; no separate screenshot retained
 - 1920x1080: optional
 
@@ -30,9 +32,10 @@ Observed desktop captures:
 
 - A keeps the workflow graph and debug trace dominant while retaining work, run, evidence, and approval context.
 - B makes the project queue and selected work item cockpit dominant; the workflow becomes execution context.
-- C is now Dify-led: the active workspace owns workflows, data pipelines, triggers/schedules,
-  runtime data, versions/publish, monitoring, plugins, and variables; the node canvas remains the
-  primary surface.
+- C now preserves the existing two-step product structure: the workspace owns a project index
+  and shared capabilities; opening one project leads to its node graph and project lifecycle.
+- Acquisition, cleaning, knowledge, workflow, and delivery appear as sibling projects rather
+  than one overloaded workspace menu.
 - Linear-style work items sit below the canvas and Paperclip-style attention, evidence, approval,
   activity, and runtime visualization stay contextual rather than becoming the product hierarchy.
 - A/B remain available as builder-first and control-plane-first comparison extremes.
@@ -79,12 +82,12 @@ Observed mobile capture:
 
 | Dimension | Score | Notes |
 | --- | ---: | --- |
-| Visual taste | 8.6/10 | Dense, quiet, and consistent with OpenCLI while giving the node workspace a clear center of gravity |
-| UX clarity | 9.1/10 | Dify owns the workspace lifecycle; Linear and Paperclip now have explicit subordinate roles |
-| Accessibility | 8.1/10 | Good semantics and dynamic workspace lifecycle naming; mobile touch targets still need a production pass |
-| Responsiveness | 8.2/10 | Desktop has no overflow and the responsive structure is deliberate; revised 390 px automation is pending |
+| Visual taste | 8.7/10 | Dense, quiet, and consistent with OpenCLI while giving the active project a clear center of gravity |
+| UX clarity | 9.4/10 | Workspace, project portfolio, active node project, Linear work, and Paperclip attention now have explicit ownership |
+| Accessibility | 8.2/10 | Project lifecycle and workspace project navigation have distinct semantic names; mobile targets still need a production pass |
+| Responsiveness | 8.3/10 | Desktop has no overflow and the responsive structure is deliberate; fresh 390 px automation is pending |
 | Motion quality | 8.5/10 | Restrained interaction feedback with shared reduced-motion behavior |
-| Engineering fit | 9.1/10 | No dependency or API expansion; fresh build is blocked only by external font retrieval |
+| Engineering fit | 9.4/10 | Reuses the existing Studio and WorkflowEditorSession contract; no dependency, API, or production-route expansion |
 | Performance risk | 9.2/10 | Static data and CSS layout only; no editor/runtime payload added to product routes |
 
 ## Decision audit
@@ -93,10 +96,10 @@ Observed mobile capture:
 | --- | --- | --- | --- |
 | Prototype before integration | Validate structure before data contracts | Three switchable static directions | Prototype must not leak to production |
 | Existing tokens and components | Preserve product identity | No new design system or dependency | Existing token inconsistencies remain outside scope |
-| Dify-led node workspace as baseline | Keep build and operate in one familiar workspace | Direction C is selected | Three-pane density still needs fresh mobile metrics |
+| Workspace → Project → Node as baseline | Reuse the existing product route and ownership model | Direction C is selected | Cross-project relationships need a future production treatment |
 
 ## Final verdict
 
 - Verdict: ready for product review; Direction C is the selected integration baseline
-- Blocking issues: none for the static-template implementation; fresh production build and 390 px automation remain environment-gated QA gaps
-- Follow-up: map the selected workspace objects and lifecycle onto existing OpenCLI routes and contracts before connecting data
+- Blocking issues: none for the static-template implementation; only fresh 390 px automation remains environment-gated
+- Follow-up: extend the existing Studio and WorkflowEditorSession only after this project hierarchy is approved; do not create a parallel workspace implementation

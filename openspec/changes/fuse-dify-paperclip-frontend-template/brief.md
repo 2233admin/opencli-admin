@@ -2,10 +2,10 @@
 
 ## Goal
 
-Create a static, clickable frontend template for a **node-based OpenCLI workspace** where
-Dify owns the primary workspace and governance model, Linear contributes the work-item
-interaction pattern, and Paperclip contributes operational visualization, evidence, and
-attention signals.
+Create a static, clickable frontend template for a **workspace → project → node workflow**
+OpenCLI product. Dify contributes the workspace/project entry and project lifecycle, Linear
+contributes the work-item interaction pattern, and Paperclip contributes operational
+visualization, evidence, and attention signals.
 
 ## Audience
 
@@ -38,14 +38,19 @@ attention signals.
 ## Acceptance checks
 
 - The three variants disagree about product structure, not just color.
-- Each variant visibly contains: workspace, workflow, nodes, work item, run, evidence,
+- Each variant visibly contains: workspace, project, workflow, nodes, work item, run, evidence,
   approval, and activity.
-- Dify's orchestrate/debug/publish/monitor lifecycle is the dominant product language.
+- The existing Studio remains the workspace project index; opening a project leads to its
+  node editor and orchestrate/debug/publish/monitor lifecycle.
+- A workspace is a project and shared-resource boundary, not one giant navigation tree.
+- Independent acquisition, knowledge, cleaning, workflow, and delivery concerns can be
+  separate projects inside the workspace.
 - Linear-style work items are a supporting operating surface, not the product root.
 - Paperclip-style attention, run, evidence, and visualization patterns enrich the workspace
   without importing its company/agent hierarchy.
-- Data pipelines, triggers/schedules, runtime data, versions, and plugins live inside the
-  active workspace rather than as global product domains.
+- Project-local triggers, runs, versions, and node capabilities stay in the active project;
+  data sources, knowledge, and cleaning become separate projects when they have independent
+  ownership or lifecycle.
 - Variant selection is URL-stable and keyboard accessible.
 - Typecheck and production build pass; the prototype is visually checked at desktop and
   mobile widths.
