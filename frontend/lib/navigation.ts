@@ -1,13 +1,14 @@
 import {
   Activity,
   Bot,
-  Clock,
   Database,
-  History,
-  KeyRound,
+  Inbox,
   LayoutDashboard,
-  Monitor,
   PanelsTopLeft,
+  ShieldCheck,
+  Sparkles,
+  SquareCheckBig,
+  Workflow,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -24,56 +25,74 @@ export type NavGroup = {
 }
 
 /**
- * Data-node IDE IA. Routes stay stable while the shell groups them by the
- * operator's work: build workflows, move data, then observe the runtime.
+ * Task-first IA inspired by the control-plane model: start with work that
+ * needs attention, then move through execution, outcomes, and governance.
+ * Related resource routes remain available through each destination's tabs.
  */
 export const NAV_GROUPS: NavGroup[] = [
   {
     label: null,
     items: [
       { href: '/dashboard', label: '概览', icon: LayoutDashboard },
-      { href: '/studio', label: '工作区', icon: PanelsTopLeft },
+      { href: '/inbox', label: '待我处理', icon: Inbox, match: ['/inbox', '/notifications'] },
     ],
   },
   {
-    label: '数据链路',
+    label: '工作',
     items: [
-      { href: '/sources', label: '采集来源', icon: Database },
-      { href: '/schedules', label: '触发与调度', icon: Clock },
+      { href: '/studio', label: '工作区', icon: PanelsTopLeft, match: ['/studio', '/canvas'] },
+      { href: '/tasks', label: '工作项', icon: SquareCheckBig },
+    ],
+  },
+  {
+    label: '执行与成果',
+    items: [
+      { href: '/sources', label: '自动化', icon: Workflow, match: ['/sources', '/schedules'] },
       {
-        href: '/tasks',
-        label: '运行与数据',
+        href: '/nodes',
+        label: '执行资源',
         icon: Activity,
-        match: ['/tasks', '/records', '/notifications'],
+        match: ['/nodes', '/workers'],
       },
+      { href: '/records', label: '成果与数据', icon: Database },
+      { href: '/agents', label: 'Agent 团队', icon: Bot, match: ['/agents', '/skills'] },
     ],
   },
   {
-    label: '集成与运行时',
+    label: '系统',
     items: [
-      { href: '/agents', label: '智能体与技能', icon: Bot, match: ['/agents', '/skills'] },
-      { href: '/providers', label: '模型与连接', icon: KeyRound },
-      { href: '/nodes', label: '节点与 Worker', icon: Monitor, match: ['/nodes', '/workers'] },
-      { href: '/control/actions', label: '控制与审计', icon: History },
+      {
+        href: '/providers',
+        label: '治理与设置',
+        icon: ShieldCheck,
+        match: ['/providers', '/control/actions'],
+      },
     ],
   },
 ]
 
+export const CREATE_WORK_ITEM: NavItem = {
+  href: '/studio/workflow',
+  label: '新建工作',
+  icon: Sparkles,
+}
+
 /** Labels for every route (incl. tab siblings) used by breadcrumbs. */
 export const ROUTE_LABELS: Record<string, string> = {
   '/dashboard': '概览',
+  '/inbox': '待我处理',
   '/studio': '工作区',
   '/studio/workflow': '节点工作流',
   '/canvas': '节点工作流（兼容入口）',
   '/sources': '采集来源',
   '/schedules': '触发与调度',
-  '/tasks': '任务',
-  '/records': '记录',
+  '/tasks': '工作项',
+  '/records': '成果与数据',
   '/notifications': '通知',
   '/agents': '智能体',
   '/skills': '技能',
   '/providers': '模型与连接',
-  '/nodes': '浏览器节点',
+  '/nodes': '执行资源',
   '/workers': 'Worker',
   '/control/actions': '控制与审计',
 }

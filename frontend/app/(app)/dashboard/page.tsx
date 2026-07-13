@@ -1,23 +1,35 @@
 'use client'
 
-import { Activity, ArrowDownToLine, BellRing, BrainCircuit, CheckCircle2, Send, Server, Tags } from 'lucide-react'
+import Link from 'next/link'
+import {
+  Activity,
+  AlertTriangle,
+  ArrowDownToLine,
+  ArrowRight,
+  BellRing,
+  BrainCircuit,
+  CheckCircle2,
+  Clock3,
+  Database,
+  GitBranch,
+  Play,
+  Send,
+  Server,
+  Tags,
+} from 'lucide-react'
 
 import { useDashboardActivity, useDashboardStats, useOpinionMonitor, useWorkers } from '@/lib/api/hooks'
 import type { OpinionMonitor, WorkerNode } from '@/lib/api/types'
-import {
-  useMonitorFeed,
-  type FailureItem,
-  type StreamTask,
-  type ThroughputPoint,
-  type WorkerView,
-} from '@/lib/demo/monitor'
+import type { FailureItem, StreamTask, ThroughputPoint, WorkerView } from '@/lib/demo/monitor'
 import { formatNumber, formatRelative } from '@/lib/format'
+import { cn } from '@/lib/utils'
 import { FailureFeed, TaskStream } from '@/components/monitor/task-stream'
 import { ThroughputChart } from '@/components/monitor/throughput-chart'
 import { WorkerAllocation } from '@/components/monitor/worker-allocation'
-import { LoadingState } from '@/components/shell/data-states'
+import { BACKEND_HINT, ErrorState, LoadingState } from '@/components/shell/data-states'
 import { PageContainer } from '@/components/shell/page-container'
 import { Badge } from '@/components/ui/badge'
+import { Button, buttonVariants } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
 function KpiCard({
@@ -42,6 +54,37 @@ function KpiCard({
         {sub ? <p className="mt-1 text-xs text-muted-foreground">{sub}</p> : null}
       </CardContent>
     </Card>
+  )
+}
+
+function ActionLink({
+  href,
+  title,
+  description,
+  icon: Icon,
+}: {
+  href: string
+  title: string
+  description: string
+  icon: typeof Activity
+}) {
+  return (
+    <Link
+      href={href}
+      className="group flex items-center gap-3 rounded-lg border border-border/70 bg-background/60 p-3 transition-colors hover:border-primary/30 hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+    >
+      <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground transition-colors group-hover:bg-primary/10 group-hover:text-primary">
+        <Icon className="size-4" aria-hidden />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-sm font-medium">{title}</span>
+        <span className="mt-0.5 block text-xs text-muted-foreground">{description}</span>
+      </span>
+      <ArrowRight
+        className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-foreground"
+        aria-hidden
+      />
+    </Link>
   )
 }
 
@@ -196,158 +239,302 @@ export default function DashboardPage() {
   const opinion = useOpinionMonitor()
   const workersQuery = useWorkers()
 
-  const demoMode = stats.isError
-  const demo = useMonitorFeed(demoMode)
-
-  if (stats.isLoading || (demoMode && !demo)) {
+  if (stats.isLoading) {
     return (
-      <PageContainer eyebrow="Monitor" title="监控台" description="采集 → 发送全链路任务分配态势">
+      <PageContainer
+        eyebrow="Control plane"
+        title="运营工作台"
+        description="先处理异常，再推进正在运行的工作。"
+      >
         <LoadingState rows={3} />
       </PageContainer>
     )
   }
 
-  // ── Resolve view models: real backend data first, demo feed as fallback ──
-  let kpis: Array<{ title: string; value: string; sub?: string; icon: typeof Activity }>
-  let throughput: ThroughputPoint[]
-  let workers: WorkerView[]
-  let stream: StreamTask[]
-  let failures: FailureItem[]
-  let daily = false
-
-  if (!demoMode && stats.data) {
-    const s = stats.data
-    kpis = [
-      {
-        title: '采集记录',
-        value: formatNumber(s.records.total),
-        sub: `AI 处理 ${formatNumber(s.records.ai_processed)}`,
-        icon: ArrowDownToLine,
-      },
-      {
-        title: '任务',
-        value: formatNumber(s.tasks.total),
-        sub: `运行中 ${s.tasks.running} · 失败 ${s.tasks.failed}`,
-        icon: Send,
-      },
-      {
-        title: '运行成功率',
-        value: `${Math.round((s.runs.success_rate ?? 0) * 100)}%`,
-        sub: `成功 ${s.runs.success} · 失败 ${s.runs.failed}`,
-        icon: CheckCircle2,
-      },
-      {
-        title: '数据源',
-        value: formatNumber(s.sources.total),
-        sub: `启用 ${s.sources.enabled} · 停用 ${s.sources.disabled}`,
-        icon: Server,
-      },
-    ]
-    daily = true
-    throughput = (activity.data?.daily ?? []).map((d) => ({
-      time: d.date.slice(5),
-      collected: d.success_runs,
-      dispatched: d.new_records,
-      failed: d.failed_runs,
-    }))
-    workers = (workersQuery.data?.data ?? []).map((w: WorkerNode) => ({
-      id: w.id,
-      name: w.hostname,
-      lane: 'collect' as const,
-      region: w.worker_id.slice(0, 8),
-      online: w.status === 'online',
-      load: Math.min(96, w.active_tasks * 18),
-      queue: w.active_tasks,
-      current: w.active_tasks > 0 ? `${w.active_tasks} 个任务执行中` : null,
-      doneToday: 0,
-      failedToday: 0,
-    }))
-    stream = runsToStream(s.recent_runs ?? [])
-    failures = stream
-      .filter((t) => t.phase === 'failed')
-      .map((t) => ({
-        id: `f-${t.id}`,
-        lane: t.lane,
-        title: t.title,
-        workerName: t.workerName,
-        error: '查看任务详情获取错误信息',
-        retries: t.retries,
-        at: t.startedAt,
-      }))
-  } else {
-    const d = demo!
-    kpis = [
-      {
-        title: '采集吞吐',
-        value: `${d.kpi.collectPerMin}/min`,
-        sub: `今日记录 ${formatNumber(d.kpi.recordsToday)}`,
-        icon: ArrowDownToLine,
-      },
-      {
-        title: '发送吞吐',
-        value: `${d.kpi.dispatchPerMin}/min`,
-        sub: `今日已发送 ${formatNumber(d.kpi.dispatchedToday)}`,
-        icon: Send,
-      },
-      {
-        title: '成功率',
-        value: `${(d.kpi.successRate * 100).toFixed(1)}%`,
-        sub: '近 30 分钟滚动窗口',
-        icon: CheckCircle2,
-      },
-      {
-        title: '队列 / Worker',
-        value: `${d.kpi.queueDepth}`,
-        sub: `在线 Worker ${d.kpi.onlineWorkers}/${d.kpi.totalWorkers}`,
-        icon: Server,
-      },
-    ]
-    throughput = d.throughput
-    workers = d.workers
-    stream = d.stream
-    failures = d.failures
+  if (stats.isError || !stats.data) {
+    return (
+      <PageContainer
+        eyebrow="Control plane"
+        title="运营工作台"
+        description="先处理异常，再推进正在运行的工作。"
+      >
+        <ErrorState
+          message={(stats.error as Error)?.message}
+          hint={BACKEND_HINT}
+          action={<Button onClick={() => stats.refetch()}>重新连接</Button>}
+        />
+      </PageContainer>
+    )
   }
+
+  const s = stats.data
+  const kpis: Array<{ title: string; value: string; sub?: string; icon: typeof Activity }> = [
+    {
+      title: '采集记录',
+      value: formatNumber(s.records.total),
+      sub: `AI 处理 ${formatNumber(s.records.ai_processed)}`,
+      icon: ArrowDownToLine,
+    },
+    {
+      title: '任务总量',
+      value: formatNumber(s.tasks.total),
+      sub: `运行中 ${s.tasks.running} · 失败 ${s.tasks.failed}`,
+      icon: Send,
+    },
+    {
+      title: '运行成功率',
+      value: `${Math.round((s.runs.success_rate ?? 0) * 100)}%`,
+      sub: `成功 ${s.runs.success} · 失败 ${s.runs.failed}`,
+      icon: CheckCircle2,
+    },
+    {
+      title: '数据源',
+      value: formatNumber(s.sources.total),
+      sub: `启用 ${s.sources.enabled} · 停用 ${s.sources.disabled}`,
+      icon: Server,
+    },
+  ]
+  const throughput: ThroughputPoint[] = (activity.data?.daily ?? []).map((d) => ({
+    time: d.date.slice(5),
+    collected: d.success_runs,
+    dispatched: d.new_records,
+    failed: d.failed_runs,
+  }))
+  const workers: WorkerView[] = (workersQuery.data?.data ?? []).map((w: WorkerNode) => ({
+    id: w.id,
+    name: w.hostname,
+    lane: 'collect' as const,
+    region: w.worker_id.slice(0, 8),
+    online: w.status === 'online',
+    load: Math.min(96, w.active_tasks * 18),
+    queue: w.active_tasks,
+    current: w.active_tasks > 0 ? `${w.active_tasks} 个任务执行中` : null,
+    doneToday: 0,
+    failedToday: 0,
+  }))
+  const stream = runsToStream(s.recent_runs ?? [])
+  const failures: FailureItem[] = stream
+    .filter((task) => task.phase === 'failed')
+    .map((task) => ({
+      id: `f-${task.id}`,
+      lane: task.lane,
+      title: task.title,
+      workerName: task.workerName,
+      error: '查看任务详情获取错误信息',
+      retries: task.retries,
+      at: task.startedAt,
+    }))
+  const latestRun = stream[0]
+  const hasAttention = s.tasks.failed > 0 || failures.length > 0
 
   return (
     <PageContainer
-      eyebrow="Monitor"
-      title="监控台"
-      description="采集 → 发送全链路任务分配态势"
+      eyebrow="Control plane"
+      title="运营工作台"
+      description="先处理异常，再推进正在运行的工作。"
       actions={
-        demoMode ? (
-          <Badge variant="outline" className="gap-1.5">
-            <span className="size-1.5 animate-pulse rounded-full bg-warning" aria-hidden />
-            演示数据 · 未连接后端
-          </Badge>
-        ) : (
-          <Badge variant="outline" className="gap-1.5">
-            <span className="size-1.5 animate-pulse rounded-full bg-success" aria-hidden />
-            实时
-          </Badge>
-        )
+        <Badge variant="outline" className="gap-1.5">
+          <span className="size-1.5 animate-pulse rounded-full bg-success" aria-hidden />
+          实时
+        </Badge>
       }
     >
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {kpis.map((k) => (
-          <KpiCard key={k.title} {...k} />
-        ))}
-      </div>
+      <section
+        className="grid gap-4 lg:grid-cols-[minmax(0,1.45fr)_minmax(300px,0.75fr)]"
+        aria-labelledby="attention-title"
+      >
+        <Card
+          className={cn(
+            'relative isolate min-h-72 overflow-hidden border-0 py-0 ring-1',
+            hasAttention
+              ? 'bg-destructive/[0.055] ring-destructive/25'
+              : 'bg-primary/[0.045] ring-primary/20',
+          )}
+        >
+          <div
+            className={cn(
+              'absolute inset-y-0 left-0 w-1',
+              hasAttention ? 'bg-destructive' : 'bg-success',
+            )}
+            aria-hidden
+          />
+          <CardContent className="flex h-full flex-col justify-between gap-8 p-5 pl-6 md:p-7 md:pl-8">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <p className="eyebrow-mono" id="attention-title">
+                  需要你处理
+                </p>
+                <h2 className="mt-3 max-w-2xl text-balance text-2xl font-semibold tracking-tight md:text-3xl">
+                  {hasAttention
+                    ? `${formatNumber(s.tasks.failed)} 个失败任务需要检查`
+                    : '当前没有阻塞，可以继续推进工作'}
+                </h2>
+                <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">
+                  {hasAttention
+                    ? '先查看失败原因和最近运行记录，再决定重试、调整来源或修改工作流。'
+                    : '运行链路没有发现失败任务。你可以创建工作流、接入来源，或检查下一次调度。'}
+                </p>
+              </div>
+              <span
+                className={cn(
+                  'grid size-12 shrink-0 place-items-center rounded-xl',
+                  hasAttention ? 'bg-destructive/10 text-destructive' : 'bg-success/10 text-success',
+                )}
+              >
+                {hasAttention ? (
+                  <AlertTriangle className="size-6" aria-hidden />
+                ) : (
+                  <CheckCircle2 className="size-6" aria-hidden />
+                )}
+              </span>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Link
+                href="/tasks"
+                className={buttonVariants({
+                  variant: hasAttention ? 'destructive' : 'default',
+                  size: 'lg',
+                })}
+              >
+                {hasAttention ? '查看失败工作项' : '查看工作项'}
+                <ArrowRight aria-hidden />
+              </Link>
+              <Link
+                href="/control/actions"
+                className={buttonVariants({ variant: 'outline', size: 'lg' })}
+              >
+                查看控制记录
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
 
-      <OpinionMonitorPanel data={opinion.data} isLoading={opinion.isLoading} isError={opinion.isError} />
+        <Card className="min-h-72">
+          <CardHeader>
+            <p className="eyebrow-mono">现在正在发生</p>
+            <CardTitle className="mt-2 text-xl">运行态势</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-3">
+            <div className="flex items-center justify-between rounded-lg border border-border/70 p-3">
+              <div className="flex items-center gap-3">
+                <span className="grid size-9 place-items-center rounded-lg bg-primary/10 text-primary">
+                  <Play className="size-4" aria-hidden />
+                </span>
+                <div>
+                  <div className="text-sm font-medium">正在运行</div>
+                  <div className="text-xs text-muted-foreground">当前活跃任务</div>
+                </div>
+              </div>
+              <span className="font-mono text-2xl tabular-nums">{formatNumber(s.tasks.running)}</span>
+            </div>
+            <div className="flex items-center justify-between rounded-lg border border-border/70 p-3">
+              <div className="flex items-center gap-3">
+                <span className="grid size-9 place-items-center rounded-lg bg-muted text-muted-foreground">
+                  <Clock3 className="size-4" aria-hidden />
+                </span>
+                <div>
+                  <div className="text-sm font-medium">最近一次运行</div>
+                  <div className="text-xs text-muted-foreground">
+                    {latestRun
+                      ? formatRelative(new Date(latestRun.startedAt).toISOString())
+                      : '暂无运行记录'}
+                  </div>
+                </div>
+              </div>
+              {latestRun ? (
+                <Badge variant="outline">
+                  {latestRun.phase === 'success'
+                    ? '成功'
+                    : latestRun.phase === 'failed'
+                      ? '失败'
+                      : latestRun.phase === 'running'
+                        ? '运行中'
+                        : '排队中'}
+                </Badge>
+              ) : null}
+            </div>
+            <div className="flex items-center justify-between rounded-lg border border-border/70 p-3">
+              <div className="flex items-center gap-3">
+                <span className="grid size-9 place-items-center rounded-lg bg-muted text-muted-foreground">
+                  <Server className="size-4" aria-hidden />
+                </span>
+                <div>
+                  <div className="text-sm font-medium">在线 Worker</div>
+                  <div className="text-xs text-muted-foreground">执行节点可用性</div>
+                </div>
+              </div>
+              <span className="font-mono text-lg tabular-nums">
+                {workers.filter((worker) => worker.online).length} / {workers.length}
+              </span>
+            </div>
+          </CardContent>
+        </Card>
+      </section>
+
+      <section aria-labelledby="next-action-title">
+        <div className="mb-3 flex items-end justify-between gap-3">
+          <div>
+            <p className="eyebrow-mono">下一步</p>
+            <h2 id="next-action-title" className="mt-1 text-lg font-semibold">
+              从这里继续工作
+            </h2>
+          </div>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <ActionLink
+            href="/studio/workflow"
+            title="编排工作流"
+            description="设计节点和执行链路"
+            icon={GitBranch}
+          />
+          <ActionLink
+            href="/sources"
+            title="接入数据源"
+            description="配置采集来源与凭证"
+            icon={Database}
+          />
+          <ActionLink
+            href="/schedules"
+            title="设置触发调度"
+            description="决定何时自动运行"
+            icon={Clock3}
+          />
+          <ActionLink
+            href="/tasks"
+            title="检查运行结果"
+            description="查看任务、记录与通知"
+            icon={Activity}
+          />
+        </div>
+      </section>
+
+      <section aria-labelledby="system-overview-title">
+        <div className="mb-3">
+          <p className="eyebrow-mono">系统概览</p>
+          <h2 id="system-overview-title" className="mt-1 text-lg font-semibold">关键指标</h2>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {kpis.map((k) => (
+            <KpiCard key={k.title} {...k} />
+          ))}
+        </div>
+      </section>
 
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="lg:col-span-2">
-          <ThroughputChart data={throughput} daily={daily} />
+          <TaskStream tasks={stream} />
         </div>
         <FailureFeed failures={failures} />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="lg:col-span-2">
-          <TaskStream tasks={stream} />
+          <ThroughputChart data={throughput} daily />
         </div>
         <WorkerAllocation workers={workers} />
       </div>
+
+      <OpinionMonitorPanel data={opinion.data} isLoading={opinion.isLoading} isError={opinion.isError} />
     </PageContainer>
   )
 }
