@@ -290,6 +290,13 @@ async def test_compile_resolves_opencli_source_to_iii_runtime_binding(client):
         "channel": "opencli",
         "input": {"site": "bilibili", "command": "search"},
     })
+    assert source_node["runtime"]["resource_requirement"] == {
+        "nodeId": "source-bilibili",
+        "sourceGroup": "source-bilibili",
+        "site": "bilibili",
+        "mutationMode": "read",
+        "requestedCapability": "opencli.bilibili.search",
+    }
 
 
 @pytest.mark.asyncio
@@ -661,10 +668,8 @@ async def test_compile_materializes_opencli_hda_sources_from_ai_params_in_parall
                 "template": "opencli-multi-source",
                 "runtime": "iii",
                 "lockedInternals": True,
-                "execution": {
-                    "fanout": "serial",
-                    "maxConcurrency": 4,
-                    "workerPool": "docker-browser-workers",
+                    "execution": {
+                        "fanout": "serial",
                 },
                 "sources": [
                     {
@@ -716,7 +721,7 @@ async def test_compile_materializes_opencli_hda_sources_from_ai_params_in_parall
     normalize = runtime["nodes"][4]
     collection_output = runtime["nodes"][5]
     assert package_node["params"]["execution"]["fanout"] == "parallel"
-    assert package_node["params"]["execution"]["maxConcurrency"] == 4
+    assert package_node["params"]["execution"] == {"fanout": "parallel"}
     assert source_pool["depends_on"] == ["multi-source-opencli"]
     assert source_pool["runtime"]["binding"]["binding_id"] == (
         "workflow.source-pool.parallel-fanout"
@@ -957,6 +962,39 @@ async def test_compile_rejects_hand_rolled_node_implementation(client):
 
 
 @pytest.mark.asyncio
+async def test_compile_rejects_nested_runtime_resource_internals(client):
+    project = _valid_workflow_project()
+    project["nodes"][1]["params"].update(
+        {
+            "profileBindingId": "profile-1",
+            "workerSlotId": "worker-1",
+            "sessionSnapshotId": "session-1",
+            "concurrency": 8,
+            "execution": {"maxConcurrency": 8, "workerPool": "workers"},
+            "args": {"cookieMaterial": "secret", "keyword": "safe"},
+        }
+    )
+
+    response = await client.post("/api/v1/workflows/compile", json={"project": project})
+
+    assert response.status_code == 200
+    errors = [
+        error
+        for error in response.json()["data"]["errors"]
+        if error["code"] == "forbidden_node_definition"
+    ]
+    assert {tuple(error["path"][-2:]) for error in errors} >= {
+        ("params", "profileBindingId"),
+        ("params", "workerSlotId"),
+        ("params", "sessionSnapshotId"),
+        ("params", "concurrency"),
+        ("execution", "maxConcurrency"),
+        ("execution", "workerPool"),
+        ("args", "cookieMaterial"),
+    }
+
+
+@pytest.mark.asyncio
 async def test_compile_accepts_collection_need_input_node(client):
     project = _valid_workflow_project()
     project["nodes"].insert(
@@ -994,7 +1032,16 @@ async def test_compile_accepts_collection_need_input_node(client):
     )
     assert node["runtime"]["origin"]["catalog_id"] == "intelligence.input.collection-need"
     assert node["runtime"]["binding"]["binding_id"] == "workflow.demand-draft.patch"
+    assert node["runtime"]["binding"]["contract"]["outputShape"]["ports"] == [
+        {"name": "patch", "type": "workflowPatch"}
+    ]
     assert "missing_runtime" not in node["runtime"]
+    plan_node = next(
+        node for node in data["plan"]["runtime"]["plan_ir"]["nodes"]
+        if node["id"] == "collection-need"
+    )
+    assert plan_node["inputs"] == [{"name": "in", "type": "collectionNeed"}]
+    assert plan_node["outputs"] == [{"name": "patch", "type": "workflowPatch"}]
 
 @pytest.mark.asyncio
 async def test_compile_resolves_schedule_trigger_binding(client):
@@ -1047,5 +1094,50 @@ async def test_compile_resolves_schedule_trigger_binding(client):
     assert node["runtime"]["trigger"] == {
         "node_id": "schedule-cron",
         "mode": "manual_schedule_tick",
+    }
+    assert "missing_runtime" not in node["runtime"]
+
+
+@pytest.mark.asyncio
+async def test_compile_resolves_webhook_trigger_input_contract(client):
+    project = _valid_workflow_project()
+    project["nodes"].insert(
+        0,
+        {
+            "id": "webhook-input",
+            "kind": "schedule",
+            "capability": "trigger",
+            "params": {"method": "post", "path": "/workflow-hook"},
+            "ui": {"primitiveId": "primitive.core.webhook-trigger"},
+        },
+    )
+    response = await client.post("/api/v1/workflows/compile", json={"project": project})
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["valid"] is True
+    node = next(
+        item for item in data["plan"]["runtime"]["nodes"]
+        if item["id"] == "webhook-input"
+    )
+    plan_node = next(
+        item for item in data["plan"]["runtime"]["plan_ir"]["nodes"]
+        if item["id"] == "webhook-input"
+    )
+    assert plan_node["outputs"] == [
+        {"name": "request", "type": "webhookRequest"}
+    ]
+    assert node["runtime"]["binding"]["binding_id"] == "workflow.trigger.webhook_input"
+    assert node["runtime"]["binding"]["input"] == {
+        "method": "POST",
+        "path": "/workflow-hook",
+    }
+    assert node["runtime"]["binding"]["contract"]["outputShape"]["ports"] == [
+        {"name": "request", "type": "webhookRequest"}
+    ]
+    assert node["runtime"]["trigger"] == {
+        "node_id": "webhook-input",
+        "mode": "webhook_input",
+        "envelope": "runtimeInputEnvelope",
     }
     assert "missing_runtime" not in node["runtime"]

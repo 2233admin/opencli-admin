@@ -521,8 +521,6 @@ async def test_opencli_hda_trace_accepts_ai_source_slots_without_static_internal
         "lockedInternals": True,
         "execution": {
             "fanout": "parallel",
-            "maxConcurrency": 8,
-            "workerPool": "docker-browser-workers",
         },
         "sources": [
             {
@@ -753,6 +751,21 @@ async def test_workflow_run_trace_records_fleet_match_for_opencli_source(
     assert batch_ready["batch"]["itemCount"] == 1
     assert batch_ready["details"]["agentDispatch"]["success"] is True
     assert batch_ready["details"]["agentDispatch"]["itemCount"] == 1
+    assert batch_ready["details"]["resourceRequirement"] == {
+        "nodeId": "multi-source-opencli::source-bilibili",
+        "sourceGroup": "video",
+        "site": "twitter",
+        "mutationMode": "read",
+        "requestedCapability": "opencli.twitter.search",
+        "adapterNodeId": "opencli.adapter.twitter.search",
+    }
+    resource_resolution = batch_ready["details"]["resourceResolution"]
+    assert resource_resolution["status"] == "resolved"
+    assert resource_resolution["workerSlotId"] == "http://agent-x:19823"
+    assert resource_resolution["profileBindingId"]
+    assert resource_resolution["sessionSnapshotId"]
+    assert "lockId" not in resource_resolution
+    assert "cookie" not in str(resource_resolution).lower()
     assert partial["details"]["itemCount"] == 1
     assert partial["details"]["agentDispatch"]["agentUrl"] == "http://agent-x:19823"
     assert "iii" not in batch_ready["details"]
@@ -764,6 +777,69 @@ async def test_workflow_run_trace_records_fleet_match_for_opencli_source(
     )
     assert normalize_partial["details"]["inputItemCount"] == 1
     assert dispatched[0][0].site == "twitter"
+
+
+@pytest.mark.asyncio
+async def test_workflow_run_blocks_missing_opencli_profile_resource(
+    client,
+    monkeypatch,
+):
+    _install_fleet_trace_pool(monkeypatch)
+    monkeypatch.setattr(
+        "backend.workflow.fleet_inventory.ws_agent_manager.list_connected",
+        lambda: ["http://agent-x:19823"],
+    )
+    monkeypatch.setattr(
+        "backend.workflow.opencli_adapter_nodes._load_opencli_catalog",
+        _fleet_trace_opencli_catalog,
+    )
+    dispatched = []
+
+    async def fake_dispatch(dispatch, fleet_match):
+        dispatched.append(dispatch.nodeId)
+        return [], None
+
+    monkeypatch.setattr(
+        "backend.workflow.opencli_hda_tracer._dispatch_opencli_source_to_fleet",
+        fake_dispatch,
+    )
+    project = _multi_source_opencli_hda_project()
+    source = project["nodes"][0]["internals"]["nodes"][1]
+    source["params"].update(
+        {
+            "site": "twitter",
+            "command": "search",
+            "opencliAdapterNodeId": "opencli.adapter.twitter.search",
+        }
+    )
+
+    response = await client.post(
+        "/api/v1/workflows/runs",
+        json={
+            "project": project,
+            "packageNodeId": "multi-source-opencli",
+            "runId": "run-missing-profile-resource",
+            "traceId": "trace-missing-profile-resource",
+        },
+    )
+
+    assert response.status_code == 202
+    events = (
+        await client.get(
+            "/api/v1/workflows/runs/run-missing-profile-resource/events"
+        )
+    ).json()["data"]
+    blocked = next(
+        event
+        for event in events
+        if event["nodeId"] == "multi-source-opencli::source-bilibili"
+        and event["eventType"] == "blocked"
+    )
+    assert blocked["blockReason"]["code"] == "missing_profile_binding"
+    assert blocked["blockReason"]["source"] == "workflow_runtime_resources"
+    assert blocked["details"]["resourceResolution"]["status"] == "blocked"
+    assert blocked["details"]["resourceRequirement"]["site"] == "twitter"
+    assert "multi-source-opencli::source-bilibili" not in dispatched
 
 
 @pytest.mark.asyncio

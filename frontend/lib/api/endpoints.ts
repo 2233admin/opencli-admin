@@ -1,4 +1,5 @@
 import { apiClient, rootClient } from './client'
+import type { AuthIdentity } from '@/lib/auth/types'
 import type {
   AIAgent,
   AdvisoryReport,
@@ -41,7 +42,124 @@ import type {
   TaskRun,
   TaskRunEvent,
   WorkerNode,
+  WorkspaceSummary,
+  ProjectSummary,
+  WorkflowAssetSummary,
+  WorkflowDraftRead,
+  WorkflowVersionSummary,
+  OperationsWorkItem,
+  ApprovalDecision,
+  ApprovalDecisionResult,
+  OperationsAgent,
+  OperationsAgentMode,
+  OperationsAgentProfile,
+  OperationsAgentRun,
+  Automation,
+  WorkspaceSettingsRead,
+  WorkspaceSettingsValues,
 } from './types'
+
+export const getWorkspaceSettings = () =>
+  apiClient.get<ApiResponse<WorkspaceSettingsRead>>('/settings').then((r) => r.data.data)
+
+export const updateWorkspaceSettings = (data: Partial<WorkspaceSettingsValues>) =>
+  apiClient.patch<ApiResponse<WorkspaceSettingsRead>>('/settings', data).then((r) => r.data.data)
+
+export const resetWorkspaceSettings = () =>
+  apiClient.delete<ApiResponse<WorkspaceSettingsRead>>('/settings').then((r) => r.data.data)
+
+export const getCurrentIdentity = () =>
+  apiClient.get<ApiResponse<AuthIdentity>>('/auth/me').then((r) => r.data.data)
+
+export const listMyWorkspaces = () =>
+  apiClient.get<ApiResponse<WorkspaceSummary[]>>('/workspaces').then((r) => r.data.data)
+
+export const listWorkspaceProjects = (workspaceId: string) =>
+  apiClient.get<ApiResponse<ProjectSummary[]>>(`/workspaces/${workspaceId}/projects`).then((r) => r.data.data)
+
+export const createWorkspaceProject = (workspaceId: string, data: { name: string; slug: string; description?: string }) =>
+  apiClient.post<ApiResponse<ProjectSummary>>(`/workspaces/${workspaceId}/projects`, data).then((r) => r.data.data)
+
+export const listProjectWorkflows = (workspaceId: string, projectId: string) =>
+  apiClient.get<ApiResponse<WorkflowAssetSummary[]>>(`/workspaces/${workspaceId}/projects/${projectId}/workflows`).then((r) => r.data.data)
+
+export const createProjectWorkflow = (workspaceId: string, projectId: string, data: { name: string; description?: string; graph: import('@/lib/workflow/schema').WorkflowProject }) =>
+  apiClient.post<ApiResponse<WorkflowAssetSummary>>(`/workspaces/${workspaceId}/projects/${projectId}/workflows`, data).then((r) => r.data.data)
+
+export const getProjectWorkflowDraft = (workspaceId: string, projectId: string, workflowId: string) =>
+  apiClient.get<ApiResponse<WorkflowDraftRead>>(`/workspaces/${workspaceId}/projects/${projectId}/workflows/${workflowId}/draft`).then((r) => r.data.data)
+
+export const updateProjectWorkflowDraft = (workspaceId: string, projectId: string, workflowId: string, graph: import('@/lib/workflow/schema').WorkflowProject, expectedRevision: number) =>
+  apiClient.put<ApiResponse<WorkflowDraftRead>>(`/workspaces/${workspaceId}/projects/${projectId}/workflows/${workflowId}/draft`, { graph, revision: expectedRevision }).then((r) => r.data.data)
+
+export const validateProjectWorkflowDraft = (workspaceId: string, projectId: string, workflowId: string) =>
+  apiClient.post<ApiResponse<import('@/lib/workflow/backend-runs').WorkflowRunProjection>>(`/workspaces/${workspaceId}/projects/${projectId}/workflows/${workflowId}/draft/validation-runs`, {}).then((r) => r.data.data)
+
+export const publishProjectWorkflow = (workspaceId: string, projectId: string, workflowId: string, reason: string) =>
+  apiClient.post<ApiResponse<WorkflowVersionSummary>>(`/workspaces/${workspaceId}/projects/${projectId}/workflows/${workflowId}/versions`, { reason }).then((r) => r.data.data)
+
+export const listProjectWorkflowVersions = (workspaceId: string, projectId: string, workflowId: string) =>
+  apiClient.get<ApiResponse<WorkflowVersionSummary[]>>(`/workspaces/${workspaceId}/projects/${projectId}/workflows/${workflowId}/versions`).then((r) => r.data.data)
+
+export const listOperationsInbox = (
+  workspaceId: string,
+  params?: { type?: string; status?: string; page?: number; limit?: number },
+) =>
+  apiClient
+    .get<ApiResponse<OperationsWorkItem[]>>(`/workspaces/${workspaceId}/operations-inbox`, { params })
+    .then((r) => r.data)
+
+export const decideOperationsApproval = (
+  workspaceId: string,
+  approvalId: string,
+  data: { decision: ApprovalDecision; reason: string },
+) =>
+  apiClient
+    .post<ApiResponse<ApprovalDecisionResult>>(
+      `/workspaces/${workspaceId}/operations-inbox/${approvalId}/decision`,
+      data,
+    )
+    .then((r) => r.data.data)
+
+export const listOperationsAgents = (workspaceId: string) =>
+  apiClient
+    .get<ApiResponse<OperationsAgent[]>>(`/workspaces/${workspaceId}/operations-agents`)
+    .then((r) => r.data.data)
+
+export const listOperationsAgentActivity = (workspaceId: string) =>
+  apiClient.get<ApiResponse<OperationsAgentRun[]>>(`/workspaces/${workspaceId}/operations-agents/activity`).then((r) => r.data.data)
+
+export const listAutomations = (workspaceId: string) =>
+  apiClient.get<ApiResponse<Automation[]>>(`/workspaces/${workspaceId}/automations`).then((r) => r.data.data)
+
+export const createAutomation = (workspaceId: string, data: Omit<Automation, 'id' | 'workspace_id' | 'created_by_user_id' | 'created_at' | 'updated_at'>) =>
+  apiClient.post<ApiResponse<Automation>>(`/workspaces/${workspaceId}/automations`, data).then((r) => r.data.data)
+
+export const patchAutomation = (workspaceId: string, automationId: string, data: Partial<Automation>) =>
+  apiClient.patch<ApiResponse<Automation>>(`/workspaces/${workspaceId}/automations/${automationId}`, data).then((r) => r.data.data)
+
+export const patchOperationsAgent = (workspaceId: string, agentId: string, disabled: boolean) =>
+  apiClient
+    .patch<ApiResponse<OperationsAgent>>(`/workspaces/${workspaceId}/operations-agents/${agentId}`, { disabled })
+    .then((r) => r.data.data)
+
+export const assignOperationsAgentProfile = (
+  workspaceId: string,
+  agentId: string,
+  data: {
+    mode: OperationsAgentMode
+    tool_scope: string[]
+    resource_scope: string[]
+    action_scope: string[]
+    reason: string
+  },
+) =>
+  apiClient
+    .post<ApiResponse<OperationsAgentProfile>>(
+      `/workspaces/${workspaceId}/operations-agents/${agentId}/profiles`,
+      data,
+    )
+    .then((r) => r.data.data)
 
 // ── Dashboard ──────────────────────────────────────────────────────────────────
 export const getDashboardStats = (params?: { range?: string; start?: string; end?: string }) =>

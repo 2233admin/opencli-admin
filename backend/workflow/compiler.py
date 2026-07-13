@@ -804,7 +804,19 @@ def _plan_ports_for_node(
     node: WorkflowProjectNode,
     kind: Literal["source", "transform", "merge", "sink"],
 ) -> tuple[list[PlanPort], list[PlanPort]]:
-    catalog_id = (node.ui or {}).get("catalogId")
+    ui = node.ui or {}
+    catalog_id = ui.get("catalogId")
+    node_library_id = ui.get("primitiveId") or catalog_id
+    if node_library_id in {
+        "primitive.core.webhook-trigger",
+        "primitive.ops.trigger-webhook",
+    }:
+        return ([], [PlanPort(name="request", type="webhookRequest")])
+    if catalog_id == "intelligence.input.collection-need":
+        return (
+            [PlanPort(name="in", type="collectionNeed")],
+            [PlanPort(name="patch", type="workflowPatch")],
+        )
     if catalog_id == "intelligence.flow.merge":
         return (
             [

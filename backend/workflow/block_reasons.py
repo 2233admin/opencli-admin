@@ -16,14 +16,20 @@ BlockReasonCategory = Literal[
 FETCH_PERMISSION_REQUIRED = "fetch_permission_required"
 SEND_PERMISSION_REQUIRED = "send_permission_required"
 MISSING_DELIVERY_PROJECTION = "missing_delivery_projection"
+MISSING_ADAPTER_RESOURCE = "missing_adapter_resource"
+MISSING_OPENCLI_COMMAND = "missing_opencli_command"
+MISSING_PROFILE_BINDING = "missing_profile_binding"
 MISSING_RUNTIME_BINDING = "missing_runtime_binding"
 MISSING_RUNTIME_IO_CONTRACT = "missing_runtime_io_contract"
 MISSING_RUNTIME_PARAMETER = "missing_runtime_parameter"
 MISSING_SOURCE_CREDENTIAL = "missing_source_credential"
+MISSING_SESSION_SNAPSHOT = "missing_session_snapshot"
 MISSING_TOOL_CAPABILITY_BINDING = "missing_tool_capability_binding"
 MISSING_TURBOPUSH_CONTENT_TYPE = "missing_turbopush_content_type"
 MISSING_TURBOPUSH_SERVICE = "missing_turbopush_service"
 SOURCE_OUTPUT_REQUIRED = "source_output_required"
+MISSING_WORKER_CAPACITY = "missing_worker_capacity"
+PROFILE_LOCK_CONTENDED = "profile_lock_contended"
 
 
 @dataclass(frozen=True)
@@ -36,6 +42,48 @@ class WorkflowBlockReasonDefinition:
 
 
 WORKFLOW_BLOCK_REASON_TAXONOMY: dict[str, WorkflowBlockReasonDefinition] = {
+    MISSING_ADAPTER_RESOURCE: WorkflowBlockReasonDefinition(
+        code=MISSING_ADAPTER_RESOURCE,
+        category="missing_runtime_resource",
+        stable_fields=("code", "source", "details.adapterNodeId"),
+        volatile_fields=("message",),
+        description="OpenCLI adapter capability is not present in the registered catalog.",
+    ),
+    MISSING_OPENCLI_COMMAND: WorkflowBlockReasonDefinition(
+        code=MISSING_OPENCLI_COMMAND,
+        category="missing_runtime_resource",
+        stable_fields=("code", "source", "details.site"),
+        volatile_fields=("message",),
+        description="The adapter catalog cannot resolve an OpenCLI command.",
+    ),
+    MISSING_PROFILE_BINDING: WorkflowBlockReasonDefinition(
+        code=MISSING_PROFILE_BINDING,
+        category="missing_runtime_resource",
+        stable_fields=("code", "source", "details.site"),
+        volatile_fields=("message",),
+        description="Browser execution requires a site/profile binding that is unavailable.",
+    ),
+    MISSING_SESSION_SNAPSHOT: WorkflowBlockReasonDefinition(
+        code=MISSING_SESSION_SNAPSHOT,
+        category="missing_runtime_resource",
+        stable_fields=("code", "source", "details.site"),
+        volatile_fields=("message",),
+        description="Read-only browser fanout requires a shareable session snapshot.",
+    ),
+    MISSING_WORKER_CAPACITY: WorkflowBlockReasonDefinition(
+        code=MISSING_WORKER_CAPACITY,
+        category="missing_runtime_resource",
+        stable_fields=("code", "source", "details.requestedCapability"),
+        volatile_fields=("message",),
+        description="No connected worker slot currently satisfies the runtime requirement.",
+    ),
+    PROFILE_LOCK_CONTENDED: WorkflowBlockReasonDefinition(
+        code=PROFILE_LOCK_CONTENDED,
+        category="missing_runtime_resource",
+        stable_fields=("code", "source", "details.site"),
+        volatile_fields=("message",),
+        description="A mutating browser task cannot acquire the exclusive profile lock.",
+    ),
     FETCH_PERMISSION_REQUIRED: WorkflowBlockReasonDefinition(
         code=FETCH_PERMISSION_REQUIRED,
         category="missing_permission",
@@ -131,16 +179,22 @@ def block_reason_category(code: str) -> BlockReasonCategory | None:
 __all__ = [
     "BlockReasonCategory",
     "FETCH_PERMISSION_REQUIRED",
+    "MISSING_ADAPTER_RESOURCE",
     "MISSING_DELIVERY_PROJECTION",
+    "MISSING_OPENCLI_COMMAND",
+    "MISSING_PROFILE_BINDING",
     "MISSING_RUNTIME_BINDING",
     "MISSING_RUNTIME_IO_CONTRACT",
     "MISSING_RUNTIME_PARAMETER",
     "MISSING_SOURCE_CREDENTIAL",
+    "MISSING_SESSION_SNAPSHOT",
     "MISSING_TOOL_CAPABILITY_BINDING",
     "MISSING_TURBOPUSH_CONTENT_TYPE",
     "MISSING_TURBOPUSH_SERVICE",
     "SEND_PERMISSION_REQUIRED",
     "SOURCE_OUTPUT_REQUIRED",
+    "MISSING_WORKER_CAPACITY",
+    "PROFILE_LOCK_CONTENDED",
     "WORKFLOW_BLOCK_REASON_TAXONOMY",
     "WorkflowBlockReasonDefinition",
     "block_reason_category",

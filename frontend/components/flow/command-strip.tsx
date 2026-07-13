@@ -28,7 +28,6 @@ import {
   MoreHorizontal,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Separator } from "@/components/ui/separator"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import {
   DropdownMenu,
@@ -38,13 +37,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { Slider } from "@/components/ui/slider"
-import { Label } from "@/components/ui/label"
 import { useFlowStore } from "@/lib/flow/store"
 import { useSettingsStore } from "@/lib/flow/settings-store"
 import { buildShareUrl } from "@/lib/flow/share-state"
-import type { LayoutDirection, LayoutEngine } from "@/lib/flow/layout"
 import {
   exportReactFlowToWorkflowJson,
   exportReactFlowToWorkflowCanvas,
@@ -55,16 +50,7 @@ import {
   importWorkflowMermaidToReactFlow,
 } from "@/lib/workflow/io"
 import { cn } from "@/lib/utils"
-
-const LAYOUTS: { engine: LayoutEngine; dir: LayoutDirection; label: string }[] = [
-  { engine: "elk", dir: "TB", label: "ELK · 纵向（推荐）" },
-  { engine: "elk", dir: "LR", label: "ELK · 横向" },
-  { engine: "dagre", dir: "TB", label: "Dagre · 从上到下" },
-  { engine: "dagre", dir: "LR", label: "Dagre · 从左到右" },
-  { engine: "d3-hierarchy", dir: "TB", label: "树状 · 纵向" },
-  { engine: "d3-hierarchy", dir: "LR", label: "树状 · 横向" },
-  { engine: "d3-force", dir: "TB", label: "力导向 · 自由" },
-]
+import { COLLECTION_WORKFLOW_PROJECT } from "@/lib/workflow/collection-pipeline"
 
 function downloadText(filename: string, data: string, type: string) {
   const blob = new Blob([data], { type })
@@ -153,6 +139,8 @@ export function CommandStrip({
   const canRedo = useFlowStore((s) => s.future.length > 0)
   const nodeCount = useFlowStore((s) => s.nodes.length)
   const edgeCount = useFlowStore((s) => s.edges.length)
+  const workflowProjectName = useFlowStore((s) => s.workflowProject.name)
+  const networkDepth = useFlowStore((s) => s.networkStack.length)
   const selectedNodeId = useFlowStore((s) => s.nodes.find((node) => node.selected)?.id)
   const selectedNodeCount = useFlowStore((s) => s.nodes.reduce((count, node) => count + (node.selected ? 1 : 0), 0))
   const selectedEdgeCount = useFlowStore((s) => s.edges.reduce((count, edge) => count + (edge.selected ? 1 : 0), 0))
@@ -168,10 +156,6 @@ export function CommandStrip({
 
   const toolMode = useFlowStore((s) => s.toolMode)
   const setToolMode = useFlowStore((s) => s.setToolMode)
-  const penColor = useFlowStore((s) => s.penColor)
-  const setPenColor = useFlowStore((s) => s.setPenColor)
-  const penSize = useFlowStore((s) => s.penSize)
-  const setPenSize = useFlowStore((s) => s.setPenSize)
   const clearDrawings = useFlowStore((s) => s.clearDrawings)
 
   const isDirty = canUndo
@@ -335,122 +319,36 @@ export function CommandStrip({
   return (
     <header
       data-health="command-strip"
-      className="grid h-12 shrink-0 grid-cols-[minmax(108px,176px)_minmax(224px,1fr)_auto] items-center gap-2 overflow-hidden border-b bg-background px-2 lg:grid-cols-[minmax(150px,220px)_minmax(248px,1fr)_auto] lg:gap-3 xl:gap-4"
+      className="flex h-14 shrink-0 items-center gap-3 border-b bg-background px-3"
     >
-      <nav aria-label="路径" className="flex min-w-0 items-center gap-2">
-        <span className="flex size-6 shrink-0 items-center justify-center rounded-sm border border-border bg-card font-mono text-[11px] font-semibold text-foreground">
+      <nav aria-label="工作流" className="flex min-w-0 flex-1 items-center gap-2.5">
+        <span className="flex size-7 shrink-0 items-center justify-center rounded-lg border border-border bg-card font-mono text-[11px] font-semibold text-foreground">
           K
         </span>
         <div className="min-w-0">
-          <div className="truncate font-mono text-[11px] font-semibold text-foreground">order-pipeline</div>
-          <div className="hidden truncate font-mono text-[9px] uppercase tracking-[0.14em] text-muted-foreground lg:block">
-            / workflows
+          <div className="truncate text-sm font-medium text-foreground">{workflowProjectName}</div>
+          <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+            <span>{nodeCount} 个节点</span>
+            <span>·</span>
+            <span className={cn(isDirty && "text-[#ff7a17]")}>{isDirty ? "未保存" : "已保存"}</span>
           </div>
         </div>
       </nav>
 
-      <div className="flex min-w-0 items-center justify-center gap-2 px-1">
-        <div className="flex items-center rounded-sm border border-border bg-card p-0.5 font-mono text-[10px] uppercase tracking-[0.1em]">
-          <button
-            type="button"
-            onClick={() => setToolMode("select")}
-            className={cn(
-              "rounded-[3px] px-2 py-1 transition-colors",
-              toolMode === "select"
-                ? "bg-accent text-foreground"
-                : "text-muted-foreground hover:text-foreground",
-            )}
-          >
-            Select
-          </button>
-          <button
-            type="button"
-            onClick={() => setToolMode(toolMode === "scissors" ? "select" : "scissors")}
-            className={cn(
-              "flex items-center gap-1 rounded-[3px] px-2 py-1 transition-colors",
-              toolMode === "scissors"
-                ? "bg-accent text-foreground"
-                : "text-muted-foreground hover:text-foreground",
-            )}
-            aria-label="剪刀工具"
-            title="剪刀工具 (Y)"
-          >
-            <Scissors className="size-3" />
-            <span className="hidden sm:inline">Cut</span>
-          </button>
-          <Popover>
-            <PopoverTrigger
-              render={
-                <button
-                  type="button"
-                  onClick={() => setToolMode("draw")}
-                  className={cn(
-                    "rounded-[3px] px-2 py-1 font-mono text-[10px] uppercase tracking-[0.1em] transition-colors",
-                    toolMode === "draw"
-                      ? "bg-accent text-foreground"
-                      : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  Draw
-                </button>
-              }
-            />
-            <PopoverContent className="w-56 space-y-3" align="start">
-            <div className="space-y-2">
-              <Label className="font-mono text-[10px] uppercase tracking-wider">Stroke Color</Label>
-              <div className="flex flex-wrap gap-1.5">
-                {["var(--foreground)", "#8a8f98", "#ff7a17", "#4ade80", "#a0c3ec", "#f87171"].map((c) => (
-                  <button
-                    key={c}
-                    type="button"
-                    onClick={() => setPenColor(c)}
-                    className={cn(
-                      "size-6 rounded-sm border transition-transform hover:scale-110",
-                      penColor === c ? "border-foreground" : "border-transparent",
-                    )}
-                    style={{ backgroundColor: c }}
-                    aria-label={`选择颜色 ${c}`}
-                  />
-                ))}
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label className="font-mono text-[10px] uppercase tracking-wider">Size · {penSize}px</Label>
-              <Slider value={[penSize]} min={1} max={20} step={1} onValueChange={(v) => setPenSize(Array.isArray(v) ? v[0] : v)} />
-            </div>
-            <Button variant="outline" size="sm" className="w-full gap-1.5" onClick={clearDrawings}>
-              <Eraser className="size-3.5" />
-              清除所有笔迹
-            </Button>
-            </PopoverContent>
-          </Popover>
-        </div>
-        <button
-          type="button"
-          onClick={onOpenPalette}
-          className="flex h-8 min-w-10 shrink-0 items-center justify-center gap-2 rounded-sm border border-border bg-card px-2 font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground min-[1281px]:px-2.5"
-          aria-label="Add Operator"
-          title="Add Operator (Command Palette)"
-        >
-          <kbd className="text-foreground">⌘K</kbd>
-          <span className="hidden truncate min-[1281px]:inline">Add Operator</span>
-        </button>
+      <div className="hidden items-center gap-2 rounded-full border border-border/80 bg-card/70 px-3 py-1.5 text-[11px] text-muted-foreground lg:flex">
+        <Network className="size-3.5" />
+        <span className="font-medium text-foreground">{networkDepth > 0 ? "封包内部网络" : "顶层封包网络"}</span>
+        <span>·</span>
+        <span>{networkDepth > 0 ? "添加和连接内部节点" : "双击封包进入内部"}</span>
       </div>
 
-      <div className="flex min-w-0 items-center justify-end gap-1.5 xl:gap-2">
-        <div className="hidden min-w-0 items-center gap-1.5 rounded-sm border border-border bg-card px-2 py-1 font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground xl:flex">
-          <span className="whitespace-nowrap">N {nodeCount} · E {edgeCount}</span>
-          <span className={cn("whitespace-nowrap", isDirty ? "text-[#ff7a17]" : "text-[#4ade80]")}>
-            {isDirty ? "Dirty" : "Clean"}
-          </span>
-          {selectedNodeCount > 0 || selectedEdgeCount > 0 ? (
-            <span className="whitespace-nowrap text-[#a8d8ff]">Sel {selectedNodeCount}+{selectedEdgeCount}</span>
-          ) : null}
-          {shareUrlLoaded ? <span className="text-[#a8d8ff]">URL</span> : null}
-          <span className="text-muted-foreground/50">V1.0</span>
-        </div>
+      <div className="flex shrink-0 items-center gap-1.5">
+        <Button variant="outline" size="sm" className="h-8 gap-1.5 rounded-lg" onClick={onOpenPalette}>
+          <span className="text-base leading-none">＋</span>
+          <span className="hidden sm:inline">添加节点</span>
+        </Button>
 
-        <div className="hidden shrink-0 items-center rounded-sm border border-border bg-card p-0.5 lg:flex">
+        <div className="hidden items-center sm:flex">
           <IconAction label="撤销 (Ctrl+Z)" onClick={undo} disabled={!canUndo}>
             <Undo2 className="size-3.5" />
           </IconAction>
@@ -459,76 +357,23 @@ export function CommandStrip({
           </IconAction>
         </div>
 
-        <div className="hidden shrink-0 items-center rounded-sm border border-border bg-card p-0.5 xl:flex">
-
-        <DropdownMenu>
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <DropdownMenuTrigger
-                  render={
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-7 text-muted-foreground hover:text-foreground"
-                      aria-label="自动布局"
-                    />
-                  }
-                />
-              }
-            >
-              <Network className="size-3.5" />
-            </TooltipTrigger>
-            <TooltipContent>自动布局</TooltipContent>
-          </Tooltip>
-          <DropdownMenuContent align="end">
-            <DropdownMenuLabel className="font-mono text-[10px] uppercase tracking-wider">
-              Layout Engine
-            </DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            {LAYOUTS.map((l) => (
-              <DropdownMenuItem
-                key={l.label}
-                onClick={() => {
-                  void autoLayout(l.dir, l.engine, true)
-                  onExported?.(`已应用 ${l.label}`)
-                }}
-              >
-                {l.label}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-
-        <IconAction
-          label="选择当前连通组件"
-          disabled={selectedNodeCount === 0}
-          active={selectedNodeCount > 1 || selectedEdgeCount > 0}
-          onClick={selectActiveComponent}
-        >
-          <Network className="size-3.5" />
-        </IconAction>
-        </div>
-
-        <div className="hidden shrink-0 items-center rounded-sm border border-border bg-card p-0.5 lg:flex">
-        <IconAction
-          label="保存到本地"
+        <Button
+          variant="outline"
+          size="sm"
+          className="hidden h-8 gap-1.5 rounded-lg md:flex"
           onClick={() => {
             save()
-            onExported?.("已保存到本地")
+            onExported?.("工作流已保存到本地")
           }}
         >
           <Save className="size-3.5" />
-        </IconAction>
-        <IconAction
-          label="恢复上次保存"
-          onClick={() => {
-            const ok = load()
-            onExported?.(ok ? "已恢复上次保存" : "没有找到保存记录")
-          }}
-        >
-          <FolderOpen className="size-3.5" />
-        </IconAction>
+          保存
+        </Button>
+
+        <Button size="sm" className="h-8 gap-1.5 rounded-lg" onClick={onToggleRunTrace}>
+          <Play className="size-3.5" />
+          试运行
+        </Button>
 
         <DropdownMenu>
           <Tooltip>
@@ -536,32 +381,120 @@ export function CommandStrip({
               render={
                 <DropdownMenuTrigger
                   render={
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-7 text-muted-foreground hover:text-foreground"
-                      aria-label="导入导出"
-                    />
+                    <Button variant="ghost" size="icon" className="size-8 rounded-lg" aria-label="更多工具" />
                   }
                 />
               }
             >
-              <Download className="size-3.5" />
+              <MoreHorizontal className="size-4" />
             </TooltipTrigger>
-            <TooltipContent>导入 / 导出</TooltipContent>
+            <TooltipContent>更多工具</TooltipContent>
           </Tooltip>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={exportImage}>
-              <ImageDown className="size-3.5" />
-              导出 PNG 图片
+          <DropdownMenuContent align="end" className="max-h-[76vh] w-64 overflow-y-auto">
+            <DropdownMenuLabel>工作流</DropdownMenuLabel>
+            <DropdownMenuItem
+              onClick={() => {
+                reset()
+                onExported?.("已恢复默认封包网络")
+              }}
+            >
+              <RotateCcw className="size-3.5" />
+              恢复默认封包网络
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => void exportServerImage()}>
-              <ServerCog className="size-3.5" />
-              服务端成图 (SVG)
+            <DropdownMenuItem
+              onClick={() => {
+                importWorkflowProject(COLLECTION_WORKFLOW_PROJECT)
+                onExported?.("已载入完整采集示例")
+              }}
+            >
+              <ListTree className="size-3.5" />
+              载入完整采集示例
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => {
+                const ok = load()
+                onExported?.(ok ? "已恢复上次保存" : "没有找到保存记录")
+              }}
+            >
+              <FolderOpen className="size-3.5" />
+              恢复上次保存
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+
+            <DropdownMenuLabel>编辑与视图</DropdownMenuLabel>
+            <DropdownMenuItem onClick={() => setToolMode("select")}>
+              <Magnet className="size-3.5" />
+              选择工具 {toolMode === "select" ? "· 当前" : ""}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setToolMode(toolMode === "scissors" ? "select" : "scissors")}>
+              <Scissors className="size-3.5" />
+              剪断连线 {toolMode === "scissors" ? "· 当前" : ""}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setToolMode(toolMode === "draw" ? "select" : "draw")}>
+              <Eraser className="size-3.5" />
+              画布标注 {toolMode === "draw" ? "· 当前" : ""}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={clearDrawings}>
+              <Eraser className="size-3.5" />
+              清除画布标注
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => void autoLayout("LR", "elk", true)}>
+              <Network className="size-3.5" />
+              自动整理节点
+            </DropdownMenuItem>
+            <DropdownMenuItem disabled={selectedNodeCount === 0} onClick={selectActiveComponent}>
+              <Network className="size-3.5" />
+              选择当前流程分支
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setCanvasSetting("snapToHelperLines", !snapToHelperLines)}>
+              <Magnet className="size-3.5" />
+              {snapToHelperLines ? "关闭节点吸附" : "开启节点吸附"}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+
+            <DropdownMenuLabel>运行与设置</DropdownMenuLabel>
+            <DropdownMenuItem onClick={onToggleRunTrace}>
+              <Play className="size-3.5" />
+              {runTraceOpen ? "关闭运行记录" : "运行记录与结果"}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={onToggleProjectSettings}>
+              <SlidersHorizontal className="size-3.5" />
+              {projectSettingsOpen ? "关闭工作流设置" : "工作流设置"}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={onToggleAgentDrawer}>
+              <Bot className="size-3.5" />
+              {agentDrawerOpen ? "关闭 AI 修改建议" : "AI 修改建议"}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={onToggleNodeManagement}>
+              <ListTree className="size-3.5" />
+              {nodeManagementOpen ? "关闭节点状态" : "节点状态"}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={onToggleCollab}>
+              <Users className="size-3.5" />
+              {collab ? "关闭多人协作" : "开启多人协作"}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={onToggleSettings}>
+              <Settings className="size-3.5" />
+              {settingsOpen ? "关闭画布设置" : "画布设置"}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+
+            <DropdownMenuLabel>导入与导出</DropdownMenuLabel>
+            <DropdownMenuItem onClick={() => fileInputRef.current?.click()}>
+              <Upload className="size-3.5" />
+              导入 JSON / Mermaid / n8n
             </DropdownMenuItem>
             <DropdownMenuItem onClick={exportJson}>
               <Download className="size-3.5" />
               导出 JSON
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={exportImage}>
+              <ImageDown className="size-3.5" />
+              导出 PNG
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => void exportServerImage()}>
+              <ServerCog className="size-3.5" />
+              导出 SVG
             </DropdownMenuItem>
             <DropdownMenuItem onClick={exportMermaid}>
               <FileCode2 className="size-3.5" />
@@ -581,125 +514,12 @@ export function CommandStrip({
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => void copyShareUrl()}>
               <Link2 className="size-3.5" />
-              复制压缩分享 URL
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => fileInputRef.current?.click()}>
-              <Upload className="size-3.5" />
-              导入 JSON / Mermaid / n8n
+              {shareUrlLoaded ? "重新复制分享链接" : "复制分享链接"}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem
-              onClick={() => {
-                reset()
-                onExported?.("已重置为示例")
-              }}
-              variant="destructive"
-            >
-              <RotateCcw className="size-3.5" />
-              重置为示例
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-
-        <IconAction label="复制压缩分享 URL" active={shareUrlLoaded} onClick={() => void copyShareUrl()}>
-          <Link2 className="size-3.5" />
-        </IconAction>
-        </div>
-
-        <div className="hidden shrink-0 items-center rounded-sm border border-border bg-card p-0.5 xl:flex">
-        <IconAction label="多用户实时协作 (Yjs)" active={collab} onClick={onToggleCollab}>
-          <Users className="size-3.5" />
-        </IconAction>
-        <IconAction label="Project Settings" active={projectSettingsOpen} onClick={onToggleProjectSettings}>
-          <SlidersHorizontal className="size-3.5" />
-        </IconAction>
-        <IconAction label="Run Trace" active={runTraceOpen} onClick={onToggleRunTrace}>
-          <Play className="size-3.5" />
-        </IconAction>
-        <IconAction label="Agent Proposals" active={agentDrawerOpen} onClick={onToggleAgentDrawer}>
-          <Bot className="size-3.5" />
-        </IconAction>
-        <IconAction label="Node Management" active={nodeManagementOpen} onClick={onToggleNodeManagement}>
-          <ListTree className="size-3.5" />
-        </IconAction>
-        </div>
-
-        <div className="hidden shrink-0 items-center rounded-sm border border-border bg-card p-0.5 2xl:flex">
-        <IconAction
-          label={snapToHelperLines ? "关闭吸附" : "开启吸附"}
-          active={snapToHelperLines}
-          onClick={() => setCanvasSetting("snapToHelperLines", !snapToHelperLines)}
-        >
-          <Magnet className="size-3.5" />
-        </IconAction>
-        <IconAction label="交互设置" active={settingsOpen} onClick={onToggleSettings}>
-          <Settings className="size-3.5" />
-        </IconAction>
-        </div>
-
-        <DropdownMenu>
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <DropdownMenuTrigger
-                  render={
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-7 shrink-0 rounded-sm border border-border bg-card text-muted-foreground hover:text-foreground xl:hidden"
-                      aria-label="更多工具"
-                    />
-                  }
-                />
-              }
-            >
-              <MoreHorizontal className="size-3.5" />
-            </TooltipTrigger>
-            <TooltipContent>更多工具</TooltipContent>
-          </Tooltip>
-          <DropdownMenuContent align="end" className="w-56">
-            <DropdownMenuLabel className="font-mono text-[10px] uppercase tracking-wider">
-              Overflow Tools
+            <DropdownMenuLabel className="text-[10px] font-normal text-muted-foreground">
+              {nodeCount} 个节点 · {edgeCount} 条连线 · {selectedNodeCount + selectedEdgeCount} 个已选
             </DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => void autoLayout("TB", "elk", true)}>
-              <Network className="size-3.5" />
-              ELK 自动布局
-            </DropdownMenuItem>
-            <DropdownMenuItem disabled={selectedNodeCount === 0} onClick={selectActiveComponent}>
-              <Network className="size-3.5" />
-              选择连通组件
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={onToggleCollab}>
-              <Users className="size-3.5" />
-              {collab ? "关闭协作" : "开启协作"}
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={onToggleProjectSettings}>
-              <SlidersHorizontal className="size-3.5" />
-              Project Settings
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={onToggleRunTrace}>
-              <Play className="size-3.5" />
-              Run Trace
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={onToggleAgentDrawer}>
-              <Bot className="size-3.5" />
-              Agent Proposals
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={onToggleNodeManagement}>
-              <ListTree className="size-3.5" />
-              Node Management
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => setCanvasSetting("snapToHelperLines", !snapToHelperLines)}>
-              <Magnet className="size-3.5" />
-              {snapToHelperLines ? "关闭吸附" : "开启吸附"}
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={onToggleSettings}>
-              <Settings className="size-3.5" />
-              交互设置
-            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

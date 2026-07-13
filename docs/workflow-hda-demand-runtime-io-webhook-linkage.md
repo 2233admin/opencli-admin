@@ -9,12 +9,12 @@ Workflow I/O should be modeled as typed runtime envelopes on the same WorkflowPr
 
 The canonical spine is:
 
-1. A trigger produces a `WorkflowRunRequest`.
-2. The backend validates and compiles the Canvas-authored `WorkflowProject`.
-3. The run service creates a `workflow_run_id` and dispatches compiled runtime nodes.
-4. Node execution emits replayable node events.
-5. Large outputs are stored as batch/projection references.
-6. Canvas, AI callers, and optional webhook responders read the same event stream and projection APIs.
+1. Build owns the workflow surface at `/build/workflow`; the visible collection-need node carries business demand into Canvas assembly.
+2. The backend validates and compiles the Canvas-authored `WorkflowProject` with stable node and port contracts.
+3. Source nodes resolve adapters and infrastructure resources from catalog/registry metadata; unresolved infrastructure becomes a structured blocked reason rather than editable cookie/profile/worker fields.
+4. Manual or workflow-specific webhook input creates the same run axis and emits typed workflow/run/node/source identifiers.
+5. Source and normalize execution emits replayable node events and stable, idempotent EvidenceBatch references.
+6. Canvas, AI callers, and optional webhook responders read the same event stream and EvidenceBatch projection APIs.
 
 ## Runtime Input
 

@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react"
 import { ReactFlowProvider, useReactFlow, type NodeMouseHandler } from "@xyflow/react"
+import { useShallow } from "zustand/react/shallow"
 import "@xyflow/react/dist/style.css"
 
 import { useFlowStore } from "@/lib/flow/store"
@@ -86,7 +87,7 @@ function EditorCanvas() {
     unlockNodeInternals,
     updateWorkflowProfile,
     workflowProject,
-  } = useFlowStore(selectEditorCanvasState)
+  } = useFlowStore(useShallow(selectEditorCanvasState))
 
   const settings = useSettingsStore()
 
@@ -100,7 +101,8 @@ function EditorCanvas() {
   const [scissorTrail, setScissorTrail] = useState<{ x: number; y: number }[]>([])
   const [toast, setToast] = useState<string | null>(null)
   const [paletteOpen, setPaletteOpen] = useState(false)
-  const [inspectorOpen, setInspectorOpen] = useState(true)
+  const [paletteAnchor, setPaletteAnchor] = useState<{ x: number; y: number } | null>(null)
+  const [inspectorOpen, setInspectorOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [projectSettingsOpen, setProjectSettingsOpen] = useState(false)
   const [runTraceOpen, setRunTraceOpen] = useState(false)
@@ -211,10 +213,32 @@ function EditorCanvas() {
     [diveIntoNetwork],
   )
 
+  const onNodeClick: NodeMouseHandler<WorkflowNode> = useCallback(() => {
+    setInspectorOpen(true)
+  }, [])
+
   const onNodeContextMenu: NodeMouseHandler<WorkflowNode> = useCallback((event, node) => {
     event.preventDefault()
     event.stopPropagation()
+    setPaletteOpen(false)
     setNodeMenu({ nodeId: node.id, x: event.clientX, y: event.clientY })
+  }, [])
+
+  const onPaneContextMenu = useCallback((event: ReactMouseEvent<Element> | MouseEvent) => {
+    event.preventDefault()
+    setNodeMenu(null)
+    setPaletteAnchor({ x: event.clientX, y: event.clientY })
+    setPaletteOpen(true)
+  }, [])
+
+  const openNodePicker = useCallback(() => {
+    const bounds = wrapperRef.current?.getBoundingClientRect()
+    setPaletteAnchor(
+      bounds
+        ? { x: bounds.left + bounds.width / 2, y: bounds.top + bounds.height / 2 }
+        : { x: window.innerWidth / 2, y: window.innerHeight / 2 },
+    )
+    setPaletteOpen(true)
   }, [])
 
   const { isValidConnection, onBeforeDelete } = useConnectionGuards({ settings, showToast })
@@ -245,7 +269,7 @@ function EditorCanvas() {
   return (
     <div data-health="workflow-editor" className="flex h-full min-h-0 flex-1 flex-col">
       <CommandStrip
-        onOpenPalette={() => setPaletteOpen(true)}
+        onOpenPalette={openNodePicker}
         onExported={showToast}
         collab={settings.collabProvider !== "off"}
         onToggleCollab={toggleCollabProvider}
@@ -295,6 +319,8 @@ function EditorCanvas() {
           onEdgesChange={onEdgesChange}
           onMouseMove={onCanvasMouseMove}
           onNodeContextMenu={onNodeContextMenu}
+          onPaneContextMenu={onPaneContextMenu}
+          onNodeClick={onNodeClick}
           onNodeDoubleClick={onNodeDoubleClick}
           onNodeDrag={onNodeDrag}
           onNodeDragStop={onNodeDragStop}
@@ -325,9 +351,12 @@ function EditorCanvas() {
 
       <CommandPalette
         open={paletteOpen}
-        onClose={() => setPaletteOpen(false)}
+        onClose={() => {
+          setPaletteOpen(false)
+          setPaletteAnchor(null)
+        }}
         onMessage={showToast}
-        getAnchor={() => screenToFlowPosition(mousePos.current)}
+        getAnchor={() => screenToFlowPosition(paletteAnchor ?? mousePos.current)}
       />
     </div>
   )

@@ -33,7 +33,7 @@ import {
   createWhiteboardActions,
 } from "./store-slices"
 import { snapshot } from "./store-utils"
-import { COLLECTION_WORKFLOW_PROJECT } from "../workflow/collection-pipeline"
+import { PACKAGED_WORKFLOW_PROJECT } from "../workflow/collection-pipeline"
 import type { WorkflowProject } from "../workflow/schema"
 import { parseWorkflowProject, type AdapterBinding, type WorkflowProfile, type WorkflowProjectNode } from "../workflow/schema"
 import { workflowNodeToReactFlow, workflowProjectToReactFlow } from "../workflow/to-react-flow"
@@ -43,21 +43,26 @@ import { getPrimitiveByStepCapability, primitiveToNodeData, type WorkflowPrimiti
 import { createParameterInterfaceFromInternals, setParameterInterfaceFieldValue } from "../workflow/parameter-interface"
 import {
   catalogRuntimeCapability,
+  projectedCatalogRuntimeCapability,
+  runtimeContractForCapability,
   type WorkflowCapabilitiesResponse,
   type WorkflowRuntimeCapability,
 } from "../workflow/capabilities"
 import type { AgentProposal } from "../workflow/proposal"
 import type {
+  WorkflowEvidenceBatchProjection,
+  WorkflowEvidenceBatchSummary,
   WorkflowNodeRunEvent,
   WorkflowRunNodeState,
   WorkflowRunProjection,
   WorkflowRunStatus,
 } from "../workflow/backend-runs"
+import { applyEvidenceBatchRuntimePatches } from "../workflow/runtime-bridge"
 
 export type { GeneratedWorkflowSpec } from "./types"
 
 const STORAGE_KEY = "workflow-editor-state"
-const initialWorkflowProject = COLLECTION_WORKFLOW_PROJECT
+const initialWorkflowProject = PACKAGED_WORKFLOW_PROJECT
 const initialWorkflowFlow = workflowProjectToReactFlow(initialWorkflowProject)
 
 export type FlowState = {
@@ -157,6 +162,10 @@ export type FlowState = {
   applyWorkflowCapabilities: (capabilities: WorkflowCapabilitiesResponse) => void
   applyWorkflowNodeRunEvent: (event: WorkflowNodeRunEvent) => void
   applyWorkflowRunProjection: (projection: WorkflowRunProjection) => void
+  applyWorkflowEvidenceBatchProjection: (
+    projection: WorkflowEvidenceBatchProjection,
+    batches: WorkflowEvidenceBatchSummary[],
+  ) => void
   updateWorkflowProfile: (profile: WorkflowProfile) => void
   queueAgentProposal: (proposal: AgentProposal) => void
   clearPendingAgentProposal: () => void
@@ -407,6 +416,7 @@ type InternalWorkflowEdge = {
 function materializeProjectInternals(
   projectNode: WorkflowProjectNode | undefined,
   parentNode: WorkflowNode,
+  canvasParentId: string,
   mode: "network" | "unlock",
 ): { nodes: WorkflowNode[]; edges: WorkflowEdge[] } | undefined {
   const rawNodes = projectNode?.internals?.nodes.filter(isWorkflowProjectNode) ?? []
@@ -414,7 +424,7 @@ function materializeProjectInternals(
 
   const explicitEdges = projectNode.internals?.edges.filter(isInternalWorkflowEdge) ?? []
   const rawEdges = explicitEdges.length > 0 ? explicitEdges : inferNormalizeFanoutEdges(rawNodes)
-  const parentId = projectNode.id
+  const parentId = canvasParentId
   const parentRect = nodeRect(parentNode)
   const origin =
     mode === "network"
@@ -493,6 +503,42 @@ function isWorkflowProjectNode(value: unknown): value is WorkflowProjectNode {
     typeof node.capability === "string" &&
     (!("params" in node) || Boolean(node.params && typeof node.params === "object" && !Array.isArray(node.params)))
   )
+}
+
+function findProjectNodeByCanvasId(project: WorkflowProject, canvasNodeId: string): WorkflowProjectNode | undefined {
+  const visit = (node: WorkflowProjectNode, scopedId: string): WorkflowProjectNode | undefined => {
+    if (scopedId === canvasNodeId) return node
+    const children = node.internals?.nodes.filter(isWorkflowProjectNode) ?? []
+    for (const child of children) {
+      const match = visit(child, scopedInternalId(scopedId, child.id))
+      if (match) return match
+    }
+    return undefined
+  }
+
+  for (const node of project.nodes) {
+    const match = visit(node, node.id)
+    if (match) return match
+  }
+  return undefined
+}
+
+function projectNodeFromCanvasNode(node: WorkflowNode): WorkflowProjectNode | undefined {
+  const canonical = node.data.canonical
+  if (!canonical) return undefined
+  return {
+    id: node.data.internalStepId ?? node.id,
+    kind: canonical.kind,
+    capability: canonical.capability,
+    adapter: canonical.adapter,
+    params: canonical.params ?? {},
+    parameterInterface: node.data.parameterInterface,
+    ui: {
+      label: node.data.label,
+      description: node.data.description,
+      catalogId: canonical.catalogId,
+    },
+  }
 }
 
 function isInternalWorkflowEdge(value: unknown): value is InternalWorkflowEdge {
@@ -783,10 +829,10 @@ export const useFlowStore = create<FlowState>((set, get) => ({
   enterNodeNetwork: (nodeId) => {
     const { workflowProject, nodes, edges, drawings, networkStack } = get()
     const node = nodes.find((candidate) => candidate.id === nodeId)
-    const projectNode = workflowProject.nodes.find((candidate) => candidate.id === nodeId)
     if (!node) return 0
+    const projectNode = findProjectNodeByCanvasId(workflowProject, nodeId) ?? projectNodeFromCanvasNode(node)
 
-    const projectInternals = materializeProjectInternals(projectNode, node, "network")
+    const projectInternals = materializeProjectInternals(projectNode, node, nodeId, "network")
     if (projectInternals) {
       const internalNodeIds = projectInternals.nodes.map((internalNode) => internalNode.id)
       set({
@@ -878,15 +924,15 @@ export const useFlowStore = create<FlowState>((set, get) => ({
   unlockNodeInternals: (nodeId) => {
     const { workflowProject, nodes, edges } = get()
     const node = nodes.find((candidate) => candidate.id === nodeId)
-    const projectNode = workflowProject.nodes.find((candidate) => candidate.id === nodeId)
     if (!node) return 0
+    const projectNode = findProjectNodeByCanvasId(workflowProject, nodeId) ?? projectNodeFromCanvasNode(node)
 
     const existingInternalIds = new Set(
       nodes.filter((candidate) => candidate.data.internalOf === nodeId).map((candidate) => candidate.id),
     )
     if (existingInternalIds.size > 0) return 0
 
-    const projectInternals = materializeProjectInternals(projectNode, node, "unlock")
+    const projectInternals = materializeProjectInternals(projectNode, node, nodeId, "unlock")
     if (projectInternals) {
       get().takeSnapshot()
       const internalNodeIds = projectInternals.nodes.map((internalNode) => internalNode.id)
@@ -1025,13 +1071,24 @@ export const useFlowStore = create<FlowState>((set, get) => ({
     set((state) => {
       const projectNodes = state.workflowProject.nodes.map((node) => {
         const catalogId = typeof node.ui?.catalogId === "string" ? node.ui.catalogId : null
-        const runtimeCapability = catalogId ? catalogRuntimeCapability(capabilities, catalogId) : undefined
+        if (!catalogId) return node
+        const runtimeCapability = projectedCatalogRuntimeCapability(
+          catalogRuntimeCapability(capabilities, catalogId),
+          {
+            id: catalogId,
+            label: typeof node.ui?.label === "string" ? node.ui.label : node.id,
+            kind: node.kind,
+            capability: node.capability,
+          },
+          true,
+        )
         if (!runtimeCapability) return node
         return {
           ...node,
           ui: {
             ...(node.ui ?? {}),
             runtimeCapability,
+            runtimeContract: runtimeContractForCapability(runtimeCapability),
           },
         }
       })
@@ -1039,23 +1096,27 @@ export const useFlowStore = create<FlowState>((set, get) => ({
         ...state.workflowProject,
         nodes: projectNodes,
       })
-      const runtimeByNodeId = new Map<string, WorkflowRuntimeCapability>()
+      const runtimeByNodeId = new Map<string, { capability: WorkflowRuntimeCapability; contract: WorkflowNodeData["runtimeContract"] }>()
       for (const node of workflowProject.nodes) {
         const runtimeCapability = node.ui?.runtimeCapability
         if (isWorkflowRuntimeCapability(runtimeCapability)) {
-          runtimeByNodeId.set(node.id, runtimeCapability)
+          runtimeByNodeId.set(node.id, {
+            capability: runtimeCapability,
+            contract: runtimeContractForCapability(runtimeCapability),
+          })
         }
       }
       return {
         workflowProject,
         nodes: state.nodes.map((node) => {
-          const runtimeCapability = runtimeByNodeId.get(node.id)
-          if (!runtimeCapability || typeof runtimeCapability !== "object") return node
+          const runtime = runtimeByNodeId.get(node.id)
+          if (!runtime) return node
           return {
             ...node,
             data: {
               ...node.data,
-              runtimeCapability,
+              runtimeCapability: runtime.capability,
+              runtimeContract: runtime.contract,
             },
           }
         }),
@@ -1136,6 +1197,10 @@ export const useFlowStore = create<FlowState>((set, get) => ({
         }),
       }
     })
+  },
+
+  applyWorkflowEvidenceBatchProjection: (projection, batches) => {
+    set((state) => applyEvidenceBatchRuntimePatches(state.nodes, state.edges, projection, batches))
   },
 
   updateWorkflowProfile: (profile) => {

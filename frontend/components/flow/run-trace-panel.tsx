@@ -1,14 +1,20 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { Activity, Loader2, Play, RotateCcw } from "lucide-react"
+import { Activity, Boxes, Loader2, Play, RotateCcw } from "lucide-react"
 import { getApiAuthToken } from "@/lib/api/auth-token"
 import { useFlowStore } from "@/lib/flow/store"
 import { compileWorkflowProject, type WorkflowCompileResponse } from "@/lib/workflow/backend-compile"
 import { traceOpenCLIHDAWorkflow, type WorkflowOpenCLIHDATraceResponse } from "@/lib/workflow/backend-opencli-hda-trace"
 import {
+  fetchWorkflowEvidenceBatchDetail,
+  fetchWorkflowEvidenceBatchProjection,
+  fetchWorkflowEvidenceBatches,
   replayWorkflowRunEventStream,
   startWorkflowRun,
+  type WorkflowEvidenceBatchDetail,
+  type WorkflowEvidenceBatchProjection,
+  type WorkflowEvidenceBatchSummary,
   type WorkflowNodeRunEvent,
   type WorkflowRunProjection,
 } from "@/lib/workflow/backend-runs"
@@ -32,6 +38,15 @@ type BackendPreviewState =
   | { status: "blocked"; compile: WorkflowCompileResponse; trace: WorkflowOpenCLIHDATraceResponse | null; error: null }
   | { status: "error"; compile: WorkflowCompileResponse | null; trace: WorkflowOpenCLIHDATraceResponse | null; error: string }
 
+type EvidenceBatchState = {
+  status: "idle" | "loading" | "ready" | "error"
+  projection: WorkflowEvidenceBatchProjection | null
+  batches: WorkflowEvidenceBatchSummary[]
+  detail: WorkflowEvidenceBatchDetail | null
+  selectedBatchId: string | null
+  error: string | null
+}
+
 function SectionCaption({ children }: { children: React.ReactNode }) {
   return <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-muted-foreground/70">{children}</p>
 }
@@ -43,8 +58,17 @@ export function RunTracePanel() {
   const setNodes = useFlowStore((state) => state.setNodes)
   const applyWorkflowNodeRunEvent = useFlowStore((state) => state.applyWorkflowNodeRunEvent)
   const applyWorkflowRunProjection = useFlowStore((state) => state.applyWorkflowRunProjection)
+  const applyWorkflowEvidenceBatchProjection = useFlowStore((state) => state.applyWorkflowEvidenceBatchProjection)
   const [runState, setRunState] = useState<RealRunState>({ status: "idle", projection: null, events: [], error: null })
   const [backendState, setBackendState] = useState<BackendPreviewState>({ status: "idle", compile: null, trace: null, error: null })
+  const [evidenceState, setEvidenceState] = useState<EvidenceBatchState>({
+    status: "idle",
+    projection: null,
+    batches: [],
+    detail: null,
+    selectedBatchId: null,
+    error: null,
+  })
 
   const projection = runState.projection
   const errors = projection?.errors ?? []
@@ -74,12 +98,56 @@ export function RunTracePanel() {
       const finalProjection = replay.projection ?? started
       applyWorkflowRunProjection(finalProjection)
       setRunState({ status: "ready", projection: finalProjection, events: replay.events, error: null })
+      await loadEvidenceBatchResults(finalProjection.runId, authorization)
     } catch (error) {
       setRunState((current) => ({
         status: "error",
         projection: current.projection,
         events: current.events,
         error: error instanceof Error ? error.message : "Workflow run failed",
+      }))
+    }
+  }
+
+  const loadEvidenceBatchResults = async (runId: string, authorization: string | null) => {
+    setEvidenceState((current) => ({ ...current, status: "loading", error: null, detail: null, selectedBatchId: null }))
+    try {
+      const [batchList, projection] = await Promise.all([
+        fetchWorkflowEvidenceBatches(runId, { authorization }),
+        fetchWorkflowEvidenceBatchProjection(runId, { authorization }),
+      ])
+      applyWorkflowEvidenceBatchProjection(projection, batchList.batches)
+      setEvidenceState({
+        status: "ready",
+        projection,
+        batches: batchList.batches,
+        detail: null,
+        selectedBatchId: null,
+        error: null,
+      })
+    } catch (error) {
+      setEvidenceState((current) => ({
+        ...current,
+        status: "error",
+        error: error instanceof Error ? error.message : "EvidenceBatch projection failed",
+      }))
+    }
+  }
+
+  const selectEvidenceBatch = async (batchId: string) => {
+    if (!projection) return
+    setEvidenceState((current) => ({ ...current, status: "loading", selectedBatchId: batchId, detail: null, error: null }))
+    try {
+      const token = getApiAuthToken()
+      const detail = await fetchWorkflowEvidenceBatchDetail(projection.runId, batchId, {
+        authorization: token ? `Bearer ${token}` : null,
+      })
+      setEvidenceState((current) => ({ ...current, status: "ready", detail, error: null }))
+    } catch (error) {
+      setEvidenceState((current) => ({
+        ...current,
+        status: "error",
+        error: error instanceof Error ? error.message : "EvidenceBatch detail failed",
       }))
     }
   }
@@ -112,6 +180,14 @@ export function RunTracePanel() {
   const resetRun = () => {
     setRunState({ status: "idle", projection: null, events: [], error: null })
     setBackendState({ status: "idle", compile: null, trace: null, error: null })
+    setEvidenceState({
+      status: "idle",
+      projection: null,
+      batches: [],
+      detail: null,
+      selectedBatchId: null,
+      error: null,
+    })
   }
 
   return (
@@ -196,6 +272,13 @@ export function RunTracePanel() {
             </>
           ) : null}
 
+          {evidenceState.status !== "idle" ? (
+            <>
+              <Separator />
+              <EvidenceBatchWorkbench state={evidenceState} onSelectBatch={selectEvidenceBatch} />
+            </>
+          ) : null}
+
           {errors.length > 0 ? (
             <>
               <Separator />
@@ -216,6 +299,133 @@ export function RunTracePanel() {
         </div>
       </ScrollArea>
     </aside>
+  )
+}
+
+function EvidenceBatchWorkbench({
+  state,
+  onSelectBatch,
+}: {
+  state: EvidenceBatchState
+  onSelectBatch: (batchId: string) => void
+}) {
+  const projection = state.projection
+  const batches = state.batches
+  const recordCount = batches.reduce((sum, batch) => sum + batch.recordCount, 0)
+  const partialCount = projection?.summaries.filter((summary) => summary.status === "partial").length ?? 0
+  const blockedCount = projection?.nodes.filter((node) => node.status === "blocked" || node.status === "failed").length ?? 0
+  return (
+    <div className="space-y-3" aria-label="EvidenceBatch results">
+      <div className="flex items-center justify-between gap-2">
+        <SectionCaption>Result Workbench</SectionCaption>
+        {state.status === "loading" ? <Loader2 className="size-3 animate-spin text-muted-foreground" /> : null}
+      </div>
+
+      {projection ? (
+        <MetricGrid
+          title="EvidenceBatch Projection"
+          metrics={[
+            { key: "status", label: "Status", value: projection.status, tone: projection.status === "completed" ? "good" : "warn" },
+            { key: "batches", label: "Batches", value: `${batches.length}`, tone: batches.length > 0 ? "good" : "neutral" },
+            { key: "records", label: "Records", value: `${recordCount}`, tone: recordCount > 0 ? "good" : "neutral" },
+            { key: "partial", label: "Partial", value: `${partialCount}`, tone: partialCount === 0 ? "good" : "warn" },
+            { key: "missing", label: "Missing", value: `${projection.missingSources.length}`, tone: projection.missingSources.length === 0 ? "good" : "warn" },
+            { key: "blocked", label: "Blocked", value: `${blockedCount}`, tone: blockedCount === 0 ? "good" : "warn" },
+          ]}
+        />
+      ) : null}
+
+      {state.error ? (
+        <div className="rounded-md border border-[#d97706]/30 bg-[#d97706]/10 p-2.5 text-[11px] leading-relaxed text-[#d97706]">
+          {state.error}
+        </div>
+      ) : null}
+
+      {projection?.missingSources.length ? (
+        <div className="space-y-1.5">
+          {projection.missingSources.slice(0, 4).map((source) => (
+            <div
+              key={`${source.nodeId}-${source.sourceGroup ?? "source"}`}
+              className="rounded-md border border-[#d97706]/25 bg-[#d97706]/10 p-2.5"
+            >
+              <div className="flex items-center justify-between gap-2 font-mono text-[10px]">
+                <span className="min-w-0 truncate text-[#d97706]">{source.nodeId}</span>
+                <span className="shrink-0 uppercase text-muted-foreground">{source.status}</span>
+              </div>
+              <p className="mt-1 line-clamp-2 text-[10px] leading-relaxed text-muted-foreground">
+                {source.reasons[0]?.message ?? `Missing source ${source.sourceGroup ?? "output"}`}
+              </p>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {batches.length > 0 ? (
+        <div className="space-y-1.5">
+          {batches.map((batch) => (
+            <button
+              key={batch.batchId}
+              type="button"
+              onClick={() => onSelectBatch(batch.batchId)}
+              className={cn(
+                "block w-full rounded-md border bg-card p-2.5 text-left transition-colors hover:border-foreground/30",
+                state.selectedBatchId === batch.batchId && "border-foreground/40 bg-accent/40",
+              )}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="flex min-w-0 items-center gap-1.5 font-mono text-[10px]">
+                  <Boxes className="size-3 shrink-0 text-muted-foreground" />
+                  <span className="truncate">{batch.batchId}</span>
+                </span>
+                <span className={cn(
+                  "shrink-0 font-mono text-[9px] uppercase",
+                  batch.status === "completed" ? "text-[#2f9e44]" : "text-[#d97706]",
+                )}>
+                  {batch.status}
+                </span>
+              </div>
+              <p className="mt-1 truncate font-mono text-[10px] text-muted-foreground">
+                {batch.nodeId} · {batch.sourceGroup ?? "ungrouped"} · {batch.recordCount} records
+              </p>
+              {batch.manifestUri || batch.odpRef ? (
+                <p className="mt-1 truncate font-mono text-[9px] text-muted-foreground/80">
+                  {batch.manifestUri ?? batch.odpRef}
+                </p>
+              ) : null}
+            </button>
+          ))}
+        </div>
+      ) : state.status === "ready" ? (
+        <div className="rounded-md border border-dashed p-3 text-center text-xs text-muted-foreground">
+          no EvidenceBatch output
+        </div>
+      ) : null}
+
+      {state.detail ? <EvidenceBatchDetailCard detail={state.detail} /> : null}
+    </div>
+  )
+}
+
+function EvidenceBatchDetailCard({ detail }: { detail: WorkflowEvidenceBatchDetail }) {
+  return (
+    <div className="rounded-md border bg-card p-3">
+      <div className="flex items-center justify-between gap-2">
+        <SectionCaption>Batch Detail</SectionCaption>
+        <Badge variant="outline" className="font-mono text-[9px] uppercase">{detail.sourceCoverage.status}</Badge>
+      </div>
+      <div className="mt-2 grid grid-cols-2 gap-2 font-mono text-[10px] text-muted-foreground">
+        <span>{detail.itemCount} items</span>
+        <span className="text-right">{detail.recordCount} records</span>
+      </div>
+      <p className="mt-2 line-clamp-2 font-mono text-[9px] leading-relaxed text-muted-foreground">
+        source {detail.sourceCoverage.sourceGroup ?? "ungrouped"} · {detail.sourceCoverage.batchCount} batches
+      </p>
+      {detail.manifestUri || detail.odpRef ? (
+        <p className="mt-1 truncate font-mono text-[9px] text-muted-foreground/80">
+          {detail.manifestUri ?? detail.odpRef}
+        </p>
+      ) : null}
+    </div>
   )
 }
 

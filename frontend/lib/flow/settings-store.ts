@@ -67,7 +67,7 @@ export const DEFAULT_SETTINGS: CanvasSettings = {
   language: "zh-CN",
   snapToHelperLines: false,
   contextualZoom: true,
-  showMiniMap: true,
+  showMiniMap: false,
   showControls: true,
   showBackground: true,
   collabProvider: "off",

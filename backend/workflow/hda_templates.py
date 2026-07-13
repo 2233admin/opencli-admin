@@ -44,16 +44,12 @@ def _materialize_node(node: WorkflowProjectNode) -> WorkflowProjectNode:
 
     internals = _opencli_multi_source_internals(sources)
     topic = _topic_collapse(node, len(internals.nodes))
-    requested_execution = _read_dict(node.params.get("execution"))
     params = {
         **node.params,
         "template": OPENCLI_MULTI_SOURCE_TEMPLATE,
         "runtime": node.params.get("runtime", "iii"),
         "lockedInternals": node.params.get("lockedInternals", True),
         "execution": {
-            "maxConcurrency": min(max(len(sources), 1), 64),
-            "workerPool": "docker-browser-workers",
-            **requested_execution,
             "fanout": "parallel",
         },
     }
@@ -220,11 +216,6 @@ def _optional_source_runtime_params(source: dict[str, Any]) -> dict[str, Any]:
     optional: dict[str, Any] = {}
     for key in (
         "mode",
-        "profileId",
-        "profileBinding",
-        "sessionPolicy",
-        "workerTags",
-        "resourceTags",
         "positionalArgs",
         "positional_args",
     ):

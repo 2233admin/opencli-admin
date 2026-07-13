@@ -16,11 +16,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { getNodeInternals, type NodeInternalStatus } from "@/lib/workflow/node-internals"
-import { getNodeContract } from "@/lib/workflow/node-contracts"
+import type { NodeInternalStatus } from "@/lib/workflow/node-internals"
 import { getNodeTemplate } from "@/lib/workflow/node-templates"
 import { buildParameterInterfaceView, type ParameterInterfaceViewField } from "@/lib/workflow/parameter-interface"
 import { blockedActionViewForRuntime } from "@/lib/workflow/capabilities"
+import { buildCanonicalNodeViewContract } from "@/lib/workflow/canonical-node-contract"
 import { MonoRow, PanelShell, SectionCaption } from "./inspector-shell"
 import { cn } from "@/lib/utils"
 
@@ -205,9 +205,15 @@ export function Inspector() {
     ? workflowProject.adapters.find((candidate) => candidate.id === projectNode.adapter)
     : undefined
   const nodeTemplate = getNodeTemplate(projectNode)
-  const parameterInterfaceView = buildParameterInterfaceView({ node: projectNode, adapter: projectAdapter, nodes })
-  const nodeInternals = getNodeInternals(projectNode)
-  const nodeContract = getNodeContract(projectNode)
+  const nodeViewContract = buildCanonicalNodeViewContract(projectNode, data, node.id)
+  const parameterInterfaceView = buildParameterInterfaceView({
+    node: projectNode,
+    adapter: projectAdapter,
+    nodes,
+    allowedParamIds: nodeViewContract.params.map((param) => param.id),
+  })
+  const nodeInternals = nodeViewContract.internals
+  const nodeContract = nodeViewContract.staticContract
   const promptCapable =
     canonical?.kind === "agent" ||
     typeof data.primitiveId === "string" && (data.primitiveId.includes("prompt") || data.primitiveId.includes("model"))
@@ -431,28 +437,22 @@ export function Inspector() {
   }
 
   const isCondition = data.nodeType === "condition"
-  const ports = nodeContract
-    ? nodeContract.ports.map((port) => ({ name: port.id, dir: port.direction, type: port.type, description: port.description }))
-    : [
-        { name: "in", dir: "input", type: data.category, description: "Generic input port." },
-        ...(isCondition
-          ? [
-              { name: "true", dir: "output", type: "branch", description: "True branch output." },
-              { name: "false", dir: "output", type: "branch", description: "False branch output." },
-            ]
-          : [{ name: "out", dir: "output", type: data.category, description: "Generic output port." }]),
-      ]
+  const ports = nodeViewContract.ports.map((port) => ({
+    name: port.id,
+    dir: port.direction,
+    type: port.type,
+    description: port.description,
+  }))
   const parameterGroups = parameterInterfaceView?.groups ?? []
   const activeParameterGroupId = parameterGroups.some((group) => group.id === parameterGroupTab)
     ? parameterGroupTab
     : parameterGroups[0]?.id
   const activeParameterFields = parameterInterfaceView?.fields.filter((field) => field.groupId === activeParameterGroupId) ?? []
   const blockedAction = blockedActionViewForRuntime(data)
-
   return (
     <PanelShell
       title={data.label}
-      typeLine={`${data.category}::${data.nodeType}`.toUpperCase() + " · V1.0"}
+      typeLine={`${nodeViewContract.identity.kind}::${nodeViewContract.identity.capability}`.toUpperCase() + " · V1.0"}
       status={data.status}
       onClose={deselectAll}
     >
@@ -472,7 +472,7 @@ export function Inspector() {
                 tab === "prompt" && !promptCapable && "opacity-40",
               )}
             >
-              {tab === "config" ? "Config" : tab === "prompt" ? "Prompt" : tab === "run" ? "Run Result" : "Trace"}
+              {tab === "config" ? "配置" : tab === "prompt" ? "提示词" : tab === "run" ? "运行结果" : "执行过程"}
             </button>
           ))}
         </div>
@@ -511,6 +511,8 @@ export function Inspector() {
             <MonoRow k="node" v={node.id} />
             {canonical?.capability ? <MonoRow k="capability" v={canonical.capability} /> : null}
             {canonical?.adapter ? <MonoRow k="adapter" v={canonical.adapter} /> : null}
+            <MonoRow k="artifacts" v={nodeViewContract.outputs.artifacts.join(", ") || "none"} />
+            <MonoRow k="batches" v={nodeViewContract.outputs.evidenceBatchCount} />
           </div>
         ) : nodeTab === "trace" ? (
           <div className="space-y-3">
@@ -520,10 +522,13 @@ export function Inspector() {
             </div>
             <MonoRow k="profile" v={workflowProject.profile} />
             {canonical?.kind ? <MonoRow k="kind" v={canonical.kind} /> : null}
+            <MonoRow k="events" v={nodeViewContract.trace.events.join(", ") || "none"} />
+            {nodeViewContract.trace.runId ? <MonoRow k="run" v={nodeViewContract.trace.runId} /> : null}
+            {nodeViewContract.trace.traceId ? <MonoRow k="trace" v={nodeViewContract.trace.traceId} /> : null}
           </div>
         ) : (
           <>
-        {blockedAction ? (
+        {blockedAction && !beginnerNode ? (
           <div className="overflow-hidden rounded-[3px] border border-[#7f1d1d]/60 bg-[#180b0b]/70">
             <div className="flex items-center justify-between gap-3 border-b border-[#7f1d1d]/50 bg-[#2a1010]/72 px-3 py-2">
               <div className="flex min-w-0 items-center gap-2">
@@ -582,40 +587,48 @@ export function Inspector() {
           </div>
         ) : null}
 
-        {nodeContract ? (
+        {nodeContract || data.runtimeContract ? (
           <details className={houdiniDetailsClass}>
             <summary className={houdiniSummaryClass}>
               <span>Contract</span>
-              <span className="truncate text-[10px] normal-case tracking-normal">{nodeContract.dataModel}</span>
+              <span className="truncate text-[10px] normal-case tracking-normal">
+                {data.runtimeContract?.bindingId ?? nodeContract?.dataModel}
+              </span>
             </summary>
             <div className="space-y-3 border-t p-3">
               <div className="space-y-1">
-                <h3 className="text-xs font-medium text-foreground">{nodeContract.title}</h3>
-                <p className="font-mono text-[10px] text-muted-foreground">{nodeContract.dataModel}</p>
+                <h3 className="text-xs font-medium text-foreground">{nodeContract?.title ?? nodeViewContract.identity.label}</h3>
+                <p className="font-mono text-[10px] text-muted-foreground">
+                  {data.runtimeContract?.status ?? nodeContract?.dataModel}
+                </p>
               </div>
               <div className="grid grid-cols-2 gap-2">
-                <MonoRow k="ports" v={nodeContract.ports.length} />
-                <MonoRow k="params" v={nodeContract.params.length} />
+                <MonoRow k="ports" v={nodeViewContract.ports.length} />
+                <MonoRow k="params" v={nodeViewContract.params.length} />
               </div>
               <Separator />
               <div className="space-y-1.5">
-                {nodeContract.params.slice(0, 4).map((param) => (
+                {nodeViewContract.params.slice(0, 4).map((param) => (
                   <div key={param.id} className="flex items-center justify-between gap-2 font-mono text-[10px]">
                     <span className="truncate text-foreground">{param.id}</span>
                     <span className="shrink-0 text-muted-foreground">
-                      {param.source} · {param.type}{param.required ? " · required" : ""}
+                      {param.type ?? "runtime"}{param.required ? " · required" : ""}
                     </span>
                   </div>
                 ))}
               </div>
-              <Separator />
-              <div className="space-y-1">
-                {nodeContract.assertions.slice(0, 3).map((assertion) => (
-                  <p key={assertion} className="line-clamp-1 text-[11px] text-muted-foreground">
-                    {assertion}
-                  </p>
-                ))}
-              </div>
+              {nodeContract?.assertions.length ? (
+                <>
+                  <Separator />
+                  <div className="space-y-1">
+                    {nodeContract.assertions.slice(0, 3).map((assertion) => (
+                      <p key={assertion} className="line-clamp-1 text-[11px] text-muted-foreground">
+                        {assertion}
+                      </p>
+                    ))}
+                  </div>
+                </>
+              ) : null}
             </div>
           </details>
         ) : null}
@@ -763,6 +776,11 @@ export function Inspector() {
                   </span>
                 </div>
               ))}
+              {ports.length === 0 ? (
+                <p className="text-[11px] leading-relaxed text-[#f87171]">
+                  No backend node I/O contract is projected for this node.
+                </p>
+              ) : null}
             </div>
           </details>
         ) : null}

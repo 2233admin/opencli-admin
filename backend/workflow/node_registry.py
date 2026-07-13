@@ -169,10 +169,33 @@ FORBIDDEN_UI_KEYS = {
 }
 
 FORBIDDEN_PARAM_KEYS = {
+    "commandLine",
+    "concurrency",
+    "concurrencyLimit",
+    "cookie",
+    "cookieHeader",
+    "cookieMaterial",
+    "cookies",
+    "lockId",
+    "maxConcurrency",
+    "profileBinding",
+    "profileBindingId",
+    "profileId",
+    "profileLockId",
     "rawExecutor",
     "rawIIIPayload",
     "rawOpencliCommand",
     "rawOpenCLICommand",
+    "rawCommand",
+    "resourceTags",
+    "resolvedCommand",
+    "sessionId",
+    "sessionPolicy",
+    "sessionSnapshotId",
+    "workerId",
+    "workerPool",
+    "workerSlotId",
+    "workerTags",
 }
 
 
@@ -220,8 +243,26 @@ def forbidden_node_definition_keys(node: WorkflowProjectNode) -> list[str]:
 
     ui = node.ui or {}
     keys = [f"ui.{key}" for key in sorted(FORBIDDEN_UI_KEYS) if key in ui]
-    keys.extend(f"params.{key}" for key in sorted(FORBIDDEN_PARAM_KEYS) if key in node.params)
+    keys.extend(_forbidden_param_paths(node.params))
     return keys
+
+
+def _forbidden_param_paths(
+    value: Any,
+    *,
+    path: tuple[str, ...] = ("params",),
+) -> list[str]:
+    paths: list[str] = []
+    if isinstance(value, dict):
+        for key, nested in value.items():
+            nested_path = (*path, str(key))
+            if key in FORBIDDEN_PARAM_KEYS:
+                paths.append(".".join(nested_path))
+            paths.extend(_forbidden_param_paths(nested, path=nested_path))
+    elif isinstance(value, list):
+        for index, nested in enumerate(value):
+            paths.extend(_forbidden_param_paths(nested, path=(*path, str(index))))
+    return paths
 
 
 def _read_string(value: Any) -> str | None:

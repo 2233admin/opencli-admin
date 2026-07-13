@@ -41,3 +41,11 @@ Agent scope: implement resource requirement/resolution data structures, routing 
 ## Blocked by
 
 - 05 — Multi Source OpenCLI HDA tracer
+
+## Runtime verification
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest --no-cov -q tests/integration/test_workflow_compile_api.py tests/integration/test_workflow_capabilities_api.py
+```
+
+Before this issue can be marked complete, add focused resource-resolution tests that prove missing capacity, profile/session binding, and lock contention produce structured blocked reasons while cookie/profile/worker internals remain absent from editable node params.

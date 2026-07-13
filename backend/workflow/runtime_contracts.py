@@ -87,6 +87,18 @@ RUNTIME_IO_CONTRACTS: dict[str, RuntimeIOContract] = {
         event_shape=("queued", "started", "completed"),
         fixture_coverage=("workflow-capabilities-api", "workflow-run-default-node"),
     ),
+    "workflow.trigger.webhook_input": RuntimeIOContract(
+        binding_id="workflow.trigger.webhook_input",
+        status="dispatch_only",
+        input_ports=(),
+        output_ports=(("request", "webhookRequest"),),
+        input_params=("method", "path"),
+        output_artifacts=("runtimeInputEnvelope",),
+        permission_gate=(),
+        config_gate=("workflow_webhook_ingress",),
+        event_shape=("queued", "started", "completed"),
+        fixture_coverage=("workflow-compile-api", "workflow-capabilities-api"),
+    ),
     "workflow.source-pool.parallel-fanout": RuntimeIOContract(
         binding_id="workflow.source-pool.parallel-fanout",
         status="executable",

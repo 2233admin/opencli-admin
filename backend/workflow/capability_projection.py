@@ -33,6 +33,7 @@ from backend.workflow.runtime_registry import (
     SOURCE_POOL_BINDING_ID,
     TURBOPUSH_BINDING_ID,
     WEBHOOK_NOTIFY_BINDING_ID,
+    WEBHOOK_TRIGGER_BINDING_ID,
 )
 from backend.workflow.tool_capabilities import list_workflow_tool_capabilities
 from backend.workflow.turbopush_runtime import TURBOPUSH_PROVIDER
@@ -606,9 +607,10 @@ def _primitive_capabilities() -> list[WorkflowRuntimeCapability]:
             backend_available=True,
             kind="schedule",
             capability="trigger",
-            reason="Backend source webhook ingress exists, but workflow-level "
-            "webhook trigger binding is not connected to runs.",
-            missing=["workflow_webhook_trigger_binding", "runtime_input_envelope"],
+            runtime_binding=WEBHOOK_TRIGGER_BINDING_ID,
+            reason="The workflow webhook input contract is compilable; HTTP ingress "
+            "and run dispatch remain a separate backend slice.",
+            missing=["workflow_webhook_ingress"],
             tags=["primitive", "webhook", "trigger"],
         ),
         "primitive.ops.trigger-webhook": _capability(
@@ -619,9 +621,10 @@ def _primitive_capabilities() -> list[WorkflowRuntimeCapability]:
             backend_available=True,
             kind="schedule",
             capability="trigger",
-            reason="Backend source webhook ingress exists, but workflow-level "
-            "webhook trigger binding is not connected to runs.",
-            missing=["workflow_webhook_trigger_binding", "runtime_input_envelope"],
+            runtime_binding=WEBHOOK_TRIGGER_BINDING_ID,
+            reason="The workflow webhook input contract is compilable; HTTP ingress "
+            "and run dispatch remain a separate backend slice.",
+            missing=["workflow_webhook_ingress"],
             tags=["primitive", "webhook", "trigger"],
         ),
         "primitive.ops.action-webhook": _capability(
@@ -790,9 +793,10 @@ def _trigger_capabilities() -> list[WorkflowRuntimeCapability]:
             backend_available=True,
             kind="schedule",
             capability="trigger",
-            reason="Source webhook ingress exists, but workflow-level webhook "
-            "triggers are not connected to workflow runs.",
-            missing=["workflow_webhook_trigger_binding", "runtime_input_envelope"],
+            runtime_binding=WEBHOOK_TRIGGER_BINDING_ID,
+            reason="The workflow webhook input contract is registered; HTTP ingress "
+            "and run dispatch remain a separate backend slice.",
+            missing=["workflow_webhook_ingress"],
             tags=["trigger", "webhook"],
         ),
     ]

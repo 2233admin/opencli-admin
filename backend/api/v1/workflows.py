@@ -1,6 +1,8 @@
 """WorkflowProject compile and runtime endpoints."""
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+import uuid
+
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database import get_db
@@ -9,6 +11,12 @@ from backend.schemas.common import ApiResponse
 from backend.workflow.capability_projection import build_workflow_capabilities
 from backend.workflow.compiler import compile_workflow_project
 from backend.workflow.demand_assembler import draft_workflow_demand
+from backend.workflow.evidence_projection import (
+    build_evidence_projection,
+    get_evidence_batch,
+    list_evidence_batches,
+    parse_projection_includes,
+)
 from backend.workflow.external_importer import import_external_workflow
 from backend.workflow.fleet_inventory import (
     build_workflow_fleet_inventory,
@@ -24,6 +32,7 @@ from backend.workflow.opencli_hda_tracer import (
     start_workflow_run,
 )
 from backend.workflow.patcher import preview_workflow_patch
+from backend.workflow.runtime_registry import WEBHOOK_TRIGGER_BINDING_ID
 from backend.workflow.tool_capabilities import list_workflow_tool_capabilities
 
 router = APIRouter(prefix="/workflows", tags=["workflows"])
@@ -179,6 +188,135 @@ async def start_run(
     return ApiResponse.ok(await start_workflow_run(body, session=db))
 
 
+@router.post(
+    "/{workflow_id}/webhooks/{trigger_node_id}",
+    response_model=ApiResponse[workflow_schemas.WorkflowWebhookIngressResponse],
+    status_code=202,
+)
+async def start_run_from_webhook(
+    workflow_id: str,
+    trigger_node_id: str,
+    body: workflow_schemas.WorkflowWebhookIngressRequest,
+    idempotency_header: str | None = Header(default=None, alias="Idempotency-Key"),
+    request_id_header: str | None = Header(default=None, alias="X-Request-ID"),
+    source_id_header: str | None = Header(default=None, alias="X-Source-ID"),
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse[workflow_schemas.WorkflowWebhookIngressResponse]:
+    """Normalize an inbound webhook into the canonical workflow run input."""
+
+    if workflow_id != body.workflowProject.id:
+        raise _webhook_validation_error(
+            "workflow_id_mismatch",
+            "Path workflow id does not match workflowProject.id.",
+            workflow_id=workflow_id,
+            trigger_node_id=trigger_node_id,
+        )
+
+    compile_result = compile_workflow_project(body.workflowProject)
+    if not compile_result.valid or compile_result.plan is None:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "invalid_workflow_project",
+                "workflowId": workflow_id,
+                "nodeId": trigger_node_id,
+                "errors": [error.model_dump(mode="json") for error in compile_result.errors],
+            },
+        )
+
+    trigger_node = next(
+        (node for node in compile_result.plan.runtime.nodes if node.id == trigger_node_id),
+        None,
+    )
+    if trigger_node is None:
+        raise _webhook_validation_error(
+            "workflow_trigger_not_found",
+            "Webhook trigger node was not found in the compiled workflow.",
+            workflow_id=workflow_id,
+            trigger_node_id=trigger_node_id,
+        )
+
+    binding = trigger_node.runtime.get("binding")
+    binding_id = binding.get("binding_id") if isinstance(binding, dict) else None
+    if binding_id != WEBHOOK_TRIGGER_BINDING_ID:
+        raise _webhook_validation_error(
+            "unsupported_webhook_trigger",
+            "The selected node does not implement the workflow webhook input contract.",
+            workflow_id=workflow_id,
+            trigger_node_id=trigger_node_id,
+        )
+
+    binding_input = binding.get("input") if isinstance(binding, dict) else None
+    configured_method = (
+        str(binding_input.get("method", "POST")).upper()
+        if isinstance(binding_input, dict)
+        else "POST"
+    )
+    if configured_method != "POST":
+        raise _webhook_validation_error(
+            "unsupported_webhook_method",
+            f"Webhook trigger expects {configured_method}, but this ingress accepts POST.",
+            workflow_id=workflow_id,
+            trigger_node_id=trigger_node_id,
+        )
+
+    request_id = body.requestId or request_id_header or str(uuid.uuid4())
+    idempotency_key = body.idempotencyKey or idempotency_header
+    run_id = body.runId
+    if run_id is None and idempotency_key:
+        run_id = str(
+            uuid.uuid5(
+                uuid.NAMESPACE_URL,
+                f"opencli-admin:workflow-webhook:{workflow_id}:{trigger_node_id}:{idempotency_key}",
+            )
+        )
+
+    if run_id is not None and idempotency_key:
+        existing = await get_workflow_run_projection(run_id, session=db)
+        if existing is not None:
+            return ApiResponse.ok(
+                _webhook_ingress_response(
+                    existing,
+                    trigger_node_id=trigger_node_id,
+                    request_id=request_id,
+                    source_id=body.input.sourceId or source_id_header or "external",
+                    idempotency_key=idempotency_key,
+                )
+            )
+
+    runtime_input = body.input.model_copy(
+        update={
+            "source": "external",
+            "sourceId": body.input.sourceId or source_id_header or "external",
+        }
+    )
+    projection = await start_workflow_run(
+        workflow_schemas.WorkflowRunStartRequest(
+            project=body.workflowProject,
+            runId=run_id,
+            traceId=body.traceId,
+            trigger=workflow_schemas.WorkflowRunTrigger(
+                kind="webhook",
+                triggerNodeId=trigger_node_id,
+                requestId=request_id,
+                idempotencyKey=idempotency_key,
+            ),
+            input=runtime_input,
+            responseMode=body.responseMode,
+        ),
+        session=db,
+    )
+    return ApiResponse.ok(
+        _webhook_ingress_response(
+            projection,
+            trigger_node_id=trigger_node_id,
+            request_id=request_id,
+            source_id=runtime_input.sourceId,
+            idempotency_key=idempotency_key,
+        )
+    )
+
+
 @router.get(
     "/runs/{run_id}",
     response_model=ApiResponse[workflow_schemas.WorkflowRunProjection],
@@ -193,6 +331,86 @@ async def get_run_projection(
     if projection is None:
         raise HTTPException(status_code=404, detail="Workflow run not found")
     return ApiResponse.ok(projection)
+
+
+@router.get(
+    "/runs/{run_id}/evidence-batches",
+    response_model=ApiResponse[workflow_schemas.WorkflowEvidenceBatchListResponse],
+)
+async def get_run_evidence_batches(
+    run_id: str,
+    node_id: str | None = Query(default=None),
+    source_group: str | None = Query(default=None),
+    cursor: str | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=200),
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse[workflow_schemas.WorkflowEvidenceBatchListResponse]:
+    """List compact EvidenceBatch metadata without returning raw records."""
+
+    projection = await get_workflow_run_projection(run_id, session=db)
+    if projection is None:
+        raise HTTPException(status_code=404, detail="Workflow run not found")
+    try:
+        batches = list_evidence_batches(
+            projection,
+            node_id=node_id,
+            source_group=source_group,
+            cursor=cursor,
+            limit=limit,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return ApiResponse.ok(batches)
+
+
+@router.get(
+    "/runs/{run_id}/evidence-batches/{batch_id}",
+    response_model=ApiResponse[workflow_schemas.WorkflowEvidenceBatchDetail],
+)
+async def get_run_evidence_batch(
+    run_id: str,
+    batch_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse[workflow_schemas.WorkflowEvidenceBatchDetail]:
+    """Return one compact EvidenceBatch manifest and source coverage projection."""
+
+    projection = await get_workflow_run_projection(run_id, session=db)
+    if projection is None:
+        raise HTTPException(status_code=404, detail="Workflow run not found")
+    batch = get_evidence_batch(projection, batch_id)
+    if batch is None:
+        raise HTTPException(status_code=404, detail="Evidence batch not found")
+    return ApiResponse.ok(batch)
+
+
+@router.get(
+    "/runs/{run_id}/projection",
+    response_model=ApiResponse[workflow_schemas.WorkflowEvidenceProjection],
+)
+async def get_run_evidence_projection(
+    run_id: str,
+    node_id: str | None = Query(default=None),
+    source_group: str | None = Query(default=None),
+    include: str | None = Query(default=None),
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse[workflow_schemas.WorkflowEvidenceProjection]:
+    """Project run results for Canvas and AI consumers from replayable metadata."""
+
+    projection = await get_workflow_run_projection(run_id, session=db)
+    if projection is None:
+        raise HTTPException(status_code=404, detail="Workflow run not found")
+    try:
+        includes = parse_projection_includes(include)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return ApiResponse.ok(
+        build_evidence_projection(
+            projection,
+            node_id=node_id,
+            source_group=source_group,
+            includes=includes,
+        )
+    )
 
 
 @router.post(
@@ -334,3 +552,44 @@ async def stream_run_events(
 
 def _sse(event: str, data: str) -> str:
     return f"event: {event}\ndata: {data}\n\n"
+
+
+def _webhook_validation_error(
+    code: str,
+    message: str,
+    *,
+    workflow_id: str,
+    trigger_node_id: str,
+) -> HTTPException:
+    return HTTPException(
+        status_code=422,
+        detail={
+            "code": code,
+            "message": message,
+            "workflowId": workflow_id,
+            "nodeId": trigger_node_id,
+        },
+    )
+
+
+def _webhook_ingress_response(
+    projection: workflow_schemas.WorkflowRunProjection,
+    *,
+    trigger_node_id: str,
+    request_id: str,
+    source_id: str | None,
+    idempotency_key: str | None,
+) -> workflow_schemas.WorkflowWebhookIngressResponse:
+    base_path = f"/api/v1/workflows/runs/{projection.runId}"
+    return workflow_schemas.WorkflowWebhookIngressResponse(
+        workflowId=projection.workflowId,
+        runId=projection.runId,
+        traceId=projection.traceId,
+        triggerNodeId=trigger_node_id,
+        requestId=request_id,
+        sourceId=source_id,
+        idempotencyKey=idempotency_key,
+        projectionPath=base_path,
+        eventsPath=f"{base_path}/events",
+        projection=projection,
+    )

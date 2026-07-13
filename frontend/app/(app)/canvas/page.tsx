@@ -1,12 +1,15 @@
-import { ErrorBoundary } from '@/components/error-boundary'
-import { WorkflowEditor } from '@/components/flow/workflow-editor'
+import { redirect } from 'next/navigation'
 
-export default function CanvasPage() {
-  return (
-    <div className="h-full w-full overflow-hidden">
-      <ErrorBoundary label="WorkflowEditor">
-        <WorkflowEditor />
-      </ErrorBoundary>
-    </div>
-  )
+type CanvasRedirectProps = {
+  searchParams: Promise<Record<string, string | string[] | undefined>>
+}
+
+export default async function CanvasRedirectPage({ searchParams }: CanvasRedirectProps) {
+  const query = new URLSearchParams()
+  for (const [key, value] of Object.entries(await searchParams)) {
+    if (Array.isArray(value)) value.forEach((item) => query.append(key, item))
+    else if (value !== undefined) query.set(key, value)
+  }
+  const suffix = query.toString()
+  redirect(`/studio/workflow${suffix ? `?${suffix}` : ''}`)
 }

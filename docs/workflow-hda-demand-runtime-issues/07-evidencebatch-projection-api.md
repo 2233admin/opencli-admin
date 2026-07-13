@@ -41,3 +41,11 @@ Empty or partial runs are valid responses. Missing run id returns `404`; unautho
 
 - 05 — Multi Source OpenCLI HDA tracer
 - 06 — Node run event stream
+
+## Runtime verification
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest --no-cov -q tests/integration/test_workflow_evidence_batches_api.py tests/integration/test_workflow_opencli_hda_trace_api.py
+```
+
+The verification must prove stable `batchId` values, replay deduplication, empty and partial projections, filters, pagination, and `400`/`404` behavior without returning raw records.

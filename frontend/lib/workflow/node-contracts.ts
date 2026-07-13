@@ -481,29 +481,7 @@ const CONTRACTS: Record<string, NodeContract> = {
 export function getNodeContract(node: WorkflowProjectNode | undefined): NodeContract | undefined {
   if (!node) return undefined
   const catalogId = typeof node.ui?.catalogId === "string" ? node.ui.catalogId : undefined
-  if (catalogId && CONTRACTS[catalogId]) return CONTRACTS[catalogId]
-
-  if (isCollectionNeedNode(node)) {
-    return CONTRACTS["intelligence.input.collection-need"]
-  }
-  if (node.kind === "schedule" && node.capability === "trigger") return CONTRACTS["intelligence.schedule.cron"]
-  if (node.kind === "source" && node.adapter === "jin10-kuaixun") return CONTRACTS["intelligence.source.jin10"]
-  if (node.kind === "source" && node.adapter?.startsWith("opencli-")) return CONTRACTS["intelligence.source.opencli-slot"]
-  if (node.kind === "agent" && node.capability === "normalize" && node.params.fanout === "parallel") return CONTRACTS["intelligence.source.pool"]
-  if (node.kind === "agent" && node.capability === "normalize") return CONTRACTS["intelligence.processing.normalize"]
-  if (node.kind === "agent" && node.capability === "dedupe") return CONTRACTS["intelligence.processing.dedupe"]
-  if (node.kind === "flow" && node.capability === "merge") return CONTRACTS["intelligence.flow.merge"]
-  if (node.kind === "agent" && node.capability === "summarize") return CONTRACTS["intelligence.agent.summary"]
-  if (node.kind === "agent" && node.capability === "score") return CONTRACTS["intelligence.agent.score"]
-  if (node.kind === "agent" && node.capability === "tag") return CONTRACTS["intelligence.agent.tag"]
-  if (node.kind === "router" && node.capability === "route") return CONTRACTS["intelligence.router.importance"]
-  if (node.kind === "control" && node.capability === "accept") return CONTRACTS["intelligence.control.record-acceptance"]
-  if (node.kind === "sink" && node.capability === "store") return CONTRACTS["intelligence.sink.records"]
-  if (node.kind === "inbox" && node.capability === "store" && node.params.queue === "opencli-hda-output") return CONTRACTS["intelligence.output.collection-result"]
-  if (node.kind === "inbox" && node.capability === "store") return CONTRACTS["intelligence.output.inbox"]
-  if (node.kind === "notify" && node.adapter?.startsWith("turbopush")) return CONTRACTS["intelligence.output.turbopush-publish"]
-  if (node.kind === "notify" && node.capability === "send") return CONTRACTS["intelligence.output.webhook"]
-  return undefined
+  return catalogId ? CONTRACTS[catalogId] : undefined
 }
 
 export function buildProjectContractReport(project: WorkflowProject): ProjectContractReport {
@@ -675,21 +653,6 @@ function matchesType(value: unknown, type: ParamDataType): boolean {
   if (type === "object") return Boolean(value) && typeof value === "object" && !Array.isArray(value)
   if (type === "object[]") return Array.isArray(value) && value.every((item) => Boolean(item) && typeof item === "object" && !Array.isArray(item))
   return typeof value === type
-}
-
-function isCollectionNeedNode(node: WorkflowProjectNode): boolean {
-  if (node.ui?.catalogId === "intelligence.input.collection-need") return true
-  if (node.kind !== "schedule" || node.capability !== "trigger") return false
-  if (node.params.mode === "demand-draft") return true
-  return hasNeedShape(node.params) && !hasScheduleShape(node.params)
-}
-
-function hasNeedShape(params: Record<string, unknown>): boolean {
-  return typeof params.text === "string" || typeof params.locale === "string"
-}
-
-function hasScheduleShape(params: Record<string, unknown>): boolean {
-  return typeof params.interval === "string" || typeof params.timezone === "string"
 }
 
 function finding(

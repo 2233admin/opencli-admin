@@ -12,6 +12,7 @@ import { COLLECTION_NEED_CATALOG_ID } from "@/lib/workflow/node-catalog"
 import { getNodeDisplayId, localizeNodeText } from "@/lib/workflow/node-i18n"
 import { getNodeVisualSignature } from "@/lib/workflow/node-visuals"
 import { runtimeStatusLabel, runtimeStatusTone } from "@/lib/workflow/capabilities"
+import { buildCanonicalNodeViewContract } from "@/lib/workflow/canonical-node-contract"
 import type { AgentProposal } from "@/lib/workflow/proposal"
 import { cn } from "@/lib/utils"
 
@@ -155,6 +156,16 @@ function readMapBadges(data: WorkflowNodeType["data"]) {
 
   if (sourceAnchor && typeof sourceAnchor === "object") badges.push({ key: "anchor", label: "ANCHOR", tone: "text-[#a8d8ff]" })
   if (runArtifact && typeof runArtifact === "object") badges.push({ key: "artifact", label: "ARTIFACT", tone: "text-[#4ade80]" })
+  if (data.runtimeEvidenceBatches?.length) {
+    const batches = data.runtimeEvidenceBatches
+    const itemCount = batches.reduce((sum, batch) => sum + batch.itemCount, 0)
+    const blocked = batches.some((batch) => batch.status === "blocked" || batch.status === "failed")
+    badges.push({
+      key: "evidence-batch",
+      label: `BATCH ${batches.length} · ${itemCount}`,
+      tone: blocked ? "text-[#f87171]" : "text-[#4ade80]",
+    })
+  }
   if (topicCollapse && typeof topicCollapse === "object") {
     const state = topicCollapse as { mode?: unknown; nodeCount?: unknown }
     badges.push({
@@ -268,7 +279,6 @@ function MiniNetworkPreview({ data }: { data: WorkflowNodeType["data"] }) {
 }
 
 function WorkflowNodeComponent({ id, data, selected }: NodeProps<WorkflowNodeType>) {
-  const isCondition = data.nodeType === "condition"
   const proposalFocused = data.proposalFocused === true
   const internalLocked = data.internalLocked === true
   const internalDraft = data.internalDraft === true
@@ -280,6 +290,8 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<WorkflowNodeTyp
   const language = useSettingsStore((s) => s.language)
   const zoom = useStore((s) => s.transform[2])
   const canonical = readCanonical(data)
+  const projectNode = workflowProject.nodes.find((candidate) => candidate.id === id)
+  const nodeViewContract = buildCanonicalNodeViewContract(projectNode, data, id)
   const displayId = getNodeDisplayId(data)
   const isCollectionNeed = displayId === COLLECTION_NEED_CATALOG_ID || isCollectionNeedData(data)
   const demandParams = canonical?.params
@@ -301,31 +313,34 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<WorkflowNodeTyp
         ? "mid"
         : "high"
 
-  const primitivePorts = Array.isArray(data.primitivePorts)
+  const primitivePorts = nodeViewContract.ports.length > 0
+    ? nodeViewContract.ports
+    : Array.isArray(data.primitivePorts)
     ? (data.primitivePorts as Array<{ id: string; direction: string; type: string }>)
     : []
   const primitiveOutputs = primitivePorts
     .filter((port) => port.direction === "output")
-    .map((port) => ({ id: port.id, label: port.id, accent: port.type === "assertion" ? "#4ade80" : undefined }))
+    .map((port) => ({
+      id: port.id,
+      label: port.type.toLowerCase() === "evidencebatch" ? "EvidenceBatch" : port.id,
+      accent: port.type === "assertion" || port.type.toLowerCase() === "evidencebatch" ? "#4ade80" : undefined,
+    }))
   const primitiveInputs = primitivePorts.filter((port) => port.direction === "input")
   const outputs: { id?: string; label: string; accent?: string }[] = primitiveOutputs.length > 0
     ? primitiveOutputs
-    : isCondition
-      ? [
-          { id: "true", label: "true", accent: "#4ade80" },
-          { id: "false", label: "false", accent: "#f87171" },
-        ]
-      : isCollectionNeed
-        ? [{ id: "out", label: "need" }]
-      : [{ label: "out" }]
+    : []
 
   const summary = paramSummary(data)
   const nodeShape = nodeDisplayShape(data)
   const clipPath = shapeClips[nodeShape]
   const borderColor = selected ? "var(--foreground)" : proposalFocused ? "#ff7a17" : "var(--border)"
-  const localized = localizeNodeText(displayId, { label: data.label, description: data.description }, language)
+  const prefersCustomLabel = projectNode?.ui?.preferCustomLabel === true
+  const localized = prefersCustomLabel
+    ? { label: data.label, description: data.description }
+    : localizeNodeText(displayId, { label: data.label, description: data.description }, language)
   const visual = getNodeVisualSignature(data)
   const mapBadges = readMapBadges(data)
+  const evidenceBatchItemCount = data.runtimeEvidenceBatches?.reduce((sum, batch) => sum + batch.itemCount, 0) ?? 0
   const nodeStyle = {
     clipPath,
     borderRadius: clipPath ? undefined : 6,
@@ -380,13 +395,14 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<WorkflowNodeTyp
         data-runtime-status={data.runtimeCapability?.status ?? "unknown"}
         data-selected={selected ? "true" : "false"}
         data-package-state={internalLocked ? "locked" : internalDraft ? "draft" : "canonical"}
+        aria-label={`${nodeViewContract.identity.label}, ${nodeViewContract.identity.kind}, ${runtimeStatusLabel(nodeViewContract.status.capability)}`}
         className={cn(
           "workflow-node-card flex size-12 items-center justify-center bg-card text-card-foreground ring-1 transition-colors",
           selected ? "ring-foreground/40" : "ring-border",
           proposalFocused && "ring-2 ring-[#ff7a17]/45",
         )}
         style={nodeStyle}
-        title={`${localized.label} · ${runtimeStatusLabel(data.runtimeCapability?.status)}`}
+        title={`${nodeViewContract.identity.label} · ${nodeViewContract.identity.kind} · ${runtimeStatusLabel(nodeViewContract.status.capability)} · ${primitiveInputs.length} in / ${outputs.length} out`}
       >
         <span className="workflow-node-mini-code">{visual.code}</span>
         <Handle type="target" id={primitiveInputs[0]?.id} position={Position.Top} className={handleCls} />
@@ -410,7 +426,8 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<WorkflowNodeTyp
       data-status={data.status ?? "idle"}
       data-runtime-status={data.runtimeCapability?.status ?? "unknown"}
       data-selected={selected ? "true" : "false"}
-      data-package-state={internalLocked ? "locked" : internalDraft ? "draft" : "canonical"}
+        data-package-state={internalLocked ? "locked" : internalDraft ? "draft" : "canonical"}
+      aria-label={`${nodeViewContract.identity.label}, ${nodeViewContract.identity.kind}, ${runtimeStatusLabel(nodeViewContract.status.capability)}`}
       className={cn(
         "workflow-node-card group relative overflow-hidden bg-card text-card-foreground transition-colors",
         "w-[204px]",
@@ -447,23 +464,25 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<WorkflowNodeTyp
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-1.5">
             <span className="truncate font-mono text-[9px] uppercase tracking-[0.08em] text-muted-foreground/80">
-              {internalLocked ? "LOCKED PACKAGE" : internalDraft ? "DRAFT INTERNAL" : typeCaption(data.category, data.nodeType)}
+              {prefersCustomLabel
+                ? id === "collection-need" ? "工作流入口" : "工作流输出"
+                : internalLocked ? "LOCKED PACKAGE" : internalDraft ? "DRAFT INTERNAL" : typeCaption(data.category, data.nodeType)}
             </span>
             <span className="flex min-w-0 shrink-0 items-center gap-1">
-              <RuntimeCapabilityBadge data={data} />
+              {prefersCustomLabel ? null : <RuntimeCapabilityBadge data={data} />}
               <NodeStatus status={data.status} />
             </span>
           </div>
 
           <p className="mt-1 truncate text-[13px] font-medium leading-tight">{localized.label}</p>
 
-          {detail === "high" && summary ? (
+          {detail === "high" && summary && !prefersCustomLabel ? (
             <code className="mt-1 block truncate font-mono text-[10px] leading-tight text-muted-foreground">
               {summary}
             </code>
           ) : null}
 
-          {detail === "high" && isCollectionNeed ? (
+          {detail === "high" && isCollectionNeed && !prefersCustomLabel ? (
             <div className="nodrag nopan mt-2 space-y-1.5" onPointerDown={(event) => event.stopPropagation()}>
               <div className="rounded-[3px] border border-border/70 bg-background/45 px-2 py-1.5">
                 <p className="line-clamp-2 font-mono text-[10px] leading-snug text-foreground">{draftText}</p>
@@ -513,7 +532,9 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<WorkflowNodeTyp
             >
               <span>{i === 0 ? (primitiveInputs[0]?.id ?? "in") : ""}</span>
               <span className="flex items-center gap-1.5">
-                {out.label}
+                {out.label === "EvidenceBatch" && evidenceBatchItemCount > 0
+                  ? `${out.label} · ${evidenceBatchItemCount}`
+                  : out.label}
                 {out.accent ? (
                   <span
                     className="size-1.5 rounded-full"
