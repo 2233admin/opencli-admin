@@ -275,7 +275,6 @@ async def start_workflow_run(
             continue
 
         missing_runtime = _read_dict(node.runtime.get("missing_runtime"))
-        package_parent_id = _read_string(node.runtime.get("package_parent_id"))
         if missing_runtime:
             reason = WorkflowRunBlockReason(
                 code=_read_string(missing_runtime.get("code")) or "missing_runtime",
@@ -290,8 +289,8 @@ async def start_workflow_run(
                 message=reason.message,
                 block_reason=reason,
             )
-            if package_parent_id:
-                blocked_by_package.setdefault(package_parent_id, []).append(reason)
+            for ancestor_id in _package_ancestor_ids(node):
+                blocked_by_package.setdefault(ancestor_id, []).append(reason)
             continue
 
         if _binding_id(node) == WEBHOOK_TRIGGER_BINDING_ID:
@@ -411,8 +410,8 @@ async def start_workflow_run(
                 message=reason.message,
                 block_reason=reason,
             )
-            if package_parent_id:
-                blocked_by_package.setdefault(package_parent_id, []).append(reason)
+            for ancestor_id in _package_ancestor_ids(node):
+                blocked_by_package.setdefault(ancestor_id, []).append(reason)
             continue
 
         if _is_turbopush_publish_node(node):
@@ -590,8 +589,8 @@ async def start_workflow_run(
                 block_reason=reason,
                 details=resource_details,
             )
-            if package_parent_id:
-                blocked_by_package.setdefault(package_parent_id, []).append(reason)
+            for ancestor_id in _package_ancestor_ids(node):
+                blocked_by_package.setdefault(ancestor_id, []).append(reason)
             outputs_by_node[node.id] = []
             continue
 
@@ -637,8 +636,8 @@ async def start_workflow_run(
                 block_reason=reason,
                 details=reason.details,
             )
-            if package_parent_id:
-                blocked_by_package.setdefault(package_parent_id, []).append(reason)
+            for ancestor_id in _package_ancestor_ids(node):
+                blocked_by_package.setdefault(ancestor_id, []).append(reason)
             outputs_by_node[node.id] = []
             continue
 
@@ -669,7 +668,7 @@ async def start_workflow_run(
         )
         outputs_by_node[node.id] = output_items
 
-    for package_node in package_nodes:
+    for package_node in reversed(package_nodes):
         trace_errors = [
             error
             for error in (trace.errors if trace else [])
@@ -977,8 +976,8 @@ class _WorkflowRunEventEmitter:
         details: dict[str, object] | None = None,
     ) -> None:
         sequence = self._initial_sequence + len(self.events) + 1
-        package_node_id = _read_string(node.runtime.get("package_parent_id"))
-        internal_node_id = _optional_internal_node_id(node.id, package_node_id)
+        node_path = _compiled_node_path(node)
+        package_node_id, internal_node_id = _legacy_location_from_node_path(node_path)
         source_group = _read_string(node.params.get("sourceGroup")) or _read_string(
             node.params.get("source_group")
         )
@@ -996,6 +995,7 @@ class _WorkflowRunEventEmitter:
                 sourceId=self._source_id,
                 eventType=event_type,
                 createdAt=_utcnow(),
+                nodePath=node_path,
                 packageNodeId=package_node_id,
                 internalNodeId=internal_node_id,
                 sourceGroup=source_group,
@@ -1022,12 +1022,14 @@ def _build_projection(
     states: dict[str, WorkflowRunNodeState] = {}
     ordered_ids: list[str] = []
     for node in runtime_nodes:
-        package_parent_id = _read_string(node.runtime.get("package_parent_id"))
+        node_path = _compiled_node_path(node)
+        package_parent_id, internal_node_id = _legacy_location_from_node_path(node_path)
         states[node.id] = WorkflowRunNodeState(
             nodeId=node.id,
             status="queued",
+            nodePath=node_path,
             packageNodeId=package_parent_id,
-            internalNodeId=_optional_internal_node_id(node.id, package_parent_id),
+            internalNodeId=internal_node_id,
         )
         ordered_ids.append(node.id)
 
@@ -1036,6 +1038,7 @@ def _build_projection(
             event.nodeId,
             WorkflowRunNodeState(
                 nodeId=event.nodeId,
+                nodePath=event.nodePath,
                 packageNodeId=event.packageNodeId,
                 internalNodeId=event.internalNodeId,
             ),
@@ -2370,10 +2373,32 @@ def _native_node_completed_message(node: CompiledWorkflowNode) -> str:
 def _lineage_pointer(node: CompiledWorkflowNode) -> dict[str, object]:
     return {
         "nodeId": node.id,
+        "nodePath": _compiled_node_path(node),
         "dependsOn": node.depends_on,
         "packageParentId": node.runtime.get("package_parent_id"),
         "packageInternalId": node.runtime.get("package_internal_id"),
     }
+
+
+def _compiled_node_path(node: CompiledWorkflowNode) -> list[str]:
+    value = node.runtime.get("node_path")
+    if isinstance(value, list) and value and all(isinstance(part, str) and part for part in value):
+        return list(value)
+    return node.id.split(INTERNAL_ID_SEPARATOR)
+
+
+def _legacy_location_from_node_path(node_path: list[str]) -> tuple[str | None, str | None]:
+    if len(node_path) <= 1:
+        return None, None
+    return INTERNAL_ID_SEPARATOR.join(node_path[:-1]), node_path[-1]
+
+
+def _package_ancestor_ids(node: CompiledWorkflowNode) -> list[str]:
+    node_path = _compiled_node_path(node)
+    return [
+        INTERNAL_ID_SEPARATOR.join(node_path[:depth])
+        for depth in range(1, len(node_path))
+    ]
 
 
 def _webhook_runtime_input_envelope(
@@ -2437,6 +2462,7 @@ def _to_dispatch(
         "workflow_run_id": run_id,
         "package_node_id": package_node_id,
         "node_id": node.id,
+        "node_path": _compiled_node_path(node),
         "internal_node_id": internal_node_id,
         "source_group": source_group,
         "site": site,
@@ -2456,6 +2482,7 @@ def _to_dispatch(
     return WorkflowOpenCLIHDATraceDispatch(
         taskId=task_id,
         nodeId=node.id,
+        nodePath=_compiled_node_path(node),
         packageNodeId=package_node_id,
         internalNodeId=internal_node_id,
         sourceGroup=source_group,

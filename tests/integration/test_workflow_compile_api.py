@@ -108,6 +108,107 @@ def _opencli_workflow_project() -> dict:
     return project
 
 
+def _nested_operator_project(depth: int = 4) -> dict:
+    project = _valid_workflow_project()
+    nested_node = {
+        "id": f"level-{depth}-implementation",
+        "kind": "agent",
+        "capability": "normalize",
+        "params": {"language": "zh-CN"},
+        "ui": {"catalogId": "intelligence.processing.normalize"},
+        "internals": {"nodes": [], "edges": []},
+    }
+    for level in range(depth - 1, 0, -1):
+        if level == 1:
+            nested_node = {
+                "id": "level-1-operator",
+                "kind": "source",
+                "capability": "fetch",
+                "params": {
+                    "operator": {
+                        "execution": "internals",
+                        "implementationCatalogId": "package.opencli.multi-source-hda",
+                        "implementationNodeId": "level-2-package",
+                    }
+                },
+                "ui": {"networkRole": "operator"},
+                "internals": {"nodes": [nested_node], "edges": []},
+            }
+            continue
+        nested_node = {
+            "id": "level-2-package" if level == 2 else f"level-{level}-package",
+            "kind": "agent",
+            "capability": "normalize",
+            "params": {},
+            "ui": {
+                "catalogId": (
+                    "package.opencli.multi-source-hda"
+                    if level == 2
+                    else "package.intelligence.pipeline"
+                )
+            },
+            "internals": {"nodes": [nested_node], "edges": []},
+        }
+
+    project["nodes"] = [nested_node]
+    project["edges"] = []
+    project["adapters"] = []
+    return project
+
+
+def _two_operator_pipeline_project() -> dict:
+    project = _valid_workflow_project()
+    project["nodes"] = [
+        {
+            "id": "collect-operator",
+            "kind": "source",
+            "capability": "fetch",
+            "params": {"operator": {"execution": "internals"}},
+            "ui": {"networkRole": "operator"},
+            "internals": {
+                "nodes": [
+                    {
+                        "id": "collect-implementation",
+                        "kind": "agent",
+                        "capability": "normalize",
+                        "params": {"fixtureItems": [{"title": "captured"}]},
+                        "ui": {"catalogId": "intelligence.processing.normalize"},
+                    }
+                ],
+                "edges": [],
+            },
+        },
+        {
+            "id": "clean-operator",
+            "kind": "agent",
+            "capability": "normalize",
+            "params": {"operator": {"execution": "internals"}},
+            "ui": {"networkRole": "operator"},
+            "internals": {
+                "nodes": [
+                    {
+                        "id": "clean-implementation",
+                        "kind": "agent",
+                        "capability": "normalize",
+                        "params": {"language": "zh-CN"},
+                        "ui": {"catalogId": "intelligence.processing.dedupe"},
+                    }
+                ],
+                "edges": [],
+            },
+        },
+    ]
+    project["edges"] = [
+        {
+            "id": "collect-clean",
+            "source": "collect-operator",
+            "target": "clean-operator",
+        }
+    ]
+    project["adapters"] = []
+    return project
+
+
 def _native_nodes_first_loop_project() -> dict:
     return {
         "id": "wf-native-nodes-first-loop",
@@ -258,7 +359,7 @@ async def test_compile_valid_workflow_returns_plan_preview(client):
     body = response.json()
     assert body["success"] is True
     data = body["data"]
-    assert data["valid"] is True
+    assert data["valid"] is True, data["errors"]
     assert data["errors"] == []
 
     plan = data["plan"]
@@ -591,9 +692,292 @@ async def test_compile_expands_package_internals_and_binds_public_params(client)
     internal_fetch = runtime["nodes"][1]
     assert internal_fetch["params"]["limit"] == 50
     assert internal_fetch["runtime"]["package_parent_id"] == "multi-source-hda"
-    assert internal_fetch["depends_on"] == ["multi-source-hda"]
+    assert internal_fetch["depends_on"] == []
     assert runtime["edges"][0]["id"] == "multi-source-hda::internal-fetch-normalize"
     assert [node["id"] for node in runtime["plan_ir"]["nodes"]] == runtime["node_ids"]
+
+
+@pytest.mark.asyncio
+async def test_compile_recurses_through_four_node_levels_with_canonical_paths(client):
+    response = await client.post(
+        "/api/v1/workflows/compile",
+        json={"project": _nested_operator_project(depth=4)},
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["valid"] is True
+    runtime = data["plan"]["runtime"]
+    assert runtime["node_ids"] == [
+        "level-1-operator",
+        "level-1-operator::level-2-package",
+        "level-1-operator::level-2-package::level-3-package",
+        "level-1-operator::level-2-package::level-3-package::level-4-implementation",
+    ]
+
+    operator, package, nested_package, implementation = runtime["nodes"]
+    assert operator["runtime"]["node_path"] == ["level-1-operator"]
+    assert operator["runtime"]["structural"] is True
+    assert operator["runtime"]["executable"] is False
+    assert "missing_runtime" not in operator["runtime"]
+    assert package["runtime"]["node_path"] == [
+        "level-1-operator",
+        "level-2-package",
+    ]
+    assert nested_package["runtime"]["node_path"] == [
+        "level-1-operator",
+        "level-2-package",
+        "level-3-package",
+    ]
+    assert implementation["runtime"]["node_path"] == [
+        "level-1-operator",
+        "level-2-package",
+        "level-3-package",
+        "level-4-implementation",
+    ]
+    assert implementation["runtime"]["package_parent_id"] == (
+        "level-1-operator::level-2-package::level-3-package"
+    )
+    assert implementation["runtime"]["package_internal_id"] == "level-4-implementation"
+    assert implementation["runtime"]["structural"] is False
+    assert implementation["runtime"]["executable"] is True
+    assert "binding" in implementation["runtime"]
+    assert implementation["depends_on"] == []
+
+    plan_nodes = runtime["plan_ir"]["nodes"]
+    assert plan_nodes[0]["params"]["workflow"] == {
+        "kind": "source",
+        "capability": "fetch",
+        "adapter": None,
+        "node_path": ["level-1-operator"],
+        "structural": True,
+        "executable": False,
+    }
+    assert plan_nodes[-1]["params"]["workflow"]["node_path"] == [
+        "level-1-operator",
+        "level-2-package",
+        "level-3-package",
+        "level-4-implementation",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_compile_rejects_a_fifth_node_level(client):
+    response = await client.post(
+        "/api/v1/workflows/compile",
+        json={"project": _nested_operator_project(depth=5)},
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["valid"] is False
+    assert data["plan"] is None
+    errors = [
+        error for error in data["errors"] if error["code"] == "node_path_depth_exceeded"
+    ]
+    assert errors == [
+        {
+            "code": "node_path_depth_exceeded",
+            "message": (
+                'Workflow node "level-1-operator::level-2-package::level-3-package::'
+                'level-4-package::level-5-implementation" exceeds the maximum nesting '
+                "depth of 4"
+            ),
+            "node_id": (
+                "level-1-operator::level-2-package::level-3-package::"
+                "level-4-package::level-5-implementation"
+            ),
+            "edge_id": None,
+            "path": [
+                "nodes",
+                "level-1-operator",
+                "internals",
+                "nodes",
+                "level-2-package",
+                "internals",
+                "nodes",
+                "level-3-package",
+                "internals",
+                "nodes",
+                "level-4-package",
+                "internals",
+                "nodes",
+                "level-5-implementation",
+            ],
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_compile_rewrites_operator_edges_to_executable_boundaries(client):
+    response = await client.post(
+        "/api/v1/workflows/compile",
+        json={"project": _two_operator_pipeline_project()},
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["valid"] is True
+    runtime = data["plan"]["runtime"]
+    assert runtime["edges"] == [
+        {
+            "id": "collect-clean",
+            "source": "collect-operator::collect-implementation",
+            "target": "clean-operator::clean-implementation",
+            "sourcePort": "out",
+            "targetPort": "in",
+            "contractId": None,
+            "condition": None,
+        }
+    ]
+    nodes = {node["id"]: node for node in runtime["nodes"]}
+    assert nodes["clean-operator::clean-implementation"]["depends_on"] == [
+        "collect-operator::collect-implementation"
+    ]
+    assert runtime["plan_ir"]["edges"][0]["source_node"] == (
+        "collect-operator::collect-implementation"
+    )
+    assert runtime["plan_ir"]["edges"][0]["target_node"] == (
+        "clean-operator::clean-implementation"
+    )
+    assert runtime["plan_ir"]["edges"][0]["source_port"] == "out"
+    assert runtime["plan_ir"]["edges"][0]["target_port"] == "in"
+
+
+@pytest.mark.asyncio
+async def test_compile_topologically_orders_reversed_operator_nodes(client):
+    project = _two_operator_pipeline_project()
+    project["nodes"].reverse()
+
+    response = await client.post(
+        "/api/v1/workflows/compile",
+        json={"project": project},
+    )
+
+    assert response.status_code == 200
+    runtime = response.json()["data"]["plan"]["runtime"]
+    executable_ids = [
+        node["id"] for node in runtime["nodes"] if node["runtime"]["executable"]
+    ]
+    assert executable_ids == [
+        "collect-operator::collect-implementation",
+        "clean-operator::clean-implementation",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_compile_uses_declared_primitive_ports_for_validation_and_plan_ir(client):
+    project = _valid_workflow_project()
+    project["nodes"] = [
+        {
+            "id": "manual-sample",
+            "kind": "action",
+            "capability": "store",
+            "params": {},
+            "ui": {
+                "catalogId": "primitive.input.manual-sample",
+                "primitiveId": "primitive.input.manual-sample",
+                "primitivePorts": [
+                    {"id": "sample", "direction": "output", "type": "items[]"}
+                ],
+            },
+        },
+        {
+            "id": "filter-items",
+            "kind": "action",
+            "capability": "store",
+            "params": {},
+            "ui": {
+                "catalogId": "primitive.transform.filter-items",
+                "primitiveId": "primitive.transform.filter-items",
+                "primitivePorts": [
+                    {"id": "items", "direction": "input", "type": "items[]"},
+                    {"id": "items", "direction": "output", "type": "items[]"},
+                ],
+            },
+        },
+    ]
+    project["edges"] = [
+        {
+            "id": "sample-filter",
+            "source": "manual-sample",
+            "target": "filter-items",
+            "sourcePort": "sample",
+            "targetPort": "items",
+        }
+    ]
+    project["adapters"] = []
+
+    response = await client.post("/api/v1/workflows/compile", json={"project": project})
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["valid"] is True, data["errors"]
+    plan_nodes = {node["id"]: node for node in data["plan"]["runtime"]["plan_ir"]["nodes"]}
+    assert plan_nodes["manual-sample"]["outputs"] == [
+        {"name": "sample", "type": "items[]"}
+    ]
+    assert plan_nodes["filter-items"]["inputs"] == [
+        {"name": "items", "type": "items[]"}
+    ]
+
+    project["nodes"][1]["ui"]["primitivePorts"][0]["type"] = "object"
+    incompatible = await client.post(
+        "/api/v1/workflows/compile",
+        json={"project": project},
+    )
+    errors = incompatible.json()["data"]["errors"]
+    assert any(error["code"] == "incompatible_edge_ports" for error in errors)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("reserved_id", ["ambiguous::node", "ambiguous__node"])
+async def test_compile_rejects_reserved_node_path_separators(client, reserved_id):
+    project = _valid_workflow_project()
+    project["nodes"][0]["id"] = reserved_id
+    project["edges"][0]["source"] = reserved_id
+
+    response = await client.post("/api/v1/workflows/compile", json={"project": project})
+
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_compile_rejects_duplicate_edge_ids_inside_a_node_scope(client):
+    project = _two_operator_pipeline_project()
+    internals = project["nodes"][0]["internals"]
+    internals["nodes"].append(
+        {
+            "id": "collect-tail",
+            "kind": "agent",
+            "capability": "normalize",
+            "params": {},
+            "ui": {"catalogId": "intelligence.processing.normalize"},
+        }
+    )
+    internals["edges"] = [
+        {
+            "id": "duplicate-edge",
+            "source": "collect-implementation",
+            "target": "collect-tail",
+        },
+        {
+            "id": "duplicate-edge",
+            "source": "collect-implementation",
+            "target": "collect-tail",
+        },
+    ]
+
+    response = await client.post("/api/v1/workflows/compile", json={"project": project})
+
+    assert response.status_code == 200
+    errors = response.json()["data"]["errors"]
+    assert any(
+        error["code"] == "duplicate_edge_id"
+        and error["node_id"] == "collect-operator"
+        and error["edge_id"] == "duplicate-edge"
+        for error in errors
+    )
 
 
 @pytest.mark.asyncio
@@ -646,7 +1030,9 @@ async def test_compile_resolves_opencli_hda_internal_source_binding(client):
     internal_source = runtime_nodes[1]
     assert package_node["id"] == "multi-source-hda"
     assert "binding" not in package_node["runtime"]
-    assert package_node["runtime"]["missing_runtime"]["code"] == "missing_runtime_binding"
+    assert "missing_runtime" not in package_node["runtime"]
+    assert package_node["runtime"]["structural"] is True
+    assert package_node["runtime"]["executable"] is False
     assert internal_source["id"] == "multi-source-hda::source-bilibili"
     assert internal_source["runtime"]["package_parent_id"] == "multi-source-hda"
     assert internal_source["runtime"]["binding"]["function_id"] == "odp.collect::opencli_snapshot"
@@ -722,7 +1108,7 @@ async def test_compile_materializes_opencli_hda_sources_from_ai_params_in_parall
     collection_output = runtime["nodes"][5]
     assert package_node["params"]["execution"]["fanout"] == "parallel"
     assert package_node["params"]["execution"] == {"fanout": "parallel"}
-    assert source_pool["depends_on"] == ["multi-source-opencli"]
+    assert source_pool["depends_on"] == []
     assert source_pool["runtime"]["binding"]["binding_id"] == (
         "workflow.source-pool.parallel-fanout"
     )
@@ -761,6 +1147,85 @@ async def test_compile_materializes_opencli_hda_sources_from_ai_params_in_parall
         "multi-source-opencli::source-xhs",
         "multi-source-opencli::internal-normalize",
     ]
+
+
+@pytest.mark.asyncio
+async def test_compile_materializes_nested_opencli_hda_and_merges_adapters(client):
+    project = _valid_workflow_project()
+    project["nodes"] = [
+        {
+            "id": "source-operator",
+            "kind": "agent",
+            "capability": "normalize",
+            "params": {"operator": {"execution": "internals"}},
+            "ui": {"networkRole": "operator"},
+            "internals": {
+                "nodes": [
+                    {
+                        "id": "source-package",
+                        "kind": "agent",
+                        "capability": "normalize",
+                        "params": {
+                            "template": "opencli-multi-source",
+                            "runtime": "iii",
+                            "lockedInternals": True,
+                            "execution": {
+                                "fanout": "parallel",
+                                "maxConcurrency": 4,
+                            },
+                            "sources": [
+                                {
+                                    "id": "bili",
+                                    "sourceGroup": "video",
+                                    "site": "bilibili",
+                                    "command": "search",
+                                    "args": {"keyword": "ai"},
+                                },
+                                {
+                                    "id": "xhs",
+                                    "sourceGroup": "social",
+                                    "site": "xiaohongshu",
+                                    "command": "search",
+                                    "args": {"keyword": "ai"},
+                                },
+                            ],
+                        },
+                        "ui": {"catalogId": "package.opencli.multi-source-hda"},
+                    }
+                ],
+                "edges": [],
+            },
+        }
+    ]
+    project["edges"] = []
+    project["adapters"] = []
+
+    response = await client.post("/api/v1/workflows/compile", json={"project": project})
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["valid"] is True
+    runtime = data["plan"]["runtime"]
+    source_package = next(
+        node
+        for node in runtime["nodes"]
+        if node["id"] == "source-operator::source-package"
+    )
+    assert source_package["params"]["execution"] == {"fanout": "parallel"}
+    assert "source-operator::source-package::source-bili" in runtime["node_ids"]
+    assert "source-operator::source-package::source-xhs" in runtime["node_ids"]
+    source_nodes = [
+        node
+        for node in runtime["nodes"]
+        if node["id"]
+        in {
+            "source-operator::source-package::source-bili",
+            "source-operator::source-package::source-xhs",
+        }
+    ]
+    assert {node["runtime"]["binding"]["function_id"] for node in source_nodes} == {
+        "odp.collect::opencli_snapshot"
+    }
 
 
 @pytest.mark.asyncio

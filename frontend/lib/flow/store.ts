@@ -38,7 +38,7 @@ import type { WorkflowProject } from "../workflow/schema"
 import { parseWorkflowProject, type AdapterBinding, type WorkflowProfile, type WorkflowProjectNode } from "../workflow/schema"
 import { workflowNodeToReactFlow, workflowProjectToReactFlow } from "../workflow/to-react-flow"
 import { addCatalogNodeToWorkflowProject, type WorkflowNodeCatalogItem } from "../workflow/node-catalog"
-import { getNodeInternals, type NodeInternalStep } from "../workflow/node-internals"
+import { getNodeInternals, type NodeInternals, type NodeInternalStep } from "../workflow/node-internals"
 import { getPrimitiveByStepCapability, primitiveToNodeData, type WorkflowPrimitive } from "../workflow/node-primitives"
 import { createParameterInterfaceFromInternals, setParameterInterfaceFieldValue } from "../workflow/parameter-interface"
 import {
@@ -58,6 +58,14 @@ import type {
   WorkflowRunStatus,
 } from "../workflow/backend-runs"
 import { applyEvidenceBatchRuntimePatches } from "../workflow/runtime-bridge"
+import { MAX_WORKFLOW_NODE_DEPTH, NODE_NETWORK_DEPTH_LIMIT_REACHED } from "../workflow/node-hierarchy"
+import { normalizeWorkflowRuntimeNodePath, workflowRuntimeCanvasNodeIds } from "../workflow/node-path"
+import {
+  appendCanonicalNetworkNode,
+  canonicalPositionFromNetworkCanvas,
+  updateCanonicalProjectNodeByCanvasId,
+} from "./store-canonical-actions"
+import type { FlowClipboard, FlowNetworkStackEntry, FlowStoreSnapshot } from "./store-utils"
 
 export type { GeneratedWorkflowSpec } from "./types"
 
@@ -69,11 +77,11 @@ export type FlowState = {
   workflowProject: WorkflowProject
   nodes: WorkflowNode[]
   edges: WorkflowEdge[]
-  networkStack: { nodeId: string; label: string; snapshot: FlowSnapshot }[]
+  networkStack: FlowNetworkStackEntry[]
   helperLines: HelperLines
-  past: FlowSnapshot[]
-  future: FlowSnapshot[]
-  clipboard: FlowSnapshot | null
+  past: FlowStoreSnapshot[]
+  future: FlowStoreSnapshot[]
+  clipboard: FlowClipboard | null
   selectedIds: string[]
   pendingAgentProposal: AgentProposal | null
 
@@ -103,7 +111,14 @@ export type FlowState = {
     item: WorkflowPrimitive,
     position: XYPosition,
     runtimeCapability?: WorkflowRuntimeCapability,
+    options?: { suppressSnapshot?: boolean },
   ) => void
+  addPrimitiveToNodeNetwork: (
+    nodeId: string,
+    item: WorkflowPrimitive,
+    position: XYPosition,
+    runtimeCapability?: WorkflowRuntimeCapability,
+  ) => number
   addWorkflowNodeFromCatalog: (item: WorkflowNodeCatalogItem, position: XYPosition) => void
   updateWorkflowNodeParams: (
     nodeId: string,
@@ -142,6 +157,7 @@ export type FlowState = {
   addChildNode: (parentId: string) => void
   insertNodeOnEdge: (edgeId: string) => void
   enterNodeNetwork: (nodeId: string) => number
+  enterNodeNetworkForEdit: (nodeId: string, options?: { suppressSnapshot?: boolean }) => number
   exitNodeNetwork: () => boolean
   unlockNodeInternals: (nodeId: string) => number
   lockNodeInternals: (nodeId: string) => number
@@ -183,6 +199,135 @@ function uniqueWorkflowNodeId(prefix: string, nodes: WorkflowProject["nodes"]): 
     i += 1
   }
   return candidate
+}
+
+function canonicalNodeFromPrimitive(
+  item: WorkflowPrimitive,
+  id: string,
+  canvasPosition: XYPosition,
+  runtimeCapability?: WorkflowRuntimeCapability,
+): WorkflowProjectNode {
+  const primitiveData = primitiveToNodeData(item, runtimeCapability)
+  return {
+    id,
+    kind: item.canonical.kind,
+    capability: item.canonical.capability,
+    params: {
+      ...Object.fromEntries(item.fields.map((field) => [field.id, field.value])),
+      io: {
+        inputs: item.canonical.inputPorts,
+        outputs: item.canonical.outputPorts,
+      },
+    },
+    sourceAnchor: primitiveData.sourceAnchor,
+    runArtifact: primitiveData.runArtifact,
+    miniNetwork: primitiveData.miniNetwork,
+    topicCollapse: primitiveData.topicCollapse,
+    proposalState: primitiveData.proposalState,
+    ui: {
+      label: item.label,
+      description: item.description,
+      icon: item.icon,
+      color: item.color,
+      position: canonicalPositionFromNetworkCanvas(canvasPosition),
+      catalogId: item.id,
+      primitiveId: item.id,
+      primitiveCategory: item.category,
+      primitivePorts: item.ports,
+      runtimeCapability: primitiveData.runtimeCapability,
+    },
+  }
+}
+
+function canonicalInternalsFromFallback(internals: NodeInternals): NonNullable<WorkflowProjectNode["internals"]> {
+  const nodes = internals.steps.map((stepItem, index) => {
+    const primitiveItem = getPrimitiveByStepCapability(stepItem.capability)
+    const node = canonicalNodeFromPrimitive(
+      primitiveItem,
+      stepItem.id,
+      { x: 520, y: 80 + index * 140 },
+    )
+    return {
+      ...node,
+      params: {
+        ...node.params,
+        stepCapability: stepItem.capability,
+        evidence: stepItem.evidence,
+        ...Object.fromEntries(
+          (stepItem.exposedParams ?? []).map((param) => [param.binding?.fieldId ?? param.id, param.value]),
+        ),
+      },
+      ui: {
+        ...node.ui,
+        label: stepItem.label,
+        description: stepItem.description,
+        internalStatus: stepItem.status,
+      },
+    }
+  })
+  const edges = nodes.slice(0, -1).map((node, index) => {
+    const target = nodes[index + 1]
+    const sourcePrimitive = getPrimitiveByStepCapability(internals.steps[index].capability)
+    const targetPrimitive = getPrimitiveByStepCapability(internals.steps[index + 1].capability)
+    return {
+      id: `fallback-${node.id}-${target.id}`,
+      source: node.id,
+      target: target.id,
+      sourcePort: sourcePrimitive.canonical.outputPorts[0]?.id,
+      targetPort: targetPrimitive.canonical.inputPorts[0]?.id,
+    }
+  })
+  return { locked: false, nodes, edges }
+}
+
+function canonicalParameterInterface(
+  projectNode: WorkflowProjectNode,
+  fallback: NodeInternals | undefined,
+): ParameterInterface | undefined {
+  const parameterInterface =
+    projectNode.parameterInterface ?? createParameterInterfaceFromInternals(projectNode.id, fallback)
+  if (!parameterInterface) return undefined
+  const childIds = new Set(
+    (projectNode.internals?.nodes ?? []).filter(isWorkflowProjectNode).map((node) => node.id),
+  )
+  if (fallback) {
+    for (const step of fallback.steps) childIds.add(step.id)
+  }
+  return {
+    ...parameterInterface,
+    groups: [...parameterInterface.groups],
+    fields: parameterInterface.fields.map((field) => {
+      const localChildId = Array.from(childIds).find(
+        (childId) => field.binding.nodeId === childId || field.binding.nodeId.endsWith(`__${childId}`),
+      )
+      return localChildId
+        ? { ...field, binding: { ...field.binding, nodeId: localChildId } }
+        : field
+    }),
+  }
+}
+
+function ensureCanonicalNodeInternals(
+  project: WorkflowProject,
+  canvasNodeId: string,
+  projectNode: WorkflowProjectNode,
+): { project: WorkflowProject; projectNode: WorkflowProjectNode } {
+  const fallback = getNodeInternals(projectNode)
+  const internals =
+    projectNode.internals ??
+    (fallback ? canonicalInternalsFromFallback(fallback) : { locked: false, nodes: [], edges: [] })
+  const parameterInterface = canonicalParameterInterface({ ...projectNode, internals }, fallback)
+  const nextProject = parseWorkflowProject(
+    updateCanonicalProjectNodeByCanvasId(project, canvasNodeId, (node) => ({
+      ...node,
+      parameterInterface,
+      internals,
+    })),
+  )
+  return {
+    project: nextProject,
+    projectNode: findProjectNodeByCanvasId(nextProject, canvasNodeId) ?? projectNode,
+  }
 }
 
 function isWorkflowRuntimeCapability(value: unknown): value is WorkflowRuntimeCapability {
@@ -229,6 +374,7 @@ function workflowNodeStatusFromEvent(eventType: WorkflowNodeRunEvent["eventType"
 function runStateForEvent(event: WorkflowNodeRunEvent): WorkflowRunNodeState {
   return {
     nodeId: event.nodeId,
+    nodePath: event.nodePath,
     status:
       event.eventType === "queued"
         ? "queued"
@@ -255,29 +401,50 @@ function runtimeNodeIdCandidates(
   nodeId: string,
   packageNodeId?: string | null,
   internalNodeId?: string | null,
+  nodePath?: readonly string[] | null,
 ): string[] {
-  const candidates = [nodeId]
-  if (packageNodeId && internalNodeId) {
-    candidates.push(scopedInternalId(packageNodeId, internalNodeId))
-  }
-  if (nodeId.includes("::")) {
-    candidates.push(nodeId.replace("::", "__"))
-  }
-  return Array.from(new Set(candidates))
+  return workflowRuntimeCanvasNodeIds({ nodeId, nodePath, packageNodeId, internalNodeId })
 }
 
 function runtimeStateByCanvasNodeId(projection: WorkflowRunProjection): Map<string, WorkflowRunNodeState> {
   const byCanvasNodeId = new Map<string, WorkflowRunNodeState>()
+  const exactNodeIds = new Set<string>()
   for (const nodeState of projection.nodeStates) {
+    const exactNodeId = normalizeWorkflowRuntimeNodePath({
+      nodeId: nodeState.nodeId,
+      nodePath: nodeState.nodePath,
+      packageNodeId: nodeState.packageNodeId,
+      internalNodeId: nodeState.internalNodeId,
+    }).join("__")
+    exactNodeIds.add(exactNodeId)
+    byCanvasNodeId.set(exactNodeId, nodeState)
+  }
+  for (const nodeState of projection.nodeStates) {
+    if (nodeState.status !== "blocked" && nodeState.status !== "failed") continue
+    const exactNodeId = normalizeWorkflowRuntimeNodePath({
+      nodeId: nodeState.nodeId,
+      nodePath: nodeState.nodePath,
+      packageNodeId: nodeState.packageNodeId,
+      internalNodeId: nodeState.internalNodeId,
+    }).join("__")
     for (const candidate of runtimeNodeIdCandidates(
       nodeState.nodeId,
       nodeState.packageNodeId,
       nodeState.internalNodeId,
+      nodeState.nodePath,
     )) {
-      byCanvasNodeId.set(candidate, nodeState)
+      if (candidate === exactNodeId || exactNodeIds.has(candidate)) continue
+      const current = byCanvasNodeId.get(candidate)
+      if (!current || runtimeFailureSeverity(nodeState.status) > runtimeFailureSeverity(current.status)) {
+        byCanvasNodeId.set(candidate, nodeState)
+      }
     }
   }
   return byCanvasNodeId
+}
+
+function runtimeFailureSeverity(status: WorkflowRunStatus): number {
+  return status === "failed" ? 2 : status === "blocked" ? 1 : 0
 }
 
 function patchProjectNodeRunEvent(
@@ -285,13 +452,34 @@ function patchProjectNodeRunEvent(
   event: WorkflowNodeRunEvent,
   runtimeRunState: WorkflowRunNodeState,
 ): WorkflowProjectNode {
-  const matchesPackageNode = node.id === event.nodeId
-  const matchesInternalNode = Boolean(event.packageNodeId === node.id && event.internalNodeId && node.internals)
-  if (!matchesPackageNode && !matchesInternalNode) return node
+  const targets = new Set(
+    runtimeNodeIdCandidates(event.nodeId, event.packageNodeId, event.internalNodeId, event.nodePath),
+  )
+  return patchProjectNodeRunEventAtPath(node, "", targets, event, runtimeRunState)
+}
+
+function patchProjectNodeRunEventAtPath(
+  node: WorkflowProjectNode,
+  canvasParentId: string,
+  targets: ReadonlySet<string>,
+  event: WorkflowNodeRunEvent,
+  runtimeRunState: WorkflowRunNodeState,
+): WorkflowProjectNode {
+  const canvasNodeId = canvasParentId ? scopedInternalId(canvasParentId, node.id) : node.id
+  const patchedChildren = node.internals?.nodes.map((child) =>
+    isWorkflowProjectNode(child)
+      ? patchProjectNodeRunEventAtPath(child, canvasNodeId, targets, event, runtimeRunState)
+      : child,
+  )
+  const childrenChanged = Boolean(
+    patchedChildren?.some((child, index) => child !== node.internals?.nodes[index]),
+  )
+  const matchesNode = targets.has(canvasNodeId)
+  if (!matchesNode && !childrenChanged) return node
 
   return {
     ...node,
-    ...(matchesPackageNode
+    ...(matchesNode
       ? {
           ui: {
             ...(node.ui ?? {}),
@@ -300,13 +488,11 @@ function patchProjectNodeRunEvent(
           },
         }
       : {}),
-    ...(matchesInternalNode && node.internals
+    ...(node.internals && patchedChildren
       ? {
           internals: {
             ...node.internals,
-            nodes: node.internals.nodes.map((internalNode) =>
-              patchInternalRunEvent(internalNode, event, runtimeRunState),
-            ),
+            nodes: patchedChildren,
           },
         }
       : {}),
@@ -317,13 +503,25 @@ function patchProjectNodeRunProjection(
   node: WorkflowProjectNode,
   stateByCanvasNodeId: Map<string, WorkflowRunNodeState>,
 ): WorkflowProjectNode {
-  const runtimeRunState = stateByCanvasNodeId.get(node.id)
-  const hasInternalStates = Boolean(
-    node.internals?.nodes.some((internalNode) =>
-      stateByCanvasNodeId.has(scopedInternalId(node.id, readInternalNodeId(internalNode) ?? "")),
-    ),
+  return patchProjectNodeRunProjectionAtPath(node, "", stateByCanvasNodeId)
+}
+
+function patchProjectNodeRunProjectionAtPath(
+  node: WorkflowProjectNode,
+  canvasParentId: string,
+  stateByCanvasNodeId: Map<string, WorkflowRunNodeState>,
+): WorkflowProjectNode {
+  const canvasNodeId = canvasParentId ? scopedInternalId(canvasParentId, node.id) : node.id
+  const runtimeRunState = stateByCanvasNodeId.get(canvasNodeId)
+  const patchedChildren = node.internals?.nodes.map((child) =>
+    isWorkflowProjectNode(child)
+      ? patchProjectNodeRunProjectionAtPath(child, canvasNodeId, stateByCanvasNodeId)
+      : child,
   )
-  if (!runtimeRunState && !hasInternalStates) return node
+  const childrenChanged = Boolean(
+    patchedChildren?.some((child, index) => child !== node.internals?.nodes[index]),
+  )
+  if (!runtimeRunState && !childrenChanged) return node
 
   return {
     ...node,
@@ -335,54 +533,15 @@ function patchProjectNodeRunProjection(
           },
         }
       : {}),
-    ...(node.internals
+    ...(node.internals && patchedChildren
       ? {
           internals: {
             ...node.internals,
-            nodes: node.internals.nodes.map((internalNode) =>
-              patchInternalRunProjection(internalNode, node.id, stateByCanvasNodeId),
-            ),
+            nodes: patchedChildren,
           },
         }
       : {}),
   }
-}
-
-function patchInternalRunEvent(
-  value: unknown,
-  event: WorkflowNodeRunEvent,
-  runtimeRunState: WorkflowRunNodeState,
-): unknown {
-  if (!isWorkflowProjectNode(value) || value.id !== event.internalNodeId) return value
-  return {
-    ...value,
-    ui: {
-      ...(value.ui ?? {}),
-      runtimeRunState,
-      runtimeLatestEvent: event,
-    },
-  }
-}
-
-function patchInternalRunProjection(
-  value: unknown,
-  packageNodeId: string,
-  stateByCanvasNodeId: Map<string, WorkflowRunNodeState>,
-): unknown {
-  if (!isWorkflowProjectNode(value)) return value
-  const runtimeRunState = stateByCanvasNodeId.get(scopedInternalId(packageNodeId, value.id))
-  if (!runtimeRunState) return value
-  return {
-    ...value,
-    ui: {
-      ...(value.ui ?? {}),
-      runtimeRunState,
-    },
-  }
-}
-
-function readInternalNodeId(value: unknown): string | null {
-  return isWorkflowProjectNode(value) ? value.id : null
 }
 
 function fieldsForInternalStep(stepItem: NodeInternalStep, parentNodeId?: string, parameterInterface?: ParameterInterface) {
@@ -392,7 +551,9 @@ function fieldsForInternalStep(stepItem: NodeInternalStep, parentNodeId?: string
     ...(stepItem.exposedParams ?? []).map((param) => {
       const fieldId = param.binding?.fieldId ?? param.id
       const boundValue = parameterInterface?.fields.find(
-        (field) => field.binding.nodeId === `${parentNodeId}__${stepItem.id}` && field.binding.fieldId === fieldId,
+        (field) =>
+          (field.binding.nodeId === stepItem.id || field.binding.nodeId === `${parentNodeId}__${stepItem.id}`) &&
+          field.binding.fieldId === fieldId,
       )?.value
       return {
         id: fieldId,
@@ -425,6 +586,7 @@ function materializeProjectInternals(
   const explicitEdges = projectNode.internals?.edges.filter(isInternalWorkflowEdge) ?? []
   const rawEdges = explicitEdges.length > 0 ? explicitEdges : inferNormalizeFanoutEdges(rawNodes)
   const parentId = canvasParentId
+  const networkLocked = projectNode.internals?.locked === true
   const parentRect = nodeRect(parentNode)
   const origin =
     mode === "network"
@@ -436,12 +598,16 @@ function materializeProjectInternals(
     const normalizedNode: WorkflowProjectNode = { ...internalNode, params: internalNode.params ?? {} }
     const reactNode = workflowNodeToReactFlow(normalizedNode, index)
     const relativePosition = readInternalPosition(normalizedNode, index)
+    const catalogId = typeof normalizedNode.ui?.catalogId === "string" ? normalizedNode.ui.catalogId : undefined
+    const primitivePorts = Array.isArray(normalizedNode.ui?.primitivePorts)
+      ? normalizedNode.ui.primitivePorts
+      : undefined
     return {
       ...reactNode,
       id: scopedInternalId(parentId, normalizedNode.id),
       type: "workflow" as const,
-      draggable: mode === "network" ? false : reactNode.draggable,
-      connectable: reactNode.connectable,
+      draggable: mode === "network" ? !networkLocked : reactNode.draggable,
+      connectable: mode === "network" ? !networkLocked : reactNode.connectable,
       position: {
         x: origin.x + relativePosition.x,
         y: origin.y + relativePosition.y,
@@ -451,8 +617,15 @@ function materializeProjectInternals(
         status: mode === "network" ? "success" : reactNode.data.status,
         internalOf: parentId,
         internalStepId: normalizedNode.id,
+        ...(catalogId?.startsWith("primitive.")
+          ? {
+              primitiveId: catalogId,
+              primitiveCategory: normalizedNode.ui?.primitiveCategory,
+              primitivePorts,
+            }
+          : {}),
         internalStatus: "ready",
-        internalLocked: mode === "network",
+        internalLocked: mode === "network" && networkLocked,
         ...(mode === "network"
           ? { networkTitle: title }
           : { internalDraft: true, packageDraft: true }),
@@ -471,11 +644,12 @@ function materializeProjectInternals(
       type: "workflow" as const,
       animated: true,
       data: {
+        ...(edge.ui ?? {}),
         label: edge.label,
         internalOf: parentId,
+        internalEdgeId: edge.id,
         sourcePort: edge.sourcePort,
         targetPort: edge.targetPort,
-        ...(edge.ui ?? {}),
       },
     }))
 
@@ -678,22 +852,72 @@ export const useFlowStore = create<FlowState>((set, get) => ({
     set((state) => ({ nodes: isGroup ? [newNode, ...state.nodes] : [...state.nodes, newNode] }))
   },
 
-  addPrimitiveNode: (item, position, runtimeCapability) => {
-    get().takeSnapshot()
-    const { nodes, networkStack } = get()
-    const id = `${item.idPrefix}-${nanoid(6)}`
+  addPrimitiveNode: (item, position, runtimeCapability, options) => {
+    if (!options?.suppressSnapshot) get().takeSnapshot()
+    const { workflowProject, nodes, networkStack } = get()
+    const localId = `${item.idPrefix}-${nanoid(6)}`
     const freePos = findFreePosition(nodes, position, { width: 196, height: 78 })
     const parentNetwork = networkStack.at(-1)
+    const canonicalNode = canonicalNodeFromPrimitive(item, localId, freePos, runtimeCapability)
+    const id = parentNetwork ? scopedInternalId(parentNetwork.nodeId, localId) : localId
     const newNode: WorkflowNode = {
       id,
       type: "workflow",
       position: freePos,
       data: {
         ...primitiveToNodeData(item, runtimeCapability),
-        ...(parentNetwork ? { internalOf: parentNetwork.nodeId, packageDraft: true } : { packageDraft: true }),
+        ...(parentNetwork
+          ? {
+              canonical: {
+                kind: canonicalNode.kind,
+                capability: canonicalNode.capability,
+                params: canonicalNode.params,
+                catalogId: item.id,
+              },
+              internalOf: parentNetwork.nodeId,
+              internalStepId: localId,
+              packageDraft: true,
+            }
+          : { packageDraft: true }),
       },
     }
-    set({ nodes: [...nodes.map((node) => ({ ...node, selected: false })), { ...newNode, selected: true }] })
+    let projectForEdit = workflowProject
+    if (parentNetwork) {
+      const parentProjectNode = findProjectNodeByCanvasId(projectForEdit, parentNetwork.nodeId)
+      if (parentProjectNode && !parentProjectNode.internals) {
+        projectForEdit = ensureCanonicalNodeInternals(
+          projectForEdit,
+          parentNetwork.nodeId,
+          parentProjectNode,
+        ).project
+      }
+    }
+    const nextProject = parentNetwork
+      ? parseWorkflowProject(appendCanonicalNetworkNode(projectForEdit, parentNetwork.nodeId, canonicalNode))
+      : workflowProject
+    set({
+      workflowProject: nextProject,
+      nodes: [...nodes.map((node) => ({ ...node, selected: false })), { ...newNode, selected: true }],
+    })
+  },
+
+  addPrimitiveToNodeNetwork: (nodeId, item, position, runtimeCapability) => {
+    const state = get()
+    if (state.networkStack.length >= MAX_WORKFLOW_NODE_DEPTH - 1) {
+      return NODE_NETWORK_DEPTH_LIMIT_REACHED
+    }
+    if (
+      !state.nodes.some((candidate) => candidate.id === nodeId) ||
+      !findProjectNodeByCanvasId(state.workflowProject, nodeId)
+    ) {
+      return 0
+    }
+
+    get().takeSnapshot()
+    const count = get().enterNodeNetworkForEdit(nodeId, { suppressSnapshot: true })
+    if (count <= 0) return count
+    get().addPrimitiveNode(item, position, runtimeCapability, { suppressSnapshot: true })
+    return count
   },
 
   addWorkflowNodeFromCatalog: (item, position) => {
@@ -712,7 +936,7 @@ export const useFlowStore = create<FlowState>((set, get) => ({
   updateWorkflowNodeParams: (nodeId, paramsPatch, adapterPatch) => {
     get().takeSnapshot()
     set((state) => {
-      const target = state.workflowProject.nodes.find((node) => node.id === nodeId)
+      const target = findProjectNodeByCanvasId(state.workflowProject, nodeId)
       if (!target) return {}
 
       const nextProject = parseWorkflowProject({
@@ -725,16 +949,12 @@ export const useFlowStore = create<FlowState>((set, get) => ({
             ...(adapterPatch.config ? { config: { ...adapter.config, ...adapterPatch.config } } : {}),
           }
         }),
-        nodes: state.workflowProject.nodes.map((node) =>
-          node.id === nodeId
-            ? {
-                ...node,
-                params: { ...node.params, ...paramsPatch },
-              }
-            : node,
-        ),
+        nodes: updateCanonicalProjectNodeByCanvasId(state.workflowProject, nodeId, (node) => ({
+          ...node,
+          params: { ...node.params, ...paramsPatch },
+        })).nodes,
       })
-      const nextNode = nextProject.nodes.find((node) => node.id === nodeId)
+      const nextNode = findProjectNodeByCanvasId(nextProject, nodeId)
       if (!nextNode) return { workflowProject: nextProject }
       const projected = workflowNodeToReactFlow(nextNode, state.nodes.findIndex((node) => node.id === nodeId))
       return {
@@ -763,37 +983,66 @@ export const useFlowStore = create<FlowState>((set, get) => ({
     get().takeSnapshot()
     set((state) => {
       const parentNode = state.nodes.find((node) => node.id === nodeId)
-      const parentProjectNode = state.workflowProject.nodes.find((node) => node.id === nodeId)
+      const parentProjectNode = findProjectNodeByCanvasId(state.workflowProject, nodeId)
+      const inferredParameterInterface = parentProjectNode
+        ? canonicalParameterInterface(parentProjectNode, getNodeInternals(parentProjectNode))
+        : undefined
       const parameterInterface =
         parentProjectNode?.parameterInterface ??
         parentNode?.data.parameterInterface ??
-        createParameterInterfaceFromInternals(nodeId, getNodeInternals(parentProjectNode))
+        inferredParameterInterface
       const targetField = parameterInterface?.fields.find((field) => field.id === fieldId)
-      if (!parameterInterface || !targetField || targetField.readonly) return {}
+      if (!parentProjectNode || !parameterInterface || !targetField || targetField.readonly) return {}
 
       const nextParameterInterface = setParameterInterfaceFieldValue(parameterInterface, fieldId, value)
       const binding = targetField.binding
-      const boundProjectNode = state.workflowProject.nodes.find((node) => node.id === binding.nodeId)
-      const backingNodeId = boundProjectNode ? binding.nodeId : nodeId
+      const bindsParent = binding.nodeId === parentProjectNode.id || binding.nodeId === nodeId
+      const directBindingNode = bindsParent
+        ? parentProjectNode
+        : findProjectNodeByCanvasId(state.workflowProject, binding.nodeId)
+      const localBindingNodeId = scopedInternalId(nodeId, binding.nodeId)
+      const localBindingNode = findProjectNodeByCanvasId(state.workflowProject, localBindingNodeId)
+      const legacyPrefix = `${parentProjectNode.id}__`
+      const legacyBindingNodeId = binding.nodeId.startsWith(legacyPrefix)
+        ? scopedInternalId(nodeId, binding.nodeId.slice(legacyPrefix.length))
+        : binding.nodeId
+      const legacyBindingNode = findProjectNodeByCanvasId(state.workflowProject, legacyBindingNodeId)
+      const boundProjectNode = bindsParent
+        ? parentProjectNode
+        : localBindingNode ?? legacyBindingNode ?? directBindingNode
+      const backingNodeId = bindsParent
+        ? nodeId
+        : localBindingNode
+          ? localBindingNodeId
+          : legacyBindingNode
+            ? legacyBindingNodeId
+            : directBindingNode
+              ? binding.nodeId
+            : nodeId
       const backingProjectNode = boundProjectNode ?? parentProjectNode
 
+      let projectNodes = updateCanonicalProjectNodeByCanvasId(state.workflowProject, nodeId, (node) => ({
+        ...node,
+        parameterInterface: nextParameterInterface,
+      }))
+      if (binding.source === "params") {
+        projectNodes = updateCanonicalProjectNodeByCanvasId(projectNodes, backingNodeId, (node) => ({
+          ...node,
+          params: { ...node.params, [binding.fieldId]: value },
+        }))
+      } else if (binding.source === "data") {
+        projectNodes = updateCanonicalProjectNodeByCanvasId(projectNodes, backingNodeId, (node) => ({
+          ...node,
+          ui: { ...node.ui, [binding.fieldId]: value },
+        }))
+      }
+
       const nextProject = parseWorkflowProject({
-        ...state.workflowProject,
+        ...projectNodes,
         adapters: state.workflowProject.adapters.map((adapter) => {
           if (binding.source !== "adapter" || backingProjectNode?.adapter !== adapter.id) return adapter
           if (binding.fieldId === "mode") return { ...adapter, mode: value }
           return { ...adapter, config: { ...adapter.config, [binding.fieldId]: value } }
-        }),
-        nodes: state.workflowProject.nodes.map((node) => {
-          const withParentInterface = node.id === nodeId ? { ...node, parameterInterface: nextParameterInterface } : node
-          if (node.id !== backingNodeId) return withParentInterface
-          if (binding.source === "params") {
-            return { ...withParentInterface, params: { ...withParentInterface.params, [binding.fieldId]: value } }
-          }
-          if (binding.source === "data") {
-            return { ...withParentInterface, ui: { ...withParentInterface.ui, [binding.fieldId]: value } }
-          }
-          return withParentInterface
         }),
       })
 
@@ -804,12 +1053,10 @@ export const useFlowStore = create<FlowState>((set, get) => ({
             node.id === nodeId
               ? { ...node, data: { ...node.data, parameterInterface: nextParameterInterface } }
               : node
-          if (node.id === binding.nodeId) {
+          if (node.id === backingNodeId) {
             return writeBoundValueToNode(withParentInterface, binding.source, binding.fieldId, value)
           }
-          return node.id === backingNodeId && binding.nodeId !== backingNodeId
-            ? writeBoundValueToNode(withParentInterface, binding.source, binding.fieldId, value)
-            : withParentInterface
+          return withParentInterface
         }),
       }
     })
@@ -828,13 +1075,15 @@ export const useFlowStore = create<FlowState>((set, get) => ({
 
   enterNodeNetwork: (nodeId) => {
     const { workflowProject, nodes, edges, drawings, networkStack } = get()
+    if (networkStack.length >= MAX_WORKFLOW_NODE_DEPTH - 1) return NODE_NETWORK_DEPTH_LIMIT_REACHED
     const node = nodes.find((candidate) => candidate.id === nodeId)
     if (!node) return 0
     const projectNode = findProjectNodeByCanvasId(workflowProject, nodeId) ?? projectNodeFromCanvasNode(node)
 
     const projectInternals = materializeProjectInternals(projectNode, node, nodeId, "network")
-    if (projectInternals) {
-      const internalNodeIds = projectInternals.nodes.map((internalNode) => internalNode.id)
+    if (projectNode?.internals) {
+      const materialized = projectInternals ?? { nodes: [], edges: [] }
+      const internalNodeIds = materialized.nodes.map((internalNode) => internalNode.id)
       set({
         networkStack: [
           ...networkStack,
@@ -844,17 +1093,19 @@ export const useFlowStore = create<FlowState>((set, get) => ({
             snapshot: snapshot({ nodes, edges, drawings }),
           },
         ],
-        nodes: projectInternals.nodes,
+        nodes: materialized.nodes,
         edges: [],
         drawings: [],
         helperLines: { snapPosition: {} },
       })
-      scheduleNetworkInternalEdges(get, set, nodeId, internalNodeIds, projectInternals.edges)
-      return projectInternals.nodes.length
+      scheduleNetworkInternalEdges(get, set, nodeId, internalNodeIds, materialized.edges)
+      return materialized.nodes.length
     }
 
     const internals = getNodeInternals(projectNode)
-    if (!internals || internals.steps.length === 0) return 0
+    if (!internals || internals.steps.length === 0) {
+      return 0
+    }
 
     const internalNodes: WorkflowNode[] = internals.steps.map((stepItem, index) => ({
       ...(() => {
@@ -907,6 +1158,26 @@ export const useFlowStore = create<FlowState>((set, get) => ({
     return internalNodes.length
   },
 
+  enterNodeNetworkForEdit: (nodeId, options) => {
+    const state = get()
+    if (state.networkStack.length >= MAX_WORKFLOW_NODE_DEPTH - 1) {
+      return NODE_NETWORK_DEPTH_LIMIT_REACHED
+    }
+    const canvasNode = state.nodes.find((candidate) => candidate.id === nodeId)
+    const projectNode = findProjectNodeByCanvasId(state.workflowProject, nodeId)
+    if (!canvasNode || !projectNode) return 0
+
+    if (!projectNode.internals) {
+      if (!options?.suppressSnapshot) get().takeSnapshot()
+      const ensured = ensureCanonicalNodeInternals(state.workflowProject, nodeId, projectNode)
+      set({ workflowProject: ensured.project })
+    }
+
+    const stackDepth = get().networkStack.length
+    const count = get().enterNodeNetwork(nodeId)
+    return get().networkStack.length > stackDepth ? Math.max(1, count) : count
+  },
+
   exitNodeNetwork: () => {
     const { networkStack } = get()
     const previous = networkStack[networkStack.length - 1]
@@ -922,10 +1193,12 @@ export const useFlowStore = create<FlowState>((set, get) => ({
   },
 
   unlockNodeInternals: (nodeId) => {
-    const { workflowProject, nodes, edges } = get()
+    const { workflowProject, nodes, edges, networkStack } = get()
+    if (networkStack.length >= MAX_WORKFLOW_NODE_DEPTH - 1) return NODE_NETWORK_DEPTH_LIMIT_REACHED
     const node = nodes.find((candidate) => candidate.id === nodeId)
     if (!node) return 0
     const projectNode = findProjectNodeByCanvasId(workflowProject, nodeId) ?? projectNodeFromCanvasNode(node)
+    if (!projectNode?.internals) return 0
 
     const existingInternalIds = new Set(
       nodes.filter((candidate) => candidate.data.internalOf === nodeId).map((candidate) => candidate.id),
@@ -949,57 +1222,7 @@ export const useFlowStore = create<FlowState>((set, get) => ({
       return projectInternals.nodes.length
     }
 
-    const internals = getNodeInternals(projectNode)
-    if (!internals || internals.steps.length === 0) return 0
-
-    get().takeSnapshot()
-    const parentRect = nodeRect(node)
-    const startX = parentRect.x
-    const startY = parentRect.y + parentRect.height + 110
-    const internalNodes: WorkflowNode[] = internals.steps.map((stepItem, index) => ({
-      ...(() => {
-        const primitiveItem = getPrimitiveByStepCapability(stepItem.capability)
-        return {
-          data: {
-            ...primitiveToNodeData(primitiveItem),
-            label: stepItem.label,
-            description: stepItem.description,
-            status: stepItem.status === "future" ? "idle" : "success",
-            fields: fieldsForInternalStep(stepItem, nodeId, node.data.parameterInterface ?? projectNode?.parameterInterface),
-            internalOf: nodeId,
-            internalStepId: stepItem.id,
-            internalStatus: stepItem.status,
-            internalLocked: false,
-            internalDraft: true,
-            packageDraft: true,
-          },
-        }
-      })(),
-      id: `${nodeId}__${stepItem.id}`,
-      type: "workflow",
-      position: { x: startX, y: startY + index * 112 },
-    }))
-
-    const internalEdges: WorkflowEdge[] = internalNodes.slice(0, -1).map((internalNode, index) => ({
-      id: `e-${nodeId}__${internals.steps[index].id}-${internals.steps[index + 1].id}`,
-      source: internalNode.id,
-      target: internalNodes[index + 1].id,
-      type: "workflow",
-      animated: true,
-      data: { internalOf: nodeId },
-    }))
-
-    const nextNodes = nodes.map((candidate) =>
-      candidate.id === nodeId
-        ? { ...candidate, data: { ...candidate.data, internalsUnlocked: true } }
-        : candidate,
-    )
-
-    set({
-      nodes: resolveCollisions([...nextNodes, ...internalNodes], internalNodes[0]?.id ?? nodeId),
-      edges: [...edges, ...internalEdges],
-    })
-    return internalNodes.length
+    return 0
   },
 
   lockNodeInternals: (nodeId) => {
@@ -1128,7 +1351,7 @@ export const useFlowStore = create<FlowState>((set, get) => ({
     set((state) => {
       const runtimeRunState = runStateForEvent(event)
       const canvasNodeIds = new Set(
-        runtimeNodeIdCandidates(event.nodeId, event.packageNodeId, event.internalNodeId),
+        runtimeNodeIdCandidates(event.nodeId, event.packageNodeId, event.internalNodeId, event.nodePath),
       )
       const nextProject = parseWorkflowProject({
         ...state.workflowProject,

@@ -3,7 +3,7 @@ import type { FlowState } from "@/lib/flow/store"
 export function selectEditorCanvasState(state: FlowState) {
   return {
     addNodeFromPalette: state.addNodeFromPalette,
-    addPrimitiveNode: state.addPrimitiveNode,
+    addPrimitiveToNodeNetwork: state.addPrimitiveToNodeNetwork,
     addWorkflowNodeFromCatalog: state.addWorkflowNodeFromCatalog,
     applyWorkflowCapabilities: state.applyWorkflowCapabilities,
     attachToParent: state.attachToParent,

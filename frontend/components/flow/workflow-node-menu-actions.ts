@@ -5,6 +5,7 @@ import { primitiveRuntimeCapability, type WorkflowCapabilitiesResponse } from "@
 import { localizeNodeText, type WorkflowLanguage } from "@/lib/workflow/node-i18n"
 import type { WorkflowNodeCatalogItem } from "@/lib/workflow/node-catalog"
 import type { WorkflowPrimitive } from "@/lib/workflow/node-primitives"
+import { NODE_NETWORK_DEPTH_LIMIT_REACHED } from "@/lib/workflow/node-hierarchy"
 import type { CanvasPoint } from "./workflow-canvas-geometry"
 
 export type NodeMenuState = { nodeId: string; x: number; y: number }
@@ -12,7 +13,12 @@ export type NodeMenuState = { nodeId: string; x: number; y: number }
 type FitView = (options?: { padding?: number; duration?: number; nodes?: { id: string }[] }) => unknown
 
 export function useWorkflowNodeMenuActions(options: {
-  addPrimitiveNode: (item: WorkflowPrimitive, position: CanvasPoint, runtimeCapability: ReturnType<typeof primitiveRuntimeCapability>) => void
+  addPrimitiveToNodeNetwork: (
+    nodeId: string,
+    item: WorkflowPrimitive,
+    position: CanvasPoint,
+    runtimeCapability: ReturnType<typeof primitiveRuntimeCapability>,
+  ) => number
   addWorkflowNodeFromCatalog: (item: WorkflowNodeCatalogItem, position: CanvasPoint) => void
   capabilities: WorkflowCapabilitiesResponse | null | undefined
   enterNodeNetwork: (nodeId: string) => number
@@ -28,7 +34,7 @@ export function useWorkflowNodeMenuActions(options: {
   unlockNodeInternals: (nodeId: string) => number
 }) {
   const {
-    addPrimitiveNode,
+    addPrimitiveToNodeNetwork,
     addWorkflowNodeFromCatalog,
     capabilities,
     enterNodeNetwork,
@@ -56,7 +62,13 @@ export function useWorkflowNodeMenuActions(options: {
   const diveIntoNetwork = useCallback(
     (nodeId: string) => {
       const count = enterNodeNetwork(nodeId)
-      showToast(count > 0 ? `Dive into Network: ${count} nodes` : "这个节点没有下层 Network")
+      showToast(
+        count === NODE_NETWORK_DEPTH_LIMIT_REACHED
+          ? "已到第 4 层原子节点，不能继续下钻"
+          : count > 0
+            ? `进入下层网络：${count} 个节点`
+            : "这个节点没有下层网络",
+      )
       setNodeMenu(null)
       if (count > 0) window.setTimeout(() => void fitView({ padding: 0.24, duration: 180 }), 20)
     },
@@ -66,9 +78,14 @@ export function useWorkflowNodeMenuActions(options: {
   const addDopNodeFromMenu = useCallback(
     (item: WorkflowNodeCatalogItem) => {
       if (!nodeMenu) return
+      if (useFlowStore.getState().networkStack.length > 0) {
+        showToast("一级业务节点只能添加到工作流根层")
+        setNodeMenu(null)
+        return
+      }
       const text = localizeNodeText(item.id, { label: item.label, description: item.description }, language)
       addWorkflowNodeFromCatalog(item, screenToFlowPosition({ x: nodeMenu.x + 26, y: nodeMenu.y + 26 }))
-      showToast(`已添加 DOP 节点：${text.label}`)
+      showToast(`已添加一级业务节点：${text.label}`)
       setNodeMenu(null)
     },
     [addWorkflowNodeFromCatalog, language, nodeMenu, screenToFlowPosition, setNodeMenu, showToast],
@@ -78,24 +95,28 @@ export function useWorkflowNodeMenuActions(options: {
     (item: WorkflowPrimitive, itemIndex: number) => {
       if (!nodeMenu) return
       const text = localizeNodeText(item.id, { label: item.label, description: item.description }, language)
-      const isInsideNetwork = useFlowStore.getState().networkStack.length > 0
-      let position = screenToFlowPosition({ x: nodeMenu.x + 280, y: nodeMenu.y + 26 + itemIndex * 34 })
-
-      if (!isInsideNetwork) {
-        const count = enterNodeNetwork(nodeMenu.nodeId)
-        if (count > 0) {
-          position = { x: 780, y: 96 + itemIndex * 96 }
-          window.setTimeout(() => void fitView({ padding: 0.24, duration: 180 }), 20)
-        } else {
-          showToast("这个节点没有下层 Network，已在当前层添加 draft primitive")
-        }
+      const count = addPrimitiveToNodeNetwork(
+        nodeMenu.nodeId,
+        item,
+        { x: 780, y: 96 + itemIndex * 96 },
+        primitiveRuntimeCapability(capabilities, item.id),
+      )
+      if (count === NODE_NETWORK_DEPTH_LIMIT_REACHED) {
+        showToast("已到第 4 层原子节点，不能继续添加下层节点")
+        setNodeMenu(null)
+        return
+      }
+      if (count <= 0) {
+        showToast("无法进入这个节点的下层 Network")
+        setNodeMenu(null)
+        return
       }
 
-      addPrimitiveNode(item, position, primitiveRuntimeCapability(capabilities, item.id))
       showToast(`已添加原子节点：${text.label}`)
       setNodeMenu(null)
+      window.setTimeout(() => void fitView({ padding: 0.24, duration: 180 }), 20)
     },
-    [addPrimitiveNode, capabilities, enterNodeNetwork, fitView, language, nodeMenu, screenToFlowPosition, setNodeMenu, showToast],
+    [addPrimitiveToNodeNetwork, capabilities, fitView, language, nodeMenu, setNodeMenu, showToast],
   )
 
   const lockInternals = useCallback(

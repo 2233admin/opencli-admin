@@ -9,6 +9,7 @@ export type WorkflowOpenCLIHDATraceDispatchEnvelope = {
 export type WorkflowOpenCLIHDATraceDispatchItem = {
   taskId: string
   nodeId: string
+  nodePath?: string[]
   packageNodeId?: string | null
   internalNodeId?: string | null
   sourceGroup: string

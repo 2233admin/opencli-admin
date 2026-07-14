@@ -26,6 +26,7 @@ type NodeContextMenuProps = {
   onShowParameters: () => void
   onUnlockInternals: (nodeId: string) => void
   primitiveMenuGroups: PrimitiveMenuGroup[]
+  showDopOperators: boolean
   wrapperElement: HTMLElement | null
 }
 
@@ -37,12 +38,11 @@ export function NodeContextMenu({
   onAddDopNode,
   onAddPrimitive,
   onDiveIntoNetwork,
-  onLockInternals,
   onSelectComponent,
   onShowNodeInfo,
   onShowParameters,
-  onUnlockInternals,
   primitiveMenuGroups,
+  showDopOperators,
   wrapperElement,
 }: NodeContextMenuProps) {
   return (
@@ -63,12 +63,14 @@ export function NodeContextMenu({
         <span>Dive into Network</span>
         <span className="text-[#a8a8a8]">Enter</span>
       </button>
-      <div className="my-1 border-t border-[#626262]" />
-      <div className="px-3 py-1 font-mono text-[9px] uppercase tracking-[0.18em] text-[#a8a8a8]">
-        DOP Operators
-      </div>
-      <div className="max-h-64 overflow-y-auto">
-        {dopNodeMenuItems.map((item) => {
+      {showDopOperators ? (
+        <>
+          <div className="my-1 border-t border-[#626262]" />
+          <div className="px-3 py-1 font-mono text-[9px] uppercase tracking-[0.18em] text-[#a8a8a8]">
+            DOP Operators
+          </div>
+          <div className="max-h-64 overflow-y-auto">
+            {dopNodeMenuItems.map((item) => {
           const text = localizeNodeText(item.id, { label: item.label, description: item.description }, language)
           const visual = getNodeVisualSignature({
             label: item.label,
@@ -98,8 +100,10 @@ export function NodeContextMenu({
               </span>
             </button>
           )
-        })}
-      </div>
+            })}
+          </div>
+        </>
+      ) : null}
       <div className="group/atoms relative">
         <div className="flex w-full items-center justify-between px-3 py-1.5 text-left font-semibold text-white hover:bg-[#4a4a4a]">
           <span>Add Internal Primitive</span>
@@ -175,21 +179,6 @@ export function NodeContextMenu({
         onClick={onShowNodeInfo}
       >
         <span>Show Node Information...</span>
-      </button>
-      <div className="my-1 border-t border-[#626262]" />
-      <button
-        type="button"
-        className="flex w-full items-center justify-between px-3 py-1.5 text-left hover:bg-[#4a4a4a] hover:text-white"
-        onClick={() => onUnlockInternals(menu.nodeId)}
-      >
-        <span>Unlock Package in Current Network</span>
-      </button>
-      <button
-        type="button"
-        className="flex w-full items-center justify-between px-3 py-1.5 text-left hover:bg-[#4a4a4a] hover:text-white"
-        onClick={() => onLockInternals(menu.nodeId)}
-      >
-        <span>Lock Package</span>
       </button>
       <div className="my-1 border-t border-[#626262]" />
       <div className="px-3 py-1.5 text-[#cfcfcf]">Help...</div>

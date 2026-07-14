@@ -95,3 +95,20 @@ below supersedes those node/editor decisions while retaining the project-browser
 - [x] Run the production build and production-isolation smoke check.
 - [x] Run a fresh development-route smoke check and independent final review.
 - [ ] Re-run desktop/mobile browser interaction QA after the browser-control runtime is repaired.
+
+## Four-layer canonical node integration
+
+- [x] Define L1 Operator → L2 Implementation → L3 Component → L4 Primitive over the existing
+  recursive `WorkflowProjectNode` contract.
+- [x] Wrap the default packaged workflow in Dify-style L1 business nodes without deleting L2 nodes.
+- [x] Persist root and nested add/move/connect/delete/layout/duplicate/cut/paste operations into the
+  canonical graph and include it in undo/redo snapshots.
+- [x] Keep fallback networks read-only until an explicit internal edit initializes canonical internals.
+- [x] Reject L5, reserved path separators, duplicate scoped ids, and duplicate scoped edge ids.
+- [x] Recursively compile and run L1-L4, skip structural containers, rewrite boundary edges, and
+  expose full runtime `nodePath`.
+- [x] Validate primitive typed ports and project them into Plan IR.
+- [x] Disable legacy flat simulation and canvas-only Add Child / Insert Node shortcuts for nested graphs.
+- [x] Run backend tests, frontend Store regressions, contracts, TypeScript, targeted ESLint, build,
+  development smoke, and production isolation.
+- [ ] Re-run interactive visual QA after the in-app browser runtime no longer fails initialization.

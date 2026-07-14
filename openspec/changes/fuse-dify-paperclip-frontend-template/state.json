@@ -2,8 +2,8 @@
   "schema": "design-pipeline.state.v1",
   "changeId": "fuse-dify-paperclip-frontend-template",
   "status": "complete-with-browser-control-gap",
-  "phase": "formal-node-system-integration-verified",
-  "updatedAt": "2026-07-14T19:05:59+08:00",
+  "phase": "four-layer-canonical-node-integration-verified",
+  "updatedAt": "2026-07-14T20:31:18+08:00",
   "artifactRoot": "openspec/changes/fuse-dify-paperclip-frontend-template",
   "projectRoot": "D:/projects/opencli-admin",
   "surfaces": ["/prototype/product-shell"],
@@ -27,7 +27,7 @@
     "reducedMotion": "specified"
   },
   "qa": {
-    "status": "lint-typecheck-regressions-contracts-build-isolation-and-dev-smoke-passed",
+    "status": "four-layer-cross-stack-regressions-plan-ir-gate-backend-tests-lint-typecheck-contracts-build-isolation-and-dev-smoke-passed",
     "evidenceRoot": "openspec/changes/fuse-dify-paperclip-frontend-template/qa.md"
   },
   "decisions": [
@@ -40,6 +40,9 @@
     "Keep EdgeNode Worker and Fleet inventory as the control-plane source of truth",
     "Keep Agent teams AI processors runs data assets work items and plugins distinct from graph nodes",
     "Keep Inbox and work items outside the permanent IDE canvas layout",
+    "Cap the canonical node graph at L1 operator L2 OpenCLI package L3 component and L4 primitive",
+    "Wrap existing packages at L1 instead of replacing the existing node implementation",
+    "Require final Plan IR validation before reporting workflow compilation success",
     "Keep the prototype development-only"
   ],
   "blockers": [
@@ -47,6 +50,7 @@
   ],
   "nextActions": [
     "Manually inspect Direction C until browser-control runtime initialization is repaired",
+    "Define explicit L1 boundary-port mappings for compound nodes with multiple entries or exits",
     "Later add a thin canonical resource-node projection over existing Fleet inventory",
     "Before project autosave integration prove React Flow edge synchronization into WorkflowProject"
   ]

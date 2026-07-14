@@ -202,6 +202,7 @@ def _batch_summaries(
                 EvidenceBatchSummary(
                     runId=projection.runId,
                     nodeId=node.nodeId,
+                    nodePath=node.nodePath,
                     packageNodeId=node.packageNodeId,
                     internalNodeId=node.internalNodeId,
                     sourceGroup=batch.sourceGroup,

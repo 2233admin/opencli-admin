@@ -80,3 +80,23 @@ candidate discovery remain in the control plane.
 - Production integration extends the existing Studio/session and adds only a thin resource-node
   projection when ready. It must not promote the static A/B comparison canvas or recreate the
   removed execution-binding panel.
+
+## Four-layer canonical node hierarchy
+
+The formal editor now uses one recursive node contract for four product layers:
+
+1. **L1 Operator / 业务节点** — the Dify-style business step shown on the workflow canvas.
+2. **L2 Implementation / 实现节点** — the existing OpenCLI node or package that implements L1.
+3. **L3 Component / 组件节点** — an implementation's editable internal component network.
+4. **L4 Primitive / 原子节点** — the deepest normal execution unit.
+
+Every layer is still a `WorkflowProjectNode`; `internals.nodes` and `internals.edges` create the next
+scope. A node is structural only when it has non-empty child internals. L5 is rejected. Navigation is
+read-only, while “Add Internal Primitive” is the explicit operation that may initialize or migrate a
+child network. Visual-only React Flow parent/child and insert-on-edge shortcuts are not workflow
+hierarchy operations and therefore stay disabled.
+
+Compilation recursively expands executable leaves, rewrites container-boundary edges to those
+leaves, topologically orders runtime nodes independently of authoring-array order, and carries the
+full `nodePath` through run states, events, dispatches, and evidence. Local node ids reserve `::` and
+`__` for runtime and canvas path projection.

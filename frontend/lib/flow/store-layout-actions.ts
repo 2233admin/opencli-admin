@@ -1,10 +1,12 @@
 import { nanoid } from "nanoid"
 import type { StoreApi } from "zustand"
 import { animateNodes } from "./animate"
-import { COLLISION_GAP, findFreePosition, nodeRect, resolveCollisions } from "./collision"
+import { nodeRect, resolveCollisions } from "./collision"
 import { getLayoutedElements } from "./layout"
 import type { FlowState } from "./store"
-import type { WorkflowEdge, WorkflowNode } from "./types"
+import { syncCanonicalNetworkNodePositions } from "./store-canonical-actions"
+import type { WorkflowNode } from "./types"
+import { parseWorkflowProject } from "../workflow/schema"
 
 type FlowSet = StoreApi<FlowState>["setState"]
 type FlowGet = StoreApi<FlowState>["getState"]
@@ -35,12 +37,22 @@ export function createLayoutActions(
   return {
     autoLayout: async (direction, engine = "elk", animated = true) => {
       get().takeSnapshot()
-      const current = get().nodes
-      const { nodes } = await getLayoutedElements(current, get().edges, direction, engine)
+      const state = get()
+      const current = state.nodes
+      const { nodes } = await getLayoutedElements(current, state.edges, direction, engine)
+      const parentNetwork = state.networkStack.at(-1)
+      const scopeId = parentNetwork?.nodeId ?? null
+      const canonicalNodes = nodes.filter(
+        (node) => scopeId !== null || typeof node.data.internalOf !== "string",
+      )
+      const workflowProject = parseWorkflowProject(
+        syncCanonicalNetworkNodePositions(state.workflowProject, scopeId, canonicalNodes),
+      )
       if (!animated || typeof window === "undefined") {
-        set({ nodes })
+        set({ workflowProject, nodes })
         return
       }
+      set({ workflowProject })
       animateNodes(current, nodes, (frame) => set({ nodes: frame }))
     },
 
@@ -184,77 +196,13 @@ export function createLayoutActions(
       })
     },
 
-    addChildNode: (parentId) => {
-      const { nodes, edges } = get()
-      const parent = nodes.find((n) => n.id === parentId)
-      if (!parent) return
-      get().takeSnapshot()
-      const id = nanoid(8)
-      const parentRect = nodeRect(parent)
-      const size = { width: 240, height: 96 }
-      const childCount = edges.filter((e) => e.source === parentId).length
-      const desired = {
-        x: parentRect.x + childCount * (size.width + COLLISION_GAP),
-        y: parentRect.y + parentRect.height + 96,
-      }
-      const freePos = findFreePosition(nodes, desired, size, parent.parentId)
-      const newNode: WorkflowNode = {
-        id,
-        type: "workflow",
-        position: freePos,
-        ...(parent.parentId ? { parentId: parent.parentId } : {}),
-        data: {
-          label: "新节点",
-          nodeType: "action",
-          category: "action",
-          icon: "Zap",
-          color: "var(--chart-1)",
-          status: "idle",
-        },
-      }
-      const newEdge: WorkflowEdge = {
-        id: `e-${nanoid(6)}`,
-        source: parentId,
-        target: id,
-        type: "workflow",
-        animated: true,
-      }
-      set({ nodes: [...nodes, newNode], edges: [...edges, newEdge] })
-    },
+    // A React Flow parent/child is only a visual grouping primitive. It must not
+    // masquerade as a canonical L2-L4 workflow network.
+    addChildNode: () => {},
 
-    insertNodeOnEdge: (edgeId) => {
-      const { nodes, edges } = get()
-      const edge = edges.find((e) => e.id === edgeId)
-      if (!edge) return
-      get().takeSnapshot()
-      const source = nodes.find((n) => n.id === edge.source)
-      const target = nodes.find((n) => n.id === edge.target)
-      if (!source || !target) return
-
-      const id = nanoid(8)
-      const newNode: WorkflowNode = {
-        id,
-        type: "workflow",
-        position: {
-          x: (source.position.x + target.position.x) / 2,
-          y: (source.position.y + target.position.y) / 2,
-        },
-        data: {
-          label: "插入节点",
-          nodeType: "action",
-          category: "action",
-          icon: "Zap",
-          color: "var(--chart-1)",
-          status: "idle",
-        },
-      }
-      const newEdges = edges.filter((e) => e.id !== edgeId)
-      newEdges.push(
-        { id: `e-${nanoid(6)}`, source: edge.source, target: id, type: "workflow", animated: true },
-        { id: `e-${nanoid(6)}`, source: id, target: edge.target, type: "workflow", animated: true },
-      )
-      set({ nodes: resolveCollisions([...nodes, newNode], id), edges: newEdges })
-    },
+    // Inserting a canvas-only node would create an unsaved graph alongside the
+    // canonical workflow. Re-enable only with a canonical node kind selected.
+    insertNodeOnEdge: () => {},
 
     resolveNodeCollisions: (movedId) => {
       set((state) => ({ nodes: resolveCollisions(state.nodes, movedId) }))
