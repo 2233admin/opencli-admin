@@ -2,59 +2,58 @@
 
 ## Goal
 
-Create a static, clickable frontend template for a **workspace → project → node workflow**
-OpenCLI product. Dify contributes the workspace/project entry and project lifecycle, Linear
-contributes the work-item interaction pattern, and Paperclip contributes operational
-visualization, evidence, and attention signals.
+Create a static, clickable product template for an OpenCLI **data-pipeline IDE** with a
+clear `Workspace → Project → Workflow → Node` hierarchy. Dify contributes the familiar
+project/workflow entry and editor lifecycle, OpenCLI keeps its data-contract-driven node
+foundation, Linear contributes work-item interaction, and Paperclip contributes the
+Agent-team control-plane pattern.
 
 ## Audience
 
-- Operators handling failures, approvals, evidence, and production runs under pressure.
-- Builders composing sources, transforms, agents, schedules, and delivery nodes.
-- Team leads reviewing ownership, versions, budgets, and audit history.
+- Data builders composing acquisition, cleaning, enrichment, Agent, storage, and delivery pipelines.
+- Operators publishing nodes to local, LAN, device, compute-pool, or remote Agent runtimes.
+- Team leads reviewing projects, ownership, runs, data assets, Agent teams, and execution resources.
 
 ## Surface
 
 - One isolated development-only route: `/prototype/product-shell`.
 - Three structurally different variants selected by `?variant=A|B|C`.
-- Desktop-first product shell with explicit small-screen collapse.
+- Direction C is the selected synthesis: a light project browser followed by a workflow IDE.
 - Static representative data only; no API reads or mutations.
 
 ## Constraints
 
 - Keep the current Next.js, Tailwind v4, shadcn/Base UI, Lucide, and semantic tokens.
 - Do not add dependencies or copy source code from Dify or Paperclip.
-- Preserve the current dark operational-console character.
+- Preserve the existing formal Studio, WorkflowEditorSession, node catalog, inspector, and Fleet contracts.
 - Clearly label the route as a product template with static data.
 - Production builds must not expose the throwaway template.
 
 ## Non-goals
 
-- Backend integration or API contract changes.
-- Final route migration or production navigation changes.
-- Full workflow-canvas fidelity.
-- Choosing the final copy, permissions model, or billing system.
+- Backend integration or a final executor-binding API contract.
+- Replacing the existing React Flow editor or six-node static prototype with production code.
+- Final route migration, permissions, billing, or Agent-organization persistence.
 
 ## Acceptance checks
 
-- The three variants disagree about product structure, not just color.
-- Each variant visibly contains: workspace, project, workflow, nodes, work item, run, evidence,
-  approval, and activity.
-- The existing Studio remains the workspace project index; opening a project leads to its
-  node editor and orchestrate/debug/publish/monitor lifecycle.
-- Direction C defaults to the workspace project index. Its project editor is a separate
-  screen reached by opening a project, with an explicit return path to the index.
-- The project editor does not retain a permanent sibling-project navigator; project switching
-  belongs to the workspace index.
-- A workspace is a project and shared-resource boundary, not one giant navigation tree.
-- Independent acquisition, knowledge, cleaning, workflow, and delivery concerns can be
-  separate projects inside the workspace.
-- Linear-style work items are a supporting operating surface, not the product root.
-- Paperclip-style attention, run, evidence, and visualization patterns enrich the workspace
-  without importing its company/agent hierarchy.
-- Project-local triggers, runs, versions, and node capabilities stay in the active project;
-  data sources, knowledge, and cleaning become separate projects when they have independent
-  ownership or lifecycle.
+- The three variants disagree about product structure, not only color.
+- Direction C defaults to a quiet workspace project browser with search, filters, favorites,
+  ownership, create/import, and project-level aggregate metadata.
+- Opening a project makes the current workflow explicit and provides a workflow/sub-pipeline switcher.
+- The IDE keeps the graph central; the right side is the selected node inspector and the bottom
+  is data preview/log/Schema. Project analytics, work items, Inbox, runs, schedules, versions,
+  and settings are separate tabs or global surfaces rather than permanent IDE panels.
+- A node separately exposes: business meaning, encapsulation layer, data input/output contract,
+  and execution binding. These dimensions must not be collapsed.
+- A video collection node can target the local camera, a LAN device, a camera-capable device
+  pool, or a remote collection Agent without changing the node's business definition.
+- A compute-heavy node can target local CPU/GPU, a LAN compute server, or a remote Agent team.
+- Agent teams and devices/compute are platform control planes. The IDE references/binds them;
+  it does not embed their full management consoles.
+- Workspace, Project, Workflow, workflow Node, executor/device, AI processor, Agent team, Run,
+  and Data Asset are named as different objects.
+- The existing Studio remains the production workspace/project index and the existing
+  WorkflowEditorSession remains the production editor/session foundation.
 - Variant selection is URL-stable and keyboard accessible.
-- Typecheck and production build pass; the prototype is visually checked at desktop and
-  mobile widths.
+- Typecheck and production build pass; the prototype is visually checked at desktop and mobile widths.

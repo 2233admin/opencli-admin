@@ -31,7 +31,8 @@ and Paperclip work.
 - [x] Reframe the selected direction around a node-based Dify workspace.
 - [x] Implement the initial overloaded workspace panel for review; later rejected and removed.
 - [x] Keep global “待我处理” as Inbox and retain Linear-style work-item behavior.
-- [x] Limit Paperclip influence to attention, visualization, evidence, approval, and activity surfaces.
+- [x] Record the initial Paperclip-only-as-visualization pass; this historical decision was
+  superseded by the later Agent-team control-plane requirement.
 - [x] Rework Direction C and update the prototype switcher label.
 - [x] Re-run targeted lint and TypeScript checks.
 - [x] Re-run desktop browser QA and verify no horizontal overflow or runtime errors.
@@ -57,3 +58,18 @@ and Paperclip work.
 - [x] Re-run static checks, browser QA, and production isolation.
 - [x] Complete an independent screen-boundary and project-context review; remediate the initial
   shared-profile and fixed AttentionRail findings before submission.
+
+## Product granularity and execution-binding correction
+
+- [x] Audit the formal Workspace, Project, WorkflowAsset, WorkflowGraph, node, Fleet, and Agent models.
+- [x] Lock Workspace → Project → Workflow → Node and the separate executor/Agent-team objects.
+- [x] Reduce Direction C workspace to a searchable, filterable, scalable project browser.
+- [x] Replace workflow-internal card metadata with project aggregate metadata.
+- [x] Make the current main workflow/sub-pipeline explicit after project entry.
+- [x] Remove the permanent project-dashboard metrics, Inbox, work-item, and runtime rails from the IDE.
+- [x] Add selected-node data contract, encapsulation layer, capabilities, and execution-binding UI.
+- [x] Demonstrate video collection across local camera, LAN device, device pool, and remote Agent.
+- [x] Demonstrate compute placement across local CPU/GPU, LAN compute, and remote Agent team.
+- [x] Add a bottom sample/log/Schema data-debug dock.
+- [x] Re-run production isolation and independent review; final re-review has no P0/P1/P2/P3 findings.
+- [ ] Re-run desktop/mobile browser interaction QA after the browser-control runtime is repaired.

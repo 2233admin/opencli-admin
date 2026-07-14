@@ -10,6 +10,7 @@ The source of truth for this change is:
 - [Brief](brief.md)
 - [Directions](directions.md)
 - [Design](design.md)
+- [Locked object model](object-model.md)
 - [Motion](motion.md)
 - [Tasks](tasks.md)
 - [QA](qa.md)

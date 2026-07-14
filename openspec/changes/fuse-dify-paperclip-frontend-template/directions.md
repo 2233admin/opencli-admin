@@ -27,27 +27,26 @@ Fit: best for multi-person operations and review-heavy work.
 Risk: makes OpenCLI's strongest differentiator, the executable node workflow, feel like
 an attachment.
 
-## C. Dify-led Workspace and Node Projects (selected direction)
+## C. Data Pipeline IDE with Dify Entry (selected direction)
 
-Visual thesis: preserve OpenCLI's existing Dify-like two-step entry. The workspace is a
-portfolio of projects and shared capabilities. Opening one project enters a project-specific
-node cockpit with orchestration, debug, publish, and monitor modes. These are two distinct
-screens: the workspace index shows project cards, filters, templates, and create/import actions;
-the project cockpit shows only the active project's nodes and lifecycle. Linear-style work items
-and a Paperclip-style live attention/visualization rail support the active project.
+Visual thesis: preserve OpenCLI's existing Dify-like entry while making the real hierarchy
+explicit: Workspace → Project → Workflow → Node. The workspace is a quiet project browser.
+Opening a project exposes its workflow selector and data-pipeline IDE. The graph is central,
+the right panel configures the selected node and its execution binding, and the bottom dock
+shows sample data, logs, Schema, and Trace.
 
-Interaction thesis: users enter `/studio`, select a workspace, create or open a project, then
-work with that project's nodes. A source collector, knowledge base, cleaning pipeline, or
-delivery workflow can be its own project when it has a separate lifecycle. Inside the active
-project, users compose nodes, debug the draft, publish a version, and inspect that project's
-runs. Inbox is the global “待我处理” surface and deep-links to the relevant project object.
+Interaction thesis: users enter `/studio`, select a workspace, create or open a project, choose
+its main workflow or sub-pipeline, compose data-contract-driven nodes, bind runtime requirements,
+test with real samples, and publish. Project data, runs, schedules, versions, and settings remain
+available as adjacent tabs. Inbox deep-links to the relevant object. Agent teams and devices/
+compute are separate control planes referenced by node bindings.
 
 Fit: matches OpenCLI's node foundation and uses a workflow mental model that Dify and n8n
 users already understand, while preserving the team's existing Linear-like operating logic.
 
-Risk: project types can fragment the experience if cross-project dependencies are invisible.
-The workspace index must therefore show project type, ownership, and relationships without
-turning back into a single overloaded editor.
+Risk: the existing formal Studio still silently opens a project's first workflow. Production
+integration must add an explicit Project → Workflow boundary and stable executor/Agent binding
+references without replacing the existing editor or Fleet foundation.
 
 ## Selection rule
 

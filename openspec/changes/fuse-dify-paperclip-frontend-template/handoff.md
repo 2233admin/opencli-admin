@@ -3,15 +3,15 @@
 ## Current State
 
 - Change id: `fuse-dify-paperclip-frontend-template`
-- Status: complete with one mobile automation gap
-- Phase: stage 7 complete
-- Last updated: 2026-07-14 02:25 +08:00
+- Status: implementation complete; browser-control automation gap recorded
+- Phase: product-granularity correction verified
+- Last updated: 2026-07-14 +08:00
 
 ## Goal
 
-Produce a development-only static template that preserves the existing workspace → project →
-node workflow, uses Dify's lifecycle inside an opened project, adds Linear-style work items,
-and limits Paperclip influence to attention, evidence, approval, activity, and run visualization.
+Produce a development-only static template for an OpenCLI data-pipeline IDE with the locked
+`Workspace → Project → Workflow → Node` hierarchy, data-contract-driven nodes, and execution
+bindings to devices, compute pools, or Agent teams.
 
 ## Artifacts
 
@@ -19,76 +19,68 @@ and limits Paperclip influence to attention, evidence, approval, activity, and r
 - Brief: `brief.md`
 - Directions: `directions.md`
 - Design: `design.md`
+- Locked object model: `object-model.md`
 - Motion: `motion.md`
 - Tasks: `tasks.md`
 - QA: `qa.md`
 - State: `state.json`
 - Events: `events.jsonl`
 
-## Decisions
+## Locked decisions
 
-- No backend or API integration in this change.
-- The prototype is a separate development-only route.
-- Three structural variants remain available; Direction C is the selected product synthesis.
-- Existing tokens, fonts, components, and Lucide icons are reused.
-- Nodes and workflows remain the product foundation.
-- The existing Studio remains the workspace and project index; it must not be rewritten.
-- Dify's orchestrate/debug/publish/monitor lifecycle begins after a project is opened.
-- Acquisition, cleaning, knowledge, workflow, and delivery can be separate sibling projects.
-- Linear supplies work-item behavior; global “待我处理” is Inbox.
-- Paperclip is limited to attention, run visualization, evidence, approval, and activity patterns.
-- Project-local triggers, runs, versions, and node capabilities remain scoped to the active project.
+- Workspace is the tenant/team/shared-resource boundary and defaults to a light project browser.
+- Project owns business outcome, permissions, data lifecycle, workflows, runs, schedules, versions,
+  data assets, and work items.
+- Workflow/Pipeline is independently editable and publishable; Project is not its first Workflow.
+- Workflow Node declares processing and data input/output. Executor/device declares where it runs.
+- Business semantics, encapsulation layer, and execution binding are independent node dimensions.
+- Agent Team is a Paperclip-inspired platform control-plane object, not a synonym for an AI
+  processor, workflow node, or device.
+- Devices and compute pools form a separate control plane. The IDE references both control planes
+  through node binding; it does not embed their management UI.
+- Linear supplies work-item behavior and global “待我处理” remains Inbox.
+- Paperclip supplies the Agent-team/cluster operating model plus relevant attention and evidence
+  patterns; the earlier decision to limit it to visualization is superseded.
+- Production integration must preserve the existing Studio, WorkflowEditorSession, React Flow
+  editor, node catalog, inspector, and Fleet inventory.
 
-## Missing capabilities / fallbacks
+## Current prototype behavior
 
-- GBrain is not enabled; durable decisions stay in this OpenSpec folder.
+- Direction C defaults to a searchable/filterable workspace project browser with project-level
+  aggregate metadata, favorites, ownership, create/import, and no permanent template gallery.
+- Opening a project enters its data-pipeline IDE with tabs for 编排、数据、运行、调度、版本、设置.
+- The main workflow and offline backfill sub-pipeline are separately selectable and render different
+  node graphs, proving the Project → Workflow boundary in the clickable prototype.
+- The selected node panel exposes layer, data contract, capabilities, and stateful execution binding.
+- Video collection can bind to a LAN device pool, local camera, LAN device, or remote collection Agent.
+- Visual detection can bind to a visual Agent cluster, local GPU compute, or remote visual Agent.
+- The bottom data dock shows sample, log, and Schema entry points.
+- Dashboard metrics, Inbox, work items, runtime charts, and evidence no longer permanently compete
+  with the graph inside the IDE.
 
-## Evidence
+## Verification evidence
 
-- Local route/component inventory completed.
-- Dify and Paperclip official-source product inventories completed.
-- Design pipeline dependency check returned OK.
-- Development-only route implemented at `/prototype/product-shell?variant=A|B|C`.
-- Existing `/studio` already supplies workspace selection, project cards, templates, and DSL import.
-- Existing `WorkflowEditorSession` already loads, saves, validates, and publishes by workspace,
-  project, and workflow identifiers.
-- Direction C now defaults to a dedicated workspace project index with project cards, filters,
-  create/import actions, and templates.
-- Opening a project transitions to a separate node editor with an explicit return action; the
-  editor no longer repeats sibling projects as a permanent sidebar.
-- Every project card now supplies its own representative nodes, metrics, versions, work items,
-  Inbox alert, related runs, evidence, owner, and approval context; switching projects does not
-  retain data from the previous project.
-- The node canvas remains central; Linear-style work items and Paperclip-style runtime/attention
-  surfaces are subordinate to it.
-- Targeted ESLint and TypeScript checks passed after the revision.
-- Revised C was inspected in the in-app browser at 1280x720; document scroll width stayed below
-  viewport width and the browser console contained no runtime errors.
-- A/B/C switcher interaction updated the URL correctly and returned to selected C.
-- The runtime visualization was visually rechecked after fixing a zero-height chart container.
-- Independent review passed after separating the global Inbox surface from the Linear work-item card.
-- Independent hierarchy review passed with no P0/P1/P2 findings.
-- The screen-boundary-corrected C direction passed targeted ESLint, TypeScript, a complete
-  Next.js production build, and 1280px in-app browser inspection without horizontal overflow
-  or runtime errors.
-- Browser interaction confirmed workspace index → project editor → workspace index, with the
-  page reset to the top during both transitions.
-- Browser interaction also confirmed cleaning at `v9 / RUN-3147` and notification at
-  `v7 / RUN-6231`, with no stale project node or run identifiers after switching.
-- A fresh production server returned 404 for the prototype, omitted its marker, and returned
-  200 for `/dashboard`.
-- Independent screen-boundary review initially found shared sentiment data and then hard-coded
-  AttentionRail data; both findings were remediated, and the final re-review reported no
-  P0/P1/P2 findings and recommended submission.
-- The earlier C structure passed at 390x812. Fresh viewport emulation for the revised C could not
-  run because the selected browser does not expose resizing and rejected the isolated harness.
+- Targeted ESLint passed.
+- TypeScript passed.
+- Complete Next.js 16.2.6 production build passed.
+- Production server returned 404 for the prototype, omitted its marker, and returned 200 for dashboard.
+- Development server returned 200 for Direction C and includes the revised workspace project content.
+- `git diff --check` passed.
+- Independent audit identified the formal Workspace/Project/Workflow boundary and four Agent meanings.
+- Independent revision review findings about binding state, Workflow switching, and stale OpenSpec
+  decisions were remediated before completion.
+- Formal Studio and WorkflowEditorSession have no changes in this revision.
 
-## Blockers
+## Known gap
 
-- Fresh 390 px metrics: browser viewport emulation unavailable under the selected security policy.
+- Fresh visual/browser interaction automation could not run because the installed browser-control
+  runtime failed during initialization (`Cannot redefine property: process`). This is a tooling error,
+  not a page runtime/build error. The dev server remains available for manual product review.
 
-## Next actions
+## Next production steps
 
-1. Review the corrected workspace-index → project-editor direction.
-2. Map approved additions onto the existing Studio and WorkflowEditorSession only.
-3. Re-run 390 px metrics when the environment supports that check.
+1. Add an explicit Workflow list/switcher to the existing Studio/WorkflowEditorSession route contract.
+2. Introduce stable `executionRequirement` and `bindingRef` fields aligned with existing Fleet tags.
+3. Build separate Agent Team and Device/Compute control-plane pages from current backend capabilities.
+4. Reuse the existing inspector and canvas for data-contract and runtime-binding UI.
+5. Re-run desktop/mobile visual automation when the browser-control runtime is repaired.
