@@ -339,6 +339,30 @@ async def test_redis_pool_initialize_already_initialized():
     mock_redis.rpush.assert_not_called()
 
 
+@pytest.mark.asyncio
+async def test_redis_pool_registers_a_dynamic_anonymous_endpoint_idempotently():
+    from backend.browser_pool import RedisBrowserPool
+
+    endpoint = "http://dynamic-clean-profile:9222"
+    mock_redis = AsyncMock()
+    mock_redis.sadd = AsyncMock(side_effect=[1, 0])
+    mock_redis.rpush = AsyncMock()
+    mock_redis_cm = AsyncMock()
+    mock_redis_cm.__aenter__ = AsyncMock(return_value=mock_redis)
+    mock_redis_cm.__aexit__ = AsyncMock(return_value=False)
+    pool = RedisBrowserPool([], "redis://localhost:6379")
+
+    with patch.object(pool, "_client", return_value=mock_redis_cm):
+        await pool.register_endpoint(endpoint)
+        await pool.register_endpoint(endpoint)
+    pool.set_profile_kind(endpoint, "anonymous")
+
+    assert pool.select_anonymous_endpoint() == endpoint
+    assert mock_redis.rpush.await_count == 2
+    mock_redis.rpush.assert_any_await("browser_pool:endpoints", endpoint)
+    mock_redis.rpush.assert_any_await(pool._ep_key(endpoint), endpoint)
+
+
 # ── RedisBrowserPool.acquire ──────────────────────────────────────────────────
 
 @pytest.mark.asyncio
@@ -382,22 +406,49 @@ async def test_redis_pool_acquire_routed():
 
 
 @pytest.mark.asyncio
-async def test_redis_pool_acquire_timeout():
-    """acquire() raises TimeoutError when blpop returns None."""
+async def test_redis_pool_acquire_timeout(monkeypatch):
+    """acquire() raises TimeoutError when no endpoint lease is available."""
     from backend.browser_pool import RedisBrowserPool
 
     mock_redis = AsyncMock()
-    mock_redis.blpop = AsyncMock(return_value=None)
+    mock_redis.set = AsyncMock(return_value=False)
     mock_redis_cm = AsyncMock()
     mock_redis_cm.__aenter__ = AsyncMock(return_value=mock_redis)
     mock_redis_cm.__aexit__ = AsyncMock(return_value=False)
 
     pool = RedisBrowserPool(["http://chrome:9222"], "redis://localhost:6379")
+    monkeypatch.setattr(pool, "_ACQUIRE_TIMEOUT_SECONDS", 0.01)
+    monkeypatch.setattr(pool, "_RETRY_SECONDS", 0.001)
 
     with patch.object(pool, "_client", return_value=mock_redis_cm):
         with pytest.raises(TimeoutError):
             async with pool.acquire():
                 pass
+
+
+@pytest.mark.asyncio
+async def test_redis_routed_and_unrouted_share_one_endpoint_lease(monkeypatch):
+    from backend.browser_pool import RedisBrowserPool
+
+    endpoint = "http://chrome:9222"
+    redis = AsyncMock()
+    redis.set = AsyncMock(side_effect=[True, *([False] * 50)])
+    redis.eval = AsyncMock(return_value=1)
+    redis_cm = AsyncMock()
+    redis_cm.__aenter__ = AsyncMock(return_value=redis)
+    redis_cm.__aexit__ = AsyncMock(return_value=False)
+    pool = RedisBrowserPool([endpoint], "redis://localhost:6379")
+    monkeypatch.setattr(pool, "_ACQUIRE_TIMEOUT_SECONDS", 0.02, raising=False)
+    monkeypatch.setattr(pool, "_RETRY_SECONDS", 0.001, raising=False)
+
+    with patch.object(pool, "_client", return_value=redis_cm):
+        async with pool.acquire(endpoint):
+            with pytest.raises(TimeoutError):
+                async with pool.acquire():
+                    pass
+
+    lease_keys = [call.args[0] for call in redis.set.await_args_list]
+    assert set(lease_keys) == {pool._lease_key(endpoint)}
 # Managed official-site acquisition must never fall back to the operator's
 # default (potentially authenticated) browser profile.
 @pytest.mark.asyncio

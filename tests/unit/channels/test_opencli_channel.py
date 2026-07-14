@@ -11,6 +11,7 @@ from backend.channels.opencli_channel import (
     OpenCLIChannel,
     _collect_via_agent,
     _get_named_options,
+    _kill_subprocess,
     _parse_csv,
     _parse_json,
     _parse_markdown,
@@ -22,6 +23,34 @@ from backend.channels.opencli_channel import (
 
 def _sessionmaker(db_engine):
     return async_sessionmaker(db_engine, class_=AsyncSession, expire_on_commit=False)
+
+
+@pytest.mark.asyncio
+async def test_kill_subprocess_terminates_windows_process_tree(monkeypatch):
+    process = MagicMock(pid=4321, returncode=None)
+    process.wait = AsyncMock()
+    run = AsyncMock()
+    monkeypatch.setattr("backend.channels.opencli_channel.asyncio.to_thread", run)
+
+    await _kill_subprocess(process, platform="nt")
+
+    assert run.await_args.args[1][:4] == ["taskkill", "/PID", "4321", "/T"]
+    process.wait.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_kill_subprocess_terminates_posix_process_group(monkeypatch):
+    process = MagicMock(pid=4321, returncode=None)
+    process.wait = AsyncMock()
+    killpg = MagicMock()
+    monkeypatch.setattr(
+        "backend.channels.opencli_channel.os.killpg", killpg, raising=False
+    )
+
+    await _kill_subprocess(process, platform="posix")
+
+    killpg.assert_called_once_with(4321, 9)
+    process.wait.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -37,6 +66,26 @@ async def test_named_options_accept_opencli_underscore_flags():
         )
 
     assert options == frozenset({"url", "max_text_chars", "trace"})
+
+
+@pytest.mark.asyncio
+async def test_named_options_cancellation_kills_the_help_process():
+    process = MagicMock()
+    process.returncode = None
+    process.communicate = AsyncMock(side_effect=asyncio.CancelledError())
+    process.kill = MagicMock()
+    process.wait = AsyncMock()
+
+    with (
+        patch("asyncio.create_subprocess_exec", return_value=process),
+        patch(
+            "backend.channels.opencli_channel._kill_subprocess", new=AsyncMock()
+        ) as kill_tree,
+        pytest.raises(asyncio.CancelledError),
+    ):
+        await _get_named_options("cancel-opencli", "site", "command")
+
+    kill_tree.assert_awaited_once_with(process)
 
 
 def test_managed_profile_requirement_is_not_forwarded_as_a_cli_argument():
@@ -172,7 +221,10 @@ def test_parse_markdown_only_header():
 async def test_collect_via_agent_success():
     mock_response = MagicMock()
     mock_response.raise_for_status = MagicMock()
-    mock_response.json = MagicMock(return_value={"success": True, "items": [{"x": 1}]})
+    mock_response.json = MagicMock(return_value={
+        "success": True, "items": [{"x": 1}],
+        "metadata": {"trace_artifact": "trace://1", "runtime": {"opencli_version": "1.8.5"}},
+    })
 
     mock_client = AsyncMock()
     mock_client.post = AsyncMock(return_value=mock_response)
@@ -180,13 +232,23 @@ async def test_collect_via_agent_success():
     mock_client_ctx.__aenter__ = AsyncMock(return_value=mock_client)
     mock_client_ctx.__aexit__ = AsyncMock(return_value=False)
 
-    with patch("httpx.AsyncClient", return_value=mock_client_ctx):
+    settings = MagicMock(agent_http_timeout=130, api_auth_token="fleet-secret")
+    with (
+        patch("httpx.AsyncClient", return_value=mock_client_ctx),
+        patch("backend.config.get_settings", return_value=settings),
+    ):
         result = await _collect_via_agent(
-            "http://agent:8000", "example.com", "list", {}, [], "json", "cdp"
+            "http://agent:8000", "example.com", "list", {}, [], "json", "cdp", "exec-1"
         )
 
     assert result.success is True
     assert result.items == [{"x": 1}]
+    assert result.metadata["trace_artifact"] == "trace://1"
+    assert result.metadata["runtime"]["opencli_version"] == "1.8.5"
+    assert mock_client.post.await_args.kwargs["headers"] == {
+        "Authorization": "Bearer fleet-secret"
+    }
+    assert mock_client.post.await_args.kwargs["json"]["execution_id"] == "exec-1"
 
 
 @pytest.mark.asyncio
@@ -286,6 +348,26 @@ async def test_run_opencli_timeout():
                 await _run_opencli(["/opt/opencli-cdp/bin/opencli", "site", "cmd"], {})
 
 
+@pytest.mark.asyncio
+async def test_run_opencli_cancellation_kills_the_child_process():
+    mock_proc = MagicMock()
+    mock_proc.returncode = None
+    mock_proc.communicate = AsyncMock(side_effect=asyncio.CancelledError())
+    mock_proc.kill = MagicMock()
+    mock_proc.wait = AsyncMock()
+
+    with (
+        patch("asyncio.create_subprocess_exec", return_value=mock_proc),
+        patch(
+            "backend.channels.opencli_channel._kill_subprocess", new=AsyncMock()
+        ) as kill_tree,
+        pytest.raises(asyncio.CancelledError),
+    ):
+        await _run_opencli(["opencli", "site", "cmd"], {})
+
+    kill_tree.assert_awaited_once_with(mock_proc)
+
+
 # ── validate_config tests ──────────────────────────────────────────────────────
 
 @pytest.fixture
@@ -296,6 +378,12 @@ def channel():
 @pytest.fixture(autouse=True)
 def opencli_manifest_mocks(monkeypatch):
     """Keep unit tests offline: command manifest probing is tested by collect paths."""
+    # Other pool test modules intentionally leave the module singleton in
+    # different implementations.  Channel tests must not inherit a Redis pool
+    # and block for its production BLPOP timeout when the full suite runs.
+    from backend.browser_pool import init_pool
+
+    init_pool(["http://chrome:9222"], use_redis=False)
     state = {"named_options": frozenset(), "requires_browser": True}
 
     async def fake_get_named_options(*_args, **_kwargs):

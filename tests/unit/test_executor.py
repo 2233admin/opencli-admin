@@ -21,6 +21,30 @@ async def test_local_executor_dispatch_acquisition():
 
     runner.assert_awaited_once_with("execution-1")
 
+
+@pytest.mark.asyncio
+async def test_local_executor_cancel_acquisition_stops_the_running_task():
+    from backend.executor.local import LocalExecutor
+
+    started = asyncio.Event()
+    cancelled = asyncio.Event()
+
+    async def run(_execution_id):
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            cancelled.set()
+            raise
+
+    executor = LocalExecutor()
+    with patch("backend.acquisition.runner.run_acquisition_execution", new=run):
+        await executor.dispatch_acquisition("execution-1")
+        await started.wait()
+        await executor.cancel_acquisition("execution-1")
+
+    assert cancelled.is_set()
+
 @pytest.mark.asyncio
 async def test_local_executor_dispatch_collection():
     """dispatch_collection creates an asyncio Task and returns task_id."""
@@ -119,8 +143,20 @@ async def test_celery_executor_dispatch_acquisition():
         await executor.dispatch_acquisition("execution-1")
 
     task.apply_async.assert_called_once_with(
-        kwargs={"execution_id": "execution-1"}
+        kwargs={"execution_id": "execution-1"},
+        task_id="acquisition:execution-1",
     )
+
+
+@pytest.mark.asyncio
+async def test_celery_executor_cancel_acquisition_revokes_without_orphaning_subprocess():
+    from backend.executor.celery_exec import CeleryExecutor
+
+    executor = CeleryExecutor()
+    with patch("backend.worker.celery_app.celery_app.control.revoke") as revoke:
+        await executor.cancel_acquisition("execution-1")
+
+    revoke.assert_called_once_with("acquisition:execution-1", terminate=False)
 
 @pytest.mark.asyncio
 async def test_celery_executor_dispatch_collection():

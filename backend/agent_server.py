@@ -51,13 +51,15 @@ import logging
 import os
 import re
 import shutil
+import signal
 import socket
+import subprocess
 from contextlib import asynccontextmanager
 from typing import Any
 from urllib.parse import urlparse
 
 import yaml
-from fastapi import FastAPI
+from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel
 
 # Imported directly from the registry submodule (not the `backend.agent_runtimes`
@@ -115,6 +117,8 @@ _HTTPS_PROXY = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy") or
 # Fleet auth token (ADR-0005): AGENT_API_TOKEN preferred, API_AUTH_TOKEN accepted
 # as a fallback for nodes that share the center's environment.
 _AGENT_API_TOKEN = os.environ.get("AGENT_API_TOKEN") or os.environ.get("API_AUTH_TOKEN") or ""
+_OHMYOPENCLI_ROOT = os.environ.get("OHMYOPENCLI_ROOT", "/opt/ohmyopencli")
+_ACTIVE_COLLECTS: dict[str, asyncio.subprocess.Process] = {}
 
 
 def _auth_headers() -> dict[str, str]:
@@ -126,6 +130,65 @@ def _auth_headers() -> dict[str, str]:
     if not _AGENT_API_TOKEN:
         return {}
     return {"Authorization": f"Bearer {_AGENT_API_TOKEN}"}
+
+
+def _require_collect_auth(authorization: str | None) -> None:
+    """Fail closed when the edge node has no inbound fleet secret."""
+    import hmac
+
+    expected = f"Bearer {_AGENT_API_TOKEN}" if _AGENT_API_TOKEN else ""
+    if not expected or not authorization or not hmac.compare_digest(authorization, expected):
+        raise HTTPException(status_code=401, detail="invalid or unconfigured agent bearer token")
+
+
+def _process_group_kwargs() -> dict[str, Any]:
+    if os.name == "nt":
+        return {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
+    return {"start_new_session": True}
+
+
+async def _kill_process_tree(proc: asyncio.subprocess.Process) -> None:
+    if proc.returncode is not None:
+        return
+    try:
+        if os.name == "nt":
+            await asyncio.to_thread(
+                subprocess.run,
+                ["taskkill", "/PID", str(proc.pid), "/T", "/F"],
+                capture_output=True,
+                check=False,
+            )
+        else:
+            os.killpg(proc.pid, signal.SIGKILL)
+    except (OSError, ProcessLookupError):
+        proc.kill()
+    await proc.wait()
+
+
+async def _runtime_lineage(bin_path: str) -> dict[str, str]:
+    """Measure the binaries/source used by this node; never echo declarations."""
+    async def output(*argv: str, cwd: str | None = None) -> str:
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *argv, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, cwd=cwd
+            )
+            stdout, _ = await proc.communicate()
+            return stdout.decode(errors="replace").strip() if proc.returncode == 0 else ""
+        except (OSError, ValueError):
+            return ""
+
+    repo_commit = await output("git", "rev-parse", "HEAD", cwd=_OHMYOPENCLI_ROOT)
+    source_commit = await output(
+        "git", "log", "-1", "--format=%H", "--", "adapters/official-site/observe.js",
+        cwd=_OHMYOPENCLI_ROOT,
+    )
+    version_text = await output(bin_path, "--version")
+    match = re.search(r"\d+\.\d+\.\d+(?:[-+][\w.-]+)?", version_text)
+    return {
+        "ohmyopencli_repo_commit": repo_commit,
+        "capability_source_commit": source_commit,
+        "opencli_version": match.group(0) if match else version_text,
+    }
 
 
 def _detect_advertise_url() -> str:
@@ -217,6 +280,7 @@ async def _handle_ws_collect(ws, msg: dict) -> None:
         positional_args=msg.get("positional_args", []),
         format=msg.get("format", "json"),
         mode=msg.get("mode", "bridge"),
+        execution_id=request_id,
     )
     try:
         result = await collect(req)
@@ -401,6 +465,10 @@ async def _register_via_ws(advertise_url: str) -> None:
                         asyncio.create_task(_handle_ws_collect(ws, msg))
                     elif msg_type == "agent_task":
                         asyncio.create_task(_handle_ws_agent_task(ws, msg))
+                    elif msg_type == "cancel":
+                        proc = _ACTIVE_COLLECTS.get(msg.get("request_id", ""))
+                        if proc is not None:
+                            asyncio.create_task(_kill_process_tree(proc))
                     elif msg_type == "ping":
                         await ws.send(json.dumps({"type": "pong"}))
                     elif msg_type == "pong":
@@ -466,6 +534,7 @@ class CollectRequest(BaseModel):
     mode: str = "bridge"
     # CDP endpoint override; falls back to OPENCLI_CDP_ENDPOINT env var
     cdp_endpoint: str = ""
+    execution_id: str = ""
 
 
 async def _snapshot_tab_ids(cdp_endpoint: str) -> set[str]:
@@ -541,7 +610,6 @@ def health() -> dict:
     }
 
 
-@app.post("/collect")
 async def collect(req: CollectRequest) -> dict:
     cdp_ep = req.cdp_endpoint.strip() or _DEFAULT_CDP
     mode = req.mode
@@ -589,14 +657,16 @@ async def collect(req: CollectRequest) -> dict:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             env=env,
+            **_process_group_kwargs(),
         )
+        if req.execution_id:
+            _ACTIVE_COLLECTS[req.execution_id] = proc
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=_OPENCLI_TIMEOUT)
         rc = proc.returncode
     except TimeoutError:
         logger.error("timeout | cmd=%s", " ".join(cmd))
         if proc:
-            proc.kill()
-            await proc.wait()
+            await _kill_process_tree(proc)
         if mode == "cdp":
             await _cleanup_cdp_tabs(cdp_ep, pre_tab_ids)
         return {"success": False, "items": [], "error": "opencli timed out after 120s"}
@@ -605,6 +675,9 @@ async def collect(req: CollectRequest) -> dict:
         if mode == "cdp":
             await _cleanup_cdp_tabs(cdp_ep, pre_tab_ids)
         return {"success": False, "items": [], "error": str(exc)}
+    finally:
+        if req.execution_id:
+            _ACTIVE_COLLECTS.pop(req.execution_id, None)
 
     if mode == "cdp":
         await _cleanup_cdp_tabs(cdp_ep, pre_tab_ids)
@@ -625,7 +698,37 @@ async def collect(req: CollectRequest) -> dict:
         return {"success": False, "items": [], "error": f"parse error: {exc}"}
 
     logger.info("done | site=%s cmd=%s items=%d", req.site, req.command, len(items))
-    return {"success": True, "items": items, "error": None}
+    trace_match = re.search(r"OpenCLI trace artifact:\s*([^\r\n]+)", stderr_str)
+    metadata: dict[str, Any] = {"runtime": await _runtime_lineage(bin_path)}
+    if trace_match:
+        metadata["trace_artifact"] = trace_match.group(1)
+    return {
+        "success": True,
+        "items": items,
+        "error": None,
+        "runtime": metadata["runtime"],
+        "trace_artifact": metadata.get("trace_artifact"),
+        "metadata": metadata,
+    }
+
+
+@app.post("/collect")
+async def collect_http(
+    req: CollectRequest, authorization: str | None = Header(default=None)
+) -> dict:
+    _require_collect_auth(authorization)
+    return await collect(req)
+
+
+@app.post("/collect/{execution_id}/cancel")
+async def cancel_collect(
+    execution_id: str, authorization: str | None = Header(default=None)
+) -> dict:
+    _require_collect_auth(authorization)
+    proc = _ACTIVE_COLLECTS.get(execution_id)
+    if proc is not None:
+        await _kill_process_tree(proc)
+    return {"cancelled": True, "execution_id": execution_id}
 
 
 if __name__ == "__main__":

@@ -1,4 +1,5 @@
 import asyncio
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock
 
 import pytest
@@ -10,6 +11,16 @@ from backend.models.acquisition import AcquisitionExecutionStatus
 from backend.models.browser import BrowserInstance
 from backend.schemas.acquisition import AcquisitionSubmission
 from backend.services import acquisition_service
+
+
+@pytest.fixture(autouse=True)
+def _public_url_guard(monkeypatch):
+    async def validate(url, **_kwargs):
+        return url
+
+    monkeypatch.setattr(
+        "backend.security.url_guard.avalidate_public_url", validate
+    )
 
 
 def _submission() -> AcquisitionSubmission:
@@ -28,6 +39,38 @@ def _submission() -> AcquisitionSubmission:
             "geo_refs": {"attempt_id": "attempt-1"},
         }
     )
+
+
+@pytest.mark.asyncio
+async def test_official_site_execution_rejects_private_target_before_opencli(
+    db_engine, monkeypatch
+):
+    from backend.acquisition.runner import run_acquisition_execution
+    from backend.security.url_guard import SSRFValidationError
+
+    async def reject(_url, **_kwargs):
+        raise SSRFValidationError("non-public address")
+
+    monkeypatch.setattr("backend.security.url_guard.avalidate_public_url", reject)
+    sessions = async_sessionmaker(
+        db_engine, class_=AsyncSession, expire_on_commit=False
+    )
+    submission = _submission().model_copy(update={"input": {"url": "http://127.0.0.1"}})
+    async with sessions() as db:
+        outcome = await acquisition_service.submit_execution(db, submission)
+        await acquisition_service.queue_execution(db, outcome.execution)
+        execution_id = outcome.execution.id
+    channel = AsyncMock()
+
+    await run_acquisition_execution(
+        execution_id, session_factory=sessions, channel=channel
+    )
+
+    channel.collect.assert_not_awaited()
+    async with sessions() as db:
+        execution = await acquisition_service.get_execution(db, execution_id)
+        assert execution is not None
+        assert execution.failure["code"] == "ssrf_rejected"
 
 
 @pytest.mark.asyncio
@@ -116,6 +159,169 @@ async def test_duplicate_delivery_claims_a_queued_execution_only_once(db_engine)
     await first
 
     channel.collect.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_expired_worker_cannot_overwrite_a_new_lease_owner(db_engine):
+    from backend.acquisition.runner import run_acquisition_execution
+
+    sessions = async_sessionmaker(
+        db_engine, class_=AsyncSession, expire_on_commit=False
+    )
+    async with sessions() as db:
+        outcome = await acquisition_service.submit_execution(db, _submission())
+        await acquisition_service.queue_execution(db, outcome.execution)
+        execution_id = outcome.execution.id
+
+    pool = init_pool(["http://clean-profile:9222"], use_redis=False)
+    pool.set_profile_kind("http://clean-profile:9222", "anonymous")
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def collect(*_args, **_kwargs):
+        started.set()
+        await release.wait()
+        return ChannelResult.ok(
+            [
+                {
+                    "capabilityId": "official-site.observe",
+                    "capabilityVersion": "1.0.0",
+                    "outputSchemaVersion": "1",
+                }
+            ],
+            trace_artifact="artifact://trace/1",
+        )
+
+    task = asyncio.create_task(
+        run_acquisition_execution(
+            execution_id,
+            session_factory=sessions,
+            channel=AsyncMock(collect=AsyncMock(side_effect=collect)),
+        )
+    )
+    await started.wait()
+    async with sessions() as db:
+        execution = await acquisition_service.get_execution(db, execution_id)
+        assert execution is not None
+        assert execution.lease_owner is not None
+        execution.lease_owner = "replacement-worker"
+        execution.lease_expires_at = datetime.now(UTC) + timedelta(minutes=1)
+        await db.commit()
+
+    release.set()
+    await task
+
+    async with sessions() as db:
+        execution = await acquisition_service.get_execution(db, execution_id)
+        assert execution is not None
+        assert execution.status == AcquisitionExecutionStatus.RUNNING
+        assert execution.lease_owner == "replacement-worker"
+        assert execution.result_payload is None
+
+
+@pytest.mark.asyncio
+async def test_running_execution_renews_its_lease_while_collecting(
+    db_engine, monkeypatch
+):
+    from backend.acquisition.runner import run_acquisition_execution
+
+    monkeypatch.setattr(
+        "backend.acquisition.runner._HEARTBEAT_INTERVAL_SECONDS", 0.01
+    )
+    sessions = async_sessionmaker(
+        db_engine, class_=AsyncSession, expire_on_commit=False
+    )
+    async with sessions() as db:
+        outcome = await acquisition_service.submit_execution(db, _submission())
+        await acquisition_service.queue_execution(db, outcome.execution)
+        execution_id = outcome.execution.id
+
+    pool = init_pool(["http://clean-profile:9222"], use_redis=False)
+    pool.set_profile_kind("http://clean-profile:9222", "anonymous")
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def collect(*_args, **_kwargs):
+        started.set()
+        await release.wait()
+        return ChannelResult.fail("cancelled by test")
+
+    channel = AsyncMock()
+    channel.collect.side_effect = collect
+    task = asyncio.create_task(
+        run_acquisition_execution(
+            execution_id, session_factory=sessions, channel=channel
+        )
+    )
+    await started.wait()
+    async with sessions() as db:
+        execution = await acquisition_service.get_execution(db, execution_id)
+        assert execution is not None
+        first_heartbeat = execution.heartbeat_at
+
+    await asyncio.sleep(0.04)
+    async with sessions() as db:
+        execution = await acquisition_service.get_execution(db, execution_id)
+        assert execution is not None
+        assert execution.heartbeat_at != first_heartbeat
+        assert execution.lease_expires_at is not None
+
+    release.set()
+    await task
+
+
+@pytest.mark.asyncio
+async def test_durable_cancellation_stops_the_inflight_channel(db_engine, monkeypatch):
+    from backend.acquisition.runner import run_acquisition_execution
+
+    monkeypatch.setattr(
+        "backend.acquisition.runner._HEARTBEAT_INTERVAL_SECONDS", 0.01
+    )
+    sessions = async_sessionmaker(
+        db_engine, class_=AsyncSession, expire_on_commit=False
+    )
+    async with sessions() as db:
+        outcome = await acquisition_service.submit_execution(db, _submission())
+        await acquisition_service.queue_execution(db, outcome.execution)
+        execution_id = outcome.execution.id
+
+    pool = init_pool(["http://clean-profile:9222"], use_redis=False)
+    pool.set_profile_kind("http://clean-profile:9222", "anonymous")
+    started = asyncio.Event()
+    channel_cancelled = asyncio.Event()
+
+    async def collect(*_args, **_kwargs):
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            channel_cancelled.set()
+            raise
+
+    channel = AsyncMock()
+    channel.collect.side_effect = collect
+    task = asyncio.create_task(
+        run_acquisition_execution(
+            execution_id, session_factory=sessions, channel=channel
+        )
+    )
+    await started.wait()
+    async with sessions() as db:
+        execution = await acquisition_service.get_execution(db, execution_id)
+        assert execution is not None
+        await acquisition_service.cancel_execution(db, execution)
+
+    try:
+        # SQLite scheduling and Windows CI can delay the heartbeat transaction;
+        # keep the assertion below the production 5s cancellation bound without
+        # making the test depend on a sub-second scheduler turn.
+        await asyncio.wait_for(channel_cancelled.wait(), timeout=2.0)
+        await asyncio.wait_for(asyncio.shield(task), timeout=2.0)
+    finally:
+        if not task.done():
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
 
 
 @pytest.mark.asyncio
@@ -227,6 +433,21 @@ async def test_unknown_capability_invocation_fails_closed(db_engine):
     channel.collect.assert_not_awaited()
 
 
+def test_dispatch_registry_contains_only_real_versioned_capabilities():
+    from backend.acquisition.registry import list_capability_registrations
+
+    registrations = list_capability_registrations()
+
+    assert [registration.identity for registration in registrations] == [
+        ("official-site.observe", "1.0.0", "1")
+    ]
+    assert registrations[0].invocation == {
+        "site": "official-site",
+        "command": "observe",
+        "format": "json",
+    }
+
+
 @pytest.mark.asyncio
 async def test_worker_process_hydrates_anonymous_profile_before_dispatch(
     db_engine,
@@ -274,6 +495,60 @@ async def test_worker_process_hydrates_anonymous_profile_before_dispatch(
     assert browser_pool.get_pool().get_profile_kind(
         "http://clean-profile:9222"
     ) == "anonymous"
+
+
+@pytest.mark.asyncio
+async def test_redis_worker_registers_a_dynamic_anonymous_profile_before_dispatch(
+    db_engine, monkeypatch
+):
+    from backend import browser_pool
+    from backend.acquisition.runner import run_acquisition_execution
+    from backend.browser_pool import RedisBrowserPool
+
+    sessions = async_sessionmaker(
+        db_engine, class_=AsyncSession, expire_on_commit=False
+    )
+    async with sessions() as db:
+        outcome = await acquisition_service.submit_execution(db, _submission())
+        await acquisition_service.queue_execution(db, outcome.execution)
+        execution_id = outcome.execution.id
+        db.add(
+            BrowserInstance(
+                endpoint="http://dynamic-clean-profile:9222",
+                mode="cdp",
+                profile_kind="anonymous",
+                agent_url="http://dynamic-clean-profile:9222",
+            )
+        )
+        await db.commit()
+
+    pool = RedisBrowserPool([], "redis://localhost:6379")
+    monkeypatch.setattr(browser_pool, "_pool", pool)
+    redis = AsyncMock()
+    redis.sadd = AsyncMock(return_value=1)
+    redis.rpush = AsyncMock()
+    redis_cm = AsyncMock()
+    redis_cm.__aenter__ = AsyncMock(return_value=redis)
+    redis_cm.__aexit__ = AsyncMock(return_value=False)
+    channel = AsyncMock()
+    channel.collect.return_value = ChannelResult.ok(
+        [
+            {
+                "capabilityId": "official-site.observe",
+                "capabilityVersion": "1.0.0",
+                "outputSchemaVersion": "1",
+            }
+        ],
+        trace_artifact="artifact://trace/1",
+    )
+
+    monkeypatch.setattr(pool, "_client", lambda: redis_cm)
+    await run_acquisition_execution(
+        execution_id, session_factory=sessions, channel=channel
+    )
+
+    channel.collect.assert_awaited_once()
+    assert pool.select_anonymous_endpoint() == "http://dynamic-clean-profile:9222"
 
 
 @pytest.mark.asyncio
@@ -342,10 +617,10 @@ async def test_official_site_execution_preserves_payload_in_versioned_envelope(
             "operational": {
                 "runtime": {
                     "ohmyopencli_repo_commit": (
-                        "8a087abe1805a9cff77b64ba80da12379afa184e"
+                        "73cc60c83586ef2c95469b3b70d6cfc80fa5bc53"
                     ),
                     "capability_source_commit": (
-                        "35b146e675a51f013f293d12d303cfedfac58495"
+                        "73cc60c83586ef2c95469b3b70d6cfc80fa5bc53"
                     ),
                     "opencli_version": "1.8.5",
                 },
@@ -392,6 +667,11 @@ async def test_startup_requeues_durable_inflight_acquisitions(db_engine):
             )
             outcome = await acquisition_service.submit_execution(db, body)
             outcome.execution.status = status
+            if status == AcquisitionExecutionStatus.RUNNING:
+                outcome.execution.lease_owner = "expired-worker"
+                outcome.execution.lease_expires_at = datetime.now(UTC) - timedelta(
+                    seconds=1
+                )
             execution_ids.append(outcome.execution.id)
         await db.commit()
 
@@ -409,6 +689,78 @@ async def test_startup_requeues_durable_inflight_acquisitions(db_engine):
             execution = await acquisition_service.get_execution(db, execution_id)
             assert execution is not None
             assert execution.status == AcquisitionExecutionStatus.QUEUED
+
+
+@pytest.mark.asyncio
+async def test_startup_does_not_requeue_a_running_execution_with_an_active_lease(
+    db_engine,
+):
+    from backend.acquisition.runner import recover_acquisition_executions
+
+    sessions = async_sessionmaker(
+        db_engine, class_=AsyncSession, expire_on_commit=False
+    )
+    async with sessions() as db:
+        outcome = await acquisition_service.submit_execution(db, _submission())
+        execution = outcome.execution
+        execution.status = AcquisitionExecutionStatus.RUNNING
+        execution.lease_owner = "live-worker"
+        execution.heartbeat_at = datetime.now(UTC)
+        execution.lease_expires_at = datetime.now(UTC) + timedelta(minutes=1)
+        execution_id = execution.id
+        await db.commit()
+
+    executor = AsyncMock()
+    recovered = await recover_acquisition_executions(
+        session_factory=sessions,
+        executor=executor,
+    )
+
+    assert recovered == []
+    executor.dispatch_acquisition.assert_not_awaited()
+    async with sessions() as db:
+        execution = await acquisition_service.get_execution(db, execution_id)
+        assert execution is not None
+        assert execution.status == AcquisitionExecutionStatus.RUNNING
+        assert execution.lease_owner == "live-worker"
+
+
+@pytest.mark.asyncio
+async def test_periodic_sweeper_requeues_execution_that_expires_after_start(
+    db_engine,
+):
+    from backend.acquisition.runner import sweep_acquisition_executions
+
+    sessions = async_sessionmaker(
+        db_engine, class_=AsyncSession, expire_on_commit=False
+    )
+    async with sessions() as db:
+        outcome = await acquisition_service.submit_execution(db, _submission())
+        execution = outcome.execution
+        execution.status = AcquisitionExecutionStatus.RUNNING
+        execution.lease_owner = "dead-worker"
+        execution.lease_expires_at = datetime.now(UTC) - timedelta(seconds=1)
+        await db.commit()
+
+    executor = AsyncMock()
+    stop = asyncio.Event()
+    task = asyncio.create_task(
+        sweep_acquisition_executions(
+            stop=stop,
+            interval_seconds=0.01,
+            session_factory=sessions,
+            executor=executor,
+        )
+    )
+    try:
+        for _ in range(50):
+            if executor.dispatch_acquisition.await_count:
+                break
+            await asyncio.sleep(0.01)
+        executor.dispatch_acquisition.assert_awaited_once_with(execution.id)
+    finally:
+        stop.set()
+        await task
 
 
 @pytest.mark.asyncio

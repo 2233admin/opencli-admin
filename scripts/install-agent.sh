@@ -51,6 +51,7 @@ AGENT_MODE="${AGENT_MODE:-cdp}"
 IMAGE_TAG="${IMAGE_TAG:-__IMAGE_TAG__}"
 INSTALL_CHROME="${INSTALL_CHROME:-false}"
 OPENCLI_BROWSER_PROFILE_KIND="${OPENCLI_BROWSER_PROFILE_KIND:-authenticated}"
+OHMYOPENCLI_REPO="${OHMYOPENCLI_REPO:-https://github.com/2233admin/OhMyOpenCLI.git}"
 INSTALL_MODE="${1:-docker}"
 
 [[ "$CENTRAL_API_URL" == "__CENTRAL_API_URL__" ]] && CENTRAL_API_URL=""
@@ -332,12 +333,12 @@ install_python() {
 
   # Install the exact project-owned managed-acquisition capability package.
   OHMYOPENCLI_ROOT="$AGENT_DIR/ohmyopencli"
-  OHMYOPENCLI_COMMIT="8a087abe1805a9cff77b64ba80da12379afa184e"
-  OFFICIAL_SITE_CAPABILITY_COMMIT="35b146e675a51f013f293d12d303cfedfac58495"
+  OHMYOPENCLI_COMMIT="73cc60c83586ef2c95469b3b70d6cfc80fa5bc53"
+  OFFICIAL_SITE_CAPABILITY_COMMIT="73cc60c83586ef2c95469b3b70d6cfc80fa5bc53"
   command -v git >/dev/null 2>&1 || die "git is required to install OhMyOpenCLI"
   [[ -e "$OHMYOPENCLI_ROOT" ]] && die \
     "Managed OhMyOpenCLI target already exists; archive it explicitly before reinstalling: $OHMYOPENCLI_ROOT"
-  git clone https://github.com/2233admin/OhMyOpenCLI.git "$OHMYOPENCLI_ROOT"
+  git clone "$OHMYOPENCLI_REPO" "$OHMYOPENCLI_ROOT"
   git -C "$OHMYOPENCLI_ROOT" checkout --detach "$OHMYOPENCLI_COMMIT"
   git -C "$OHMYOPENCLI_ROOT" merge-base --is-ancestor \
     "$OFFICIAL_SITE_CAPABILITY_COMMIT" HEAD

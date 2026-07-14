@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,6 +14,8 @@ from backend.schemas.acquisition import (
     CapabilityList,
 )
 from backend.services import acquisition_service
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/internal/geo-acquisition", tags=["internal-geo-acquisition"]
@@ -127,4 +131,11 @@ async def cancel_execution(
             detail={"code": "execution_not_cancellable", "message": execution.status},
         )
     cancelled = await acquisition_service.cancel_execution(db, execution)
+    try:
+        await get_executor().cancel_acquisition(execution_id)
+    except Exception as exc:
+        # Cancellation is an externally idempotent state transition.  Once the
+        # durable state is CANCELLED a best-effort broker revoke must not turn a
+        # successful API operation into a misleading 503.
+        logger.warning("Cancellation persisted but executor revoke failed: %s", exc)
     return AcquisitionExecutionRead.from_execution(cancelled)

@@ -92,6 +92,9 @@ async def cancel_execution(
     next_status = execution.status.cancel()
     if next_status != execution.status:
         execution.status = next_status
+        execution.lease_owner = None
+        execution.heartbeat_at = None
+        execution.lease_expires_at = None
         await db.commit()
         await db.refresh(execution)
     return execution

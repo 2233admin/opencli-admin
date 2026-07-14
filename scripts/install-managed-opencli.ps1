@@ -2,13 +2,14 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$CentralApiUrl,
     [string]$ApiAuthToken = "",
+    [string]$OhMyOpenCliRepo = "https://github.com/2233admin/OhMyOpenCLI.git",
     [string]$OhMyOpenCliRoot = "$env:LOCALAPPDATA\opencli-admin\OhMyOpenCLI"
 )
 
 $ErrorActionPreference = "Stop"
 $OpenCliVersion = "1.8.5"
-$OhMyOpenCliCommit = "8a087abe1805a9cff77b64ba80da12379afa184e"
-$CapabilitySourceCommit = "35b146e675a51f013f293d12d303cfedfac58495"
+$OhMyOpenCliCommit = "73cc60c83586ef2c95469b3b70d6cfc80fa5bc53"
+$CapabilitySourceCommit = "73cc60c83586ef2c95469b3b70d6cfc80fa5bc53"
 $requestHeaders = @{}
 if ($ApiAuthToken) {
     $requestHeaders = @{ Authorization = "Bearer $ApiAuthToken" }
@@ -32,7 +33,7 @@ node $patchPath
 if (Test-Path $OhMyOpenCliRoot) {
     throw "Target already exists; choose a new OhMyOpenCliRoot or archive it explicitly: $OhMyOpenCliRoot"
 }
-git clone https://github.com/2233admin/OhMyOpenCLI.git $OhMyOpenCliRoot
+git clone $OhMyOpenCliRepo $OhMyOpenCliRoot
 git -C $OhMyOpenCliRoot checkout --detach $OhMyOpenCliCommit
 git -C $OhMyOpenCliRoot merge-base --is-ancestor $CapabilitySourceCommit HEAD
 if ($LASTEXITCODE -ne 0) {

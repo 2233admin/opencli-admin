@@ -9,6 +9,7 @@ httpx POST calls, and the `additional_headers` -> `extra_headers` fallback in
 import json
 
 import pytest
+from fastapi import HTTPException
 
 from backend import agent_server
 from backend.agent_runtimes.base import RuntimeInvocationError
@@ -52,6 +53,18 @@ def test_auth_headers_empty_when_no_token(monkeypatch):
 def test_auth_headers_bearer_when_token_set(monkeypatch):
     monkeypatch.setattr(agent_server, "_AGENT_API_TOKEN", "x")
     assert agent_server._auth_headers() == {"Authorization": "Bearer x"}
+
+
+def test_collect_auth_fails_closed_and_accepts_exact_bearer(monkeypatch):
+    monkeypatch.setattr(agent_server, "_AGENT_API_TOKEN", "")
+    with pytest.raises(HTTPException) as unset:
+        agent_server._require_collect_auth(None)
+    assert unset.value.status_code == 401
+
+    monkeypatch.setattr(agent_server, "_AGENT_API_TOKEN", "secret")
+    with pytest.raises(HTTPException):
+        agent_server._require_collect_auth("Bearer wrong")
+    agent_server._require_collect_auth("Bearer secret")
 
 
 # ── _register_with_center attaches Authorization header ────────────────────
@@ -215,7 +228,11 @@ class _FakeWs:
 class _StubAdapter:
     """Fake RuntimeAdapter whose invoke() yields a fixed event sequence."""
 
-    def __init__(self, events: list[dict] | None = None, raise_exc: Exception | None = None) -> None:
+    def __init__(
+        self,
+        events: list[dict] | None = None,
+        raise_exc: Exception | None = None,
+    ) -> None:
         self._events = events or []
         self._raise_exc = raise_exc
 

@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from backend.acquisition.registry import OFFICIAL_SITE_CAPABILITY_COMMIT
 from backend.browser_pool import init_pool
 
 
@@ -71,7 +72,7 @@ async def test_catalog_reports_runtime_identity_and_clean_profile_readiness(monk
     assert descriptor.unavailable_reason == "no_clean_profile"
     assert descriptor.runtime == {
         "ohmyopencli_repo_commit": capabilities.OHMYOPENCLI_COMMIT,
-        "capability_source_commit": capabilities.OFFICIAL_SITE_CAPABILITY_COMMIT,
+        "capability_source_commit": OFFICIAL_SITE_CAPABILITY_COMMIT,
         "opencli_version": "1.8.5",
     }
 
@@ -109,6 +110,8 @@ async def test_runtime_probe_uses_the_configured_opencli_binary(monkeypatch):
 
     assert await capabilities._runtime_is_installed() is True
     assert command.await_args_list[3].args == (configured_bin, "--version")
+    registration = capabilities.list_capability_registrations()[0]
+    assert await capabilities._registration_is_available(registration) is True
     assert command.await_args_list[4].args == (
         configured_bin,
         "official-site",
@@ -145,6 +148,9 @@ async def test_catalog_stays_ready_while_anonymous_inventory_is_busy(monkeypatch
     monkeypatch.setattr(
         capabilities, "_runtime_is_installed", AsyncMock(return_value=True)
     )
+    monkeypatch.setattr(
+        capabilities, "_registration_is_available", AsyncMock(return_value=True)
+    )
     endpoint = "http://anonymous-profile:9222"
     pool = init_pool([endpoint], use_redis=False)
     pool.set_profile_kind(endpoint, "anonymous")
@@ -154,3 +160,58 @@ async def test_catalog_stays_ready_while_anonymous_inventory_is_busy(monkeypatch
 
     assert descriptor.ready is True
     assert descriptor.unavailable_reason is None
+
+
+@pytest.mark.asyncio
+async def test_catalog_omits_a_capability_when_its_real_command_is_not_registered(
+    monkeypatch,
+):
+    from backend.acquisition import capabilities
+
+    monkeypatch.setattr(
+        capabilities, "_runtime_is_installed", AsyncMock(return_value=True)
+    )
+    monkeypatch.setattr(
+        capabilities,
+        "_command",
+        AsyncMock(return_value=(1, "unknown command: official-site observe")),
+    )
+
+    assert await capabilities.probe_capabilities() == []
+
+
+@pytest.mark.asyncio
+async def test_catalog_rejects_opencli_root_help_for_an_unknown_site(monkeypatch):
+    from backend.acquisition import capabilities
+
+    monkeypatch.setattr(
+        capabilities, "_runtime_is_installed", AsyncMock(return_value=True)
+    )
+    command = AsyncMock(return_value=(0, "Usage: opencli [options] [command]"))
+    monkeypatch.setattr(capabilities, "_command", command)
+
+    assert await capabilities.probe_capabilities() == []
+    command.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_catalog_does_not_invent_chat_ai_capture(monkeypatch):
+    from backend.acquisition import capabilities
+
+    monkeypatch.setattr(
+        capabilities, "_runtime_is_installed", AsyncMock(return_value=True)
+    )
+    monkeypatch.setattr(
+        capabilities,
+        "_command",
+        AsyncMock(
+            side_effect=[
+                (0, "official-site observe help"),
+                (1, "CDP not reachable at http://127.0.0.1:9"),
+            ]
+        ),
+    )
+
+    descriptors = await capabilities.probe_capabilities()
+
+    assert [item.capability_id for item in descriptors] == ["official-site.observe"]

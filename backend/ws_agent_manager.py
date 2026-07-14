@@ -125,6 +125,7 @@ async def dispatch_collect(
     output_format: str,
     mode: str,
     timeout: float | None = None,
+    request_id: str | None = None,
 ) -> dict[str, Any]:
     """Send a collect task to a WS agent and await the result dict.
 
@@ -140,7 +141,7 @@ async def dispatch_collect(
     if ws is None:
         raise RuntimeError(f"No active WS connection for agent: {agent_url}")
 
-    request_id = str(uuid.uuid4())
+    request_id = request_id or str(uuid.uuid4())
     loop = asyncio.get_running_loop()
     fut: asyncio.Future[dict] = loop.create_future()
     _pending[request_id] = fut
@@ -161,6 +162,9 @@ async def dispatch_collect(
         return await asyncio.wait_for(fut, timeout=timeout)
     except TimeoutError:
         raise TimeoutError(f"WS agent {agent_url!r} did not respond in {timeout}s")
+    except asyncio.CancelledError:
+        await ws.send_json({"type": "cancel", "request_id": request_id})
+        raise
     finally:
         _pending.pop(request_id, None)
 

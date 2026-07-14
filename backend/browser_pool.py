@@ -18,8 +18,10 @@ a specific site (e.g. only chrome-2 is logged into Twitter).
 
 import asyncio
 import logging
+import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from uuid import uuid4
 
 logger = logging.getLogger(__name__)
 
@@ -283,12 +285,25 @@ class RedisBrowserPool:
 
     _POOL_KEY = "browser_pool:endpoints"
     _LOCK_KEY = "browser_pool:initialized"
+    _REGISTRY_KEY = "browser_pool:registered"
+    _LEASE_TTL_MS = 30_000
+    _LEASE_RENEW_SECONDS = 10
+    _ACQUIRE_TIMEOUT_SECONDS = 300
+    _RETRY_SECONDS = 0.1
 
     @staticmethod
     def _ep_key(endpoint: str) -> str:
         """Per-endpoint Redis list key (safe characters only)."""
         safe = endpoint.replace("://", "_").replace(":", "_").replace("/", "_")
         return f"browser_pool:ep:{safe}"
+
+    @classmethod
+    def _lease_key(cls, endpoint: str) -> str:
+        return f"{cls._ep_key(endpoint)}:lease"
+
+    @classmethod
+    def _fence_key(cls, endpoint: str) -> str:
+        return f"{cls._ep_key(endpoint)}:fence"
 
     def __init__(self, endpoints: list[str], redis_url: str) -> None:
         self._endpoints = list(endpoints)
@@ -306,7 +321,7 @@ class RedisBrowserPool:
     async def initialize(self) -> None:
         """Populate the Redis pool and per-endpoint lists (idempotent)."""
         async with self._client() as r:
-            acquired = await r.set(self._LOCK_KEY, "1", nx=True, ex=3600)
+            acquired = await r.set(self._LOCK_KEY, "1", nx=True)
             if not acquired:
                 logger.info("BrowserPool (Redis): pool already initialized by another replica")
                 return
@@ -315,6 +330,7 @@ class RedisBrowserPool:
             await r.delete(self._POOL_KEY)
             if self._endpoints:
                 await r.rpush(self._POOL_KEY, *self._endpoints)
+                await r.sadd(self._REGISTRY_KEY, *self._endpoints)
 
             # Per-endpoint lists (for routed acquire)
             for ep in self._endpoints:
@@ -326,6 +342,21 @@ class RedisBrowserPool:
                 "BrowserPool (Redis): %d Chrome instance(s) initialised",
                 self._total,
             )
+
+    async def register_endpoint(self, endpoint: str) -> None:
+        """Add a DB-discovered endpoint to every worker and Redis exactly once."""
+        if endpoint not in self._endpoints:
+            self._endpoints.append(endpoint)
+            self._total += 1
+            self._modes.setdefault(endpoint, "bridge")
+            self._profile_kinds.setdefault(endpoint, "authenticated")
+
+        async with self._client() as r:
+            added = await r.sadd(self._REGISTRY_KEY, endpoint)
+            if not added:
+                return
+            await r.rpush(self._POOL_KEY, endpoint)
+            await r.rpush(self._ep_key(endpoint), endpoint)
 
     @asynccontextmanager
     async def acquire(
@@ -340,43 +371,72 @@ class RedisBrowserPool:
             or self.get_profile_kind(endpoint) != required_profile_kind
         ):
             raise NoCleanProfileError()
-        if endpoint:
-            key = self._ep_key(endpoint)
-            async with self._client() as r:
-                result = await r.blpop(key, timeout=300)
-            if result is None:
-                raise TimeoutError(
-                    f"Chrome instance {endpoint!r} not available within 5 minutes."
-                )
-            _, ep = result
-            logger.debug("Chrome acquired (routed, Redis): %s", ep)
-        else:
-            async with self._client() as r:
-                result = await r.blpop(self._POOL_KEY, timeout=300)
-            if result is None:
-                raise TimeoutError(
-                    "No Chrome instance became available within 5 minutes. "
-                    "Check that chrome containers are running."
-                )
-            _, ep = result
-            logger.debug("Chrome acquired (any, Redis): %s", ep)
+        candidates = [endpoint] if endpoint else list(self._endpoints)
+        deadline = time.monotonic() + self._ACQUIRE_TIMEOUT_SECONDS
+        ep = None
+        owner = None
+        while time.monotonic() < deadline and ep is None:
+            for candidate in candidates:
+                async with self._client() as r:
+                    fence = await r.incr(self._fence_key(candidate))
+                    candidate_owner = f"{fence}:{uuid4()}"
+                    acquired = await r.set(
+                        self._lease_key(candidate),
+                        candidate_owner,
+                        nx=True,
+                        px=self._LEASE_TTL_MS,
+                    )
+                if acquired:
+                    ep = candidate
+                    owner = candidate_owner
+                    break
+            if ep is None:
+                await asyncio.sleep(self._RETRY_SECONDS)
+        if ep is None or owner is None:
+            raise TimeoutError("No Chrome endpoint lease became available in time")
 
-        if required_profile_kind and self.get_profile_kind(ep) != required_profile_kind:
-            release_key = self._ep_key(ep) if endpoint else self._POOL_KEY
-            async with self._client() as r:
-                await r.rpush(release_key, ep)
-            raise NoCleanProfileError()
+        owning_task = asyncio.current_task()
+        stop_renewal = asyncio.Event()
+
+        async def renew() -> None:
+            while True:
+                try:
+                    await asyncio.wait_for(
+                        stop_renewal.wait(), timeout=self._LEASE_RENEW_SECONDS
+                    )
+                    return
+                except TimeoutError:
+                    pass
+                async with self._client() as r:
+                    renewed = await r.eval(
+                        "if redis.call('get',KEYS[1]) == ARGV[1] then "
+                        "return redis.call('pexpire',KEYS[1],ARGV[2]) else return 0 end",
+                        1,
+                        self._lease_key(ep),
+                        owner,
+                        self._LEASE_TTL_MS,
+                    )
+                if not renewed:
+                    if owning_task is not None:
+                        owning_task.cancel()
+                    return
+
+        renewal_task = asyncio.create_task(renew())
 
         try:
             yield ep
         finally:
-            if endpoint:
-                release_key = self._ep_key(ep)
-            else:
-                release_key = self._POOL_KEY
+            stop_renewal.set()
+            await renewal_task
             async with self._client() as r:
-                await r.rpush(release_key, ep)
-            logger.debug("Chrome released (Redis): %s", ep)
+                await r.eval(
+                    "if redis.call('get',KEYS[1]) == ARGV[1] then "
+                    "return redis.call('del',KEYS[1]) else return 0 end",
+                    1,
+                    self._lease_key(ep),
+                    owner,
+                )
+            logger.debug("Chrome lease released (Redis): %s", ep)
 
     @property
     def total(self) -> int:

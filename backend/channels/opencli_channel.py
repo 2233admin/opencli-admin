@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import re
+import subprocess
 from typing import Any
 from urllib.parse import urlparse
 
@@ -36,7 +37,7 @@ def _split_routing_parameters(
     cli_parameters = {
         key: value
         for key, value in parameters.items()
-        if key not in {"chrome_endpoint", "required_profile_kind"}
+        if key not in {"chrome_endpoint", "required_profile_kind", "execution_id"}
     }
     return (chrome_endpoint, required_profile_kind), cli_parameters
 
@@ -91,6 +92,33 @@ async def _select_agent_endpoint(pool: Any, site: str) -> str | None:
     return None
 
 
+async def _kill_subprocess(proc, *, platform: str | None = None) -> None:
+    if proc is None or proc.returncode is not None:
+        return
+    try:
+        if (platform or os.name) == "nt":
+            await asyncio.to_thread(
+                subprocess.run,
+                ["taskkill", "/PID", str(proc.pid), "/T", "/F"],
+                capture_output=True,
+                check=False,
+            )
+        else:
+            os.killpg(proc.pid, 9)  # SIGKILL on POSIX
+    except (OSError, ProcessLookupError):
+        try:
+            proc.kill()
+        except ProcessLookupError:
+            pass
+    await proc.wait()
+
+
+def _process_group_kwargs() -> dict:
+    if os.name == "nt":
+        return {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
+    return {"start_new_session": True}
+
+
 async def _get_named_options(bin_path: str, site: str, command: str) -> frozenset[str]:
     """Return the set of --option names accepted by `opencli <site> <command>`.
 
@@ -101,11 +129,13 @@ async def _get_named_options(bin_path: str, site: str, command: str) -> frozense
     key = (bin_path, site, command)
     if key in _help_cache:
         return _help_cache[key]
+    proc = None
     try:
         proc = await asyncio.create_subprocess_exec(
             bin_path, site, command, "--help",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            **_process_group_kwargs(),
         )
         stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=10)
         text = stdout.decode(errors="replace")
@@ -113,7 +143,11 @@ async def _get_named_options(bin_path: str, site: str, command: str) -> frozense
         names = frozenset(re.findall(r"--([a-zA-Z][a-zA-Z0-9_-]*)", text)) - {
             "format", "verbose", "help"
         }
+    except asyncio.CancelledError:
+        await _kill_subprocess(proc)
+        raise
     except Exception as exc:
+        await _kill_subprocess(proc)
         logger.debug("could not fetch --help for %s %s: %s", site, command, exc)
         names = frozenset()
     _help_cache[key] = names
@@ -129,6 +163,7 @@ async def _command_requires_browser(bin_path: str, site: str, command: str) -> b
     key = (bin_path, site, command)
     if key in _browser_requirement_cache:
         return _browser_requirement_cache[key]
+    proc = None
     try:
         proc = await asyncio.create_subprocess_exec(
             bin_path,
@@ -138,6 +173,7 @@ async def _command_requires_browser(bin_path: str, site: str, command: str) -> b
             "yaml",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            **_process_group_kwargs(),
         )
         stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=10)
         manifest = yaml.safe_load(stdout.decode(errors="replace")) or {}
@@ -151,7 +187,11 @@ async def _command_requires_browser(bin_path: str, site: str, command: str) -> b
             None,
         )
         requires_browser = bool(match.get("browser", True)) if match else True
+    except asyncio.CancelledError:
+        await _kill_subprocess(proc)
+        raise
     except Exception as exc:
+        await _kill_subprocess(proc)
         logger.debug("could not inspect browser requirement for %s %s: %s", site, command, exc)
         requires_browser = True
     _browser_requirement_cache[key] = requires_browser
@@ -238,6 +278,7 @@ async def _collect_via_agent(
     positional_args: list,
     output_format: str,
     mode: str,
+    execution_id: str | None = None,
 ) -> ChannelResult:
     """Dispatch a collection request to a LAN agent server via HTTP POST.
 
@@ -255,14 +296,23 @@ async def _collect_via_agent(
         "positional_args": positional_args,
         "format": output_format,
         "mode": mode,
+        "execution_id": execution_id or "",
     }
     from backend.config import get_settings
     logger.info("agent dispatch | url=%s site=%s cmd=%s", url, site, command)
     try:
-        async with httpx.AsyncClient(timeout=get_settings().agent_http_timeout) as client:
-            resp = await client.post(url, json=payload)
+        settings = get_settings()
+        headers = {"Authorization": f"Bearer {settings.api_auth_token}"}
+        async with httpx.AsyncClient(timeout=settings.agent_http_timeout) as client:
+            resp = await client.post(url, json=payload, headers=headers)
             resp.raise_for_status()
             data = resp.json()
+    except asyncio.CancelledError:
+        try:
+            async with httpx.AsyncClient(timeout=5) as client:
+                await client.post(f"{url}/{execution_id}/cancel", headers=headers)
+        finally:
+            raise
     except httpx.TimeoutException:
         logger.error("agent timeout | url=%s", url)
         return ChannelResult.fail(f"Agent request timed out: {url}")
@@ -276,8 +326,16 @@ async def _collect_via_agent(
         return ChannelResult.fail(f"Agent error: {err}")
 
     items = data.get("items", [])
+    agent_metadata = dict(data.get("metadata") or {})
+    if data.get("runtime") is not None:
+        agent_metadata["runtime"] = data["runtime"]
+    if data.get("trace_artifact"):
+        agent_metadata["trace_artifact"] = data["trace_artifact"]
     logger.info("agent done | site=%s cmd=%s items=%d", site, command, len(items))
-    return ChannelResult.ok(items, site=site, command=command, node_url=agent_url, chrome_mode=mode)
+    return ChannelResult.ok(
+        items, site=site, command=command, node_url=agent_url, chrome_mode=mode,
+        **agent_metadata,
+    )
 
 
 async def _collect_via_ws_agent(
@@ -288,6 +346,7 @@ async def _collect_via_ws_agent(
     positional_args: list,
     output_format: str,
     mode: str,
+    execution_id: str | None = None,
 ) -> ChannelResult:
     """Dispatch a collect request to a NAT agent via the persistent reverse WS channel."""
     from backend import ws_agent_manager
@@ -295,7 +354,8 @@ async def _collect_via_ws_agent(
     logger.info("WS agent dispatch | agent=%s site=%s cmd=%s", agent_url, site, command)
     try:
         result = await ws_agent_manager.dispatch_collect(
-            agent_url, site, command, args, positional_args, output_format, mode
+            agent_url, site, command, args, positional_args, output_format, mode,
+            request_id=execution_id,
         )
     except TimeoutError:
         logger.error("WS agent timeout | agent=%s", agent_url)
@@ -313,8 +373,16 @@ async def _collect_via_ws_agent(
         return ChannelResult.fail(f"WS agent error: {err}")
 
     items = result.get("items", [])
+    agent_metadata = dict(result.get("metadata") or {})
+    if result.get("runtime") is not None:
+        agent_metadata["runtime"] = result["runtime"]
+    if result.get("trace_artifact"):
+        agent_metadata["trace_artifact"] = result["trace_artifact"]
     logger.info("WS agent done | site=%s cmd=%s items=%d", site, command, len(items))
-    return ChannelResult.ok(items, site=site, command=command, node_url=agent_url, chrome_mode=mode)
+    return ChannelResult.ok(
+        items, site=site, command=command, node_url=agent_url, chrome_mode=mode,
+        **agent_metadata,
+    )
 
 
 async def _check_bridge_ready(daemon_host: str, daemon_port: int) -> str | None:
@@ -407,15 +475,14 @@ async def _run_opencli(cmd: list[str], env: dict) -> tuple[int, str, str]:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             env=env,
+            **_process_group_kwargs(),
         )
         from backend.config import get_settings
         timeout = get_settings().opencli_timeout
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
         return proc.returncode, stdout.decode(), stderr.decode().strip()
-    except TimeoutError:
-        if proc:
-            proc.kill()
-            await proc.wait()
+    except (TimeoutError, asyncio.CancelledError):
+        await _kill_subprocess(proc)
         raise
 
 
@@ -503,6 +570,7 @@ class OpenCLIChannel(AbstractChannel):
         command = config.get("command", "")
         output_format = config.get("format", "json")
 
+        execution_id = parameters.get("execution_id") or None
         (chrome_endpoint, required_profile_kind), cli_params = (
             _split_routing_parameters(parameters)
         )
@@ -591,11 +659,13 @@ class OpenCLIChannel(AbstractChannel):
                     )
                 if protocol == "http":
                     return await _collect_via_agent(
-                        agent_url, site, command, args, positional_args, output_format, mode
+                        agent_url, site, command, args, positional_args, output_format, mode,
+                        execution_id,
                     )
                 elif protocol == "ws":
                     return await _collect_via_ws_agent(
-                        agent_url, site, command, args, positional_args, output_format, mode
+                        agent_url, site, command, args, positional_args, output_format, mode,
+                        execution_id,
                     )
                 else:
                     logger.error(

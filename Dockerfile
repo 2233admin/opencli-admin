@@ -45,8 +45,8 @@ RUN npm install -g @jackwener/opencli@${OPENCLI_VERSION} \
     && rm -rf /root/.npm
 
 ARG OHMYOPENCLI_REPO=https://github.com/2233admin/OhMyOpenCLI.git
-ARG OHMYOPENCLI_COMMIT=8a087abe1805a9cff77b64ba80da12379afa184e
-ARG OFFICIAL_SITE_CAPABILITY_COMMIT=35b146e675a51f013f293d12d303cfedfac58495
+ARG OHMYOPENCLI_COMMIT=73cc60c83586ef2c95469b3b70d6cfc80fa5bc53
+ARG OFFICIAL_SITE_CAPABILITY_COMMIT=73cc60c83586ef2c95469b3b70d6cfc80fa5bc53
 RUN git clone ${OHMYOPENCLI_REPO} /opt/ohmyopencli \
     && cd /opt/ohmyopencli \
     && git checkout --detach ${OHMYOPENCLI_COMMIT} \
@@ -60,6 +60,7 @@ COPY --from=builder /install /usr/local
 # Copy application source
 COPY backend/ ./backend/
 COPY scripts/patch-opencli.js ./scripts/patch-opencli.js
+COPY scripts/verify_managed_opencli_runtime.py ./scripts/verify_managed_opencli_runtime.py
 COPY alembic.ini .
 
 # Entrypoint handles migrations
@@ -69,10 +70,10 @@ RUN sed -i 's/\r$//' /entrypoint.sh && chmod +x /entrypoint.sh
 # Non-root user for security; pre-create /data so the SQLite volume is writable
 RUN useradd -m -u 1000 appuser && \
     mkdir -p /data && \
-    chown -R appuser:appuser /app /data \
+    chown -R appuser:appuser /app /data /opt/ohmyopencli \
     && cd /opt/ohmyopencli \
     && HOME=/home/appuser npm run bootstrap \
-    && chown -R appuser:appuser /home/appuser/.opencli
+    && chown -R appuser:appuser /home/appuser/.opencli /opt/ohmyopencli
 USER appuser
 
 ENV PYTHONPATH=/app \

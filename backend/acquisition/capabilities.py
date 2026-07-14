@@ -4,12 +4,15 @@ import asyncio
 import os
 import re
 
+from backend.acquisition.registry import (
+    OHMYOPENCLI_COMMIT,
+    OPENCLI_VERSION,
+    CapabilityRegistration,
+    list_capability_registrations,
+)
 from backend.opencli_runtime import resolve_opencli_bin
 from backend.schemas.acquisition import CapabilityDescriptor
 
-OHMYOPENCLI_COMMIT = "8a087abe1805a9cff77b64ba80da12379afa184e"
-OFFICIAL_SITE_CAPABILITY_COMMIT = "35b146e675a51f013f293d12d303cfedfac58495"
-OPENCLI_VERSION = "1.8.5"
 COMMAND_TIMEOUT_SECONDS = 15.0
 
 
@@ -42,17 +45,21 @@ async def _runtime_is_installed() -> bool:
     if commit_rc != 0 or commit.strip() != OHMYOPENCLI_COMMIT:
         return False
 
-    source_rc, _ = await _command(
-        "git",
-        "-C",
-        root,
-        "merge-base",
-        "--is-ancestor",
-        OFFICIAL_SITE_CAPABILITY_COMMIT,
-        "HEAD",
-    )
-    if source_rc != 0:
-        return False
+    for source_commit in dict.fromkeys(
+        registration.source_commit
+        for registration in list_capability_registrations()
+    ):
+        source_rc, _ = await _command(
+            "git",
+            "-C",
+            root,
+            "merge-base",
+            "--is-ancestor",
+            source_commit,
+            "HEAD",
+        )
+        if source_rc != 0:
+            return False
 
     dirty_rc, dirty_output = await _command(
         "git",
@@ -71,25 +78,27 @@ async def _runtime_is_installed() -> bool:
     if version_rc != 0 or OPENCLI_VERSION not in versions:
         return False
 
-    command_rc, _ = await _command(
-        opencli_bin, "official-site", "observe", "--help"
+    return True
+
+
+async def _registration_is_available(
+    registration: CapabilityRegistration,
+) -> bool:
+    opencli_bin = resolve_opencli_bin()
+    command_rc, command_output = await _command(
+        opencli_bin, *registration.probe_args
     )
-    if command_rc != 0:
+    if command_rc != 0 or registration.help_marker not in command_output:
         return False
 
     patch_env = os.environ.copy()
     patch_env["OPENCLI_CDP_ENDPOINT"] = "http://127.0.0.1:9"
     patch_rc, patch_output = await _command(
         opencli_bin,
-        "official-site",
-        "observe",
-        "--url",
-        "https://example.invalid",
-        "-f",
-        "json",
+        *registration.route_probe_args,
         env=patch_env,
     )
-    return patch_rc != 0 and "CDP not reachable at http://127.0.0.1:9" in patch_output
+    return patch_rc != 0 and registration.route_probe_error in patch_output
 
 
 def _anonymous_profile_available() -> bool:
@@ -110,17 +119,18 @@ async def probe_capabilities() -> list[CapabilityDescriptor]:
         return []
 
     ready = _anonymous_profile_available()
-    return [
-        CapabilityDescriptor(
-            capability_id="official-site.observe",
-            capability_version="1.0.0",
-            output_schema_version="1",
-            ready=ready,
-            runtime={
-                "ohmyopencli_repo_commit": OHMYOPENCLI_COMMIT,
-                "capability_source_commit": OFFICIAL_SITE_CAPABILITY_COMMIT,
-                "opencli_version": OPENCLI_VERSION,
-            },
-            unavailable_reason=None if ready else "no_clean_profile",
+    descriptors = []
+    for registration in list_capability_registrations():
+        if not await _registration_is_available(registration):
+            continue
+        descriptors.append(
+            CapabilityDescriptor(
+                capability_id=registration.capability_id,
+                capability_version=registration.capability_version,
+                output_schema_version=registration.output_schema_version,
+                ready=ready,
+                runtime=registration.runtime_identity(),
+                unavailable_reason=None if ready else "no_clean_profile",
+            )
         )
-    ]
+    return descriptors

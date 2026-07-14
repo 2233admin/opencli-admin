@@ -36,8 +36,8 @@ RUN npm install -g @jackwener/opencli@${OPENCLI_VERSION} \
 # identities separate: the latter is the behavior change, while the former is
 # the exact checkout certified by this image.
 ARG OHMYOPENCLI_REPO=https://github.com/2233admin/OhMyOpenCLI.git
-ARG OHMYOPENCLI_COMMIT=8a087abe1805a9cff77b64ba80da12379afa184e
-ARG OFFICIAL_SITE_CAPABILITY_COMMIT=35b146e675a51f013f293d12d303cfedfac58495
+ARG OHMYOPENCLI_COMMIT=73cc60c83586ef2c95469b3b70d6cfc80fa5bc53
+ARG OFFICIAL_SITE_CAPABILITY_COMMIT=73cc60c83586ef2c95469b3b70d6cfc80fa5bc53
 RUN git clone ${OHMYOPENCLI_REPO} /opt/ohmyopencli \
     && cd /opt/ohmyopencli \
     && git checkout --detach ${OHMYOPENCLI_COMMIT} \
@@ -65,6 +65,7 @@ WORKDIR /app
 COPY backend/agent_server.py ./backend/agent_server.py
 COPY backend/agent_runtimes/ ./backend/agent_runtimes/
 COPY backend/miniflow/ ./backend/miniflow/
+COPY scripts/verify_managed_opencli_runtime.py ./scripts/verify_managed_opencli_runtime.py
 RUN touch ./backend/__init__.py
 
 COPY agent/entrypoint.sh /entrypoint.sh
@@ -72,10 +73,10 @@ RUN sed -i 's/\r$//' /entrypoint.sh && chmod +x /entrypoint.sh
 
 RUN useradd -m -u 1000 agent \
     && mkdir -p /home/agent/.config/chromium \
-    && chown -R agent:agent /home/agent /app \
+    && chown -R agent:agent /home/agent /app /opt/ohmyopencli \
     && cd /opt/ohmyopencli \
     && HOME=/home/agent npm run bootstrap \
-    && chown -R agent:agent /home/agent/.opencli
+    && chown -R agent:agent /home/agent/.opencli /opt/ohmyopencli
 
 ARG INSTALL_CHROME=false
 ENV PYTHONPATH=/app \

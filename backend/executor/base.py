@@ -6,6 +6,9 @@ class AbstractExecutor(ABC):
     async def dispatch_acquisition(self, execution_id: str) -> None: ...
 
     @abstractmethod
+    async def cancel_acquisition(self, execution_id: str) -> None: ...
+
+    @abstractmethod
     async def dispatch_collection(self, task_id: str, parameters: dict) -> dict: ...
 
     @abstractmethod

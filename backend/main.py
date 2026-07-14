@@ -1,5 +1,6 @@
 """FastAPI application factory."""
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
@@ -146,10 +147,17 @@ async def lifespan(app: FastAPI):
     # Managed acquisitions are durable submit-and-observe work. Unlike legacy
     # collection tasks, accepted/queued/running records are requeued rather than
     # declared lost when the API or worker restarts.
-    from backend.acquisition.runner import recover_acquisition_executions
+    from backend.acquisition.runner import (
+        recover_acquisition_executions,
+        sweep_acquisition_executions,
+    )
 
     recovered_acquisitions = await recover_acquisition_executions()
     logger.info("Requeued %d managed acquisitions", len(recovered_acquisitions))
+    acquisition_sweeper_stop = asyncio.Event()
+    acquisition_sweeper = asyncio.create_task(
+        sweep_acquisition_executions(stop=acquisition_sweeper_stop)
+    )
 
     use_admin_scheduler = (
         settings.collection_orchestrator == "admin"
@@ -188,6 +196,8 @@ async def lifespan(app: FastAPI):
     )
     yield
     # Shutdown
+    acquisition_sweeper_stop.set()
+    await acquisition_sweeper
     await cycle_task.stop()
     if use_admin_scheduler:
         from backend.scheduler import stop_scheduler

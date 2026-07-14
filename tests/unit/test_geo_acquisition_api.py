@@ -26,10 +26,10 @@ def _official_site_runtime_is_probed(monkeypatch):
                 ready=True,
                 runtime={
                     "ohmyopencli_repo_commit": (
-                        "8a087abe1805a9cff77b64ba80da12379afa184e"
+                        "73cc60c83586ef2c95469b3b70d6cfc80fa5bc53"
                     ),
                     "capability_source_commit": (
-                        "35b146e675a51f013f293d12d303cfedfac58495"
+                        "73cc60c83586ef2c95469b3b70d6cfc80fa5bc53"
                     ),
                     "opencli_version": "1.8.5",
                 },
@@ -44,7 +44,10 @@ def _official_site_runtime_is_probed(monkeypatch):
 
 @pytest.fixture
 def acquisition_executor(monkeypatch):
-    executor = SimpleNamespace(dispatch_acquisition=AsyncMock(return_value=None))
+    executor = SimpleNamespace(
+        dispatch_acquisition=AsyncMock(return_value=None),
+        cancel_acquisition=AsyncMock(return_value=None),
+    )
     monkeypatch.setattr(
         "backend.api.v1.geo_acquisition.get_executor", lambda: executor
     )
@@ -84,10 +87,10 @@ async def test_geo_can_discover_submit_observe_and_cancel_an_execution(
                 "ready": True,
                 "runtime": {
                     "ohmyopencli_repo_commit": (
-                        "8a087abe1805a9cff77b64ba80da12379afa184e"
+                        "73cc60c83586ef2c95469b3b70d6cfc80fa5bc53"
                     ),
                     "capability_source_commit": (
-                        "35b146e675a51f013f293d12d303cfedfac58495"
+                        "73cc60c83586ef2c95469b3b70d6cfc80fa5bc53"
                     ),
                     "opencli_version": "1.8.5",
                 },
@@ -121,6 +124,23 @@ async def test_geo_can_discover_submit_observe_and_cancel_an_execution(
     cancelled = await client.post(
         f"{BASE}/executions/{execution['execution_id']}/cancel"
     )
+    assert cancelled.status_code == 200
+    assert cancelled.json()["status"] == "cancelled"
+    acquisition_executor.cancel_acquisition.assert_awaited_once_with(
+        execution["execution_id"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_cancel_stays_successful_when_best_effort_revoke_fails(
+    client, acquisition_executor
+):
+    submitted = await client.post(f"{BASE}/executions", json=_request())
+    execution_id = submitted.json()["execution_id"]
+    acquisition_executor.cancel_acquisition.side_effect = RuntimeError("broker unavailable")
+
+    cancelled = await client.post(f"{BASE}/executions/{execution_id}/cancel")
+
     assert cancelled.status_code == 200
     assert cancelled.json()["status"] == "cancelled"
 

@@ -17,7 +17,7 @@ def test_agent_image_pins_managed_acquisition_runtime():
     assert "ARG OPENCLI_VERSION=1.8.5" in dockerfile
     assert (
         "ARG OHMYOPENCLI_COMMIT="
-        "8a087abe1805a9cff77b64ba80da12379afa184e"
+        "73cc60c83586ef2c95469b3b70d6cfc80fa5bc53"
     ) in dockerfile
     assert "git checkout --detach ${OHMYOPENCLI_COMMIT}" in dockerfile
     assert "npm ci" in dockerfile
@@ -40,6 +40,36 @@ def test_managed_runtime_plugin_is_registered_for_each_final_image_user():
         final_user = dockerfile.index(f"USER {user}")
 
         assert user_creation < user_bootstrap < final_user
+
+
+def test_every_installer_allows_an_audited_ohmyopencli_source_override():
+    main_image = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+    agent_image = (ROOT / "agent" / "Dockerfile").read_text(encoding="utf-8")
+    windows = (ROOT / "scripts" / "install-managed-opencli.ps1").read_text(
+        encoding="utf-8"
+    )
+    linux = (ROOT / "scripts" / "install-agent.sh").read_text(encoding="utf-8")
+
+    assert "ARG OHMYOPENCLI_REPO=" in main_image
+    assert "git clone ${OHMYOPENCLI_REPO}" in main_image
+    assert "ARG OHMYOPENCLI_REPO=" in agent_image
+    assert "git clone ${OHMYOPENCLI_REPO}" in agent_image
+    assert '[string]$OhMyOpenCliRepo = "https://github.com/2233admin/OhMyOpenCLI.git"' in windows
+    assert "git clone $OhMyOpenCliRepo $OhMyOpenCliRoot" in windows
+    assert (
+        'OHMYOPENCLI_REPO="${OHMYOPENCLI_REPO:-'
+        'https://github.com/2233admin/OhMyOpenCLI.git}"'
+    ) in linux
+    assert 'git clone "$OHMYOPENCLI_REPO" "$OHMYOPENCLI_ROOT"' in linux
+
+
+def test_both_linux_images_package_the_cross_platform_readiness_trace_verifier():
+    for path in (ROOT / "Dockerfile", ROOT / "agent" / "Dockerfile"):
+        dockerfile = path.read_text(encoding="utf-8")
+        assert (
+            "COPY scripts/verify_managed_opencli_runtime.py "
+            "./scripts/verify_managed_opencli_runtime.py"
+        ) in dockerfile
 
 
 def test_anonymous_agent_profiles_are_fresh_per_agent_start():

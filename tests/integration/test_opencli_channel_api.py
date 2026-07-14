@@ -202,8 +202,16 @@ async def test_collect_agent_mode_passes_positional_args_to_dispatch(
 
     captured: list[dict] = []
 
-    async def fake_collect_via_agent(agent_url, site, command, args, positional_args, fmt, mode):
-        captured.append({"positional_args": positional_args, "args": args})
+    async def fake_collect_via_agent(
+        agent_url, site, command, args, positional_args, fmt, mode, execution_id
+    ):
+        captured.append(
+            {
+                "positional_args": positional_args,
+                "args": args,
+                "execution_id": execution_id,
+            }
+        )
         from backend.channels.base import ChannelResult
         return ChannelResult.ok([{"title": "ok"}], site=site, command=command)
 
@@ -275,6 +283,7 @@ async def test_collect_agent_mode_prefers_site_bound_agent(
         positional_args,
         fmt,
         mode,
+        execution_id,
     ):
         dispatched.append(
             {
@@ -283,6 +292,7 @@ async def test_collect_agent_mode_prefers_site_bound_agent(
                 "command": command,
                 "positional_args": positional_args,
                 "mode": mode,
+                "execution_id": execution_id,
             }
         )
         return ChannelResult.ok([{"title": "ok"}], site=site, command=command)
@@ -330,8 +340,9 @@ async def test_collect_agent_mode_prefers_site_bound_agent(
         {
             "agent_url": "http://agent-b:19823",
             "site": "bilibili",
-            "command": "search",
-            "positional_args": ["AI agent"],
-            "mode": "bridge",
-        }
+                "command": "search",
+                "positional_args": ["AI agent"],
+                "mode": "bridge",
+                "execution_id": None,
+            }
     ]
