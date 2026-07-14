@@ -3,8 +3,8 @@
 ## Current state
 
 - Change id: `fuse-dify-paperclip-frontend-template`
-- Status: node-system integration correction verified; browser-control automation gap recorded
-- Phase: formal-node-system-integration-verified
+- Status: four-layer canonical node hierarchy implemented and verified; browser-control automation gap recorded
+- Phase: four-layer-canonical-node-integration-verified
 - Last updated: 2026-07-14 +08:00
 
 ## Goal
@@ -31,6 +31,8 @@ built in this repository.
   workflow may reference it through a thin canonical resource-node projection.
 - “Where it runs” is a resource-node relationship, not `bindingOptions` on a business node.
 - Linear supplies work-item behavior; Paperclip supplies the Agent-team/cluster operating model.
+- The graph hierarchy is capped at four canonical levels: L1 business/operator, L2 existing OpenCLI package, L3 component, and L4 primitive.
+- L1 is a wrapper over existing packages, not a replacement node implementation; all four levels share the same recursive canonical node/edge contracts.
 
 ## Current Direction C behavior
 
@@ -56,6 +58,12 @@ built in this repository.
 - Production isolation passed on port 8040: prototype 404 without marker; dashboard 200.
 - Development smoke passed on port 8030: Direction C returned 200 with workspace/project markers.
 - Independent remediation re-review reported no P0/P1/P2/P3 findings.
+- Frontend workflow regressions now pass 19/19, including recursive persistence, L4 depth rejection, runtime-path projection, clicked-node child-scope insertion, exact single-Undo restoration, and real packaged-project compilation through the backend.
+- Backend workflow suites pass 73/73 across compile, trace, conformance, node paths, evidence batches, and webhook ingress.
+- Compiler success is gated by final Plan IR validation; container edges lower to the executable leaves and their actual typed ports instead of preserving wrapper defaults.
+- Modified Python files pass Ruff; modified frontend TypeScript/TSX files pass ESLint; TypeScript and workflow contract assertions pass.
+- A fresh Next.js 16.2.6 production build passes; port 8040 still isolates the prototype with a 404 while `/dashboard` returns 200.
+- Development services are healthy on ports 8030 and 8031.
 
 ## Known integration risks
 
@@ -63,13 +71,15 @@ built in this repository.
 - Formal React Flow edge changes must be proven to synchronize into canonical `WorkflowProject`
   before project autosave; the standalone prototype does not activate autosave.
 - Browser-control automation previously failed to initialize with `Cannot redefine property: process`.
+- Multi-entry/multi-exit compound-node boundary edges currently expand to the Cartesian product of executable boundary leaves; explicit operator port-to-leaf mappings are the next refinement for complex packages.
 
 ## Next production steps
 
-1. Add an explicit Workflow list/switcher to the existing Studio/session route contract.
-2. Define a thin canonical resource-node Catalog/projection referencing EdgeNode/Worker/Fleet records.
-3. Connect resource nodes to processing nodes through existing ports, edges, contracts, and validation.
-4. Add regression coverage proving add/remove edge synchronization into canonical autosave payloads.
-5. Keep credentials, endpoint health, matching, session locks, and concurrency in the existing backend
+1. Define explicit L1 operator input/output ports and map them to internal executable leaves for multi-boundary compound nodes.
+2. Add an explicit Workflow list/switcher to the existing Studio/session route contract.
+3. Define a thin canonical resource-node Catalog/projection referencing EdgeNode/Worker/Fleet records.
+4. Connect resource nodes to processing nodes through existing ports, edges, contracts, and validation.
+5. Add regression coverage proving add/remove edge synchronization into canonical autosave payloads.
+6. Keep credentials, endpoint health, matching, session locks, and concurrency in the existing backend
    resource layer.
-6. Re-run desktop/mobile interaction automation when the browser-control runtime is repaired.
+7. Re-run desktop/mobile interaction automation when the browser-control runtime is repaired.

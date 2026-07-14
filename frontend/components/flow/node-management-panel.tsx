@@ -1,12 +1,16 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { Activity, AlertTriangle, Bot, CheckCircle2, Database, ListTree, Play, Search, ShieldCheck, X } from "lucide-react"
+import { Activity, AlertTriangle, Bot, CheckCircle2, ListTree, Play, Search, ShieldCheck, X } from "lucide-react"
 import proposalFixture from "@/lib/workflow/fixtures/agent-proposal-duplicate-push.json"
 import { useFlowStore } from "@/lib/flow/store"
 import { summarizeNodeManagement } from "@/lib/workflow/node-management"
 import { parseAgentProposal } from "@/lib/workflow/proposal"
-import { simulateWorkflowRun, type WorkflowSimulationRun } from "@/lib/workflow/simulation"
+import {
+  simulateWorkflowRun,
+  supportsDeterministicSimulation,
+  type WorkflowSimulationRun,
+} from "@/lib/workflow/simulation"
 import { runtimeStatusLabel, runtimeStatusTone } from "@/lib/workflow/capabilities"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -38,6 +42,7 @@ export function NodeManagementPanel({ onClose }: NodeManagementPanelProps) {
   const [query, setQuery] = useState("")
   const [run, setRun] = useState<WorkflowSimulationRun | null>(null)
   const [running, setRunning] = useState(false)
+  const canSimulate = supportsDeterministicSimulation(project)
 
   const summary = useMemo(() => summarizeNodeManagement(project, run, proposal), [project, run])
   const filteredNodes = summary.nodes.filter((node) =>
@@ -287,10 +292,19 @@ export function NodeManagementPanel({ onClose }: NodeManagementPanelProps) {
 
           {tab === "runtime" ? (
             <div className="space-y-3">
-              <Button size="sm" className="w-full" onClick={runSimulation} disabled={running}>
+              <Button size="sm" className="w-full" onClick={runSimulation} disabled={running || !canSimulate}>
                 <Play className="size-3.5" />
-                {running ? "Running deterministic trace" : "Run deterministic trace"}
+                {running
+                  ? "Running deterministic trace"
+                  : canSimulate
+                    ? "Run deterministic trace"
+                    : "Use Run Trace for nested operators"}
               </Button>
+              {!canSimulate ? (
+                <div className="rounded-sm border border-dashed p-3 text-[11px] leading-relaxed text-muted-foreground">
+                  当前项目包含 L1–L4 子网络。请使用工作流编辑器的 Run Trace，由后端按完整 nodePath 执行；这里的旧版平面模拟器已停用，避免把治理节点误当成执行节点。
+                </div>
+              ) : null}
               {summary.run ? (
                 <div className="grid grid-cols-3 gap-2">
                   <Metric label="Events" value={summary.run.traceEventCount} />

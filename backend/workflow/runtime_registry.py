@@ -789,7 +789,7 @@ def _is_collection_output(node: WorkflowProjectNode) -> bool:
 
 
 def _is_normalize_node(node: WorkflowProjectNode) -> bool:
-    if node.internals or node.topicCollapse or node.miniNetwork:
+    if (node.internals and node.internals.nodes) or node.topicCollapse or node.miniNetwork:
         return False
     return _read_string(
         (node.ui or {}).get("catalogId")

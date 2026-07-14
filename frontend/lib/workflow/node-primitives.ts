@@ -1,5 +1,6 @@
 import type { NodeCategory, WorkflowNodeData, WorkflowNodeType } from "@/lib/flow/types"
 import type { WorkflowRuntimeCapability } from "./capabilities"
+import type { WorkflowCapability, WorkflowNodeKind } from "./schema"
 
 export type WorkflowPrimitiveCategory =
   | "input"
@@ -32,6 +33,12 @@ export type WorkflowPrimitive = {
   icon: string
   color: string
   ports: WorkflowPrimitivePort[]
+  canonical: {
+    kind: WorkflowNodeKind
+    capability: WorkflowCapability
+    inputPorts: WorkflowPrimitivePort[]
+    outputPorts: WorkflowPrimitivePort[]
+  }
   fields: Array<{ id: string; label: string; value: string }>
   keywords: string[]
 }
@@ -669,7 +676,52 @@ function primitive(
   fields: Array<{ id: string; label: string; value: string }>,
   keywords: string[],
 ): WorkflowPrimitive {
-  return { id, idPrefix, label, description, category, nodeType, nodeCategory, icon, color: "var(--chart-2)", ports, fields, keywords }
+  const contract = primitiveCanonicalContract(id, nodeType)
+  return {
+    id,
+    idPrefix,
+    label,
+    description,
+    category,
+    nodeType,
+    nodeCategory,
+    icon,
+    color: "var(--chart-2)",
+    ports,
+    canonical: {
+      ...contract,
+      inputPorts: ports.filter((port) => port.direction === "input"),
+      outputPorts: ports.filter((port) => port.direction === "output"),
+    },
+    fields,
+    keywords,
+  }
+}
+
+function primitiveCanonicalContract(
+  id: string,
+  nodeType: WorkflowNodeType,
+): Pick<WorkflowPrimitive["canonical"], "kind" | "capability"> {
+  if (id.includes("merge")) return { kind: "flow", capability: "merge" }
+  if (id.includes("inbox")) return { kind: "inbox", capability: "store" }
+  if (id.includes("score") || id.includes("impact")) return { kind: "agent", capability: "score" }
+  if (id.includes("prompt") || id.includes("model") || id.includes("digest")) {
+    return { kind: "agent", capability: "summarize" }
+  }
+
+  switch (nodeType) {
+    case "trigger":
+      return { kind: "schedule", capability: "trigger" }
+    case "condition":
+      return { kind: "router", capability: "route" }
+    case "delay":
+      return { kind: "control", capability: "accept" }
+    case "action":
+    case "http":
+      return { kind: "action", capability: "store" }
+    default:
+      return { kind: "agent", capability: "normalize" }
+  }
 }
 
 function inPort(id: string, type: string, description: string): WorkflowPrimitivePort {

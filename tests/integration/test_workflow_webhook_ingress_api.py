@@ -22,7 +22,6 @@ def _webhook_project(*, trigger_ui: dict | None = None) -> dict:
                 "kind": "agent",
                 "capability": "normalize",
                 "params": {"language": "zh-CN"},
-                "ui": {"catalogId": "intelligence.processing.normalize"},
             },
         ],
         "edges": [
@@ -31,7 +30,7 @@ def _webhook_project(*, trigger_ui: dict | None = None) -> dict:
                 "source": "incoming-webhook",
                 "target": "after-webhook",
                 "sourcePort": "request",
-                "targetPort": "in",
+                "targetPort": "records",
             }
         ],
         "adapters": [],
@@ -57,6 +56,8 @@ async def test_workflow_webhook_ingress_rejects_malformed_payload(client):
 @pytest.mark.asyncio
 async def test_workflow_webhook_ingress_rejects_unsupported_trigger_node(client):
     project = _webhook_project(trigger_ui={"catalogId": "intelligence.schedule.cron"})
+    project["nodes"] = project["nodes"][:1]
+    project["edges"] = []
     response = await client.post(
         "/api/v1/workflows/wf-webhook-ingress/webhooks/incoming-webhook",
         json={"workflowProject": project, "input": {"payload": {"event": "created"}}},

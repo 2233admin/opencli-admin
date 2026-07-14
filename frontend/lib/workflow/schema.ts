@@ -1,5 +1,7 @@
 import { z } from "zod"
 
+import { validateWorkflowNodeHierarchy } from "./node-hierarchy.ts"
+
 export const workflowProfileSchema = z.enum(["intelligence", "agent-debug", "sdk-dev"])
 
 export const workflowNodeKindSchema = z.enum([
@@ -31,6 +33,12 @@ export const workflowCapabilitySchema = z.enum([
 ])
 
 const jsonRecordSchema = z.record(z.string(), z.unknown())
+const workflowLocalNodeIdSchema = z
+  .string()
+  .min(1)
+  .refine((value) => !value.includes("::") && !value.includes("__"), {
+    message: 'Node id must not contain reserved path separators "::" or "__"',
+  })
 
 export const sourceAnchorSchema = z.object({
   kind: z.enum(["artifact", "url", "message", "selector"]),
@@ -97,7 +105,7 @@ export const parameterInterfaceSchema = z.object({
 })
 
 export const workflowNodeSchema = z.object({
-  id: z.string().min(1),
+  id: workflowLocalNodeIdSchema,
   kind: workflowNodeKindSchema,
   capability: workflowCapabilitySchema,
   adapter: z.string().min(1).optional(),
@@ -195,7 +203,12 @@ export function parseWorkflowProject(input: unknown): WorkflowProject {
 
 export function validateWorkflowReferences(project: WorkflowProject): void {
   const nodeIds = new Set(project.nodes.map((node) => node.id))
+  const edgeIds = new Set<string>()
   for (const edge of project.edges) {
+    if (edgeIds.has(edge.id)) {
+      throw new Error(`Workflow root scope contains duplicate edge id "${edge.id}"`)
+    }
+    edgeIds.add(edge.id)
     if (!nodeIds.has(edge.source)) {
       throw new Error(`Workflow edge "${edge.id}" references missing source "${edge.source}"`)
     }
@@ -205,9 +218,5 @@ export function validateWorkflowReferences(project: WorkflowProject): void {
   }
 
   const adapterIds = new Set(project.adapters.map((adapter) => adapter.id))
-  for (const node of project.nodes) {
-    if (node.adapter && !adapterIds.has(node.adapter)) {
-      throw new Error(`Workflow node "${node.id}" references missing adapter "${node.adapter}"`)
-    }
-  }
+  validateWorkflowNodeHierarchy(project.nodes, { adapterIds })
 }

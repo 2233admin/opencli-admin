@@ -7,6 +7,7 @@ import { NODE_PALETTE } from "@/lib/flow/palette"
 import type { PaletteItem } from "@/lib/flow/types"
 import { getWorkflowNodeCatalog, type WorkflowNodeCatalogItem } from "@/lib/workflow/node-catalog"
 import { getWorkflowPrimitives, type WorkflowPrimitive } from "@/lib/workflow/node-primitives"
+import { workflowNodeDepthFromNetworkStack, workflowNodeLayerAtDepth } from "@/lib/workflow/node-hierarchy"
 import { groupPrimitivesForNodeMenu } from "@/lib/workflow/node-menu"
 import { getIcon } from "@/lib/flow/icons"
 import { useFlowStore } from "@/lib/flow/store"
@@ -66,7 +67,10 @@ export function CommandPalette({
   const save = useFlowStore((s) => s.save)
   const reset = useFlowStore((s) => s.reset)
   const workflowProfile = useFlowStore((s) => s.workflowProject.profile)
-  const inNodeNetwork = useFlowStore((s) => s.networkStack.length > 0)
+  const networkStackLength = useFlowStore((s) => s.networkStack.length)
+  const inNodeNetwork = networkStackLength > 0
+  const nodeDepth = workflowNodeDepthFromNetworkStack(networkStackLength)
+  const nodeLayer = workflowNodeLayerAtDepth(nodeDepth)
   const language = useSettingsStore((s) => s.language)
   const { capabilities } = useWorkflowCapabilities(open)
 
@@ -116,8 +120,8 @@ export function CommandPalette({
       const status = item.runtimeCapability?.status
       onMessage?.(
         status && status !== "runnable"
-          ? `已添加封包节点：${text.label} (${runtimeStatusLabel(status)})`
-          : `已添加封包节点：${text.label}`,
+          ? `已添加一级业务节点：${text.label} (${runtimeStatusLabel(status)})`
+          : `已添加一级业务节点：${text.label}`,
       )
       onClose()
     },
@@ -347,7 +351,7 @@ export function CommandPalette({
               {filteredCatalogOperators.length > 0 ? (
                 <>
                   <p className="px-4 pb-1 pt-3 font-mono text-[9px] uppercase tracking-[0.2em] text-muted-foreground/60">
-                    封包节点
+                    一级业务节点 · Dify 风格
                   </p>
                   {filteredCatalogOperators.map((item) => {
                     const Icon = getIcon(item.icon)
@@ -379,7 +383,7 @@ export function CommandPalette({
               {primitiveOperators.length > 0 ? (
                 <>
                   <p className="px-4 pb-1 pt-3 font-mono text-[9px] uppercase tracking-[0.2em] text-muted-foreground/60">
-                    内部节点 · 当前封包
+                    L{nodeDepth} · {nodeLayer.label}
                   </p>
                   {primitiveGroups.map((group) => (
                     <div key={group.category}>

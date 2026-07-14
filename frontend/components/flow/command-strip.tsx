@@ -50,6 +50,7 @@ import {
   importWorkflowMermaidToReactFlow,
 } from "@/lib/workflow/io"
 import { cn } from "@/lib/utils"
+import { MAX_WORKFLOW_NODE_DEPTH, workflowNodeDepthFromNetworkStack, workflowNodeLayerAtDepth } from "@/lib/workflow/node-hierarchy"
 import { COLLECTION_WORKFLOW_PROJECT } from "@/lib/workflow/collection-pipeline"
 
 function downloadText(filename: string, data: string, type: string) {
@@ -140,7 +141,9 @@ export function CommandStrip({
   const nodeCount = useFlowStore((s) => s.nodes.length)
   const edgeCount = useFlowStore((s) => s.edges.length)
   const workflowProjectName = useFlowStore((s) => s.workflowProject.name)
-  const networkDepth = useFlowStore((s) => s.networkStack.length)
+  const networkStackLength = useFlowStore((s) => s.networkStack.length)
+  const networkDepth = workflowNodeDepthFromNetworkStack(networkStackLength)
+  const networkLayer = workflowNodeLayerAtDepth(networkDepth)
   const selectedNodeId = useFlowStore((s) => s.nodes.find((node) => node.selected)?.id)
   const selectedNodeCount = useFlowStore((s) => s.nodes.reduce((count, node) => count + (node.selected ? 1 : 0), 0))
   const selectedEdgeCount = useFlowStore((s) => s.edges.reduce((count, edge) => count + (edge.selected ? 1 : 0), 0))
@@ -337,9 +340,9 @@ export function CommandStrip({
 
       <div className="hidden items-center gap-2 rounded-full border border-border/80 bg-card/70 px-3 py-1.5 text-[11px] text-muted-foreground lg:flex">
         <Network className="size-3.5" />
-        <span className="font-medium text-foreground">{networkDepth > 0 ? "封包内部网络" : "顶层封包网络"}</span>
+        <span className="font-medium text-foreground">L{networkDepth} · {networkLayer.label}</span>
         <span>·</span>
-        <span>{networkDepth > 0 ? "添加和连接内部节点" : "双击封包进入内部"}</span>
+        <span>{networkDepth === 1 ? networkLayer.description : networkDepth < MAX_WORKFLOW_NODE_DEPTH ? "双击节点继续展开内部网络" : networkLayer.description}</span>
       </div>
 
       <div className="flex shrink-0 items-center gap-1.5">

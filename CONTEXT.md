@@ -13,6 +13,23 @@ _Avoid_: Source Workflow Workbench
 **Collection Canvas**: The primary authoring surface for collection logic — the graph IS the program. Defining and editing what a source collects happens on the canvas; forms survive only as the inspector panel of a selected node. Absorbs the old Diagnostic Canvas's troubleshooting role.
 _Avoid_: Diagnostic Canvas (superseded 2026-07-02: canvas promoted from secondary diagnostic view to primary authoring surface), Topology Workbench as the authoritative authoring name, form-first configuration
 
+### Node Hierarchy
+
+**Operator Node**: A first-layer, Dify-style business step that is the normal authoring surface for operators. It communicates intent and hides implementation complexity until the operator chooses to enter it.
+_Avoid_: top-level primitive, infrastructure node
+
+**Implementation Node**: A second-layer OpenCLI node that implements an Operator Node with the repository's existing executable node contracts.
+_Avoid_: runtime location, duplicate operator node
+
+**Component Node**: A third-layer executable unit inside an Implementation Node that exposes a meaningful internal stage without forcing operators down to primitives.
+_Avoid_: arbitrary visual group, dashboard card
+
+**Primitive Node**: A fourth-layer, normally deepest executable operation exposed for advanced composition and diagnosis.
+_Avoid_: Primitive Capability (the catalog ability referenced by a node), unlimited nesting
+
+**Node Depth**: The containment level of a node in a Plan. Normal authoring is limited to four layers: Operator, Implementation, Component, and Primitive.
+_Avoid_: storing depth as runtime placement, treating nesting as a separate node model
+
 **Live Collection View**: The operator-facing view of an active collection run as it happens, including streamed progress, rendered browser or pipeline state, and run-specific artifacts. It is anchored to a Recent Run, not to the default configuration surface.
 _Avoid_: Static task log, canvas-only monitoring
 

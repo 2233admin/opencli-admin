@@ -172,3 +172,26 @@ Observed mobile capture:
 - Verdict at that time: Direction C demonstrated Project → Workflow selection and a node execution-binding prototype; that binding prototype is now superseded and removed.
 - Blocking issues: none for static/build/production isolation; fresh browser interaction automation is tooling-gated
 - Follow-up: extend the existing Studio and WorkflowEditorSession only after this object model is approved; do not create a parallel workspace implementation
+
+## Four-layer canonical node integration verification (2026-07-14)
+
+- Canonical hierarchy: passed — L1 business/operator nodes wrap the existing L2 OpenCLI package nodes; L3 component nodes and L4 primitives remain editable and persisted in the same recursive `WorkflowProject` graph.
+- Depth boundary: passed — frontend paste/add guards and backend schema/compile validation reject L5 while allowing executable empty leaves at L1-L4.
+- Canonical editing: passed — root and nested add/move/connect/delete/layout, parameter bindings, duplicate/cut/paste, and scope re-entry persist through the canonical graph.
+- Atomic history: passed — “Add Internal Primitive” initializes fallback internals and adds the primitive in one history frame; one Undo restores the exact prior project.
+- Backend compile/runtime: passed — recursive compile, boundary-edge rewriting, stable topological order, primitive port projection, runtime `nodePath`, run events/state/dispatch, evidence projection, and structural status aggregation cover all four levels.
+- Frontend workflow regressions: passed — `19/19`, including a real cross-frontend/backend compile of `PACKAGED_WORKFLOW_PROJECT`.
+- Workflow contract assertions: passed.
+- TypeScript: passed — `pnpm exec tsc --noEmit`.
+- Targeted frontend ESLint: passed.
+- Backend workflow tests: passed — `73/73`; the post-run pytest temp-directory cleanup emitted a Windows permission warning after exit code 0 and did not affect test results.
+- Final Plan IR gate: passed — compile success now requires `validate_plan_graph(plan_ir).valid`; the default operator graph lowers root and HDA internal boundaries to actual `out → in` leaf ports.
+- Ruff on all modified Python files: passed.
+- Next.js 16.2.6 production build: passed.
+- Development smoke: passed — port 8030 returned 200 for Direction C with the product-shell marker; port 8031 returned `{"status":"ok"}`.
+- Fresh production isolation: passed — port 8040 returned 404 without the prototype marker and `/dashboard` returned 200.
+- Browser interaction automation: tooling-gated — the in-app browser controller still fails initialization with `Cannot redefine property: process`; no automated visual interaction claim is made for this pass.
+
+### Remaining design boundary
+
+- A compound node with multiple internal entries and exits currently expands an external boundary edge across all matching executable leaves. This is deterministic and tested, but explicit operator-level input/output port mapping should replace the Cartesian fallback before complex multi-boundary packages are published.

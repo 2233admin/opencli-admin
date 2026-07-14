@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterator
 from typing import Any
 
 from backend.schemas.workflow import (
@@ -35,33 +36,37 @@ def materialize_hda_templates(project: WorkflowProject) -> WorkflowProject:
 
 
 def _materialize_node(node: WorkflowProjectNode) -> WorkflowProjectNode:
-    if not _is_opencli_multi_source_hda(node):
-        return node
+    materialized = node
+    if _is_opencli_multi_source_hda(node):
+        sources = _source_slots(node.params.get("sources"))
+        if sources:
+            internals = _opencli_multi_source_internals(sources)
+            topic = _topic_collapse(node, len(internals.nodes))
+            params = {
+                **node.params,
+                "template": OPENCLI_MULTI_SOURCE_TEMPLATE,
+                "runtime": node.params.get("runtime", "iii"),
+                "lockedInternals": node.params.get("lockedInternals", True),
+                "execution": {
+                    "fanout": "parallel",
+                },
+            }
+            ui = {**(node.ui or {}), "catalogId": OPENCLI_HDA_CATALOG_ID}
+            materialized = node.model_copy(
+                update={
+                    "params": params,
+                    "topicCollapse": topic,
+                    "internals": internals,
+                    "ui": ui,
+                }
+            )
 
-    sources = _source_slots(node.params.get("sources"))
-    if not sources:
-        return node
+    if not materialized.internals:
+        return materialized
 
-    internals = _opencli_multi_source_internals(sources)
-    topic = _topic_collapse(node, len(internals.nodes))
-    params = {
-        **node.params,
-        "template": OPENCLI_MULTI_SOURCE_TEMPLATE,
-        "runtime": node.params.get("runtime", "iii"),
-        "lockedInternals": node.params.get("lockedInternals", True),
-        "execution": {
-            "fanout": "parallel",
-        },
-    }
-    ui = {**(node.ui or {}), "catalogId": OPENCLI_HDA_CATALOG_ID}
-    return node.model_copy(
-        update={
-            "params": params,
-            "topicCollapse": topic,
-            "internals": internals,
-            "ui": ui,
-        }
-    )
+    child_nodes = [_materialize_node(child) for child in materialized.internals.nodes]
+    internals = materialized.internals.model_copy(update={"nodes": child_nodes})
+    return materialized.model_copy(update={"internals": internals})
 
 
 def _is_opencli_multi_source_hda(node: WorkflowProjectNode) -> bool:
@@ -241,7 +246,7 @@ def _merge_adapters(
     nodes: list[WorkflowProjectNode],
 ) -> list[WorkflowAdapterBinding]:
     adapter_by_id = {adapter.id: adapter for adapter in existing}
-    for node in nodes:
+    for node in _walk_nodes(nodes):
         if not _is_opencli_multi_source_hda(node) or not node.internals:
             continue
         for internal_node in node.internals.nodes:
@@ -258,6 +263,13 @@ def _merge_adapters(
                 ),
             )
     return list(adapter_by_id.values())
+
+
+def _walk_nodes(nodes: list[WorkflowProjectNode]) -> Iterator[WorkflowProjectNode]:
+    for node in nodes:
+        yield node
+        if node.internals:
+            yield from _walk_nodes(node.internals.nodes)
 
 
 def _adapter_id(source: dict[str, Any]) -> str:

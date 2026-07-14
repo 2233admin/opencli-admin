@@ -10,11 +10,37 @@ from __future__ import annotations
 
 from typing import Any, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from backend.schemas.plan_ir import PlanGraph
 
 WORKFLOW_COMPILE_VERSION = "1.1.0"
+WORKFLOW_NODE_PATH_SEPARATOR = "::"
+
+
+def _normalize_workflow_node_path(
+    *,
+    node_id: str,
+    node_path: list[str],
+    package_node_id: str | None,
+    internal_node_id: str | None,
+) -> list[str]:
+    if node_path:
+        return node_path
+    if package_node_id and internal_node_id:
+        return [
+            *package_node_id.split(WORKFLOW_NODE_PATH_SEPARATOR),
+            *internal_node_id.split(WORKFLOW_NODE_PATH_SEPARATOR),
+        ]
+    if WORKFLOW_NODE_PATH_SEPARATOR in node_id:
+        return node_id.split(WORKFLOW_NODE_PATH_SEPARATOR)
+    return [node_id]
+
+
+def _legacy_workflow_node_location(node_path: list[str]) -> tuple[str | None, str | None]:
+    if len(node_path) <= 1:
+        return None, None
+    return WORKFLOW_NODE_PATH_SEPARATOR.join(node_path[:-1]), node_path[-1]
 
 WorkflowProfile = Literal["intelligence", "agent-debug", "sdk-dev"]
 WorkflowNodeKind = Literal[
@@ -132,6 +158,13 @@ class WorkflowProjectNode(BaseModel):
     parameterInterface: Optional[WorkflowParameterInterface] = None
     internals: Optional[WorkflowPackageInternals] = None
     ui: Optional[dict[str, Any]] = None
+
+    @field_validator("id")
+    @classmethod
+    def validate_local_node_id(cls, value: str) -> str:
+        if WORKFLOW_NODE_PATH_SEPARATOR in value or "__" in value:
+            raise ValueError('node id must not contain reserved path separators "::" or "__"')
+        return value
 
 
 class WorkflowSemanticLink(BaseModel):
@@ -490,6 +523,7 @@ class WorkflowOpenCLIHDATraceRequest(BaseModel):
 class WorkflowOpenCLIHDATraceDispatch(BaseModel):
     taskId: str
     nodeId: str
+    nodePath: list[str] = Field(default_factory=list)
     packageNodeId: Optional[str] = None
     internalNodeId: Optional[str] = None
     sourceGroup: str
@@ -497,6 +531,19 @@ class WorkflowOpenCLIHDATraceDispatch(BaseModel):
     command: str
     args: dict[str, Any] = Field(default_factory=dict)
     iii: dict[str, Any]
+
+    @model_validator(mode="after")
+    def normalize_node_location(self) -> WorkflowOpenCLIHDATraceDispatch:
+        self.nodePath = _normalize_workflow_node_path(
+            node_id=self.nodeId,
+            node_path=self.nodePath,
+            package_node_id=self.packageNodeId,
+            internal_node_id=self.internalNodeId,
+        )
+        package_node_id, internal_node_id = _legacy_workflow_node_location(self.nodePath)
+        self.packageNodeId = package_node_id
+        self.internalNodeId = internal_node_id
+        return self
 
 
 class WorkflowOpenCLIHDATraceResponse(BaseModel):
@@ -617,6 +664,7 @@ class WorkflowNodeRunEvent(BaseModel):
     sourceId: Optional[str] = None
     eventType: WorkflowNodeRunEventType
     createdAt: str = Field(..., min_length=1)
+    nodePath: list[str] = Field(default_factory=list)
     packageNodeId: Optional[str] = None
     internalNodeId: Optional[str] = None
     sourceGroup: Optional[str] = None
@@ -625,10 +673,24 @@ class WorkflowNodeRunEvent(BaseModel):
     batch: Optional[WorkflowRunBatchReference] = None
     details: dict[str, Any] = Field(default_factory=dict)
 
+    @model_validator(mode="after")
+    def normalize_node_location(self) -> WorkflowNodeRunEvent:
+        self.nodePath = _normalize_workflow_node_path(
+            node_id=self.nodeId,
+            node_path=self.nodePath,
+            package_node_id=self.packageNodeId,
+            internal_node_id=self.internalNodeId,
+        )
+        package_node_id, internal_node_id = _legacy_workflow_node_location(self.nodePath)
+        self.packageNodeId = package_node_id
+        self.internalNodeId = internal_node_id
+        return self
+
 
 class WorkflowRunNodeState(BaseModel):
     nodeId: str = Field(..., min_length=1)
     status: WorkflowRunStatus = "queued"
+    nodePath: list[str] = Field(default_factory=list)
     packageNodeId: Optional[str] = None
     internalNodeId: Optional[str] = None
     sourceGroups: list[str] = Field(default_factory=list)
@@ -636,6 +698,19 @@ class WorkflowRunNodeState(BaseModel):
     eventCount: int = Field(0, ge=0)
     blockReasons: list[WorkflowRunBlockReason] = Field(default_factory=list)
     batches: list[WorkflowRunBatchReference] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def normalize_node_location(self) -> WorkflowRunNodeState:
+        self.nodePath = _normalize_workflow_node_path(
+            node_id=self.nodeId,
+            node_path=self.nodePath,
+            package_node_id=self.packageNodeId,
+            internal_node_id=self.internalNodeId,
+        )
+        package_node_id, internal_node_id = _legacy_workflow_node_location(self.nodePath)
+        self.packageNodeId = package_node_id
+        self.internalNodeId = internal_node_id
+        return self
 
 
 class WorkflowRunProjection(BaseModel):
@@ -655,6 +730,7 @@ class WorkflowRunProjection(BaseModel):
 class EvidenceBatchSummary(BaseModel):
     runId: str = Field(..., min_length=1)
     nodeId: str = Field(..., min_length=1)
+    nodePath: list[str] = Field(default_factory=list)
     packageNodeId: Optional[str] = None
     internalNodeId: Optional[str] = None
     sourceGroup: Optional[str] = None
@@ -666,6 +742,19 @@ class EvidenceBatchSummary(BaseModel):
     itemCount: int = Field(..., ge=0)
     recordCount: int = Field(..., ge=0)
     status: WorkflowRunStatus
+
+    @model_validator(mode="after")
+    def normalize_node_location(self) -> EvidenceBatchSummary:
+        self.nodePath = _normalize_workflow_node_path(
+            node_id=self.nodeId,
+            node_path=self.nodePath,
+            package_node_id=self.packageNodeId,
+            internal_node_id=self.internalNodeId,
+        )
+        package_node_id, internal_node_id = _legacy_workflow_node_location(self.nodePath)
+        self.packageNodeId = package_node_id
+        self.internalNodeId = internal_node_id
+        return self
 
 
 class WorkflowEvidenceBatchListResponse(BaseModel):

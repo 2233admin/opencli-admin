@@ -45,7 +45,7 @@ function buildPrimitiveMenuGroups() {
 function EditorCanvas() {
   const {
     addNodeFromPalette,
-    addPrimitiveNode,
+    addPrimitiveToNodeNetwork,
     addWorkflowNodeFromCatalog,
     applyWorkflowCapabilities,
     attachToParent,
@@ -190,7 +190,7 @@ function EditorCanvas() {
     showParameters,
     unlockInternals,
   } = useWorkflowNodeMenuActions({
-    addPrimitiveNode,
+    addPrimitiveToNodeNetwork,
     addWorkflowNodeFromCatalog,
     capabilities,
     enterNodeNetwork,

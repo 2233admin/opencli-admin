@@ -108,6 +108,21 @@ Those runtime results do not create a second node schema and are not copied into
 - Connection validation continues to use the existing ports, contracts, cycle checks, and source/
   target connection limits.
 
+## Locked four-layer interpretation
+
+| Depth | Role | Meaning |
+| ---: | --- | --- |
+| L1 | Operator | Dify-style business step and governance boundary. |
+| L2 | Implementation | Existing OpenCLI node/package selected to implement the operator. |
+| L3 | Component | Internal processing, routing, IO, or policy component. |
+| L4 | Primitive | Deepest normal atomic node with canonical typed ports. |
+
+The depth is derived from canonical containment, not from a menu, `parentId`, visual grouping, or a
+runtime-placement string. All scopes use the same node and edge schema. Non-empty internals make a
+node structural/non-executable; empty internals do not duplicate execution. Runtime identifiers are
+the `::`-joined canonical path and canvas identifiers are the `__`-joined path, so local ids may not
+contain either reserved separator.
+
 ## Terminology rules
 
 - Use “工作流节点” for canonical graph nodes.

@@ -4,6 +4,7 @@ from collections import Counter, defaultdict, deque
 from dataclasses import dataclass
 from typing import Literal
 
+from backend.plan_ir.validation import validate_plan_graph
 from backend.schemas.plan_ir import PlanEdge, PlanGraph, PlanNode, PlanPort
 from backend.schemas.workflow import (
     CompiledWorkflowAdapterBinding,
@@ -27,6 +28,7 @@ from backend.workflow.node_registry import (
 from backend.workflow.runtime_registry import resolve_runtime_metadata
 
 INTERNAL_ID_SEPARATOR = "::"
+MAX_NODE_PATH_DEPTH = 4
 
 
 @dataclass(frozen=True)
@@ -38,6 +40,14 @@ class _PortContract:
 
 
 _PORT_CONTRACTS: dict[str, tuple[list[_PortContract], list[_PortContract]]] = {
+    "intelligence.input.collection-need": (
+        [_PortContract("in", "input", "collectionNeed", required=False)],
+        [_PortContract("patch", "output", "workflowPatch")],
+    ),
+    "intelligence.schedule.cron": (
+        [],
+        [_PortContract("tick", "output", "trigger")],
+    ),
     "intelligence.source.opencli-slot": (
         [_PortContract("in", "input", "trigger", required=False)],
         [_PortContract("out", "output", "items[]")],
@@ -77,9 +87,25 @@ _PORT_CONTRACTS: dict[str, tuple[list[_PortContract], list[_PortContract]]] = {
         [_PortContract("in", "input", "items[]")],
         [_PortContract("out", "output", "storedItems[]", required=False)],
     ),
+    "intelligence.output.webhook": (
+        [_PortContract("in", "input", "any", required=False)],
+        [_PortContract("payload", "output", "notificationPayload", required=False)],
+    ),
     "external.tool.capability": (
         [_PortContract("in", "input", "unknown", required=False)],
         [_PortContract("out", "output", "unknown", required=False)],
+    ),
+    "package.intelligence.pipeline": (
+        [_PortContract("in", "input", "any", required=False)],
+        [_PortContract("out", "output", "any", required=False)],
+    ),
+    "package.review.human-review": (
+        [_PortContract("in", "input", "any", required=False)],
+        [_PortContract("out", "output", "any", required=False)],
+    ),
+    "package.dispatch.fanout": (
+        [_PortContract("in", "input", "any", required=False)],
+        [_PortContract("out", "output", "any", required=False)],
     ),
 }
 
@@ -93,94 +119,53 @@ def compile_workflow_project(project: WorkflowProject) -> WorkflowCompileRespons
         return WorkflowCompileResponse(valid=False, errors=errors, plan=None)
 
     adapter_by_id = {adapter.id: adapter for adapter in project.adapters}
-    depends_on = _dependency_map(project)
+    depends_on = _expanded_dependency_map(project.nodes, project.edges, parent_path=())
     compiled_nodes: list[CompiledWorkflowNode] = []
     compiled_edges: list[CompiledWorkflowEdge] = []
     plan_nodes: list[PlanNode] = []
     plan_edges: list[PlanEdge] = []
 
     for node in project.nodes:
-        package_metadata = _package_metadata(node)
-        compiled_nodes.append(
-            _compile_node(
-                node,
-                adapter_by_id.get(node.adapter or ""),
-                depends_on[node.id],
-                package=package_metadata,
-            )
+        _compile_node_tree(
+            node,
+            node_path=(node.id,),
+            adapter_by_id=adapter_by_id,
+            depends_on=depends_on[node.id],
+            compiled_nodes=compiled_nodes,
+            compiled_edges=compiled_edges,
+            plan_nodes=plan_nodes,
+            plan_edges=plan_edges,
         )
-        plan_nodes.append(_to_plan_node(node))
 
-        if node.internals:
-            bound_internal_nodes = _bind_internal_parameters(node)
-            internal_depends_on = _dependency_map_for_nodes(
-                bound_internal_nodes, node.internals.edges
-            )
-            locked = _package_locked(node)
-            for internal_node in bound_internal_nodes:
-                internal_id = _internal_id(node.id, internal_node.id)
-                internal_upstream = internal_depends_on[internal_node.id]
-                compiled_nodes.append(
-                    _compile_node(
-                        internal_node,
-                        adapter_by_id.get(internal_node.adapter or ""),
-                        [_internal_id(node.id, upstream) for upstream in internal_upstream]
-                        or [node.id],
-                        id_override=internal_id,
-                        runtime={
-                            "package_parent_id": node.id,
-                            "package_internal_id": internal_node.id,
-                            "editable": not locked,
-                        },
-                    )
-                )
-                plan_nodes.append(_to_plan_node(internal_node, id_override=internal_id))
-
-            for edge in node.internals.edges:
-                compiled_edges.append(
-                    CompiledWorkflowEdge(
-                        id=_internal_id(node.id, edge.id),
-                        source=_internal_id(node.id, edge.source),
-                        target=_internal_id(node.id, edge.target),
-                        sourcePort=edge.sourcePort or "records",
-                        targetPort=edge.targetPort or "records",
-                        contractId=edge.contractId,
-                        condition=edge.condition,
-                    )
-                )
-                plan_edges.append(
-                    PlanEdge(
-                        id=_internal_id(node.id, edge.id),
-                        source_node=_internal_id(node.id, edge.source),
-                        source_port=edge.sourcePort or "records",
-                        target_node=_internal_id(node.id, edge.target),
-                        target_port=edge.targetPort or "records",
-                    )
-                )
-
-    compiled_edges = [
-        CompiledWorkflowEdge(
-            id=edge.id,
-            source=edge.source,
-            target=edge.target,
-            sourcePort=edge.sourcePort or "records",
-            targetPort=edge.targetPort or "records",
-            contractId=edge.contractId,
-            condition=edge.condition,
-        )
-        for edge in project.edges
-    ] + compiled_edges
-    plan_edges = [
-        PlanEdge(
-            id=edge.id,
-            source_node=edge.source,
-            source_port=edge.sourcePort or "records",
-            target_node=edge.target,
-            target_port=edge.targetPort or "records",
-        )
-        for edge in project.edges
-    ] + plan_edges
+    root_compiled_edges: list[CompiledWorkflowEdge] = []
+    root_plan_edges: list[PlanEdge] = []
+    _append_expanded_edges(
+        project.edges,
+        nodes=project.nodes,
+        parent_path=(),
+        compiled_edges=root_compiled_edges,
+        plan_edges=root_plan_edges,
+    )
+    compiled_edges = [*root_compiled_edges, *compiled_edges]
+    plan_edges = [*root_plan_edges, *plan_edges]
+    compiled_nodes = _topologically_order_compiled_nodes(compiled_nodes)
     plan_ir = PlanGraph(name=project.name, draft=True, nodes=plan_nodes, edges=plan_edges)
+    plan_validation = validate_plan_graph(plan_ir)
+    if not plan_validation.valid:
+        return WorkflowCompileResponse(
+            valid=False,
+            errors=[
+                WorkflowCompileError(
+                    code=f"plan_ir_{error.code}",
+                    message=error.message,
+                    node_id=error.node_id,
+                    edge_id=error.edge_id,
+                    path=["plan", "runtime", "plan_ir"],
+                )
+                for error in plan_validation.errors
+            ],
+            plan=None,
+        )
 
     return WorkflowCompileResponse(
         valid=True,
@@ -205,6 +190,40 @@ def compile_workflow_project(project: WorkflowProject) -> WorkflowCompileRespons
             ),
         ),
     )
+
+
+def _topologically_order_compiled_nodes(
+    nodes: list[CompiledWorkflowNode],
+) -> list[CompiledWorkflowNode]:
+    """Return a stable execution order independent of authoring array order."""
+
+    node_by_id = {node.id: node for node in nodes}
+    original_index = {node.id: index for index, node in enumerate(nodes)}
+    indegree = {node.id: 0 for node in nodes}
+    adjacency: dict[str, list[str]] = defaultdict(list)
+    for node in nodes:
+        for upstream_id in node.depends_on:
+            if upstream_id not in node_by_id:
+                continue
+            adjacency[upstream_id].append(node.id)
+            indegree[node.id] += 1
+
+    ready = deque(node.id for node in nodes if indegree[node.id] == 0)
+    ordered_ids: list[str] = []
+    while ready:
+        node_id = ready.popleft()
+        ordered_ids.append(node_id)
+        newly_ready: list[str] = []
+        for target_id in adjacency[node_id]:
+            indegree[target_id] -= 1
+            if indegree[target_id] == 0:
+                newly_ready.append(target_id)
+        for target_id in sorted(newly_ready, key=original_index.__getitem__):
+            ready.append(target_id)
+
+    if len(ordered_ids) != len(nodes):
+        return nodes
+    return [node_by_id[node_id] for node_id in ordered_ids]
 
 
 def _validate_project(project: WorkflowProject) -> list[WorkflowCompileError]:
@@ -256,7 +275,11 @@ def _validate_project(project: WorkflowProject) -> list[WorkflowCompileError]:
             )
 
     for node in project.nodes:
-        if node.adapter and node.adapter not in adapter_by_id:
+        if (
+            not _is_structural_container(node)
+            and node.adapter
+            and node.adapter not in adapter_by_id
+        ):
             errors.append(
                 WorkflowCompileError(
                     code="missing_adapter_binding",
@@ -268,7 +291,7 @@ def _validate_project(project: WorkflowProject) -> list[WorkflowCompileError]:
                     path=["nodes", node.id, "adapter"],
                 )
             )
-        elif _requires_adapter(node) and not node.adapter:
+        elif not _is_structural_container(node) and _requires_adapter(node) and not node.adapter:
             errors.append(
                 WorkflowCompileError(
                     code="missing_adapter_binding",
@@ -278,8 +301,15 @@ def _validate_project(project: WorkflowProject) -> list[WorkflowCompileError]:
                 )
             )
 
-        if node.internals:
-            errors.extend(_validate_package_internals(node, adapter_by_id))
+        if _is_structural_container(node):
+            errors.extend(
+                _validate_package_internals(
+                    node,
+                    adapter_by_id,
+                    node_path=(node.id,),
+                    path_prefix=["nodes", node.id],
+                )
+            )
 
         errors.extend(_validate_node_origin(node, ["nodes", node.id]))
 
@@ -290,6 +320,10 @@ def _validate_project(project: WorkflowProject) -> list[WorkflowCompileError]:
 
 def _requires_adapter(node: WorkflowProjectNode) -> bool:
     return node.kind == "source" or node.capability in {"fetch", "send"}
+
+
+def _is_structural_container(node: WorkflowProjectNode) -> bool:
+    return bool(node.internals and node.internals.nodes)
 
 
 def _validate_node_origin(
@@ -340,6 +374,8 @@ def _validate_typed_edges(
         source_node = node_by_id.get(edge.source)
         target_node = node_by_id.get(edge.target)
         if source_node is None or target_node is None:
+            continue
+        if _is_structural_container(source_node) or _is_structural_container(target_node):
             continue
         source_contract = _node_port_contracts(source_node)
         target_contract = _node_port_contracts(target_node)
@@ -392,9 +428,68 @@ def _validate_typed_edges(
 def _node_port_contracts(
     node: WorkflowProjectNode,
 ) -> tuple[list[_PortContract], list[_PortContract]] | None:
-    catalog_id = _read_string((node.ui or {}).get("catalogId"))
-    if catalog_id:
-        return _PORT_CONTRACTS.get(catalog_id)
+    ui = node.ui or {}
+    catalog_id = _read_string(ui.get("catalogId"))
+    if catalog_id in _PORT_CONTRACTS:
+        return _PORT_CONTRACTS[catalog_id]
+    primitive_id = _read_string(ui.get("primitiveId"))
+    node_library_id = primitive_id or catalog_id
+    if node_library_id in {
+        "primitive.core.webhook-trigger",
+        "primitive.ops.trigger-webhook",
+    }:
+        return ([], [_PortContract("request", "output", "webhookRequest")])
+    if not node_library_id or not node_library_id.startswith("primitive."):
+        return _inferred_node_port_contracts(node)
+
+    declared_ports = ui.get("primitivePorts")
+    if not isinstance(declared_ports, list):
+        return None
+    inputs: list[_PortContract] = []
+    outputs: list[_PortContract] = []
+    for value in declared_ports:
+        if not isinstance(value, dict):
+            return None
+        port_id = _read_string(value.get("id"))
+        direction = _read_string(value.get("direction"))
+        port_type = _read_string(value.get("type"))
+        if not port_id or direction not in {"input", "output"} or not port_type:
+            return None
+        port = _PortContract(
+            port_id,
+            direction,
+            port_type,
+            required=value.get("required") is not False,
+        )
+        (inputs if direction == "input" else outputs).append(port)
+    return inputs, outputs
+
+
+def _inferred_node_port_contracts(
+    node: WorkflowProjectNode,
+) -> tuple[list[_PortContract], list[_PortContract]] | None:
+    alias_input = _PortContract("records", "input", "any", required=False)
+    alias_output = _PortContract("records", "output", "any", required=False)
+    if node.kind == "source" and node.capability == "fetch":
+        return (
+            [_PortContract("in", "input", "any", required=False), alias_input],
+            [_PortContract("out", "output", "items[]"), alias_output],
+        )
+    if node.kind == "agent" and node.capability == "normalize":
+        return (
+            [_PortContract("in", "input", "items[]"), alias_input],
+            [_PortContract("out", "output", "recordCandidate[]"), alias_output],
+        )
+    if node.kind in {"inbox", "sink"} and node.capability == "store":
+        return (
+            [_PortContract("in", "input", "recordCandidate[]"), alias_input],
+            [_PortContract("out", "output", "storedItems[]", required=False)],
+        )
+    if node.kind == "notify" and node.capability == "send":
+        return (
+            [_PortContract("in", "input", "recordCandidate[]"), alias_input],
+            [_PortContract("out", "output", "notificationPayload", required=False)],
+        )
     return None
 
 
@@ -423,7 +518,7 @@ def _resolve_input_port(
 def _port_types_compatible(source_type: str, target_type: str) -> bool:
     if source_type == target_type:
         return True
-    return source_type == "unknown" or target_type == "unknown"
+    return source_type in {"any", "unknown"} or target_type in {"any", "unknown"}
 
 
 def _read_string(value: object) -> str | None:
@@ -461,19 +556,247 @@ def _cycle_errors(project: WorkflowProject) -> list[WorkflowCompileError]:
     ]
 
 
-def _dependency_map(project: WorkflowProject) -> dict[str, list[str]]:
-    return _dependency_map_for_nodes(project.nodes, project.edges)
-
-
-def _dependency_map_for_nodes(
+def _expanded_dependency_map(
     nodes: list[WorkflowProjectNode],
-    edges: list,
+    edges: list[WorkflowProjectEdge],
+    *,
+    parent_path: tuple[str, ...],
 ) -> dict[str, list[str]]:
+    node_by_id = {node.id: node for node in nodes}
     upstream: dict[str, list[str]] = {node.id: [] for node in nodes}
     for edge in edges:
-        if edge.target in upstream:
-            upstream[edge.target].append(edge.source)
+        source = node_by_id.get(edge.source)
+        if source is None or edge.target not in upstream:
+            continue
+        source_path = (*parent_path, source.id)
+        upstream[edge.target].extend(
+            _node_path_id(path) for path in _boundary_node_paths(source, source_path, "output")
+        )
     return upstream
+
+
+def _boundary_node_paths(
+    node: WorkflowProjectNode,
+    node_path: tuple[str, ...],
+    direction: Literal["input", "output"],
+) -> list[tuple[str, ...]]:
+    return [path for path, _ in _boundary_nodes(node, node_path, direction)]
+
+
+def _boundary_nodes(
+    node: WorkflowProjectNode,
+    node_path: tuple[str, ...],
+    direction: Literal["input", "output"],
+) -> list[tuple[tuple[str, ...], WorkflowProjectNode]]:
+    if not node.internals or not node.internals.nodes:
+        return [(node_path, node)]
+
+    connected_ids = {
+        edge.target if direction == "input" else edge.source for edge in node.internals.edges
+    }
+    boundary_nodes = [
+        internal_node
+        for internal_node in node.internals.nodes
+        if internal_node.id not in connected_ids
+    ]
+    boundaries: list[tuple[tuple[str, ...], WorkflowProjectNode]] = []
+    for internal_node in boundary_nodes:
+        boundaries.extend(
+            _boundary_nodes(
+                internal_node,
+                (*node_path, internal_node.id),
+                direction,
+            )
+        )
+    return boundaries
+
+
+def _boundary_edge_port(
+    node: WorkflowProjectNode,
+    direction: Literal["input", "output"],
+    requested_port: str | None,
+    *,
+    traversed_container: bool,
+) -> str:
+    contracts = _node_port_contracts(node)
+    if contracts is None:
+        return requested_port or "records"
+
+    ports = contracts[0] if direction == "input" else contracts[1]
+    requested = requested_port
+    if traversed_container and requested_port not in {port.id for port in ports}:
+        requested = None
+    resolved = (
+        _resolve_input_port(ports, requested)
+        if direction == "input"
+        else _resolve_output_port(ports, requested)
+    )
+    return resolved.id if resolved is not None else requested_port or "records"
+
+
+def _append_expanded_edges(
+    edges: list[WorkflowProjectEdge],
+    *,
+    nodes: list[WorkflowProjectNode],
+    parent_path: tuple[str, ...],
+    compiled_edges: list[CompiledWorkflowEdge],
+    plan_edges: list[PlanEdge],
+) -> None:
+    node_by_id = {node.id: node for node in nodes}
+    parent_id = _node_path_id(parent_path) if parent_path else None
+    for edge in edges:
+        source = node_by_id.get(edge.source)
+        target = node_by_id.get(edge.target)
+        if source is None or target is None:
+            continue
+        source_boundaries = _boundary_nodes(
+            source,
+            (*parent_path, source.id),
+            "output",
+        )
+        target_boundaries = _boundary_nodes(
+            target,
+            (*parent_path, target.id),
+            "input",
+        )
+        pairs = [
+            (source_boundary, target_boundary)
+            for source_boundary in source_boundaries
+            for target_boundary in target_boundaries
+        ]
+        for pair_index, (source_boundary, target_boundary) in enumerate(pairs):
+            source_path, source_leaf = source_boundary
+            target_path, target_leaf = target_boundary
+            edge_id = _internal_id(parent_id, edge.id) if parent_id else edge.id
+            if len(pairs) > 1:
+                edge_id = _internal_id(edge_id, str(pair_index + 1))
+            source_id = _node_path_id(source_path)
+            target_id = _node_path_id(target_path)
+            source_port = _boundary_edge_port(
+                source_leaf,
+                "output",
+                edge.sourcePort,
+                traversed_container=_is_structural_container(source),
+            )
+            target_port = _boundary_edge_port(
+                target_leaf,
+                "input",
+                edge.targetPort,
+                traversed_container=_is_structural_container(target),
+            )
+            compiled_edges.append(
+                CompiledWorkflowEdge(
+                    id=edge_id,
+                    source=source_id,
+                    target=target_id,
+                    sourcePort=source_port,
+                    targetPort=target_port,
+                    contractId=edge.contractId,
+                    condition=edge.condition,
+                )
+            )
+            plan_edges.append(
+                PlanEdge(
+                    id=edge_id,
+                    source_node=source_id,
+                    source_port=source_port,
+                    target_node=target_id,
+                    target_port=target_port,
+                )
+            )
+
+
+def _compile_node_tree(
+    node: WorkflowProjectNode,
+    *,
+    node_path: tuple[str, ...],
+    adapter_by_id: dict[str, WorkflowAdapterBinding],
+    depends_on: list[str],
+    compiled_nodes: list[CompiledWorkflowNode],
+    compiled_edges: list[CompiledWorkflowEdge],
+    plan_nodes: list[PlanNode],
+    plan_edges: list[PlanEdge],
+) -> None:
+    node_id = _node_path_id(node_path)
+    parent_id = _node_path_id(node_path[:-1]) if len(node_path) > 1 else None
+    package_metadata = _package_metadata(node, node_path=node_path)
+    is_structural = _is_structural_container(node)
+    runtime: dict[str, object] = {
+        "node_path": list(node_path),
+        "structural": is_structural,
+        "executable": not is_structural,
+    }
+    if parent_id is not None:
+        runtime.update(
+            {
+                "package_parent_id": parent_id,
+                "package_internal_id": node.id,
+                "editable": not _ancestor_package_locked(node_path, compiled_nodes),
+            }
+        )
+    compiled_nodes.append(
+        _compile_node(
+            node,
+            adapter_by_id.get(node.adapter or ""),
+            depends_on,
+            id_override=node_id,
+            package=package_metadata,
+            runtime=runtime,
+        )
+    )
+    plan_nodes.append(_to_plan_node(node, id_override=node_id, node_path=node_path))
+
+    if not _is_structural_container(node):
+        return
+
+    bound_internal_nodes = _bind_internal_parameters(node)
+    internal_depends_on = _expanded_dependency_map(
+        bound_internal_nodes,
+        node.internals.edges,
+        parent_path=node_path,
+    )
+    for internal_node in bound_internal_nodes:
+        child_path = (*node_path, internal_node.id)
+        internal_upstream = internal_depends_on[internal_node.id]
+        _compile_node_tree(
+            internal_node,
+            node_path=child_path,
+            adapter_by_id=adapter_by_id,
+            depends_on=internal_upstream or depends_on,
+            compiled_nodes=compiled_nodes,
+            compiled_edges=compiled_edges,
+            plan_nodes=plan_nodes,
+            plan_edges=plan_edges,
+        )
+
+    _append_expanded_edges(
+        node.internals.edges,
+        nodes=bound_internal_nodes,
+        parent_path=node_path,
+        compiled_edges=compiled_edges,
+        plan_edges=plan_edges,
+    )
+
+
+def _ancestor_package_locked(
+    node_path: tuple[str, ...],
+    compiled_nodes: list[CompiledWorkflowNode],
+) -> bool:
+    if len(node_path) <= 1:
+        return False
+    parent_id = _node_path_id(node_path[:-1])
+    parent = next((node for node in reversed(compiled_nodes) if node.id == parent_id), None)
+    return bool(
+        parent
+        and (
+            (parent.package and parent.package.get("locked"))
+            or parent.runtime.get("editable") is False
+        )
+    )
+
+
+def _node_path_id(node_path: tuple[str, ...]) -> str:
+    return INTERNAL_ID_SEPARATOR.join(node_path)
 
 
 def _internal_id(package_node_id: str, internal_node_id: str) -> str:
@@ -486,13 +809,18 @@ def _package_locked(node: WorkflowProjectNode) -> bool:
     return bool(node.topicCollapse and node.topicCollapse.mode == "locked")
 
 
-def _package_metadata(node: WorkflowProjectNode) -> dict[str, object] | None:
-    if not (node.topicCollapse or node.miniNetwork or node.internals):
+def _package_metadata(
+    node: WorkflowProjectNode,
+    *,
+    node_path: tuple[str, ...],
+) -> dict[str, object] | None:
+    if not (node.topicCollapse or node.miniNetwork or _is_structural_container(node)):
         return None
 
     locked = _package_locked(node)
+    node_id = _node_path_id(node_path)
     internal_node_ids = (
-        [_internal_id(node.id, internal_node.id) for internal_node in node.internals.nodes]
+        [_internal_id(node_id, internal_node.id) for internal_node in node.internals.nodes]
         if node.internals
         else []
     )
@@ -501,9 +829,12 @@ def _package_metadata(node: WorkflowProjectNode) -> dict[str, object] | None:
         "topicCollapse": node.topicCollapse.model_dump() if node.topicCollapse else None,
         "locked": locked,
         "editable": not locked,
+        "structural": True,
+        "executable": False,
+        "node_path": list(node_path),
         "internal_node_ids": internal_node_ids,
         "internal_edge_ids": (
-            [_internal_id(node.id, edge.id) for edge in node.internals.edges]
+            [_internal_id(node_id, edge.id) for edge in node.internals.edges]
             if node.internals
             else []
         ),
@@ -538,9 +869,13 @@ def _bind_internal_parameters(node: WorkflowProjectNode) -> list[WorkflowProject
 def _validate_package_internals(
     node: WorkflowProjectNode,
     adapter_by_id: dict[str, WorkflowAdapterBinding],
+    *,
+    node_path: tuple[str, ...],
+    path_prefix: list[str],
 ) -> list[WorkflowCompileError]:
     errors: list[WorkflowCompileError] = []
     assert node.internals is not None
+    package_node_id = _node_path_id(node_path)
 
     internal_counts = Counter(internal_node.id for internal_node in node.internals.nodes)
     for internal_node_id, count in sorted(internal_counts.items()):
@@ -549,11 +884,27 @@ def _validate_package_internals(
                 WorkflowCompileError(
                     code="duplicate_internal_node_id",
                     message=(
-                        f'Package node "{node.id}" has duplicated internal node '
+                        f'Package node "{package_node_id}" has duplicated internal node '
                         f'"{internal_node_id}"'
                     ),
-                    node_id=node.id,
-                    path=["nodes", node.id, "internals", "nodes", internal_node_id],
+                    node_id=package_node_id,
+                    path=[*path_prefix, "internals", "nodes", internal_node_id],
+                )
+            )
+
+    internal_edge_counts = Counter(edge.id for edge in node.internals.edges)
+    for edge_id, count in sorted(internal_edge_counts.items()):
+        if count > 1:
+            errors.append(
+                WorkflowCompileError(
+                    code="duplicate_edge_id",
+                    message=(
+                        f'Package node "{package_node_id}" has duplicated internal '
+                        f'edge "{edge_id}"'
+                    ),
+                    node_id=package_node_id,
+                    edge_id=edge_id,
+                    path=[*path_prefix, "internals", "edges", edge_id],
                 )
             )
 
@@ -564,12 +915,12 @@ def _validate_package_internals(
                 WorkflowCompileError(
                     code="missing_internal_edge_source",
                     message=(
-                        f'Package node "{node.id}" internal edge "{edge.id}" '
+                        f'Package node "{package_node_id}" internal edge "{edge.id}" '
                         f'references missing source "{edge.source}"'
                     ),
-                    node_id=node.id,
+                    node_id=package_node_id,
                     edge_id=edge.id,
-                    path=["nodes", node.id, "internals", "edges", edge.id, "source"],
+                    path=[*path_prefix, "internals", "edges", edge.id, "source"],
                 )
             )
         if edge.target not in internal_node_ids:
@@ -577,62 +928,87 @@ def _validate_package_internals(
                 WorkflowCompileError(
                     code="missing_internal_edge_target",
                     message=(
-                        f'Package node "{node.id}" internal edge "{edge.id}" '
+                        f'Package node "{package_node_id}" internal edge "{edge.id}" '
                         f'references missing target "{edge.target}"'
                     ),
-                    node_id=node.id,
+                    node_id=package_node_id,
                     edge_id=edge.id,
-                    path=["nodes", node.id, "internals", "edges", edge.id, "target"],
+                    path=[*path_prefix, "internals", "edges", edge.id, "target"],
                 )
             )
 
     for internal_node in node.internals.nodes:
-        if internal_node.adapter and internal_node.adapter not in adapter_by_id:
+        internal_path_prefix = [
+            *path_prefix,
+            "internals",
+            "nodes",
+            internal_node.id,
+        ]
+        internal_node_path = (*node_path, internal_node.id)
+        internal_node_id = _node_path_id(internal_node_path)
+        if len(internal_node_path) > MAX_NODE_PATH_DEPTH:
+            errors.append(
+                WorkflowCompileError(
+                    code="node_path_depth_exceeded",
+                    message=(
+                        f'Workflow node "{internal_node_id}" exceeds the maximum '
+                        f'nesting depth of {MAX_NODE_PATH_DEPTH}'
+                    ),
+                    node_id=internal_node_id,
+                    path=internal_path_prefix,
+                )
+            )
+            continue
+
+        if (
+            not _is_structural_container(internal_node)
+            and internal_node.adapter
+            and internal_node.adapter not in adapter_by_id
+        ):
             errors.append(
                 WorkflowCompileError(
                     code="missing_adapter_binding",
                     message=(
-                        f'Package node "{node.id}" internal node '
+                        f'Package node "{package_node_id}" internal node '
                         f'"{internal_node.id}" references missing adapter '
                         f'"{internal_node.adapter}"'
                     ),
-                    node_id=node.id,
-                    path=[
-                        "nodes",
-                        node.id,
-                        "internals",
-                        "nodes",
-                        internal_node.id,
-                        "adapter",
-                    ],
+                    node_id=internal_node_id,
+                    path=[*internal_path_prefix, "adapter"],
                 )
             )
-        elif _requires_adapter(internal_node) and not internal_node.adapter:
+        elif (
+            not _is_structural_container(internal_node)
+            and _requires_adapter(internal_node)
+            and not internal_node.adapter
+        ):
             errors.append(
                 WorkflowCompileError(
                     code="missing_adapter_binding",
                     message=(
-                        f'Package node "{node.id}" internal node '
+                        f'Package node "{package_node_id}" internal node '
                         f'"{internal_node.id}" requires an adapter binding'
                     ),
-                    node_id=node.id,
-                    path=[
-                        "nodes",
-                        node.id,
-                        "internals",
-                        "nodes",
-                        internal_node.id,
-                        "adapter",
-                    ],
+                    node_id=internal_node_id,
+                    path=[*internal_path_prefix, "adapter"],
                 )
             )
 
         errors.extend(
             _validate_node_origin(
                 internal_node,
-                ["nodes", node.id, "internals", "nodes", internal_node.id],
+                internal_path_prefix,
             )
         )
+        if _is_structural_container(internal_node):
+            errors.extend(
+                _validate_package_internals(
+                    internal_node,
+                    adapter_by_id,
+                    node_path=internal_node_path,
+                    path_prefix=internal_path_prefix,
+                )
+            )
 
     if node.parameterInterface:
         for field in node.parameterInterface.fields:
@@ -641,14 +1017,13 @@ def _validate_package_internals(
                     WorkflowCompileError(
                         code="invalid_parameter_binding",
                         message=(
-                            f'Package node "{node.id}" public parameter '
+                            f'Package node "{package_node_id}" public parameter '
                             f'"{field.id}" binds missing internal node '
                             f'"{field.binding.nodeId}"'
                         ),
-                        node_id=node.id,
+                        node_id=package_node_id,
                         path=[
-                            "nodes",
-                            node.id,
+                            *path_prefix,
                             "parameterInterface",
                             "fields",
                             field.id,
@@ -661,10 +1036,17 @@ def _validate_package_internals(
         _validate_typed_edges(
             node.internals.nodes,
             node.internals.edges,
-            path_prefix=["nodes", node.id, "internals", "edges"],
+            path_prefix=[*path_prefix, "internals", "edges"],
         )
     )
-    errors.extend(_cycle_errors_for_nodes(node.id, node.internals.nodes, node.internals.edges))
+    errors.extend(
+        _cycle_errors_for_nodes(
+            package_node_id,
+            node.internals.nodes,
+            node.internals.edges,
+            path_prefix=path_prefix,
+        )
+    )
     return errors
 
 
@@ -672,6 +1054,8 @@ def _cycle_errors_for_nodes(
     package_node_id: str,
     nodes: list[WorkflowProjectNode],
     edges: list,
+    *,
+    path_prefix: list[str],
 ) -> list[WorkflowCompileError]:
     node_ids = [node.id for node in nodes]
     indegree = {node_id: 0 for node_id in node_ids}
@@ -699,7 +1083,7 @@ def _cycle_errors_for_nodes(
                 f'a cycle at node "{node_id}"'
             ),
             node_id=package_node_id,
-            path=["nodes", package_node_id, "internals", "nodes", node_id],
+            path=[*path_prefix, "internals", "nodes", node_id],
         )
         for node_id in sorted(set(node_ids) - visited)
     ]
@@ -725,7 +1109,10 @@ def _compile_node(
     }
     if runtime:
         runtime_metadata.update(runtime)
-    runtime_metadata.update(resolve_runtime_metadata(node, adapter, node_id=node_id))
+    if _is_structural_container(node):
+        runtime_metadata.update({"structural": True, "executable": False})
+    else:
+        runtime_metadata.update(resolve_runtime_metadata(node, adapter, node_id=node_id))
 
     return CompiledWorkflowNode(
         id=node_id,
@@ -769,7 +1156,12 @@ def _to_plan_ir(project: WorkflowProject) -> PlanGraph:
     )
 
 
-def _to_plan_node(node: WorkflowProjectNode, id_override: str | None = None) -> PlanNode:
+def _to_plan_node(
+    node: WorkflowProjectNode,
+    id_override: str | None = None,
+    *,
+    node_path: tuple[str, ...] | None = None,
+) -> PlanNode:
     kind: Literal["source", "transform", "merge", "sink"]
     if node.kind in {"schedule", "source"}:
         kind = "source"
@@ -791,6 +1183,9 @@ def _to_plan_node(node: WorkflowProjectNode, id_override: str | None = None) -> 
                 "kind": node.kind,
                 "capability": node.capability,
                 "adapter": node.adapter,
+                "node_path": list(node_path or (node.id,)),
+                "structural": _is_structural_container(node),
+                "executable": not _is_structural_container(node),
             },
         },
         inputs=inputs,
@@ -832,7 +1227,14 @@ def _plan_ports_for_node(
         )
     if catalog_id == "intelligence.sink.records":
         return ([PlanPort(name="records", type="record[]")], [])
+    declared_contract = _node_port_contracts(node)
+    if declared_contract is not None:
+        inputs, outputs = declared_contract
+        return (
+            [PlanPort(name=port.id, type=port.type) for port in inputs],
+            [PlanPort(name=port.id, type=port.type) for port in outputs],
+        )
     return (
-        [] if kind == "source" else [PlanPort(name="records", type="records")],
-        [] if kind == "sink" else [PlanPort(name="records", type="records")],
+        [PlanPort(name="records", type="any")],
+        [] if kind == "sink" else [PlanPort(name="records", type="any")],
     )

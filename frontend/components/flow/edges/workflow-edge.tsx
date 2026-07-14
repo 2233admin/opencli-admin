@@ -7,7 +7,7 @@ import {
   getBezierPath,
   type EdgeProps,
 } from "@xyflow/react"
-import { Plus, X } from "lucide-react"
+import { X } from "lucide-react"
 import { useFlowStore } from "@/lib/flow/store"
 import type { WorkflowEdge } from "@/lib/flow/types"
 
@@ -35,7 +35,6 @@ function WorkflowEdgeComponent({
 
   const onEdgesChange = useFlowStore((s) => s.onEdgesChange)
   const takeSnapshot = useFlowStore((s) => s.takeSnapshot)
-  const insertNodeOnEdge = useFlowStore((s) => s.insertNodeOnEdge)
   const weight = typeof data?.weight === "number" ? Math.max(0, Math.min(1, data.weight)) : null
   const semantic = data?.semantic
   const semanticLabel = semantic?.relationship ?? (typeof data?.label === "string" ? data.label : undefined)
@@ -82,15 +81,6 @@ function WorkflowEdgeComponent({
               contract
             </span>
           ) : null}
-          <button
-            type="button"
-            onClick={() => insertNodeOnEdge(id)}
-            className="flex size-4 items-center justify-center rounded-full border bg-background text-muted-foreground opacity-0 shadow-sm transition-all hover:text-primary group-hover:opacity-100 data-[selected=true]:opacity-100"
-            data-selected={selected}
-            aria-label="在此插入节点"
-          >
-            <Plus className="size-2.5" />
-          </button>
           <button
             type="button"
             onClick={removeEdge}

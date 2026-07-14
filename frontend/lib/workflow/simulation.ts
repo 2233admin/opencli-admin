@@ -88,10 +88,17 @@ export type WorkflowSimulationRun = {
   runtime: WorkflowRuntimeMetrics
 }
 
+export function supportsDeterministicSimulation(project: WorkflowProject): boolean {
+  return !project.nodes.some((node) => Boolean(node.internals?.nodes.length))
+}
+
 export async function simulateWorkflowRun(
   project: WorkflowProject,
   registry: AdapterRegistry = createDefaultAdapterRegistry(),
 ): Promise<WorkflowSimulationRun> {
+  if (!supportsDeterministicSimulation(project)) {
+    throw new Error("Nested operator workflows must run through the canonical backend Run Trace")
+  }
   const orderedNodes = orderWorkflowNodes(project)
   const outgoingEdges = groupOutgoingEdges(project)
   const trace: WorkflowTraceEvent[] = []

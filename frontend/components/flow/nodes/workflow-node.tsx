@@ -1,8 +1,8 @@
 "use client"
 
 import { memo, useEffect, useState, type MouseEvent as ReactMouseEvent } from "react"
-import { Handle, NodeToolbar, Position, useStore, type NodeProps } from "@xyflow/react"
-import { Loader2, Plus, Wand2 } from "lucide-react"
+import { Handle, Position, useStore, type NodeProps } from "@xyflow/react"
+import { Loader2, Wand2 } from "lucide-react"
 import type { WorkflowNode as WorkflowNodeType } from "@/lib/flow/types"
 import { getApiAuthToken } from "@/lib/api/auth-token"
 import { useFlowStore } from "@/lib/flow/store"
@@ -282,7 +282,6 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<WorkflowNodeTyp
   const proposalFocused = data.proposalFocused === true
   const internalLocked = data.internalLocked === true
   const internalDraft = data.internalDraft === true
-  const addChildNode = useFlowStore((s) => s.addChildNode)
   const workflowProject = useFlowStore((s) => s.workflowProject)
   const updateWorkflowNodeParams = useFlowStore((s) => s.updateWorkflowNodeParams)
   const queueAgentProposal = useFlowStore((s) => s.queueAgentProposal)
@@ -440,17 +439,6 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<WorkflowNodeTyp
         outlineOffset: "-1px",
       }}
     >
-      <NodeToolbar isVisible={selected && detail === "high"} position={Position.Bottom} offset={8}>
-        <button
-          type="button"
-          onClick={() => addChildNode(id)}
-          className="flex items-center gap-1 rounded-sm border bg-popover px-2 py-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground transition-colors hover:border-foreground/40 hover:text-foreground"
-        >
-          <Plus className="size-3" />
-          Add Child
-        </button>
-      </NodeToolbar>
-
       <div className={cn("flex min-h-[72px] gap-2 py-2", shapePadding(nodeShape))}>
         <div className="workflow-node-sigil flex w-10 shrink-0 flex-col items-center justify-center gap-1 border-r border-border/70 pr-2">
           <span className="font-mono text-[13px] font-semibold leading-none text-foreground" aria-hidden>

@@ -41,6 +41,7 @@ export type WorkflowEvidenceBatchSummary = WorkflowRunBatchReference & {
   runId: string
   traceId: string
   nodeId: string
+  nodePath?: string[]
   packageNodeId?: string | null
   internalNodeId?: string | null
   status: WorkflowRunStatus
@@ -120,6 +121,7 @@ export type WorkflowNodeRunEvent = {
   workflowRunId: string
   traceId: string
   nodeId: string
+  nodePath?: string[]
   eventType: WorkflowNodeRunEventType
   createdAt: string
   packageNodeId?: string | null
@@ -134,6 +136,7 @@ export type WorkflowNodeRunEvent = {
 export type WorkflowRunNodeState = {
   nodeId: string
   status: WorkflowRunStatus
+  nodePath?: string[]
   packageNodeId?: string | null
   internalNodeId?: string | null
   sourceGroups: string[]
