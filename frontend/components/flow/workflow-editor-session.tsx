@@ -30,11 +30,15 @@ function persistableProject(project: WorkflowProject): WorkflowProject {
 
 const projectFingerprint = (project: WorkflowProject) => JSON.stringify(persistableProject(project))
 
-export function WorkflowEditorSession() {
+type WorkflowEditorSessionProps = {
+  forceStandalone?: boolean
+}
+
+export function WorkflowEditorSession({ forceStandalone = false }: WorkflowEditorSessionProps = {}) {
   const params = useSearchParams()
-  const workspaceId = params.get('workspace')
-  const projectId = params.get('project')
-  const requestedWorkflowId = params.get('workflow')
+  const workspaceId = forceStandalone ? null : params.get('workspace')
+  const projectId = forceStandalone ? null : params.get('project')
+  const requestedWorkflowId = forceStandalone ? null : params.get('workflow')
   const workflowProject = useFlowStore((state) => state.workflowProject)
   const importWorkflowProject = useFlowStore((state) => state.importWorkflowProject)
   const [workflowId, setWorkflowId] = useState<string | null>(null)

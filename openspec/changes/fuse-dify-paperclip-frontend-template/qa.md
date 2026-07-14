@@ -1,6 +1,35 @@
 # QA
 
-## Latest product-granularity correction
+## Latest formal-node integration correction
+
+- Scope: Direction C keeps the project browser and project header, then embeds the existing
+  standalone `WorkflowEditorSession`.
+- Removed: Direction C's duplicate project-node Inspector, `bindingOptions`, local binding state,
+  fake capability chips, fixed sample/log/Schema dock, and static project graph.
+- Reused: canonical Schema, Catalog, React Flow canvas, ports/edges, Inspector, internal Networks,
+  node management, and Run Trace.
+- Targeted ESLint: passed with zero warnings and zero errors.
+- TypeScript: passed with `pnpm exec tsc --noEmit`.
+- Workflow regressions: 9/9 passed, including a new guard that requires Direction C to use
+  `forceStandalone` and forbids the duplicate binding/Inspector model.
+- Workflow contract assertions: passed.
+- Production build: passed with Next.js 16.2.6.
+- Production isolation: passed on port 8040 — the prototype returned 404 without its marker and
+  `/dashboard` returned 200.
+- Development route: returned 200 on port 8030 and included the workspace plus cross-device video
+  project markers.
+- Independent audits: two read-only audits independently confirmed the duplicate-model defect and
+  recommended reusing the formal editor/session.
+- Independent final review: no findings after explicit standalone isolation, prototype-switcher
+  suppression, dead comparison-profile removal, and stale QA wording correction.
+- Browser automation gap remains: the installed browser-control runtime previously failed during
+  initialization with `Cannot redefine property: process`.
+- Manual review URL: `http://127.0.0.1:8030/prototype/product-shell?variant=C`.
+
+This section supersedes earlier claims that Direction C should demonstrate a separate execution-
+binding panel or its own project-node Inspector.
+
+## Superseded product-granularity correction
 
 - Scope: Direction C only; formal Studio, WorkflowEditorSession, React Flow editor, inspector,
   node catalog, and Fleet code were not modified.
@@ -70,8 +99,9 @@ Observed desktop captures:
 - A keeps the workflow graph and debug trace dominant while retaining work, run, evidence, and approval context.
 - B makes the project queue and selected work item cockpit dominant; the workflow becomes execution context.
 - Earlier C rendered a two-screen structure with templates and shared-capability context on the
-  workspace. The latest C keeps the two-screen entry but reduces workspace to the project browser
-  and adds an explicit Workflow switcher inside the project IDE.
+  workspace. The latest C keeps the two-screen entry, reduces workspace to the project browser,
+  and directly embeds the formal standalone editor; production Workflow switching remains a later
+  Studio/session integration.
 - Acquisition, cleaning, knowledge, workflow, and delivery appear as separate project cards on
   the workspace page, not as a permanent sidebar inside the project editor.
 - The latest granularity correction removes permanent work-item, runtime, evidence, and Inbox panels
@@ -107,7 +137,8 @@ Observed mobile capture:
 - Avoids unnecessary dependencies: yes
 - Does not create parallel source of truth: yes, this lives under OpenSpec
 - Next.js conventions: yes — App Router page, production `notFound()`, client boundary only where interaction is required
-- Runtime coupling: none — no API hooks, query libraries, or backend dependencies
+- Runtime coupling at that historical stage: none. The current Direction C instead embeds the formal
+  standalone session and therefore reuses its capability-read path while leaving draft mutations inactive.
 
 ## Agent-readable state
 
@@ -136,8 +167,8 @@ Observed mobile capture:
 | Existing tokens and components | Preserve product identity | No new design system or dependency | Existing token inconsistencies remain outside scope |
 | Workspace → Project → Workflow → Node as baseline | Match the formal data model and keep the IDE task clear | Direction C is selected | Production route needs an explicit Workflow switcher |
 
-## Final verdict
+## Historical verdict before formal-node integration
 
-- Verdict: ready for product review; Direction C now demonstrates Project → Workflow selection and node execution binding
+- Verdict at that time: Direction C demonstrated Project → Workflow selection and a node execution-binding prototype; that binding prototype is now superseded and removed.
 - Blocking issues: none for static/build/production isolation; fresh browser interaction automation is tooling-gated
 - Follow-up: extend the existing Studio and WorkflowEditorSession only after this object model is approved; do not create a parallel workspace implementation

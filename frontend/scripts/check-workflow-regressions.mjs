@@ -38,6 +38,21 @@ test('node workflow lives inside workspace while the legacy canvas route redirec
   assert.doesNotMatch(navigation, /BUILD_WORKFLOW_PATH|\/build\/workflow/)
 })
 
+test('the product-shell prototype reuses the canonical editor without project draft mutations', async () => {
+  const [prototype, session] = await Promise.all([
+    readSource('components/prototype/product-shell-prototype.tsx'),
+    readSource('components/flow/workflow-editor-session.tsx'),
+  ])
+
+  assert.ok(prototype.includes('<WorkflowEditorSession forceStandalone />'))
+  assert.ok(session.includes('forceStandalone?: boolean'))
+  assert.ok(session.includes("const workspaceId = forceStandalone ? null : params.get('workspace')"))
+  assert.ok(session.includes("const projectId = forceStandalone ? null : params.get('project')"))
+  for (const duplicatePrototypeModel of ['bindingOptions', 'bindingSelections', 'DataDebugDock', 'NodeInspector']) {
+    assert.ok(!prototype.includes(duplicatePrototypeModel), `${duplicatePrototypeModel} must not return to Direction C`)
+  }
+})
+
 test('workflow adopts the Dify-style add-node path while preserving package hierarchy', async () => {
   const [editor, surface, palette] = await Promise.all([
     readSource('components/flow/workflow-editor.tsx'),

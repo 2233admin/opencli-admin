@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, type ComponentType } from "react"
+import { Suspense, useEffect, useState, type ComponentType } from "react"
 import {
   AlertTriangle,
   ArrowRight,
@@ -11,7 +11,6 @@ import {
   ChevronDown,
   ChevronRight,
   CircleDot,
-  Code2,
   Cpu,
   Database,
   FileCheck2,
@@ -42,6 +41,7 @@ import {
   PrototypeSwitcher,
   type PrototypeVariant,
 } from "@/components/prototype/prototype-switcher"
+import { WorkflowEditorSession } from "@/components/flow/workflow-editor-session"
 import { cn } from "@/lib/utils"
 
 type Icon = ComponentType<{ className?: string; "aria-hidden"?: boolean }>
@@ -400,10 +400,10 @@ function WorkflowNode({
   )
 }
 
-function BuilderCanvas({ project, nodes, selectedNodeIndex, onSelectNode }: { project?: WorkspaceProject; nodes?: ProjectProfile["nodes"]; selectedNodeIndex?: number; onSelectNode?: (index: number) => void }) {
-  const profile = getProjectProfile(project)
+function BuilderCanvas({ nodes, selectedNodeIndex, onSelectNode }: { nodes?: ComparisonProfile["nodes"]; selectedNodeIndex?: number; onSelectNode?: (index: number) => void }) {
+  const profile = comparisonProfiles.video
   const [firstNode, secondNode, thirdNode, fourthNode, fifthNode, sixthNode] = nodes ?? profile.nodes
-  const renderNode = (node: ProjectNode, index: number) => (
+  const renderNode = (node: ComparisonNode, index: number) => (
     <WorkflowNode
       {...node}
       selected={selectedNodeIndex === undefined ? node.selected : selectedNodeIndex === index}
@@ -456,8 +456,8 @@ function BuilderCanvas({ project, nodes, selectedNodeIndex, onSelectNode }: { pr
   )
 }
 
-function AttentionRail({ condensed = false, project }: { condensed?: boolean; project?: WorkspaceProject }) {
-  const profile = getProjectProfile(project)
+function AttentionRail({ condensed = false }: { condensed?: boolean }) {
+  const profile = comparisonProfiles.video
   const primaryWorkItem = profile.workItems[0]
   const relatedRuns = getProjectRuns(profile)
 
@@ -736,19 +736,13 @@ type WorkspaceProject = {
   starred?: boolean
 }
 
-type ProjectNode = {
+type ComparisonNode = {
   icon: Icon
   eyebrow: string
   title: string
   detail: string
   tone?: "neutral" | "success" | "warning" | "danger" | "info"
   selected?: boolean
-  layer?: "业务节点" | "复合节点" | "原子节点" | "Agent 节点"
-  input?: string
-  output?: string
-  binding?: string
-  bindingOptions?: string[]
-  capabilities?: string[]
 }
 
 type ProjectRun = {
@@ -759,8 +753,8 @@ type ProjectRun = {
   tone: "neutral" | "success" | "warning" | "danger" | "info"
 }
 
-type ProjectProfile = {
-  nodes: [ProjectNode, ProjectNode, ProjectNode, ProjectNode, ProjectNode, ProjectNode]
+type ComparisonProfile = {
+  nodes: [ComparisonNode, ComparisonNode, ComparisonNode, ComparisonNode, ComparisonNode, ComparisonNode]
   nodeCount: string
   runCount: string
   debugRuns: string
@@ -800,15 +794,15 @@ const workspaceProjects: WorkspaceProject[] = [
   { id: "notify", name: "高风险升级通知", category: "工作流", description: "命中高风险规则后升级通知对应负责人。", meta: "1 条工作流 · 2 个渠道", updated: "7 月 12 日", status: "草稿", tone: "neutral", icon: Radio, owner: "自动化运营组", tags: ["通知", "Agent"] },
 ]
 
-const projectProfiles: Record<string, ProjectProfile> = {
+const comparisonProfiles: Record<string, ComparisonProfile> = {
   video: {
     nodes: [
-      { icon: Monitor, eyebrow: "Source", title: "视频采集", detail: "camera.stream", tone: "success", layer: "业务节点", input: "capture.request", output: "video.stream", binding: "局域网采集设备池", bindingOptions: ["自动匹配设备", "本机摄像头", "局域网设备", "远程采集 Agent"], capabilities: ["设备发现", "视频会话", "断线续传"] },
-      { icon: Braces, eyebrow: "Decode", title: "帧解析", detail: "8 fps · h264", tone: "success", layer: "复合节点", input: "video.stream", output: "frames[]", binding: "采集设备本地执行", bindingOptions: ["跟随数据源", "本机 CPU", "局域网算力机"], capabilities: ["解码", "抽帧", "时间戳对齐"] },
-      { icon: Bot, eyebrow: "Agent", title: "目标检测", detail: "vision.team.v3", tone: "warning", selected: true, layer: "Agent 节点", input: "frames[]", output: "detections[]", binding: "视觉 Agent 集群", bindingOptions: ["自动选择", "本地 GPU 算力机", "远程视觉 Agent"], capabilities: ["模型路由", "并行推理", "置信度复核"] },
-      { icon: ShieldCheck, eyebrow: "Quality", title: "结果清洗", detail: "37 items pending", tone: "warning", layer: "业务节点", input: "detections[]", output: "clean.records[]", binding: "本地数据处理池", bindingOptions: ["自动选择", "本机", "局域网算力机"], capabilities: ["去重", "字段归一", "质量规则"] },
-      { icon: Database, eyebrow: "Store", title: "数据入库", detail: "partition hourly", tone: "success", layer: "业务节点", input: "clean.records[]", output: "dataset://video-events", binding: "工作区存储服务", bindingOptions: ["本地数据集", "局域网存储", "远程对象存储"], capabilities: ["Schema 校验", "分区写入", "血缘记录"] },
-      { icon: FileCheck2, eyebrow: "Deliver", title: "产物归档", detail: "clips + evidence", layer: "业务节点", input: "dataset://video-events", output: "artifact.bundle", binding: "项目归档服务", bindingOptions: ["工作区默认", "本地归档", "远程归档"], capabilities: ["证据打包", "索引", "生命周期"] },
+      { icon: Monitor, eyebrow: "Source", title: "视频采集", detail: "camera.stream", tone: "success" },
+      { icon: Braces, eyebrow: "Decode", title: "帧解析", detail: "8 fps · h264", tone: "success" },
+      { icon: Bot, eyebrow: "Agent", title: "目标检测", detail: "vision.team.v3", tone: "warning", selected: true },
+      { icon: ShieldCheck, eyebrow: "Quality", title: "结果清洗", detail: "37 items pending", tone: "warning" },
+      { icon: Database, eyebrow: "Store", title: "数据入库", detail: "partition hourly", tone: "success" },
+      { icon: FileCheck2, eyebrow: "Deliver", title: "产物归档", detail: "clips + evidence" },
     ],
     nodeCount: "06", runCount: "48", debugRuns: "3", productionRuns: "45", success: "94.2", inbox: "05", inboxDetail: "离线 1 · 复核 2 · 审批 2", pluginCount: "3", references: "2", productionVersion: "v18", draftVersion: "v19", p95: "8.4s",
     evidence: "186", evidenceLabel: "视频事件", evidenceDetail: "2 条低置信检测等待人工确认",
@@ -817,124 +811,12 @@ const projectProfiles: Record<string, ProjectProfile> = {
     workItems: [
       { id: "CLI-248", title: "恢复 CAM-07 视频采集会话", status: "处理中", priority: "P0" },
       { id: "CLI-246", title: "复核低置信目标检测样本", status: "待处理", priority: "P1" },
-      { id: "CLI-239", title: "审批局域网算力绑定策略", status: "待审批", priority: "P1" },
-    ],
-  },
-  collect: {
-    nodes: [
-      { icon: Radio, eyebrow: "Schedule", title: "每 30 分钟", detail: "production trigger", tone: "success" },
-      { icon: Database, eyebrow: "Source", title: "小红书采集", detail: "cursor incremental", tone: "success" },
-      { icon: Plug, eyebrow: "Source", title: "抖音连接器", detail: "rate limited", tone: "danger", selected: true, layer: "复合节点", input: "collection.request", output: "raw.items[]", binding: "局域网采集设备池", bindingOptions: ["自动匹配设备", "本机浏览器", "局域网设备", "远程采集 Agent"], capabilities: ["登录会话", "增量游标", "限流恢复"] },
-      { icon: Braces, eyebrow: "Normalize", title: "统一采集字段", detail: "collector.schema.v3", tone: "success" },
-      { icon: ShieldCheck, eyebrow: "Quality", title: "完整性校验", detail: "2 checks pending", tone: "warning" },
-      { icon: FileCheck2, eyebrow: "Output", title: "写入原始数据集", detail: "partition hourly" },
-    ],
-    nodeCount: "06", runCount: "96", debugRuns: "4", productionRuns: "92", success: "91.7", inbox: "03", inboxDetail: "失败 1 · 限流 1 · 审批 1", pluginCount: "3", references: "0", productionVersion: "v12", draftVersion: "v13", p95: "12.8s",
-    evidence: "8,642", evidenceLabel: "原始记录", evidenceDetail: "312 条记录等待采集完整性复核",
-    alertTitle: "抖音采集游标连续两次未推进", alertLabel: "P0 · 运行失败", alertTone: "danger", alertAge: "12 min", alertRunId: "RUN-2088", alertContext: "节点 #3", alertAction: "查看限流与游标上下文", alertRunLabel: "生产运行", alertRunStatus: "失败", alertRunTime: "10:36",
-    owner: "采集平台组", deadline: "今天 15:00",
-    workItems: [
-      { id: "CLI-252", title: "修复抖音增量游标推进异常", status: "处理中", priority: "P0" },
-      { id: "CLI-247", title: "调整小红书采集限流策略", status: "待处理", priority: "P1" },
-      { id: "CLI-241", title: "审批微博连接器凭证轮换", status: "待审批", priority: "P1" },
-    ],
-  },
-  clean: {
-    nodes: [
-      { icon: Database, eyebrow: "Input", title: "原始内容数据集", detail: "from 5 sources", tone: "success" },
-      { icon: Braces, eyebrow: "Deduplicate", title: "内容去重", detail: "hash + semantic", tone: "success" },
-      { icon: Code2, eyebrow: "Transform", title: "字段归一", detail: "schema.v4", tone: "success" },
-      { icon: Bot, eyebrow: "Extract", title: "实体抽取", detail: "37 items low confidence", tone: "warning", selected: true, layer: "业务节点", input: "normalized.records[]", output: "entities[]", binding: "本地 GPU 算力机", bindingOptions: ["自动选择", "本机 CPU", "局域网 GPU", "远程推理 Agent"], capabilities: ["模型推理", "实体对齐", "低置信复核"] },
-      { icon: ShieldCheck, eyebrow: "Quality", title: "质量规则", detail: "12 rules", tone: "warning" },
-      { icon: FileCheck2, eyebrow: "Output", title: "结构化数据集", detail: "ready for workflow" },
-    ],
-    nodeCount: "06", runCount: "72", debugRuns: "5", productionRuns: "67", success: "97.1", inbox: "02", inboxDetail: "复核 1 · 规则 1", pluginCount: "1", references: "1", productionVersion: "v8", draftVersion: "v9", p95: "6.2s",
-    evidence: "7,931", evidenceLabel: "结构化记录", evidenceDetail: "37 条等待人工确认实体映射",
-    alertTitle: "实体抽取低置信数据超过阈值", alertLabel: "P1 · 需要复核", alertTone: "warning", alertAge: "18 min", alertRunId: "RUN-3147", alertContext: "节点 #4", alertAction: "打开低置信样本", alertRunLabel: "生产运行", alertRunStatus: "需复核", alertRunTime: "10:24",
-    owner: "数据治理组", deadline: "今天 17:00",
-    workItems: [
-      { id: "CLI-260", title: "复核低置信品牌实体映射", status: "处理中", priority: "P0" },
-      { id: "CLI-255", title: "更新重复内容判定阈值", status: "待处理", priority: "P1" },
-      { id: "CLI-249", title: "审批 schema v5 字段变更", status: "待审批", priority: "P1" },
-    ],
-  },
-  knowledge: {
-    nodes: [
-      { icon: Database, eyebrow: "Source", title: "品牌规则数据集", detail: "3 datasets", tone: "success" },
-      { icon: Braces, eyebrow: "Chunk", title: "规则切分", detail: "semantic chunks", tone: "success" },
-      { icon: Bot, eyebrow: "Embed", title: "向量化", detail: "model text-v3", tone: "success" },
-      { icon: Boxes, eyebrow: "Index", title: "知识索引", detail: "24 stale items", tone: "warning", selected: true, layer: "复合节点", input: "chunks[]", output: "knowledge.index", binding: "知识处理资源池", bindingOptions: ["自动选择", "本地索引服务", "远程知识 Agent"], capabilities: ["向量写入", "版本索引", "召回评测"] },
-      { icon: ShieldCheck, eyebrow: "Evaluate", title: "召回评测", detail: "86.4% recall", tone: "warning" },
-      { icon: FileCheck2, eyebrow: "Publish", title: "发布知识版本", detail: "kb.v14" },
-    ],
-    nodeCount: "06", runCount: "14", debugRuns: "2", productionRuns: "12", success: "98.6", inbox: "02", inboxDetail: "过期 1 · 审批 1", pluginCount: "1", references: "4", productionVersion: "v14", draftVersion: "v15", p95: "18.6s",
-    evidence: "1,842", evidenceLabel: "知识条目", evidenceDetail: "24 条知识条目等待更新确认",
-    alertTitle: "24 条知识索引已超过更新期限", alertLabel: "P1 · 内容过期", alertTone: "warning", alertAge: "32 min", alertRunId: "RUN-4022", alertContext: "节点 #4", alertAction: "查看过期条目", alertRunLabel: "索引运行", alertRunStatus: "需更新", alertRunTime: "10:10",
-    owner: "知识运营组", deadline: "明天 12:00",
-    workItems: [
-      { id: "CLI-271", title: "更新过期品牌别名与规则", status: "处理中", priority: "P0" },
-      { id: "CLI-266", title: "补齐高风险案例评测集", status: "待处理", priority: "P1" },
-      { id: "CLI-262", title: "审批知识版本 v15", status: "待审批", priority: "P1" },
-    ],
-  },
-  report: {
-    nodes: [
-      { icon: Radio, eyebrow: "Trigger", title: "每周一 09:00", detail: "production schedule", tone: "success" },
-      { icon: Database, eyebrow: "Query", title: "读取研判成果", detail: "last 7 days", tone: "success" },
-      { icon: Bot, eyebrow: "Compose", title: "生成风险周报", detail: "model + template", tone: "success" },
-      { icon: FileCheck2, eyebrow: "Evidence", title: "引用校验", detail: "3 sources missing", tone: "danger", selected: true, layer: "Agent 节点", input: "report.draft", output: "evidence.review", binding: "交付审核 Agent 团队", bindingOptions: ["自动选择", "本地审核 Agent", "远程审核团队"], capabilities: ["引用追溯", "来源核验", "审批交接"] },
-      { icon: UserRoundCheck, eyebrow: "Approve", title: "负责人审批", detail: "SLA 4h", tone: "warning" },
-      { icon: Rocket, eyebrow: "Deliver", title: "发布周报", detail: "pdf + dashboard" },
-    ],
-    nodeCount: "06", runCount: "18", debugRuns: "3", productionRuns: "15", success: "88.9", inbox: "04", inboxDetail: "引用 3 · 审批 1", pluginCount: "2", references: "2", productionVersion: "v18", draftVersion: "v19", p95: "42.1s",
-    evidence: "246", evidenceLabel: "周报证据", evidenceDetail: "3 条证据等待补齐引用来源",
-    alertTitle: "本周周报有 3 条引用来源缺失", alertLabel: "P0 · 引用缺失", alertTone: "danger", alertAge: "1 h", alertRunId: "RUN-5176", alertContext: "节点 #4", alertAction: "补齐引用来源", alertRunLabel: "生产运行", alertRunStatus: "失败", alertRunTime: "09:42",
-    owner: "内容交付组", deadline: "今天 18:00",
-    workItems: [
-      { id: "CLI-280", title: "补齐周报缺失引用来源", status: "处理中", priority: "P0" },
-      { id: "CLI-277", title: "调整高风险摘要版式", status: "待处理", priority: "P1" },
-      { id: "CLI-273", title: "审批发布周报草稿 v19", status: "待审批", priority: "P1" },
-    ],
-  },
-  notify: {
-    nodes: [
-      { icon: Radio, eyebrow: "Event", title: "高风险事件", detail: "from risk dataset", tone: "success" },
-      { icon: Braces, eyebrow: "Rule", title: "升级规则", detail: "severity >= P1", tone: "success" },
-      { icon: Database, eyebrow: "Enrich", title: "补全负责人", detail: "member directory", tone: "success" },
-      { icon: Bot, eyebrow: "Summarize", title: "生成通知摘要", detail: "1 template error", tone: "danger", selected: true, layer: "Agent 节点", input: "risk.event", output: "notification.draft", binding: "自动化 Agent 池", bindingOptions: ["自动选择", "本地 Agent", "远程 Agent 集群"], capabilities: ["上下文汇总", "模板变量", "人工确认"] },
-      { icon: UserRoundCheck, eyebrow: "Approve", title: "外部动作确认", detail: "required", tone: "warning" },
-      { icon: Plug, eyebrow: "Notify", title: "飞书与邮件", detail: "2 channels" },
-    ],
-    nodeCount: "06", runCount: "31", debugRuns: "6", productionRuns: "25", success: "90.3", inbox: "03", inboxDetail: "失败 1 · 审批 2", pluginCount: "2", references: "2", productionVersion: "v6", draftVersion: "v7", p95: "4.7s",
-    evidence: "31", evidenceLabel: "通知记录", evidenceDetail: "1 条通知记录等待变量复核",
-    alertTitle: "通知摘要模板缺少负责人变量", alertLabel: "P0 · 模板失败", alertTone: "danger", alertAge: "9 min", alertRunId: "RUN-6231", alertContext: "节点 #4", alertAction: "修复模板变量", alertRunLabel: "调试运行", alertRunStatus: "失败", alertRunTime: "10:39",
-    owner: "自动化运营组", deadline: "今天 16:00",
-    workItems: [
-      { id: "CLI-286", title: "修复通知摘要负责人变量", status: "处理中", priority: "P0" },
-      { id: "CLI-283", title: "补充夜间升级通知策略", status: "待处理", priority: "P1" },
-      { id: "CLI-281", title: "审批飞书外部动作权限", status: "待审批", priority: "P1" },
+      { id: "CLI-239", title: "审批局域网算力节点连接策略", status: "待审批", priority: "P1" },
     ],
   },
 }
 
-function getProjectProfile(project?: WorkspaceProject) {
-  return projectProfiles[project?.id ?? "video"]
-}
-
-function getSubPipelineNodes(nodes: ProjectProfile["nodes"]): ProjectProfile["nodes"] {
-  const [firstNode, secondNode, thirdNode, fourthNode, fifthNode, sixthNode] = nodes
-
-  return [
-    { ...firstNode, title: `${firstNode.title}回补`, detail: "batch replay · 24h", selected: true },
-    { ...secondNode, detail: "offline batch", selected: false },
-    { ...thirdNode, detail: "batch policy", selected: false },
-    { ...fourthNode, detail: "replay quality", selected: false },
-    { ...fifthNode, detail: "backfill partition", selected: false },
-    { ...sixthNode, detail: "replay artifact", selected: false },
-  ]
-}
-
-function getProjectRuns(profile: ProjectProfile): ProjectRun[] {
+function getProjectRuns(profile: ComparisonProfile): ProjectRun[] {
   const currentRunNumber = Number(profile.alertRunId.replace("RUN-", ""))
 
   return [
@@ -1042,113 +924,11 @@ function WorkspaceProjectIndex({ onOpenProject }: { onOpenProject: (project: Wor
   )
 }
 
-function NodeInspector({ node, selectedBinding, onSelectBinding }: { node: ProjectNode; selectedBinding: string; onSelectBinding: (binding: string) => void }) {
-  const NodeIcon = node.icon
-  const bindingOptions = Array.from(new Set([node.binding, ...(node.bindingOptions ?? ["自动选择", "本机执行", "远程执行器"])]).values()).filter((option): option is string => Boolean(option))
-  const capabilities = node.capabilities ?? ["输入校验", "失败重试", "运行追踪"]
-
-  return (
-    <aside className="min-h-0 min-w-0 border-t border-border bg-card/20 xl:flex xl:flex-col xl:border-l xl:border-t-0">
-      <div className="flex h-12 items-center justify-between border-b border-border px-3">
-        <div className="flex min-w-0 items-center gap-2">
-          <PanelRight className="size-3.5 text-muted-foreground" aria-hidden={true} />
-          <span className="truncate text-xs font-medium">节点配置</span>
-        </div>
-        <IconButton label="关闭节点配置"><X className="size-3.5" aria-hidden={true} /></IconButton>
-      </div>
-
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <section className="border-b border-border p-3">
-          <div className="flex items-start gap-3">
-            <span className="grid size-9 shrink-0 place-items-center rounded-lg border border-border bg-background"><NodeIcon className="size-4" aria-hidden={true} /></span>
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-1.5"><h2 className="truncate text-xs font-medium">{node.title}</h2><Pill>{node.layer ?? "业务节点"}</Pill></div>
-              <p className="mt-1 font-mono text-[9px] text-muted-foreground">{node.detail}</p>
-            </div>
-          </div>
-          <div className="mt-3 grid grid-cols-3 gap-1 rounded-lg border border-border p-1 text-[9px]">
-            <button type="button" className="rounded-md bg-muted px-2 py-1.5">配置</button>
-            <button type="button" className="rounded-md px-2 py-1.5 text-muted-foreground hover:bg-muted">输入输出</button>
-            <button type="button" className="rounded-md px-2 py-1.5 text-muted-foreground hover:bg-muted">高级</button>
-          </div>
-        </section>
-
-        <section className="border-b border-border p-3">
-          <SectionTitle eyebrow="Data contract" title="数据契约" />
-          <div className="mt-3 space-y-2 font-mono text-[9px]">
-            <div className="rounded-lg border border-border bg-background p-2.5"><span className="block text-muted-foreground">INPUT</span><span className="mt-1 block break-all">{node.input ?? "upstream.records[]"}</span></div>
-            <div className="rounded-lg border border-border bg-background p-2.5"><span className="block text-muted-foreground">OUTPUT</span><span className="mt-1 block break-all">{node.output ?? "node.result[]"}</span></div>
-          </div>
-          <button type="button" className="mt-2 text-[10px] text-muted-foreground hover:text-foreground">查看字段与样本 <ChevronRight className="inline size-3" aria-hidden={true} /></button>
-        </section>
-
-        <section className="border-b border-border p-3">
-          <SectionTitle eyebrow="Execution binding" title="运行位置" action={<Pill tone="info">可发布</Pill>} />
-          <div className="mt-3 rounded-lg border border-info/30 bg-info/5 p-2.5">
-            <div className="flex items-center gap-2"><Network className="size-3.5 text-info" aria-hidden={true} /><span className="text-[10px] font-medium">{selectedBinding}</span></div>
-            <p className="mt-1.5 text-[9px] leading-4 text-muted-foreground">节点定义处理什么数据；实际运行位置由发布策略绑定，不写死在节点里。</p>
-          </div>
-          <div className="mt-2 space-y-1">
-            {bindingOptions.map((option) => (
-              <button key={option} type="button" onClick={() => onSelectBinding(option)} aria-pressed={selectedBinding === option} className={cn("flex w-full items-center gap-2 rounded-lg border px-2.5 py-2 text-left text-[10px]", selectedBinding === option ? "border-foreground/25 bg-background text-foreground" : "border-transparent text-muted-foreground hover:border-border hover:bg-background hover:text-foreground")}>
-                {option.includes("本机") || option.includes("本地") ? <Monitor className="size-3.5" aria-hidden={true} /> : option.includes("设备") || option.includes("局域网") ? <Network className="size-3.5" aria-hidden={true} /> : <Cpu className="size-3.5" aria-hidden={true} />}
-                <span className="min-w-0 flex-1 truncate">{option}</span>
-                {selectedBinding === option && <Check className="size-3.5" aria-hidden={true} />}
-              </button>
-            ))}
-          </div>
-          <button type="button" className="mt-2 flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground">管理设备、算力与 Agent 集群 <ArrowRight className="size-3" aria-hidden={true} /></button>
-        </section>
-
-        <section className="p-3">
-          <SectionTitle eyebrow="Node surface" title="节点能力" />
-          <div className="mt-3 flex flex-wrap gap-1.5">{capabilities.map((capability) => <span key={capability} className="rounded-md border border-border bg-background px-2 py-1 text-[9px] text-muted-foreground">{capability}</span>)}</div>
-          <button type="button" className="mt-3 flex h-8 w-full items-center justify-center gap-2 rounded-lg border border-border text-[10px] hover:bg-muted"><Braces className="size-3.5" aria-hidden={true} />展开内部节点</button>
-        </section>
-      </div>
-    </aside>
-  )
-}
-
-function DataDebugDock({ node }: { node: ProjectNode }) {
-  return (
-    <section className="mt-3 overflow-hidden rounded-xl border border-border bg-card/20">
-      <div className="flex items-center gap-1 border-b border-border px-2 py-1.5">
-        <button type="button" className="rounded-md bg-muted px-2.5 py-1.5 text-[10px]">样本</button>
-        <button type="button" className="rounded-md px-2.5 py-1.5 text-[10px] text-muted-foreground hover:bg-muted">日志</button>
-        <button type="button" className="rounded-md px-2.5 py-1.5 text-[10px] text-muted-foreground hover:bg-muted">Schema</button>
-        <span className="ml-auto font-mono text-[9px] text-muted-foreground">sample_0184.json</span>
-      </div>
-      <div className="grid gap-px bg-border sm:grid-cols-3">
-        <div className="bg-background p-2.5"><Eyebrow>Selected node</Eyebrow><p className="mt-1 text-[10px]">{node.title}</p></div>
-        <div className="bg-background p-2.5"><Eyebrow>Input</Eyebrow><p className="mt-1 break-all font-mono text-[9px]">{node.input ?? "upstream.records[]"}</p></div>
-        <div className="bg-background p-2.5"><Eyebrow>Preview</Eyebrow><p className="mt-1 font-mono text-[9px]">32 frames → 7 records · 148 ms</p></div>
-      </div>
-    </section>
-  )
-}
-
 function ProjectEditor({ project, onBack }: { project: WorkspaceProject; onBack: () => void }) {
-  const profile = getProjectProfile(project)
-  const defaultSelectedNode = Math.max(0, profile.nodes.findIndex((node) => node.selected))
-  const [activeWorkflow, setActiveWorkflow] = useState<"main" | "sub">("main")
-  const [selectedNodeIndex, setSelectedNodeIndex] = useState(defaultSelectedNode)
-  const [bindingSelections, setBindingSelections] = useState<Record<string, string>>({})
-  const activeNodes = activeWorkflow === "main" ? profile.nodes : getSubPipelineNodes(profile.nodes)
-  const selectedNode = activeNodes[selectedNodeIndex]
-  const bindingKey = `${activeWorkflow}:${selectedNodeIndex}`
-  const selectedBinding = bindingSelections[bindingKey] ?? selectedNode.binding ?? "工作区默认执行池"
-  const activeWorkflowLabel = activeWorkflow === "main" ? "主工作流" : "离线回补管线"
-
-  const selectWorkflow = (workflow: "main" | "sub") => {
-    setActiveWorkflow(workflow)
-    setSelectedNodeIndex(workflow === "main" ? defaultSelectedNode : 0)
-  }
-
   return (
-    <div className="flex min-h-screen w-full min-w-0 overflow-x-hidden bg-background pb-24 text-foreground">
+    <div className="flex h-screen min-h-[760px] w-full min-w-0 overflow-hidden bg-background text-foreground">
       <GlobalNav compact />
-      <div className="min-w-0 flex-1">
+      <div className="flex min-w-0 flex-1 flex-col">
         <MobileHeader />
         <PrototypeNotice variant="C" />
         <LifecycleHeader
@@ -1159,54 +939,43 @@ function ProjectEditor({ project, onBack }: { project: WorkspaceProject; onBack:
           title={project.name}
           eyebrow={`品牌风险工作区 / ${project.category}项目`}
         />
-        <div className="grid min-h-[760px] min-w-0 grid-cols-[minmax(0,1fr)] xl:grid-cols-[minmax(480px,1fr)_320px]">
-          <main id="prototype-content" className="min-w-0 p-3 sm:p-4">
-            <button type="button" onClick={onBack} className="mb-4 flex h-8 items-center gap-2 rounded-lg px-2 text-[10px] text-muted-foreground hover:bg-muted hover:text-foreground"><ArrowRight className="size-3.5 rotate-180" aria-hidden="true" />返回工作区项目列表</button>
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2"><Eyebrow>Project / {activeWorkflowLabel}</Eyebrow><Pill><Workflow className="size-2.5" aria-hidden="true" />{profile.nodeCount} 节点</Pill></div>
-                <h2 className="mt-1 truncate text-base font-semibold">{project.name}</h2>
-                <p className="mt-1 text-[10px] text-muted-foreground">项目管理数据资产和生命周期；当前打开“{activeWorkflowLabel}”，节点只描述数据处理，运行位置单独绑定。</p>
-              </div>
-              <div className="flex items-center gap-2"><Pill tone="success">生产 {profile.productionVersion}</Pill><Pill tone="warning">草稿 {profile.draftVersion} · 4 改动</Pill></div>
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-card/30 px-3 py-2.5 sm:px-4">
+            <div className="flex min-w-0 items-center gap-3">
+              <button type="button" onClick={onBack} className="flex h-8 shrink-0 items-center gap-2 rounded-lg px-2 text-[10px] text-muted-foreground hover:bg-muted hover:text-foreground"><ArrowRight className="size-3.5 rotate-180" aria-hidden="true" />返回项目列表</button>
+              <span className="h-5 w-px bg-border" aria-hidden="true" />
+              <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><Eyebrow>Formal workflow editor</Eyebrow><Pill tone="info"><Workflow className="size-2.5" aria-hidden={true} />正式节点系统</Pill><Pill>独立样例态</Pill></div><p className="mt-0.5 truncate text-[10px] text-muted-foreground">{project.name} · 当前复用正式样例图验收交互，项目草稿接线留在后续集成</p></div>
             </div>
-
-            <section className="mt-3">
-              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                <div className="flex items-center gap-1 rounded-lg border border-border p-1">
-                  <button type="button" onClick={() => selectWorkflow("main")} aria-pressed={activeWorkflow === "main"} className={cn("flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[10px]", activeWorkflow === "main" ? "bg-foreground text-background" : "text-muted-foreground hover:bg-muted")}><Workflow className="size-3" aria-hidden={true} />主工作流</button>
-                  <button type="button" onClick={() => selectWorkflow("sub")} aria-pressed={activeWorkflow === "sub"} className={cn("rounded-md px-2.5 py-1.5 text-[10px]", activeWorkflow === "sub" ? "bg-foreground text-background" : "text-muted-foreground hover:bg-muted")}>离线回补管线</button>
-                  <button type="button" className="rounded-md px-2.5 py-1.5 text-[10px] text-muted-foreground hover:bg-muted"><Plus className="inline size-3" aria-hidden={true} /> 新建</button>
-                </div>
-                <div className="flex items-center gap-2"><Pill tone="success"><Network className="size-2.5" aria-hidden={true} />8 / 9 执行器在线</Pill><Pill><Plug className="size-2.5" aria-hidden="true" />{profile.pluginCount} 个插件</Pill></div>
-              </div>
-              <BuilderCanvas project={project} nodes={activeNodes} selectedNodeIndex={selectedNodeIndex} onSelectNode={setSelectedNodeIndex} />
-            </section>
-
-            <DataDebugDock node={selectedNode} />
-
+            <Pill><Network className="size-2.5" aria-hidden={true} />sourcePort / targetPort / contractId</Pill>
+          </div>
+          <main id="prototype-content" className="min-h-0 min-w-0 flex-1 overflow-hidden">
+            <Suspense fallback={<div className="grid h-full place-items-center text-sm text-muted-foreground">正在加载正式节点编辑器…</div>}>
+              <WorkflowEditorSession forceStandalone />
+            </Suspense>
           </main>
-          <NodeInspector node={selectedNode} selectedBinding={selectedBinding} onSelectBinding={(binding) => setBindingSelections((current) => ({ ...current, [bindingKey]: binding }))} />
         </div>
       </div>
     </div>
   )
 }
 
-function VariantC() {
+function VariantC({ onProjectOpenChange }: { onProjectOpenChange: (open: boolean) => void }) {
   const [selectedProject, setSelectedProject] = useState<WorkspaceProject | null>(null)
 
   useEffect(() => {
     window.scrollTo({ top: 0 })
   }, [selectedProject])
 
-  return selectedProject
-    ? <ProjectEditor project={selectedProject} onBack={() => setSelectedProject(null)} />
-    : <WorkspaceProjectIndex onOpenProject={setSelectedProject} />
+  if (selectedProject) {
+    return <ProjectEditor project={selectedProject} onBack={() => { setSelectedProject(null); onProjectOpenChange(false) }} />
+  }
+
+  return <WorkspaceProjectIndex onOpenProject={(project) => { setSelectedProject(project); onProjectOpenChange(true) }} />
 }
 
 export function ProductShellPrototype({ initialVariant }: { initialVariant?: string }) {
   const [variant, setVariant] = useState<PrototypeVariant>(() => normalizeVariant(initialVariant))
+  const [cProjectOpen, setCProjectOpen] = useState(false)
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -1220,7 +989,7 @@ export function ProductShellPrototype({ initialVariant }: { initialVariant?: str
         return
       }
 
-      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return
+      if (cProjectOpen || (event.key !== "ArrowLeft" && event.key !== "ArrowRight")) return
       event.preventDefault()
       const order: PrototypeVariant[] = ["A", "B", "C"]
       setVariant((current) => {
@@ -1232,7 +1001,7 @@ export function ProductShellPrototype({ initialVariant }: { initialVariant?: str
 
     window.addEventListener("keydown", handleKeyDown)
     return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [])
+  }, [cProjectOpen])
 
   useEffect(() => {
     const url = new URL(window.location.href)
@@ -1243,8 +1012,8 @@ export function ProductShellPrototype({ initialVariant }: { initialVariant?: str
   return (
     <div className="dark min-h-screen w-full min-w-0 overflow-x-hidden bg-background text-foreground">
       <a href="#prototype-content" className="fixed left-3 top-3 z-[60] -translate-y-20 rounded-lg bg-foreground px-3 py-2 text-xs text-background focus:translate-y-0">跳到主要内容</a>
-      {variant === "A" ? <VariantA /> : variant === "B" ? <VariantB /> : <VariantC />}
-      <PrototypeSwitcher active={variant} onChange={setVariant} />
+      {variant === "A" ? <VariantA /> : variant === "B" ? <VariantB /> : <VariantC onProjectOpenChange={setCProjectOpen} />}
+      {variant === "C" && cProjectOpen ? null : <PrototypeSwitcher active={variant} onChange={setVariant} />}
     </div>
   )
 }
