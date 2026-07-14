@@ -31,22 +31,23 @@ an attachment.
 
 Visual thesis: preserve OpenCLI's existing Dify-like entry while making the real hierarchy
 explicit: Workspace → Project → Workflow → Node. The workspace is a quiet project browser.
-Opening a project exposes its workflow selector and data-pipeline IDE. The graph is central,
-the right panel configures the selected node and its execution binding, and the bottom dock
-shows sample data, logs, Schema, and Trace.
+Opening a project enters the existing formal data-pipeline editor. The graph, Catalog, Inspector,
+internal Networks, node management, and Run Trace come directly from the canonical editor rather
+than a second project-specific canvas.
 
 Interaction thesis: users enter `/studio`, select a workspace, create or open a project, choose
-its main workflow or sub-pipeline, compose data-contract-driven nodes, bind runtime requirements,
+its workflow, compose data-contract-driven nodes, connect typed ports, enter compound Networks,
 test with real samples, and publish. Project data, runs, schedules, versions, and settings remain
-available as adjacent tabs. Inbox deep-links to the relevant object. Agent teams and devices/
-compute are separate control planes referenced by node bindings.
+adjacent tabs. Inbox deep-links to the relevant object. Agent teams and device/Worker/Fleet
+inventory are separate control planes; workflow usage is represented by canonical resource nodes,
+not a string binding menu on a business node.
 
 Fit: matches OpenCLI's node foundation and uses a workflow mental model that Dify and n8n
 users already understand, while preserving the team's existing Linear-like operating logic.
 
-Risk: the existing formal Studio still silently opens a project's first workflow. Production
-integration must add an explicit Project → Workflow boundary and stable executor/Agent binding
-references without replacing the existing editor or Fleet foundation.
+Risk: the existing formal Studio still silently opens a project's first workflow, and the Fleet
+inventory has no formal resource-node projection UI yet. Production integration must add that thin
+projection and prove canonical edge persistence without replacing the existing editor or Fleet foundation.
 
 ## Selection rule
 

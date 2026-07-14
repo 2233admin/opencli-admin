@@ -12,7 +12,8 @@
 - [x] Add a development-only `/prototype/product-shell` route.
 - [x] Implement three structurally different variants selected by `?variant=`.
 - [x] Add a reusable development-only prototype switcher with keyboard controls.
-- [x] Use static, clearly labelled representative data and no API hooks.
+- [x] Use clearly labelled representative data in the workspace shell; the later selected direction
+  embeds the formal editor in standalone mode without project draft mutations.
 
 ## QA
 
@@ -59,7 +60,11 @@ and Paperclip work.
 - [x] Complete an independent screen-boundary and project-context review; remediate the initial
   shared-profile and fixed AttentionRail findings before submission.
 
-## Product granularity and execution-binding correction
+## Product granularity and execution-binding correction (superseded)
+
+This pass correctly separated Workspace, Project, and Workflow, but incorrectly introduced a
+parallel project-node model and string execution-binding UI. The formal-node integration correction
+below supersedes those node/editor decisions while retaining the project-browser structure.
 
 - [x] Audit the formal Workspace, Project, WorkflowAsset, WorkflowGraph, node, Fleet, and Agent models.
 - [x] Lock Workspace → Project → Workflow → Node and the separate executor/Agent-team objects.
@@ -72,4 +77,21 @@ and Paperclip work.
 - [x] Demonstrate compute placement across local CPU/GPU, LAN compute, and remote Agent team.
 - [x] Add a bottom sample/log/Schema data-debug dock.
 - [x] Re-run production isolation and independent review; final re-review has no P0/P1/P2/P3 findings.
+- [ ] Re-run desktop/mobile browser interaction QA after the browser-control runtime is repaired.
+
+## Formal node-system integration correction
+
+- [x] Audit the existing canonical node/edge schema, Catalog, primitives, compound internals,
+  Inspector, node management, Run Trace, Fleet inventory, EdgeNode, and Worker surfaces.
+- [x] Lock which product objects are graph nodes and which remain lifecycle/control-plane objects.
+- [x] Remove Direction C's `bindingOptions`, local binding state, fake capability chips, duplicate
+  node Inspector, and fixed data-debug dock.
+- [x] Replace the Direction C project canvas with the existing standalone `WorkflowEditorSession`.
+- [x] Keep the workspace project browser, project lifecycle header, and explicit return path.
+- [x] Record the thin resource-node projection seam instead of inventing `executionRequirement`
+  or `bindingRef` fields.
+- [x] Record the canonical edge-autosave synchronization risk for the production integration slice.
+- [x] Run targeted ESLint and TypeScript after the correction.
+- [x] Run the production build and production-isolation smoke check.
+- [x] Run a fresh development-route smoke check and independent final review.
 - [ ] Re-run desktop/mobile browser interaction QA after the browser-control runtime is repaired.
