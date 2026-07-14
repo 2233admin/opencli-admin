@@ -12,13 +12,16 @@ import {
   ChevronRight,
   CircleDot,
   Code2,
+  Cpu,
   Database,
   FileCheck2,
   FileUp,
   FolderKanban,
   Inbox,
   LayoutDashboard,
+  Monitor,
   MoreHorizontal,
+  Network,
   PanelRight,
   Play,
   Plug,
@@ -28,6 +31,7 @@ import {
   Rocket,
   Search,
   ShieldCheck,
+  Star,
   TerminalSquare,
   UserRoundCheck,
   Workflow,
@@ -57,9 +61,9 @@ const navGroups: Array<{
   {
     label: "平台能力",
     items: [
-      { label: "Agent 与模型", icon: Bot },
+      { label: "Agent 集群", icon: Bot },
+      { label: "设备与算力", icon: Cpu },
       { label: "插件市场", icon: Plug },
-      { label: "集成中心", icon: Braces },
     ],
   },
   {
@@ -72,7 +76,7 @@ const navGroups: Array<{
 ]
 
 const lifecycleTabs = ["总览", "工作项", "编排", "调试运行", "版本", "成果与审计"]
-const projectLifecycleTabs = ["项目概览", "编排", "调试", "发布", "监测"]
+const projectLifecycleTabs = ["编排", "数据", "运行", "调度", "版本", "设置"]
 
 const workItems = [
   {
@@ -359,6 +363,7 @@ function WorkflowNode({
   detail,
   tone = "neutral",
   selected = false,
+  onClick,
 }: {
   icon: Icon
   eyebrow: string
@@ -366,10 +371,12 @@ function WorkflowNode({
   detail: string
   tone?: "neutral" | "success" | "warning" | "danger" | "info"
   selected?: boolean
+  onClick?: () => void
 }) {
   return (
     <button
       type="button"
+      onClick={onClick}
       className={cn(
         "relative z-10 w-full rounded-xl border bg-card p-3 text-left hover:border-foreground/30",
         selected ? "border-foreground" : "border-border",
@@ -393,9 +400,16 @@ function WorkflowNode({
   )
 }
 
-function BuilderCanvas({ project }: { project?: WorkspaceProject }) {
+function BuilderCanvas({ project, nodes, selectedNodeIndex, onSelectNode }: { project?: WorkspaceProject; nodes?: ProjectProfile["nodes"]; selectedNodeIndex?: number; onSelectNode?: (index: number) => void }) {
   const profile = getProjectProfile(project)
-  const [firstNode, secondNode, thirdNode, fourthNode, fifthNode, sixthNode] = profile.nodes
+  const [firstNode, secondNode, thirdNode, fourthNode, fifthNode, sixthNode] = nodes ?? profile.nodes
+  const renderNode = (node: ProjectNode, index: number) => (
+    <WorkflowNode
+      {...node}
+      selected={selectedNodeIndex === undefined ? node.selected : selectedNodeIndex === index}
+      onClick={onSelectNode ? () => onSelectNode(index) : undefined}
+    />
+  )
 
   return (
     <div className="relative min-h-[430px] overflow-x-auto overflow-y-hidden rounded-xl border border-border bg-background">
@@ -419,19 +433,19 @@ function BuilderCanvas({ project }: { project?: WorkspaceProject }) {
       </div>
 
       <div className="relative grid min-w-[720px] grid-cols-[150px_24px_160px_24px_160px_24px_160px] items-center px-6 py-20">
-        <WorkflowNode {...firstNode} />
+        {renderNode(firstNode, 0)}
         <div className="h-px bg-border" aria-hidden="true" />
-        <WorkflowNode {...secondNode} />
+        {renderNode(secondNode, 1)}
         <div className="h-px bg-border" aria-hidden="true" />
-        <WorkflowNode {...thirdNode} />
+        {renderNode(thirdNode, 2)}
         <div className="h-px bg-destructive/70" aria-hidden="true" />
-        <WorkflowNode {...fourthNode} />
+        {renderNode(fourthNode, 3)}
       </div>
 
       <div className="relative mx-auto -mt-10 grid max-w-[510px] grid-cols-[1fr_24px_1fr] items-center px-4 pb-10">
-        <WorkflowNode {...fifthNode} />
+        {renderNode(fifthNode, 4)}
         <div className="h-px bg-border" aria-hidden="true" />
-        <WorkflowNode {...sixthNode} />
+        {renderNode(sixthNode, 5)}
       </div>
 
       <div className="absolute bottom-3 left-3 flex items-center gap-1.5 rounded-lg border border-border bg-background p-1">
@@ -717,6 +731,9 @@ type WorkspaceProject = {
   status: string
   tone: "neutral" | "success" | "warning" | "danger" | "info"
   icon: Icon
+  owner: string
+  tags: string[]
+  starred?: boolean
 }
 
 type ProjectNode = {
@@ -726,6 +743,12 @@ type ProjectNode = {
   detail: string
   tone?: "neutral" | "success" | "warning" | "danger" | "info"
   selected?: boolean
+  layer?: "业务节点" | "复合节点" | "原子节点" | "Agent 节点"
+  input?: string
+  output?: string
+  binding?: string
+  bindingOptions?: string[]
+  capabilities?: string[]
 }
 
 type ProjectRun = {
@@ -769,39 +792,39 @@ type ProjectProfile = {
 }
 
 const workspaceProjects: WorkspaceProject[] = [
-  { id: "sentiment", name: "舆情采集与研判", category: "工作流", description: "串联采集、清洗、Agent 研判、人工复核与交付。", meta: "6 节点 · 草稿 v19", updated: "刚刚更新", status: "有待处理", tone: "warning", icon: Workflow },
-  { id: "collect", name: "多平台内容采集", category: "数据采集", description: "管理小红书、抖音、微博等独立数据入口。", meta: "5 数据源 · 每 30 分钟", updated: "12 分钟前", status: "运行中", tone: "success", icon: Database },
-  { id: "clean", name: "品牌数据清洗", category: "数据处理", description: "去重、字段归一、实体抽取与质量校验。", meta: "6 节点 · schema v4", updated: "1 小时前", status: "运行中", tone: "success", icon: Braces },
-  { id: "knowledge", name: "品牌别名与研判规则", category: "知识库", description: "维护品牌实体、风险规则和可追溯研判知识。", meta: "1,842 条 · 3 个数据集", updated: "今天 09:14", status: "已索引", tone: "info", icon: Bot },
-  { id: "report", name: "风险周报生成", category: "交付", description: "汇总证据与运行结果，生成并审批周报。", meta: "6 节点 · 生产 v18", updated: "昨天 18:40", status: "生产中", tone: "success", icon: FileCheck2 },
-  { id: "notify", name: "高风险升级通知", category: "工作流", description: "命中高风险规则后升级通知对应负责人。", meta: "6 节点 · 2 个插件", updated: "7 月 12 日", status: "草稿", tone: "neutral", icon: Radio },
+  { id: "video", name: "跨设备视频采集", category: "数据采集", description: "摄像头采集、帧解析、AI 检测、清洗与数据入库。", meta: "3 条工作流 · 2 个数据集", updated: "刚刚更新", status: "有待处理", tone: "warning", icon: Monitor, owner: "设备采集组", tags: ["视频", "局域网"], starred: true },
+  { id: "collect", name: "多平台内容采集", category: "数据采集", description: "管理小红书、抖音、微博等独立数据入口。", meta: "5 条工作流 · 1 个数据集", updated: "12 分钟前", status: "健康", tone: "success", icon: Database, owner: "采集平台组", tags: ["网页", "连接器"], starred: true },
+  { id: "clean", name: "品牌数据清洗", category: "数据处理", description: "去重、字段归一、实体抽取与质量校验。", meta: "2 条工作流 · 3 个数据集", updated: "1 小时前", status: "健康", tone: "success", icon: Braces, owner: "数据治理组", tags: ["清洗", "质量"] },
+  { id: "knowledge", name: "品牌别名与研判规则", category: "知识库", description: "维护品牌实体、风险规则和可追溯研判知识。", meta: "2 条工作流 · 3 个数据集", updated: "今天 09:14", status: "需更新", tone: "warning", icon: Bot, owner: "知识运营组", tags: ["知识", "索引"] },
+  { id: "report", name: "风险周报生成", category: "交付", description: "汇总证据与运行结果，生成并审批周报。", meta: "2 条工作流 · 4 类成果", updated: "昨天 18:40", status: "健康", tone: "success", icon: FileCheck2, owner: "内容交付组", tags: ["报告", "审批"] },
+  { id: "notify", name: "高风险升级通知", category: "工作流", description: "命中高风险规则后升级通知对应负责人。", meta: "1 条工作流 · 2 个渠道", updated: "7 月 12 日", status: "草稿", tone: "neutral", icon: Radio, owner: "自动化运营组", tags: ["通知", "Agent"] },
 ]
 
 const projectProfiles: Record<string, ProjectProfile> = {
-  sentiment: {
+  video: {
     nodes: [
-      { icon: Radio, eyebrow: "Trigger", title: "每 30 分钟", detail: "schedule.production", tone: "success" },
-      { icon: Database, eyebrow: "Collect", title: "多平台采集", detail: "5 sources · parallel", tone: "success" },
-      { icon: Braces, eyebrow: "Transform", title: "清洗与实体归一", detail: "schema.v4", tone: "success" },
-      { icon: Bot, eyebrow: "Agent", title: "风险研判", detail: "2 items blocked", tone: "danger", selected: true },
-      { icon: UserRoundCheck, eyebrow: "Review", title: "人工复核", detail: "SLA 30min", tone: "warning" },
-      { icon: FileCheck2, eyebrow: "Deliver", title: "归档与发布", detail: "report + evidence" },
+      { icon: Monitor, eyebrow: "Source", title: "视频采集", detail: "camera.stream", tone: "success", layer: "业务节点", input: "capture.request", output: "video.stream", binding: "局域网采集设备池", bindingOptions: ["自动匹配设备", "本机摄像头", "局域网设备", "远程采集 Agent"], capabilities: ["设备发现", "视频会话", "断线续传"] },
+      { icon: Braces, eyebrow: "Decode", title: "帧解析", detail: "8 fps · h264", tone: "success", layer: "复合节点", input: "video.stream", output: "frames[]", binding: "采集设备本地执行", bindingOptions: ["跟随数据源", "本机 CPU", "局域网算力机"], capabilities: ["解码", "抽帧", "时间戳对齐"] },
+      { icon: Bot, eyebrow: "Agent", title: "目标检测", detail: "vision.team.v3", tone: "warning", selected: true, layer: "Agent 节点", input: "frames[]", output: "detections[]", binding: "视觉 Agent 集群", bindingOptions: ["自动选择", "本地 GPU 算力机", "远程视觉 Agent"], capabilities: ["模型路由", "并行推理", "置信度复核"] },
+      { icon: ShieldCheck, eyebrow: "Quality", title: "结果清洗", detail: "37 items pending", tone: "warning", layer: "业务节点", input: "detections[]", output: "clean.records[]", binding: "本地数据处理池", bindingOptions: ["自动选择", "本机", "局域网算力机"], capabilities: ["去重", "字段归一", "质量规则"] },
+      { icon: Database, eyebrow: "Store", title: "数据入库", detail: "partition hourly", tone: "success", layer: "业务节点", input: "clean.records[]", output: "dataset://video-events", binding: "工作区存储服务", bindingOptions: ["本地数据集", "局域网存储", "远程对象存储"], capabilities: ["Schema 校验", "分区写入", "血缘记录"] },
+      { icon: FileCheck2, eyebrow: "Deliver", title: "产物归档", detail: "clips + evidence", layer: "业务节点", input: "dataset://video-events", output: "artifact.bundle", binding: "项目归档服务", bindingOptions: ["工作区默认", "本地归档", "远程归档"], capabilities: ["证据打包", "索引", "生命周期"] },
     ],
-    nodeCount: "06", runCount: "48", debugRuns: "3", productionRuns: "45", success: "94.2", inbox: "05", inboxDetail: "失败 1 · 复核 2 · 审批 2", pluginCount: "2", references: "3", productionVersion: "v18", draftVersion: "v19", p95: "8.4s",
-    evidence: "186", evidenceLabel: "候选证据", evidenceDetail: "2 条等待人工确认来源有效性",
-    alertTitle: "小红书采集器连续返回空结果", alertLabel: "P0 · 运行失败", alertTone: "danger", alertAge: "6 min", alertRunId: "RUN-1842", alertContext: "节点 #4", alertAction: "查看失败上下文", alertRunLabel: "调试运行", alertRunStatus: "失败", alertRunTime: "10:42",
-    owner: "数据运营组", deadline: "今天 14:00",
+    nodeCount: "06", runCount: "48", debugRuns: "3", productionRuns: "45", success: "94.2", inbox: "05", inboxDetail: "离线 1 · 复核 2 · 审批 2", pluginCount: "3", references: "2", productionVersion: "v18", draftVersion: "v19", p95: "8.4s",
+    evidence: "186", evidenceLabel: "视频事件", evidenceDetail: "2 条低置信检测等待人工确认",
+    alertTitle: "局域网采集设备 CAM-07 心跳中断", alertLabel: "P0 · 设备离线", alertTone: "danger", alertAge: "6 min", alertRunId: "RUN-1842", alertContext: "视频采集节点", alertAction: "查看设备与会话", alertRunLabel: "生产运行", alertRunStatus: "中断", alertRunTime: "10:42",
+    owner: "设备采集组", deadline: "今天 14:00",
     workItems: [
-      { id: "CLI-248", title: "修复小红书采集与复核链路", status: "处理中", priority: "P0" },
-      { id: "CLI-246", title: "补齐品牌别名词典并回放 24h 数据", status: "待处理", priority: "P1" },
-      { id: "CLI-239", title: "审批周报自动发布版本 v18", status: "待审批", priority: "P1" },
+      { id: "CLI-248", title: "恢复 CAM-07 视频采集会话", status: "处理中", priority: "P0" },
+      { id: "CLI-246", title: "复核低置信目标检测样本", status: "待处理", priority: "P1" },
+      { id: "CLI-239", title: "审批局域网算力绑定策略", status: "待审批", priority: "P1" },
     ],
   },
   collect: {
     nodes: [
       { icon: Radio, eyebrow: "Schedule", title: "每 30 分钟", detail: "production trigger", tone: "success" },
       { icon: Database, eyebrow: "Source", title: "小红书采集", detail: "cursor incremental", tone: "success" },
-      { icon: Plug, eyebrow: "Source", title: "抖音连接器", detail: "rate limited", tone: "danger", selected: true },
+      { icon: Plug, eyebrow: "Source", title: "抖音连接器", detail: "rate limited", tone: "danger", selected: true, layer: "复合节点", input: "collection.request", output: "raw.items[]", binding: "局域网采集设备池", bindingOptions: ["自动匹配设备", "本机浏览器", "局域网设备", "远程采集 Agent"], capabilities: ["登录会话", "增量游标", "限流恢复"] },
       { icon: Braces, eyebrow: "Normalize", title: "统一采集字段", detail: "collector.schema.v3", tone: "success" },
       { icon: ShieldCheck, eyebrow: "Quality", title: "完整性校验", detail: "2 checks pending", tone: "warning" },
       { icon: FileCheck2, eyebrow: "Output", title: "写入原始数据集", detail: "partition hourly" },
@@ -821,7 +844,7 @@ const projectProfiles: Record<string, ProjectProfile> = {
       { icon: Database, eyebrow: "Input", title: "原始内容数据集", detail: "from 5 sources", tone: "success" },
       { icon: Braces, eyebrow: "Deduplicate", title: "内容去重", detail: "hash + semantic", tone: "success" },
       { icon: Code2, eyebrow: "Transform", title: "字段归一", detail: "schema.v4", tone: "success" },
-      { icon: Bot, eyebrow: "Extract", title: "实体抽取", detail: "37 items low confidence", tone: "warning", selected: true },
+      { icon: Bot, eyebrow: "Extract", title: "实体抽取", detail: "37 items low confidence", tone: "warning", selected: true, layer: "业务节点", input: "normalized.records[]", output: "entities[]", binding: "本地 GPU 算力机", bindingOptions: ["自动选择", "本机 CPU", "局域网 GPU", "远程推理 Agent"], capabilities: ["模型推理", "实体对齐", "低置信复核"] },
       { icon: ShieldCheck, eyebrow: "Quality", title: "质量规则", detail: "12 rules", tone: "warning" },
       { icon: FileCheck2, eyebrow: "Output", title: "结构化数据集", detail: "ready for workflow" },
     ],
@@ -840,7 +863,7 @@ const projectProfiles: Record<string, ProjectProfile> = {
       { icon: Database, eyebrow: "Source", title: "品牌规则数据集", detail: "3 datasets", tone: "success" },
       { icon: Braces, eyebrow: "Chunk", title: "规则切分", detail: "semantic chunks", tone: "success" },
       { icon: Bot, eyebrow: "Embed", title: "向量化", detail: "model text-v3", tone: "success" },
-      { icon: Boxes, eyebrow: "Index", title: "知识索引", detail: "24 stale items", tone: "warning", selected: true },
+      { icon: Boxes, eyebrow: "Index", title: "知识索引", detail: "24 stale items", tone: "warning", selected: true, layer: "复合节点", input: "chunks[]", output: "knowledge.index", binding: "知识处理资源池", bindingOptions: ["自动选择", "本地索引服务", "远程知识 Agent"], capabilities: ["向量写入", "版本索引", "召回评测"] },
       { icon: ShieldCheck, eyebrow: "Evaluate", title: "召回评测", detail: "86.4% recall", tone: "warning" },
       { icon: FileCheck2, eyebrow: "Publish", title: "发布知识版本", detail: "kb.v14" },
     ],
@@ -859,7 +882,7 @@ const projectProfiles: Record<string, ProjectProfile> = {
       { icon: Radio, eyebrow: "Trigger", title: "每周一 09:00", detail: "production schedule", tone: "success" },
       { icon: Database, eyebrow: "Query", title: "读取研判成果", detail: "last 7 days", tone: "success" },
       { icon: Bot, eyebrow: "Compose", title: "生成风险周报", detail: "model + template", tone: "success" },
-      { icon: FileCheck2, eyebrow: "Evidence", title: "引用校验", detail: "3 sources missing", tone: "danger", selected: true },
+      { icon: FileCheck2, eyebrow: "Evidence", title: "引用校验", detail: "3 sources missing", tone: "danger", selected: true, layer: "Agent 节点", input: "report.draft", output: "evidence.review", binding: "交付审核 Agent 团队", bindingOptions: ["自动选择", "本地审核 Agent", "远程审核团队"], capabilities: ["引用追溯", "来源核验", "审批交接"] },
       { icon: UserRoundCheck, eyebrow: "Approve", title: "负责人审批", detail: "SLA 4h", tone: "warning" },
       { icon: Rocket, eyebrow: "Deliver", title: "发布周报", detail: "pdf + dashboard" },
     ],
@@ -875,10 +898,10 @@ const projectProfiles: Record<string, ProjectProfile> = {
   },
   notify: {
     nodes: [
-      { icon: Radio, eyebrow: "Event", title: "高风险事件", detail: "from sentiment project", tone: "success" },
+      { icon: Radio, eyebrow: "Event", title: "高风险事件", detail: "from risk dataset", tone: "success" },
       { icon: Braces, eyebrow: "Rule", title: "升级规则", detail: "severity >= P1", tone: "success" },
       { icon: Database, eyebrow: "Enrich", title: "补全负责人", detail: "member directory", tone: "success" },
-      { icon: Bot, eyebrow: "Summarize", title: "生成通知摘要", detail: "1 template error", tone: "danger", selected: true },
+      { icon: Bot, eyebrow: "Summarize", title: "生成通知摘要", detail: "1 template error", tone: "danger", selected: true, layer: "Agent 节点", input: "risk.event", output: "notification.draft", binding: "自动化 Agent 池", bindingOptions: ["自动选择", "本地 Agent", "远程 Agent 集群"], capabilities: ["上下文汇总", "模板变量", "人工确认"] },
       { icon: UserRoundCheck, eyebrow: "Approve", title: "外部动作确认", detail: "required", tone: "warning" },
       { icon: Plug, eyebrow: "Notify", title: "飞书与邮件", detail: "2 channels" },
     ],
@@ -895,7 +918,20 @@ const projectProfiles: Record<string, ProjectProfile> = {
 }
 
 function getProjectProfile(project?: WorkspaceProject) {
-  return projectProfiles[project?.id ?? "sentiment"]
+  return projectProfiles[project?.id ?? "video"]
+}
+
+function getSubPipelineNodes(nodes: ProjectProfile["nodes"]): ProjectProfile["nodes"] {
+  const [firstNode, secondNode, thirdNode, fourthNode, fifthNode, sixthNode] = nodes
+
+  return [
+    { ...firstNode, title: `${firstNode.title}回补`, detail: "batch replay · 24h", selected: true },
+    { ...secondNode, detail: "offline batch", selected: false },
+    { ...thirdNode, detail: "batch policy", selected: false },
+    { ...fourthNode, detail: "replay quality", selected: false },
+    { ...fifthNode, detail: "backfill partition", selected: false },
+    { ...sixthNode, detail: "replay artifact", selected: false },
+  ]
 }
 
 function getProjectRuns(profile: ProjectProfile): ProjectRun[] {
@@ -908,130 +944,185 @@ function getProjectRuns(profile: ProjectProfile): ProjectRun[] {
   ]
 }
 
-const workspaceTemplates = [
-  { title: "实时网站采集器", description: "把网站或 CLI 封装为持续运行的数据入口。", icon: Database },
-  { title: "结构化清洗管线", description: "标准化、去重、结构化与 Agent 增强处理。", icon: Braces },
-  { title: "数据消费 API", description: "将产物发送到 API、数据库或消息系统。", icon: Rocket },
-  { title: "采集到消费完整链路", description: "采集、处理、决策、发送与运行观测。", icon: Workflow },
-]
-
-const workspaceFilters: Array<{ label: string; icon: Icon }> = [
-  { label: "采集", icon: Database },
-  { label: "处理", icon: Braces },
-  { label: "知识库", icon: Bot },
-  { label: "工作流", icon: Workflow },
+const workspaceFilters: Array<{ label: string; value: string; icon: Icon }> = [
+  { label: "全部", value: "all", icon: FolderKanban },
+  { label: "采集", value: "数据采集", icon: Database },
+  { label: "处理", value: "数据处理", icon: Braces },
+  { label: "知识库", value: "知识库", icon: Bot },
+  { label: "工作流", value: "工作流", icon: Workflow },
+  { label: "交付", value: "交付", icon: FileCheck2 },
 ]
 
 function WorkspaceProjectIndex({ onOpenProject }: { onOpenProject: (project: WorkspaceProject) => void }) {
+  const [view, setView] = useState<"all" | "starred" | "mine">("all")
+  const [category, setCategory] = useState("all")
+  const [query, setQuery] = useState("")
+  const normalizedQuery = query.trim().toLowerCase()
+  const visibleProjects = workspaceProjects.filter((project) => {
+    const matchesView = view === "all" || (view === "starred" && project.starred) || (view === "mine" && ["设备采集组", "数据治理组"].includes(project.owner))
+    const matchesCategory = category === "all" || project.category === category
+    const haystack = `${project.name} ${project.description} ${project.owner} ${project.tags.join(" ")}`.toLowerCase()
+    return matchesView && matchesCategory && (!normalizedQuery || haystack.includes(normalizedQuery))
+  })
+
   return (
     <div className="flex min-h-screen w-full min-w-0 overflow-x-hidden bg-background pb-24 text-foreground">
       <GlobalNav compact />
       <div className="min-w-0 flex-1">
         <MobileHeader />
         <PrototypeNotice variant="C" />
-        <main id="prototype-content" className="min-w-0 p-4 sm:p-6 xl:p-8">
-          <header className="flex flex-wrap items-start justify-between gap-4">
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2"><Eyebrow>Workspace</Eyebrow><Pill><Boxes className="size-2.5" aria-hidden="true" />6 项目 · 12 成员</Pill></div>
-              <h1 className="mt-2 text-xl font-semibold tracking-tight sm:text-2xl">品牌风险工作区</h1>
-              <p className="mt-1 max-w-2xl text-xs leading-5 text-muted-foreground">创建和管理节点项目。采集、清洗、知识库与交付按项目分开，模型、插件和连接器由工作区共享。</p>
+        <main id="prototype-content" className="min-w-0 px-4 py-5 sm:px-6 xl:px-8">
+          <header className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-3">
+              <h1 className="text-lg font-semibold tracking-tight">项目</h1>
+              <button type="button" className="flex h-8 items-center gap-2 rounded-lg px-2 text-[10px] text-muted-foreground hover:bg-muted hover:text-foreground"><Boxes className="size-3.5" aria-hidden="true" />品牌风险工作区<ChevronDown className="size-3" aria-hidden="true" /></button>
             </div>
             <div className="flex items-center gap-2">
-              <button type="button" className="hidden h-9 items-center gap-2 rounded-lg border border-border px-3 text-xs hover:bg-muted sm:flex"><FileUp className="size-3.5" aria-hidden="true" />导入 DSL</button>
-              <button type="button" className="flex h-9 items-center gap-2 rounded-lg bg-foreground px-3 text-xs font-medium text-background hover:opacity-85"><Plus className="size-3.5" aria-hidden="true" />创建项目<ChevronDown className="size-3" aria-hidden="true" /></button>
+              <button type="button" className="hidden h-8 items-center gap-2 rounded-lg border border-border px-3 text-[10px] hover:bg-muted sm:flex"><FileUp className="size-3.5" aria-hidden="true" />导入 DSL</button>
+              <button type="button" className="flex h-8 items-center gap-2 rounded-lg bg-foreground px-3 text-[10px] font-medium text-background hover:opacity-85 active:translate-y-px"><Plus className="size-3.5" aria-hidden="true" />创建项目<ChevronDown className="size-3" aria-hidden="true" /></button>
             </div>
           </header>
 
-          <section className="mt-6 flex flex-wrap items-center gap-2 rounded-xl border border-border bg-card/30 p-2" aria-label="项目筛选">
-            <button type="button" className="flex h-8 items-center gap-2 rounded-lg bg-foreground px-3 text-[10px] text-background"><FolderKanban className="size-3.5" aria-hidden="true" />全部项目</button>
-            {workspaceFilters.map(({ icon: ProjectFilterIcon, label }) => {
-              return <button key={label} type="button" className="flex h-8 items-center gap-2 rounded-lg px-3 text-[10px] text-muted-foreground hover:bg-muted hover:text-foreground"><ProjectFilterIcon className="size-3.5" aria-hidden={true} />{label}</button>
-            })}
-            <div className="relative ml-auto min-w-[180px] flex-1 sm:max-w-[260px]">
-              <Search className="pointer-events-none absolute left-3 top-2.5 size-3.5 text-muted-foreground" aria-hidden="true" />
-              <input type="search" placeholder="搜索项目" className="h-8 w-full rounded-lg border border-border bg-background pl-8 pr-3 text-[10px] outline-none placeholder:text-muted-foreground focus:border-foreground/30" />
+          <section className="mt-5 border-b border-border pb-3" aria-label="项目浏览视图">
+            <div className="flex flex-wrap items-center gap-1">
+              {([
+                ["all", "全部项目"],
+                ["starred", "收藏"],
+                ["mine", "我负责的"],
+              ] as const).map(([value, label]) => (
+                <button key={value} type="button" onClick={() => setView(value)} aria-current={view === value ? "page" : undefined} className={cn("h-8 rounded-lg px-3 text-[10px] text-muted-foreground hover:bg-muted hover:text-foreground", view === value && "bg-muted font-medium text-foreground")}>{label}</button>
+              ))}
+              <div className="relative ml-auto min-w-[190px] flex-1 sm:max-w-[280px]">
+                <Search className="pointer-events-none absolute left-3 top-2.5 size-3.5 text-muted-foreground" aria-hidden="true" />
+                <input value={query} onChange={(event) => setQuery(event.target.value)} type="search" placeholder="搜索名称、标签或负责人" className="h-8 w-full rounded-lg border border-border bg-background pl-8 pr-3 text-[10px] outline-none placeholder:text-muted-foreground focus:border-foreground/30" />
+              </div>
             </div>
           </section>
 
-          <section className="mt-6">
-            <SectionTitle eyebrow="Projects" title="项目" action={<button type="button" className="text-[10px] text-muted-foreground hover:text-foreground">最近修改 <ChevronDown className="ml-1 inline size-3" aria-hidden="true" /></button>} />
-            <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-              {workspaceProjects.map((project) => {
+          <section className="mt-3 flex flex-wrap items-center gap-1.5" aria-label="项目筛选">
+            {workspaceFilters.map(({ icon: ProjectFilterIcon, label, value }) => (
+              <button key={value} type="button" onClick={() => setCategory(value)} aria-pressed={category === value} className={cn("flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[10px] text-muted-foreground hover:bg-muted hover:text-foreground", category === value && "bg-muted text-foreground")}><ProjectFilterIcon className="size-3.5" aria-hidden={true} />{label}</button>
+            ))}
+            <span className="mx-1 h-4 w-px bg-border" aria-hidden="true" />
+            <button type="button" className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[10px] text-muted-foreground hover:bg-muted hover:text-foreground">标签<ChevronDown className="size-3" aria-hidden="true" /></button>
+            <button type="button" className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[10px] text-muted-foreground hover:bg-muted hover:text-foreground">负责人<ChevronDown className="size-3" aria-hidden="true" /></button>
+            <button type="button" className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[10px] text-muted-foreground hover:bg-muted hover:text-foreground">健康状态<ChevronDown className="size-3" aria-hidden="true" /></button>
+          </section>
+
+          <section className="mt-5">
+            <div className="flex items-center justify-between gap-3"><p className="text-xs font-medium">{visibleProjects.length} 个项目</p><button type="button" className="text-[10px] text-muted-foreground hover:text-foreground">最近修改 <ChevronDown className="ml-1 inline size-3" aria-hidden="true" /></button></div>
+            {visibleProjects.length ? (
+              <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+              {visibleProjects.map((project) => {
                 const ProjectIcon = project.icon
                 return (
-                  <button key={project.id} type="button" onClick={() => onOpenProject(project)} className="group min-w-0 rounded-xl border border-border bg-card/30 p-4 text-left transition-[border-color,transform] hover:-translate-y-0.5 hover:border-foreground/25 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
+                  <button key={project.id} type="button" onClick={() => onOpenProject(project)} className="group min-w-0 rounded-xl border border-border/80 bg-card/20 p-3.5 text-left transition-[border-color,background-color] hover:border-foreground/25 hover:bg-card/45 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
                     <div className="flex items-start justify-between gap-3">
-                      <span className="grid size-10 place-items-center rounded-xl border border-border bg-background"><ProjectIcon className="size-4" aria-hidden={true} /></span>
-                      <Pill tone={project.tone}><StatusDot tone={project.tone} />{project.status}</Pill>
+                      <span className="grid size-9 place-items-center rounded-lg bg-muted"><ProjectIcon className="size-4" aria-hidden={true} /></span>
+                      <span className="flex items-center gap-2"><span className="inline-flex items-center gap-1 text-[9px] text-muted-foreground"><StatusDot tone={project.tone} />{project.status}</span><Star className={cn("size-3.5 text-muted-foreground", project.starred && "fill-foreground text-foreground")} aria-hidden="true" /></span>
                     </div>
-                    <div className="mt-5 flex items-center gap-2"><Eyebrow>{project.category}</Eyebrow><span className="font-mono text-[9px] text-muted-foreground">{project.meta}</span></div>
-                    <h2 className="mt-1 truncate text-sm font-semibold group-hover:underline group-hover:underline-offset-4">{project.name}</h2>
-                    <p className="mt-2 min-h-10 text-[10px] leading-5 text-muted-foreground">{project.description}</p>
-                    <div className="mt-4 flex items-center justify-between border-t border-border pt-3 font-mono text-[9px] text-muted-foreground"><span>{project.updated}</span><span className="inline-flex items-center gap-1 text-foreground">打开项目<ArrowRight className="size-3" aria-hidden="true" /></span></div>
+                    <div className="mt-4 flex items-center gap-2"><Eyebrow>{project.category}</Eyebrow><span className="font-mono text-[9px] text-muted-foreground">{project.meta}</span></div>
+                    <h2 className="mt-1 truncate text-sm font-semibold">{project.name}</h2>
+                    <p className="mt-1 line-clamp-2 min-h-8 text-[10px] leading-4 text-muted-foreground">{project.description}</p>
+                    <div className="mt-3 flex flex-wrap gap-1">{project.tags.map((tag) => <span key={tag} className="rounded-md bg-muted px-1.5 py-1 text-[9px] text-muted-foreground">{tag}</span>)}</div>
+                    <div className="mt-3 flex items-center justify-between border-t border-border/70 pt-2.5 text-[9px] text-muted-foreground"><span>{project.owner}</span><span>{project.updated}</span></div>
                   </button>
                 )
               })}
-            </div>
+              </div>
+            ) : (
+              <div className="mt-8 flex min-h-48 flex-col items-center justify-center rounded-xl border border-dashed border-border text-center"><Search className="size-5 text-muted-foreground" aria-hidden="true" /><p className="mt-3 text-xs font-medium">没有符合条件的项目</p><p className="mt-1 text-[10px] text-muted-foreground">清除搜索或切换筛选条件。</p></div>
+            )}
           </section>
 
-          <section className="mt-8 border-t border-border pt-6">
-            <SectionTitle eyebrow="Templates" title="通过模板开始" action={<button type="button" className="text-[10px] text-muted-foreground hover:text-foreground">查看全部模板</button>} />
-            <p className="mt-1 text-[10px] text-muted-foreground">按采集、处理、发送与完整链路创建独立项目。</p>
-            <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              {workspaceTemplates.map((template) => {
-                const TemplateIcon = template.icon
-                return <button key={template.title} type="button" className="rounded-xl border border-border p-3 text-left hover:border-foreground/25 hover:bg-card/30"><span className="grid size-8 place-items-center rounded-lg bg-muted"><TemplateIcon className="size-3.5" aria-hidden={true} /></span><h3 className="mt-3 text-xs font-medium">{template.title}</h3><p className="mt-1 text-[10px] leading-4 text-muted-foreground">{template.description}</p></button>
-              })}
-            </div>
-          </section>
+          <div className="mt-6 flex items-center justify-center gap-2 border-t border-border pt-4 text-[10px] text-muted-foreground"><FileUp className="size-3.5" aria-hidden="true" />拖入 DSL 创建项目，模板位于“创建项目”流程中</div>
         </main>
       </div>
     </div>
   )
 }
 
-function RuntimeVisualization({ project }: { project: WorkspaceProject }) {
-  const profile = getProjectProfile(project)
-  const bars = [42, 66, 54, 82, 72, 91, 64, 78, 48, 86, 74, 94]
+function NodeInspector({ node, selectedBinding, onSelectBinding }: { node: ProjectNode; selectedBinding: string; onSelectBinding: (binding: string) => void }) {
+  const NodeIcon = node.icon
+  const bindingOptions = Array.from(new Set([node.binding, ...(node.bindingOptions ?? ["自动选择", "本机执行", "远程执行器"])]).values()).filter((option): option is string => Boolean(option))
+  const capabilities = node.capabilities ?? ["输入校验", "失败重试", "运行追踪"]
 
   return (
-    <section className="rounded-xl border border-border p-3">
-      <SectionTitle eyebrow="Paperclip pattern · runtime" title="本项目生产表现" action={<Pill tone="success">{profile.success}%</Pill>} />
-      <div className="mt-4 flex h-24 items-end gap-1.5" aria-label="最近 12 个运行时段成功率柱状图">
-        {bars.map((height, index) => (
-          <div key={index} className="group flex h-full min-w-0 flex-1 items-end">
-            <div
-              className={cn("w-full rounded-sm bg-success/45 group-hover:bg-success", index === 8 && "bg-destructive/60 group-hover:bg-destructive")}
-              style={{ height: `${height}%` }}
-            />
+    <aside className="min-h-0 min-w-0 border-t border-border bg-card/20 xl:flex xl:flex-col xl:border-l xl:border-t-0">
+      <div className="flex h-12 items-center justify-between border-b border-border px-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <PanelRight className="size-3.5 text-muted-foreground" aria-hidden={true} />
+          <span className="truncate text-xs font-medium">节点配置</span>
+        </div>
+        <IconButton label="关闭节点配置"><X className="size-3.5" aria-hidden={true} /></IconButton>
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <section className="border-b border-border p-3">
+          <div className="flex items-start gap-3">
+            <span className="grid size-9 shrink-0 place-items-center rounded-lg border border-border bg-background"><NodeIcon className="size-4" aria-hidden={true} /></span>
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-1.5"><h2 className="truncate text-xs font-medium">{node.title}</h2><Pill>{node.layer ?? "业务节点"}</Pill></div>
+              <p className="mt-1 font-mono text-[9px] text-muted-foreground">{node.detail}</p>
+            </div>
           </div>
-        ))}
+          <div className="mt-3 grid grid-cols-3 gap-1 rounded-lg border border-border p-1 text-[9px]">
+            <button type="button" className="rounded-md bg-muted px-2 py-1.5">配置</button>
+            <button type="button" className="rounded-md px-2 py-1.5 text-muted-foreground hover:bg-muted">输入输出</button>
+            <button type="button" className="rounded-md px-2 py-1.5 text-muted-foreground hover:bg-muted">高级</button>
+          </div>
+        </section>
+
+        <section className="border-b border-border p-3">
+          <SectionTitle eyebrow="Data contract" title="数据契约" />
+          <div className="mt-3 space-y-2 font-mono text-[9px]">
+            <div className="rounded-lg border border-border bg-background p-2.5"><span className="block text-muted-foreground">INPUT</span><span className="mt-1 block break-all">{node.input ?? "upstream.records[]"}</span></div>
+            <div className="rounded-lg border border-border bg-background p-2.5"><span className="block text-muted-foreground">OUTPUT</span><span className="mt-1 block break-all">{node.output ?? "node.result[]"}</span></div>
+          </div>
+          <button type="button" className="mt-2 text-[10px] text-muted-foreground hover:text-foreground">查看字段与样本 <ChevronRight className="inline size-3" aria-hidden={true} /></button>
+        </section>
+
+        <section className="border-b border-border p-3">
+          <SectionTitle eyebrow="Execution binding" title="运行位置" action={<Pill tone="info">可发布</Pill>} />
+          <div className="mt-3 rounded-lg border border-info/30 bg-info/5 p-2.5">
+            <div className="flex items-center gap-2"><Network className="size-3.5 text-info" aria-hidden={true} /><span className="text-[10px] font-medium">{selectedBinding}</span></div>
+            <p className="mt-1.5 text-[9px] leading-4 text-muted-foreground">节点定义处理什么数据；实际运行位置由发布策略绑定，不写死在节点里。</p>
+          </div>
+          <div className="mt-2 space-y-1">
+            {bindingOptions.map((option) => (
+              <button key={option} type="button" onClick={() => onSelectBinding(option)} aria-pressed={selectedBinding === option} className={cn("flex w-full items-center gap-2 rounded-lg border px-2.5 py-2 text-left text-[10px]", selectedBinding === option ? "border-foreground/25 bg-background text-foreground" : "border-transparent text-muted-foreground hover:border-border hover:bg-background hover:text-foreground")}>
+                {option.includes("本机") || option.includes("本地") ? <Monitor className="size-3.5" aria-hidden={true} /> : option.includes("设备") || option.includes("局域网") ? <Network className="size-3.5" aria-hidden={true} /> : <Cpu className="size-3.5" aria-hidden={true} />}
+                <span className="min-w-0 flex-1 truncate">{option}</span>
+                {selectedBinding === option && <Check className="size-3.5" aria-hidden={true} />}
+              </button>
+            ))}
+          </div>
+          <button type="button" className="mt-2 flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground">管理设备、算力与 Agent 集群 <ArrowRight className="size-3" aria-hidden={true} /></button>
+        </section>
+
+        <section className="p-3">
+          <SectionTitle eyebrow="Node surface" title="节点能力" />
+          <div className="mt-3 flex flex-wrap gap-1.5">{capabilities.map((capability) => <span key={capability} className="rounded-md border border-border bg-background px-2 py-1 text-[9px] text-muted-foreground">{capability}</span>)}</div>
+          <button type="button" className="mt-3 flex h-8 w-full items-center justify-center gap-2 rounded-lg border border-border text-[10px] hover:bg-muted"><Braces className="size-3.5" aria-hidden={true} />展开内部节点</button>
+        </section>
       </div>
-      <div className="mt-2 flex justify-between font-mono text-[9px] text-muted-foreground"><span>00:00</span><span>06:00</span><span>12:00</span><span>NOW</span></div>
-      <div className="mt-4 grid grid-cols-3 gap-px overflow-hidden rounded-lg border border-border bg-border">
-        <div className="bg-background p-2"><Eyebrow>Runs</Eyebrow><p className="mt-1 font-mono text-xs">{profile.runCount}</p></div>
-        <div className="bg-background p-2"><Eyebrow>P95</Eyebrow><p className="mt-1 font-mono text-xs">{profile.p95}</p></div>
-        <div className="bg-background p-2"><Eyebrow>Evidence</Eyebrow><p className="mt-1 font-mono text-xs">{profile.evidence}</p></div>
-      </div>
-    </section>
+    </aside>
   )
 }
 
-function ProjectWorkQueue({ project }: { project: WorkspaceProject }) {
-  const profile = getProjectProfile(project)
-
+function DataDebugDock({ node }: { node: ProjectNode }) {
   return (
-    <section className="rounded-xl border border-border p-3">
-      <SectionTitle eyebrow="Linear pattern · work items" title="本项目工作项" action={<button type="button" className="text-[10px] text-muted-foreground hover:text-foreground">查看全部 12</button>} />
-      <div className="mt-3 divide-y divide-border">
-        {profile.workItems.map((item) => (
-          <button key={item.id} type="button" className="flex w-full items-center gap-2 py-2.5 text-left hover:bg-muted/40">
-            <span className={cn("font-mono text-[9px] text-muted-foreground", item.priority === "P0" && "text-destructive")}>{item.id}</span>
-            <span className="min-w-0 flex-1 truncate text-[10px] font-medium">{item.title}</span>
-            <Pill tone={item.status === "待审批" ? "warning" : item.priority === "P0" ? "danger" : "neutral"}>{item.status}</Pill>
-            <ChevronRight className="size-3 text-muted-foreground" aria-hidden="true" />
-          </button>
-        ))}
+    <section className="mt-3 overflow-hidden rounded-xl border border-border bg-card/20">
+      <div className="flex items-center gap-1 border-b border-border px-2 py-1.5">
+        <button type="button" className="rounded-md bg-muted px-2.5 py-1.5 text-[10px]">样本</button>
+        <button type="button" className="rounded-md px-2.5 py-1.5 text-[10px] text-muted-foreground hover:bg-muted">日志</button>
+        <button type="button" className="rounded-md px-2.5 py-1.5 text-[10px] text-muted-foreground hover:bg-muted">Schema</button>
+        <span className="ml-auto font-mono text-[9px] text-muted-foreground">sample_0184.json</span>
+      </div>
+      <div className="grid gap-px bg-border sm:grid-cols-3">
+        <div className="bg-background p-2.5"><Eyebrow>Selected node</Eyebrow><p className="mt-1 text-[10px]">{node.title}</p></div>
+        <div className="bg-background p-2.5"><Eyebrow>Input</Eyebrow><p className="mt-1 break-all font-mono text-[9px]">{node.input ?? "upstream.records[]"}</p></div>
+        <div className="bg-background p-2.5"><Eyebrow>Preview</Eyebrow><p className="mt-1 font-mono text-[9px]">32 frames → 7 records · 148 ms</p></div>
       </div>
     </section>
   )
@@ -1039,6 +1130,20 @@ function ProjectWorkQueue({ project }: { project: WorkspaceProject }) {
 
 function ProjectEditor({ project, onBack }: { project: WorkspaceProject; onBack: () => void }) {
   const profile = getProjectProfile(project)
+  const defaultSelectedNode = Math.max(0, profile.nodes.findIndex((node) => node.selected))
+  const [activeWorkflow, setActiveWorkflow] = useState<"main" | "sub">("main")
+  const [selectedNodeIndex, setSelectedNodeIndex] = useState(defaultSelectedNode)
+  const [bindingSelections, setBindingSelections] = useState<Record<string, string>>({})
+  const activeNodes = activeWorkflow === "main" ? profile.nodes : getSubPipelineNodes(profile.nodes)
+  const selectedNode = activeNodes[selectedNodeIndex]
+  const bindingKey = `${activeWorkflow}:${selectedNodeIndex}`
+  const selectedBinding = bindingSelections[bindingKey] ?? selectedNode.binding ?? "工作区默认执行池"
+  const activeWorkflowLabel = activeWorkflow === "main" ? "主工作流" : "离线回补管线"
+
+  const selectWorkflow = (workflow: "main" | "sub") => {
+    setActiveWorkflow(workflow)
+    setSelectedNodeIndex(workflow === "main" ? defaultSelectedNode : 0)
+  }
 
   return (
     <div className="flex min-h-screen w-full min-w-0 overflow-x-hidden bg-background pb-24 text-foreground">
@@ -1054,48 +1159,34 @@ function ProjectEditor({ project, onBack }: { project: WorkspaceProject; onBack:
           title={project.name}
           eyebrow={`品牌风险工作区 / ${project.category}项目`}
         />
-        <div className="grid min-h-[760px] min-w-0 grid-cols-[minmax(0,1fr)] xl:grid-cols-[minmax(480px,1fr)_300px]">
+        <div className="grid min-h-[760px] min-w-0 grid-cols-[minmax(0,1fr)] xl:grid-cols-[minmax(480px,1fr)_320px]">
           <main id="prototype-content" className="min-w-0 p-3 sm:p-4">
             <button type="button" onClick={onBack} className="mb-4 flex h-8 items-center gap-2 rounded-lg px-2 text-[10px] text-muted-foreground hover:bg-muted hover:text-foreground"><ArrowRight className="size-3.5 rotate-180" aria-hidden="true" />返回工作区项目列表</button>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2"><Eyebrow>Opened project / node graph</Eyebrow><Pill><Workflow className="size-2.5" aria-hidden="true" />{profile.nodeCount} 节点</Pill></div>
+                <div className="flex flex-wrap items-center gap-2"><Eyebrow>Project / {activeWorkflowLabel}</Eyebrow><Pill><Workflow className="size-2.5" aria-hidden="true" />{profile.nodeCount} 节点</Pill></div>
                 <h2 className="mt-1 truncate text-base font-semibold">{project.name}</h2>
-                <p className="mt-1 text-[10px] text-muted-foreground">当前只编辑这个项目的节点、触发、调度和运行；其他项目从工作区列表进入。</p>
+                <p className="mt-1 text-[10px] text-muted-foreground">项目管理数据资产和生命周期；当前打开“{activeWorkflowLabel}”，节点只描述数据处理，运行位置单独绑定。</p>
               </div>
               <div className="flex items-center gap-2"><Pill tone="success">生产 {profile.productionVersion}</Pill><Pill tone="warning">草稿 {profile.draftVersion} · 4 改动</Pill></div>
-            </div>
-
-            <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-              <Metric label="24h runs" value={profile.runCount} detail={`${profile.debugRuns} 次调试 / ${profile.productionRuns} 次生产`} tone="success" />
-              <Metric label="Success" value={profile.success} detail="较昨日 -2.1%" tone="success" />
-              <Metric label="Inbox" value={profile.inbox} detail={profile.inboxDetail} tone="warning" />
-              <Metric label="Nodes" value={profile.nodeCount} detail={`${profile.pluginCount} 个插件节点`} tone="success" />
             </div>
 
             <section className="mt-3">
               <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-1 rounded-lg border border-border p-1">
-                  <button type="button" className="rounded-md bg-foreground px-2.5 py-1.5 text-[10px] text-background">编排</button>
-                  <button type="button" className="rounded-md px-2.5 py-1.5 text-[10px] text-muted-foreground hover:bg-muted">变量</button>
-                  <button type="button" className="rounded-md px-2.5 py-1.5 text-[10px] text-muted-foreground hover:bg-muted">调试记录</button>
+                  <button type="button" onClick={() => selectWorkflow("main")} aria-pressed={activeWorkflow === "main"} className={cn("flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[10px]", activeWorkflow === "main" ? "bg-foreground text-background" : "text-muted-foreground hover:bg-muted")}><Workflow className="size-3" aria-hidden={true} />主工作流</button>
+                  <button type="button" onClick={() => selectWorkflow("sub")} aria-pressed={activeWorkflow === "sub"} className={cn("rounded-md px-2.5 py-1.5 text-[10px]", activeWorkflow === "sub" ? "bg-foreground text-background" : "text-muted-foreground hover:bg-muted")}>离线回补管线</button>
+                  <button type="button" className="rounded-md px-2.5 py-1.5 text-[10px] text-muted-foreground hover:bg-muted"><Plus className="inline size-3" aria-hidden={true} /> 新建</button>
                 </div>
-                <div className="flex items-center gap-2"><Pill><Plug className="size-2.5" aria-hidden="true" />{profile.pluginCount} 个插件节点</Pill><Pill><Database className="size-2.5" aria-hidden="true" />引用 {profile.references} 个项目</Pill></div>
+                <div className="flex items-center gap-2"><Pill tone="success"><Network className="size-2.5" aria-hidden={true} />8 / 9 执行器在线</Pill><Pill><Plug className="size-2.5" aria-hidden="true" />{profile.pluginCount} 个插件</Pill></div>
               </div>
-              <BuilderCanvas project={project} />
+              <BuilderCanvas project={project} nodes={activeNodes} selectedNodeIndex={selectedNodeIndex} onSelectNode={setSelectedNodeIndex} />
             </section>
 
-            <div className="mt-3 grid gap-3 lg:grid-cols-2">
-              <ProjectWorkQueue project={project} />
-              <RuntimeVisualization project={project} />
-            </div>
+            <DataDebugDock node={selectedNode} />
 
-            <section className="mt-3 grid gap-3 sm:grid-cols-2">
-              <div className="rounded-xl border border-warning/30 bg-warning/5 p-3"><div className="flex items-center gap-2"><Code2 className="size-3.5 text-warning" aria-hidden="true" /><span className="text-xs font-medium">调试空间</span><Pill tone="warning" className="ml-auto">草稿 {profile.draftVersion}</Pill></div><p className="mt-2 text-[10px] leading-4 text-muted-foreground">单节点运行、变量检查、样本回放与失败恢复，不计入生产指标。</p></div>
-              <div className="rounded-xl border border-success/30 bg-success/5 p-3"><div className="flex items-center gap-2"><Radio className="size-3.5 text-success" aria-hidden="true" /><span className="text-xs font-medium">生产空间</span><Pill tone="success" className="ml-auto">已发布 {profile.productionVersion}</Pill></div><p className="mt-2 text-[10px] leading-4 text-muted-foreground">由本项目的触发节点或调度启动，只写入本项目的运行、监测和审计记录。</p></div>
-            </section>
           </main>
-          <AttentionRail project={project} />
+          <NodeInspector node={selectedNode} selectedBinding={selectedBinding} onSelectBinding={(binding) => setBindingSelections((current) => ({ ...current, [bindingKey]: binding }))} />
         </div>
       </div>
     </div>

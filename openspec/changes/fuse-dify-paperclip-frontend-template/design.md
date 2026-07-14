@@ -2,82 +2,90 @@
 
 ## Design read
 
-Desktop operations product for technical operators and builders, using OpenCLI's existing
-dark, high-density, precise console language. The existing Studio owns workspace and project
-discovery; Dify contributes the project lifecycle after entry. Linear contributes work-item interaction.
-Paperclip contributes attention, run visualization, evidence, and audit cues.
+OpenCLI is a data-pipeline IDE, not a generic dashboard with a canvas inside it. The outer
+product may support complex automation, Agent teams, and operations, but the primary builder
+task is still: choose a project, open a workflow, connect data-processing nodes, inspect data,
+bind execution resources, test, and publish.
+
+Direction C uses OpenCLI's existing dark, dense, precise console language. Dify contributes
+the familiar project/workflow editor rhythm; OpenCLI retains its node catalog, nested node
+composition, adapters, data contracts, and execution capability tags. Linear and Paperclip
+remain adjacent operating systems, not permanent canvas chrome.
 
 Design dials: variance 5/10, motion 3/10, density 8/10.
 
-The UI/UX design-system search suggested a generic cyberpunk palette and Orbitron. That
-recommendation is rejected because it conflicts with the repository's existing xAI-like
-black/white tokens, Noto Sans SC, IBM Plex Mono, and operator-first brand constraints.
-
 ## Signature
 
-The memorable sequence is **workspace portfolio → node project cockpit**. The workspace page
-is a calm project index; after entry, the workflow graph becomes central and the right rail
-explains what currently needs human attention. Sibling projects are not permanently repeated
-inside the active project editor.
+The memorable sequence is **project browser → data pipeline IDE → node execution binding**.
+
+1. Workspace answers “which project am I entering?”
+2. Project answers “which workflow/data asset/run am I working with?”
+3. Workflow IDE answers “what data processing is this graph performing?”
+4. Node inspector answers “what is the contract, and where may this node run?”
 
 ## Layout
 
-- Target canvas: `min-h-dvh`, desktop-first.
-- Workspace desktop: 196-220px global navigation plus a responsive project-card index.
-- Project desktop: 196-220px global navigation, flexible node surface, and an optional
-  288-320px live rail.
-- Tablet: collapse one contextual rail into a horizontal strip.
-- Mobile: one content column; primary modes become a horizontally scrollable tab row;
-  rails become stacked sections.
+- Workspace desktop: compact global navigation plus a responsive project list/grid.
+- Workspace cards: project name, type, owner, tags, update time, aggregate workflow/data count,
+  and light health only. Templates live in the create flow.
+- IDE desktop: compact global navigation, project/workflow breadcrumb and switcher, flexible graph,
+  and a 300–320px selected-node inspector.
+- IDE bottom dock: sample data, logs, Schema, and Trace.
+- Project sections: 编排、数据、运行、调度、版本、设置.
+- Tablet/mobile: the inspector and bottom dock stack; lifecycle tabs scroll horizontally.
 - Fixed prototype switcher reserves at least 88px bottom padding.
+
+## Node inspector
+
+The selected node panel is organized around four independent facts:
+
+- node layer: business, composite, atomic, or Agent node;
+- data contract: explicit input and output types/schemas;
+- execution requirements: capabilities, worker/resource tags, placement policy;
+- binding reference: executor pool, device, or Agent team chosen at publish/runtime.
+
+Candidate runtimes and online state come from Fleet/control-plane inventory. They are not
+copied into the persistent node definition as display strings. The static prototype uses
+representative strings only to demonstrate the interaction.
+
+## Platform control planes
+
+- **Agent 集群** owns Agent organization, roles, Heartbeat, delegation, governance, and team health.
+- **设备与算力** owns local runtimes, LAN devices, camera-capable devices, compute servers,
+  remote executors, capability discovery, and availability.
+- **插件市场** owns reusable capability packaging.
+- The workflow IDE only selects or inspects the binding relevant to the current node.
+- Global Inbox (“待我处理”) receives failures, approvals, and Agent escalations and deep-links
+  back to the relevant project/workflow/node/run.
 
 ## Visual system
 
 - Reuse `background`, `card`, `muted`, `border`, `foreground`, and semantic state tokens.
-- White/black remains the only broad brand contrast.
-- Orange is used for pending/review; green for healthy/completed; red for blocked/failed;
-  blue/cyan only for informative runtime links.
-- Use Noto Sans SC for interface copy and IBM Plex Mono for IDs, timestamps, states, and
-  execution telemetry.
-- Panels use the existing 8px radius and hairline border. Avoid nested decorative cards.
-
-## Component inventory
-
-- Prototype shell and variant switcher.
-- Global shell with Overview, Inbox, Workspaces, platform resources, and settings.
-- Existing Studio workspace index with project cards, type filters, templates, and DSL import.
-- Workspace project cards for workflow, acquisition, cleaning, knowledge, and delivery projects.
-- Explicit workspace-index to project-editor transition and return action.
-- Project lifecycle header: Overview, Orchestrate, Debug, Publish, Monitor.
-- Work-item summary and state control.
-- Workflow graph with sources, transforms, agents, review, and delivery nodes.
-- Run timeline and environment indicator.
-- Paperclip-inspired operational visualization, evidence, approval, and activity rail.
-- Linear-style project work-item list and global Inbox deep links.
+- White/black remains the broad brand contrast; semantic colors only communicate state.
+- Noto Sans SC is used for interface copy and IBM Plex Mono for IDs, data types, timestamps,
+  states, and execution telemetry.
+- Panels use the existing small radii and hairline borders. Avoid decorative dashboard-card grids
+  above the graph.
 
 ## States
 
-- Static template badge is always visible.
-- Work state and run state must be shown separately.
-- Draft, validated, published, and production states must not collapse into “saved”.
-- Plugins are shared capabilities consumed by project nodes, not a replacement project hierarchy.
-- Inbox items deep-link to a project object; they do not become an alternative hierarchy.
-- Empty/error/loading examples appear as compact structural examples, not fake backend
-  behavior.
+- Work state, workflow draft state, published version, run state, executor state, and Agent-team
+  state are separate.
+- A project can contain a main workflow plus sub-pipelines; a project is not its first workflow.
+- Plugins are shared capabilities consumed by nodes, not a replacement hierarchy.
+- Inbox items deep-link to product objects; Inbox is not an alternative project hierarchy.
 
 ## Accessibility
 
-- Native buttons and links only for interactive elements.
-- Variant switcher supports buttons plus Left/Right keyboard shortcuts.
-- Do not intercept arrow keys while an input, textarea, select, or contenteditable is
-  focused.
+- Native buttons and inputs only for prototype interactions.
+- Variant switcher supports buttons and Left/Right keyboard shortcuts without intercepting form input.
 - Focus rings remain visible and status is never color-only.
-- Primary targets are at least 40px desktop and 44px on small screens.
+- Primary production targets should reach 40px desktop and 44px mobile; the static dense prototype
+  may retain compact secondary controls.
 
 ## Prototype boundary
 
 - The route is development-only and returns 404 in production.
 - The prototype is read-only and contains no API hooks.
-- Production work must reuse the existing `/studio` workspace/project index and
-  `/studio/workflow?workspace=&project=&workflow=` session rather than promoting or rewriting
-  prototype code as a second implementation.
+- Production integration must extend `/studio`, `WorkflowEditorSession`, the existing React Flow
+  editor/inspector, and Fleet inventory rather than promoting the prototype as a parallel source of truth.

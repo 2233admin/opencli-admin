@@ -1,5 +1,26 @@
 # QA
 
+## Latest product-granularity correction
+
+- Scope: Direction C only; formal Studio, WorkflowEditorSession, React Flow editor, inspector,
+  node catalog, and Fleet code were not modified.
+- Targeted lint: passed after stateful Workflow and execution-binding fixes.
+- TypeScript: passed after stateful Workflow and execution-binding fixes.
+- Production build: passed with Next.js 16.2.6.
+- Production isolation: passed on a fresh port — prototype returned 404 without its marker and
+  `/dashboard` returned 200.
+- Development route: returned 200 and includes the revised cross-device video project.
+- Independent audit: confirmed the formal `Workspace → Project → WorkflowAsset → WorkflowGraph → Node`
+  model and identified the previous Project/Workflow compression plus four Agent meanings.
+- Independent revision review: initially found contradictory binding selection, a non-functional
+  Workflow switcher, stale Paperclip-only-as-visualization decisions, a stale Workflow heading,
+  and historical QA conflicts. All findings were remediated; final re-review reported no
+  P0/P1/P2/P3 findings.
+- Browser automation gap: fresh click/visual checks could not run because the installed browser-control
+  runtime failed during initialization with `Cannot redefine property: process`. This is recorded as
+  a tooling gap; it is not reported as a passed visual check.
+- Manual review URL remains `http://127.0.0.1:8030/prototype/product-shell?variant=C`.
+
 ## Self-check
 
 - Command: `node C:\Users\Administrator\.codex\skills\design-pipeline\scripts\check-deps.cjs --json`
@@ -9,12 +30,18 @@
 - Missing optional skills: none
 - Fallbacks: GBrain is not enabled; decisions remain in this OpenSpec change.
 
-## Static checks
+## Historical QA before the latest correction
+
+The checks and visual observations below document earlier Direction C iterations. They are kept
+for traceability and are superseded where they conflict with “Latest product-granularity correction”.
+
+### Static checks
 
 - Lint: passed — targeted ESLint returned zero warnings and zero errors
 - Typecheck: passed — `pnpm exec tsc --noEmit`
 - Independent product-boundary review: passed after moving the global Inbox explanation out of the Linear work-item card and naming the right attention rail `Inbox · 需要处理`
-- Independent hierarchy review: passed with no P0/P1/P2 findings for Workspace → Project → Node ownership
+- Independent hierarchy review: passed for the earlier Workspace → Project → Node iteration; the
+  latest locked model adds the explicit Workflow layer.
 - Independent screen-boundary review: passed after two review findings were fixed — project cards
   now load project-specific nodes/metrics/work items, and the AttentionRail now loads project-specific
   Inbox, alert, run, owner, evidence, and draft-version context
@@ -25,16 +52,16 @@
 - Build: passed — `pnpm build` completed with Next.js 16.2.6
 - Production isolation: passed — the fresh production server returned 404 for `/prototype/product-shell?variant=C`, contained no prototype marker, and returned 200 for `/dashboard`
 
-## Browser / visual checks
+### Browser / visual checks
 
 - 390x812: passed for the earlier C structure; fresh revised-C metrics are an explicit gap because the selected browser exposes no viewport resize and rejected the isolated harness under its security policy
 - 500x812: passed for the earlier C structure as a narrow-stack visual check
 - 1280x720: passed for revised C in the in-app browser; `innerWidth=1280`, document/body scroll width `1265`, no horizontal overflow
 - Project-context switching: passed — cleaning loaded `v9 / RUN-3147`, notification loaded
   `v7 / RUN-6231`, and neither retained the previous project's node or run identifiers
-- Hierarchy semantics: passed in the DOM snapshot — workspace project cards and templates appear
-  before entry; active project lifecycle, project work items, project runs, and global Inbox appear
-  only in the separate project editor
+- Earlier hierarchy semantics: passed in the DOM snapshot for the then-current project cards,
+  template area, project work items, project runs, and global Inbox. The latest correction moves
+  templates into creation and removes permanent work/run/Inbox panels from the IDE.
 - 768x1024: static breakpoint inspection only; no separate screenshot retained
 - 1920x1080: optional
 
@@ -42,13 +69,13 @@ Observed desktop captures:
 
 - A keeps the workflow graph and debug trace dominant while retaining work, run, evidence, and approval context.
 - B makes the project queue and selected work item cockpit dominant; the workflow becomes execution context.
-- C now renders the existing two-step product structure as two distinct screens: the workspace
-  owns project cards, filters, create/import actions, templates, and shared-capability context;
-  opening one card leads to that project's node graph and lifecycle.
+- Earlier C rendered a two-screen structure with templates and shared-capability context on the
+  workspace. The latest C keeps the two-screen entry but reduces workspace to the project browser
+  and adds an explicit Workflow switcher inside the project IDE.
 - Acquisition, cleaning, knowledge, workflow, and delivery appear as separate project cards on
   the workspace page, not as a permanent sidebar inside the project editor.
-- Linear-style work items sit below the canvas and Paperclip-style attention, evidence, approval,
-  activity, and runtime visualization stay contextual rather than becoming the product hierarchy.
+- The latest granularity correction removes permanent work-item, runtime, evidence, and Inbox panels
+  from the IDE; they remain global or project-tab destinations instead of competing with the graph.
 - A/B remain available as builder-first and control-plane-first comparison extremes.
 
 Observed mobile capture:
@@ -107,10 +134,10 @@ Observed mobile capture:
 | --- | --- | --- | --- |
 | Prototype before integration | Validate structure before data contracts | Three switchable static directions | Prototype must not leak to production |
 | Existing tokens and components | Preserve product identity | No new design system or dependency | Existing token inconsistencies remain outside scope |
-| Workspace → Project → Node as baseline | Reuse the existing product route and ownership model | Direction C is selected | Cross-project relationships need a future production treatment |
+| Workspace → Project → Workflow → Node as baseline | Match the formal data model and keep the IDE task clear | Direction C is selected | Production route needs an explicit Workflow switcher |
 
 ## Final verdict
 
-- Verdict: ready for product review; the two-screen Direction C is the selected integration baseline
-- Blocking issues: none for the static-template implementation; only fresh 390 px automation remains environment-gated
-- Follow-up: extend the existing Studio and WorkflowEditorSession only after this project hierarchy is approved; do not create a parallel workspace implementation
+- Verdict: ready for product review; Direction C now demonstrates Project → Workflow selection and node execution binding
+- Blocking issues: none for static/build/production isolation; fresh browser interaction automation is tooling-gated
+- Follow-up: extend the existing Studio and WorkflowEditorSession only after this object model is approved; do not create a parallel workspace implementation
