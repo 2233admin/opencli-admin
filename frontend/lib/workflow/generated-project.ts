@@ -2,18 +2,31 @@ import type { GeneratedWorkflowSpec } from '@/lib/flow/types'
 
 import { parseWorkflowProject } from './schema'
 
-export function generatedSpecToWorkflowProject(spec: GeneratedWorkflowSpec, name: string) {
+type GeneratedProjectOptions = { deliveryEmail?: string }
+
+export function generatedSpecToWorkflowProject(spec: GeneratedWorkflowSpec, name: string, options: GeneratedProjectOptions = {}) {
+  const deliveryEmail = options.deliveryEmail?.trim()
+  const hasDeliveryNode = spec.nodes.some((node) => /通知|邮件|推送|发送/.test(`${node.label} ${node.description}`))
+  const nodes = deliveryEmail && !hasDeliveryNode
+    ? [...spec.nodes, { id: 'email-delivery', type: 'action', label: '发送邮件简报', description: `将项目简报发送到 ${deliveryEmail}`, config: deliveryEmail }]
+    : spec.nodes
+  const edges = deliveryEmail && !hasDeliveryNode && spec.nodes.length
+    ? [...spec.edges, { source: spec.nodes.at(-1)!.id, target: 'email-delivery', label: '交付简报' }]
+    : spec.edges
+
   return parseWorkflowProject({
     id: `agent-draft-${Date.now()}`,
     name,
     profile: 'intelligence',
     version: 1,
-    nodes: spec.nodes.map((node, index) => {
+    nodes: nodes.map((node, index) => {
       const mapped = mapGeneratedNode(node.type, node.label)
       return {
         id: node.id,
         ...mapped,
-        params: node.config ? { value: node.config } : {},
+        params: /通知|邮件|推送|发送/.test(node.label) && deliveryEmail
+          ? { channel: 'email', to: [deliveryEmail], value: node.config ?? deliveryEmail }
+          : node.config ? { value: node.config } : {},
         ui: {
           label: node.label,
           description: node.description,
@@ -21,7 +34,7 @@ export function generatedSpecToWorkflowProject(spec: GeneratedWorkflowSpec, name
         },
       }
     }),
-    edges: spec.edges.map((edge, index) => ({
+    edges: edges.map((edge, index) => ({
       id: `agent-edge-${index + 1}`,
       source: edge.source,
       target: edge.target,

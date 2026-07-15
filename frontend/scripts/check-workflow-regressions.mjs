@@ -98,6 +98,21 @@ test('agent-created project specs convert into the canonical persisted workflow 
   assert.ok(project.edges.every((edge) => project.nodes.some((node) => node.id === edge.source) && project.nodes.some((node) => node.id === edge.target)))
 })
 
+test('agent-created monitoring projects persist the P0 email delivery target', async () => {
+  const [{ generateWorkflowLocally }, { generatedSpecToWorkflowProject }] = await Promise.all([
+    importTypeScript('lib/flow/local-generate.ts'),
+    importTypeScript('lib/workflow/generated-project.ts'),
+  ])
+  const spec = generateWorkflowLocally('每天抓取多个网站并生成摘要')
+  const project = generatedSpecToWorkflowProject(spec, '邮件监测项目', { deliveryEmail: 'brief@example.com' })
+  const emailNode = project.nodes.find((node) => node.kind === 'notify')
+
+  assert.ok(emailNode)
+  assert.equal(emailNode.params.channel, 'email')
+  assert.deepEqual(emailNode.params.to, ['brief@example.com'])
+  assert.ok(project.edges.some((edge) => edge.target === emailNode.id))
+})
+
 test('the production studio adopts the selected project-workspace concept with real data', async () => {
   const [studio, workflowPage, projectHeader] = await Promise.all([
     readSource('app/(app)/studio/page.tsx'),
