@@ -24,6 +24,7 @@ from backend.api.v1 import (
     skill_record,
     skills,
     sources,
+    studio,
     system,
     tasks,
     webhooks,
@@ -47,6 +48,7 @@ v1_router.include_router(plans.router)
 v1_router.include_router(presets.router)
 v1_router.include_router(providers.router)
 v1_router.include_router(sources.router)
+v1_router.include_router(studio.router)
 v1_router.include_router(tasks.router)
 v1_router.include_router(records.router)
 v1_router.include_router(schedules.router)

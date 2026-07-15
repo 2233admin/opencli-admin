@@ -49,6 +49,7 @@ export default function StudioPage() {
   const [importProjectId, setImportProjectId] = useState('')
   const [importProjectName, setImportProjectName] = useState('')
   const importInputRef = useRef<HTMLInputElement>(null)
+  const createIntentHandled = useRef(false)
   const projects = useWorkspaceProjects(workspaceId)
   const createProject = useCreateWorkspaceProject()
   const createWorkflow = useCreateProjectWorkflow()
@@ -59,6 +60,17 @@ export default function StudioPage() {
     const requestedWorkspace = workspaces.data.find((workspace) => workspace.id === requestedWorkspaceId)
     setWorkspaceId(requestedWorkspace?.id ?? workspaces.data[0].id)
   }, [workspaceId, workspaces.data])
+
+  useEffect(() => {
+    if (!workspaceId || createIntentHandled.current) return
+    if (new URLSearchParams(window.location.search).get('create') === 'workflow') {
+      createIntentHandled.current = true
+      openCreate('collection-to-consumption')
+      const url = new URL(window.location.href)
+      url.searchParams.delete('create')
+      window.history.replaceState(window.history.state, '', url)
+    }
+  }, [workspaceId])
 
   const visibleProjects = useMemo(() => {
     const query = search.trim().toLowerCase()

@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { motion } from 'motion/react'
 import { usePathname } from 'next/navigation'
 
-import { CREATE_WORK_ITEM, NAV_GROUPS, type NavItem } from '@/lib/navigation'
+import { NAV_GROUPS, type NavItem } from '@/lib/navigation'
 import { Ripple } from '@/components/motion/ripple'
 import {
   Sidebar,
@@ -42,22 +42,6 @@ export function AppSidebar() {
             <span className="truncate text-xs text-muted-foreground leading-tight">工作与执行控制台</span>
           </div>
         </div>
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              tooltip={CREATE_WORK_ITEM.label}
-              size="lg"
-              className="bg-primary text-primary-foreground shadow-sm hover:bg-primary/90 hover:text-primary-foreground active:bg-primary/85 active:text-primary-foreground"
-              render={<Link href={CREATE_WORK_ITEM.href} />}
-              onClick={() => {
-                if (isMobile) setOpenMobile(false)
-              }}
-            >
-              <CREATE_WORK_ITEM.icon />
-              <span className="flex-1 truncate font-semibold">{CREATE_WORK_ITEM.label}</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
       </SidebarHeader>
 
       <SidebarContent>

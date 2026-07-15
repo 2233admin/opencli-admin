@@ -32,7 +32,7 @@ test('persistent application chrome stays outside the routed animation boundary'
   assert.match(shell, /className="[^"]*relative[^"]*z-0[^"]*overflow-x-clip[^"]*bg-background[^"]*"/)
 })
 
-test('sidebar keeps the task-first control-plane navigation contract', async () => {
+test('sidebar keeps the build-run-manage navigation contract without a global create shortcut', async () => {
   const [navigation, sidebar] = await Promise.all([
     read('lib/navigation.ts'),
     read('components/shell/app-sidebar.tsx'),
@@ -56,9 +56,12 @@ test('sidebar keeps the task-first control-plane navigation contract', async () 
   assert.match(navigation, /match: \['\/sources', '\/schedules'\]/)
   assert.match(navigation, /match: \['\/nodes', '\/workers'\]/)
   assert.match(navigation, /match: \['\/providers', '\/control\/actions'\]/)
-  assert.match(navigation, /CREATE_WORK_ITEM[\s\S]*href: '\/studio\/workflow'/)
-  assert.match(sidebar, /CREATE_WORK_ITEM\.label/)
-  assert.match(sidebar, /render=\{<Link href=\{CREATE_WORK_ITEM\.href\} \/>\}/)
+  for (const group of ['工作台', '构建', '运行', '管理']) {
+    assert.match(navigation, new RegExp(`label: '${group}'`))
+  }
+  assert.doesNotMatch(navigation, /CREATE_WORK_ITEM/)
+  assert.doesNotMatch(sidebar, /CREATE_WORK_ITEM/)
+  assert.doesNotMatch(sidebar, /新建工作/)
 })
 
 test('SSGOI boundary is pathname-keyed, interruptible, and reduced-motion safe', async () => {

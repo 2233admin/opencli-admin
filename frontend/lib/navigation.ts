@@ -6,7 +6,6 @@ import {
   LayoutDashboard,
   PanelsTopLeft,
   ShieldCheck,
-  Sparkles,
   SquareCheckBig,
   Workflow,
   type LucideIcon,
@@ -25,29 +24,30 @@ export type NavGroup = {
 }
 
 /**
- * Task-first IA inspired by the control-plane model: start with work that
- * needs attention, then move through execution, outcomes, and governance.
+ * Action-oriented IA: orient in the workbench, build automations, observe
+ * execution, then manage the platform.
  * Related resource routes remain available through each destination's tabs.
  */
 export const NAV_GROUPS: NavGroup[] = [
   {
-    label: null,
+    label: '工作台',
     items: [
       { href: '/dashboard', label: '概览', icon: LayoutDashboard },
       { href: '/inbox', label: '待我处理', icon: Inbox, match: ['/inbox', '/notifications'] },
     ],
   },
   {
-    label: '工作',
+    label: '构建',
     items: [
       { href: '/studio', label: '工作区', icon: PanelsTopLeft, match: ['/studio', '/canvas'] },
-      { href: '/tasks', label: '工作项', icon: SquareCheckBig },
+      { href: '/sources', label: '自动化', icon: Workflow, match: ['/sources', '/schedules'] },
+      { href: '/agents', label: 'Agent 团队', icon: Bot, match: ['/agents', '/skills'] },
     ],
   },
   {
-    label: '执行与成果',
+    label: '运行',
     items: [
-      { href: '/sources', label: '自动化', icon: Workflow, match: ['/sources', '/schedules'] },
+      { href: '/tasks', label: '工作项', icon: SquareCheckBig },
       {
         href: '/nodes',
         label: '执行资源',
@@ -55,11 +55,10 @@ export const NAV_GROUPS: NavGroup[] = [
         match: ['/nodes', '/workers'],
       },
       { href: '/records', label: '成果与数据', icon: Database },
-      { href: '/agents', label: 'Agent 团队', icon: Bot, match: ['/agents', '/skills'] },
     ],
   },
   {
-    label: '系统',
+    label: '管理',
     items: [
       {
         href: '/providers',
@@ -70,12 +69,6 @@ export const NAV_GROUPS: NavGroup[] = [
     ],
   },
 ]
-
-export const CREATE_WORK_ITEM: NavItem = {
-  href: '/studio/workflow',
-  label: '新建工作',
-  icon: Sparkles,
-}
 
 /** Labels for every route (incl. tab siblings) used by breadcrumbs. */
 export const ROUTE_LABELS: Record<string, string> = {
