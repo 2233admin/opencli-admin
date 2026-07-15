@@ -17,6 +17,14 @@ export function useWorkspaceProjects(workspaceId: string | null) {
   })
 }
 
+export function useProjectWorkflows(workspaceId: string | null, projectId: string | null) {
+  return useQuery({
+    queryKey: ['project-workflows', workspaceId, projectId],
+    queryFn: () => api.listProjectWorkflows(workspaceId as string, projectId as string),
+    enabled: !!workspaceId && !!projectId,
+  })
+}
+
 export function useCreateWorkspaceProject() {
   const queryClient = useQueryClient()
   return useMutation({

@@ -12,10 +12,15 @@ export function useWorkflowCapabilities(enabled = true) {
     cachedCapabilities,
   )
   const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(enabled && cachedCapabilities === null)
 
   useEffect(() => {
-    if (!enabled) return
+    if (!enabled) {
+      setLoading(false)
+      return
+    }
     let cancelled = false
+    setLoading(cachedCapabilities === null)
     const request = inFlight ?? fetchWorkflowCapabilities()
     inFlight = request
     request
@@ -33,11 +38,12 @@ export function useWorkflowCapabilities(enabled = true) {
       })
       .finally(() => {
         if (inFlight === request) inFlight = null
+        if (!cancelled) setLoading(false)
       })
     return () => {
       cancelled = true
     }
   }, [enabled])
 
-  return { capabilities, error }
+  return { capabilities, error, loading }
 }

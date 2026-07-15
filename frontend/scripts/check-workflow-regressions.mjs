@@ -83,6 +83,33 @@ test('node workflow lives inside workspace while the legacy canvas route redirec
   assert.doesNotMatch(navigation, /BUILD_WORKFLOW_PATH|\/build\/workflow/)
 })
 
+test('the production studio adopts the selected project-workspace concept with real data', async () => {
+  const [studio, workflowPage, projectHeader] = await Promise.all([
+    readSource('app/(app)/studio/page.tsx'),
+    readSource('app/(app)/studio/workflow/page.tsx'),
+    readSource('components/studio/workflow-project-header.tsx'),
+  ])
+
+  assert.match(studio, /useMyWorkspaces\(\)/)
+  assert.match(studio, /useWorkspaceProjects\(workspaceId\)/)
+  assert.match(studio, /title="项目"/)
+  assert.match(studio, /aria-label="项目浏览工具栏"/)
+  assert.match(studio, /aria-label="项目类型筛选"/)
+  assert.match(studio, /\{visibleProjects\.length\} 个项目/)
+  assert.match(studio, /project\.updated_at/)
+  assert.match(studio, /\/studio\/workflow\?workspace=\$\{workspaceId\}&project=\$\{project\.id\}/)
+  assert.doesNotMatch(studio, /ProductShellPrototype|PrototypeNotice|workspaceProjects|forceStandalone/)
+  assert.match(workflowPage, /<WorkflowProjectHeader\s*\/>/)
+  assert.match(workflowPage, /<WorkflowEditorSession\s*\/>/)
+  assert.match(projectHeader, /useWorkspaceProjects\(workspaceId\)/)
+  assert.match(projectHeader, /useProjectWorkflows\(workspaceId, projectId\)/)
+  assert.match(projectHeader, /`\/studio\?workspace=\$\{workspaceId\}`/)
+  assert.match(projectHeader, /aria-label="项目生命周期"/)
+  assert.match(projectHeader, /aria-label="选择工作流"/)
+  assert.match(projectHeader, /正式节点系统/)
+  assert.doesNotMatch(projectHeader, /PrototypeNotice|forceStandalone|comparisonProfiles/)
+})
+
 test('the product-shell prototype reuses the canonical editor without project draft mutations', async () => {
   const [prototype, session] = await Promise.all([
     readSource('components/prototype/product-shell-prototype.tsx'),
@@ -96,6 +123,19 @@ test('the product-shell prototype reuses the canonical editor without project dr
   for (const duplicatePrototypeModel of ['bindingOptions', 'bindingSelections', 'DataDebugDock', 'NodeInspector']) {
     assert.ok(!prototype.includes(duplicatePrototypeModel), `${duplicatePrototypeModel} must not return to Direction C`)
   }
+})
+
+test('workflow validation waits for the runtime capability catalog', async () => {
+  const [capabilitiesHook, session] = await Promise.all([
+    readSource('lib/workflow/use-workflow-capabilities.ts'),
+    readSource('components/flow/workflow-editor-session.tsx'),
+  ])
+
+  assert.match(capabilitiesHook, /return \{ capabilities, error, loading \}/)
+  assert.match(session, /const \{ error: capabilityError, loading: capabilityLoading \} = useWorkflowCapabilities\(true\)/)
+  assert.match(session, /if \(capabilityLoading\) \{[\s\S]*运行能力目录仍在加载/)
+  assert.match(session, /disabled=\{capabilityLoading \|\| Boolean\(capabilityError\)/)
+  assert.match(session, /capabilityLoading \? '正在加载运行能力目录'/)
 })
 
 test('workflow adopts the Dify-style add-node path while preserving the four-layer hierarchy', async () => {

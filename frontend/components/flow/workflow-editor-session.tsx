@@ -8,7 +8,8 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { ErrorBoundary } from '@/components/error-boundary'
 import { loader, Matrix } from '@/components/unlumen-ui/matrix'
-import { getProjectWorkflowDraft, listProjectWorkflows, publishProjectWorkflow, updateProjectWorkflowDraft, validateProjectWorkflowDraft } from '@/lib/api/endpoints'
+import { getProjectWorkflowDraft, publishProjectWorkflow, updateProjectWorkflowDraft, validateProjectWorkflowDraft } from '@/lib/api/endpoints'
+import { useProjectWorkflows } from '@/lib/api/hooks'
 import { useFlowStore } from '@/lib/flow/store'
 import { useWorkflowCapabilities } from '@/lib/workflow/use-workflow-capabilities'
 import { parseWorkflowProject, type WorkflowProject, type WorkflowProjectNode } from '@/lib/workflow/schema'
@@ -39,6 +40,7 @@ export function WorkflowEditorSession({ forceStandalone = false }: WorkflowEdito
   const workspaceId = forceStandalone ? null : params.get('workspace')
   const projectId = forceStandalone ? null : params.get('project')
   const requestedWorkflowId = forceStandalone ? null : params.get('workflow')
+  const projectWorkflows = useProjectWorkflows(workspaceId, projectId)
   const workflowProject = useFlowStore((state) => state.workflowProject)
   const importWorkflowProject = useFlowStore((state) => state.importWorkflowProject)
   const [workflowId, setWorkflowId] = useState<string | null>(null)
@@ -52,7 +54,7 @@ export function WorkflowEditorSession({ forceStandalone = false }: WorkflowEdito
   const lastSavedFingerprint = useRef<string | null>(null)
   const saveQueuePromise = useRef<Promise<void> | null>(null)
   const saveBlocked = useRef(false)
-  const { error: capabilityError } = useWorkflowCapabilities(true)
+  const { error: capabilityError, loading: capabilityLoading } = useWorkflowCapabilities(true)
   const standalone = !workspaceId || !projectId
 
   const saveDraft = useCallback((graph: typeof workflowProject) => {
@@ -89,6 +91,7 @@ export function WorkflowEditorSession({ forceStandalone = false }: WorkflowEdito
 
   useEffect(() => {
     if (!workspaceId || !projectId) return
+    if (!requestedWorkflowId && projectWorkflows.isLoading) return
     loaded.current = false
     revision.current = null
     setSavedRevision(null)
@@ -98,7 +101,7 @@ export function WorkflowEditorSession({ forceStandalone = false }: WorkflowEdito
     setDocumentState('loading')
     ;(async () => {
       try {
-        const resolvedId = requestedWorkflowId ?? (await listProjectWorkflows(workspaceId, projectId))[0]?.id
+        const resolvedId = requestedWorkflowId ?? projectWorkflows.data?.[0]?.id
         if (!resolvedId) throw new Error('项目中没有可编辑的工作流')
         const draft = await getProjectWorkflowDraft(workspaceId, projectId, resolvedId)
         const graph = parseWorkflowProject(draft.graph)
@@ -114,7 +117,7 @@ export function WorkflowEditorSession({ forceStandalone = false }: WorkflowEdito
         toast.error(reason instanceof Error ? reason.message : '工作流加载失败')
       }
     })()
-  }, [importWorkflowProject, projectId, requestedWorkflowId, workspaceId])
+  }, [importWorkflowProject, projectId, projectWorkflows.data, projectWorkflows.isLoading, requestedWorkflowId, workspaceId])
 
   useEffect(() => {
     if (!loaded.current || !workspaceId || !projectId || !workflowId) return
@@ -133,6 +136,10 @@ export function WorkflowEditorSession({ forceStandalone = false }: WorkflowEdito
 
   async function validateDraft() {
     if (!workspaceId || !projectId || !workflowId) return
+    if (capabilityLoading) {
+      toast.info('运行能力目录仍在加载，请稍候再验证')
+      return
+    }
     if (capabilityError) {
       toast.error('运行能力目录不可用，当前 Draft 不能验证或发布')
       return
@@ -207,8 +214,8 @@ export function WorkflowEditorSession({ forceStandalone = false }: WorkflowEdito
           </div>
           {documentState === 'conflict' ? <Button size="sm" variant="outline" onClick={() => window.location.reload()}><RefreshCw className="size-3.5" />重新加载</Button> : null}
           {documentState === 'error' ? <Button size="sm" variant="outline" onClick={() => void saveDraft(workflowProject)}><RefreshCw className="size-3.5" />重试保存</Button> : null}
-          <Button size="sm" variant="outline" onClick={validateDraft} disabled={Boolean(capabilityError) || releaseState === 'validating' || releaseState === 'publishing'} title={capabilityError ? '运行能力目录不可用' : undefined}>
-            {releaseState === 'validating' ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}
+          <Button size="sm" variant="outline" onClick={validateDraft} disabled={capabilityLoading || Boolean(capabilityError) || releaseState === 'validating' || releaseState === 'publishing'} title={capabilityLoading ? '正在加载运行能力目录' : capabilityError ? '运行能力目录不可用' : undefined}>
+            {capabilityLoading || releaseState === 'validating' ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}
             验证
           </Button>
           <Button size="sm" onClick={publishDraft} disabled={releaseState !== 'validated'}>

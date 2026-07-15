@@ -10,13 +10,12 @@ import { PageContainer } from '@/components/shell/page-container'
 import { ErrorState } from '@/components/shell/data-states'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Dock } from '@/components/unlumen-ui/dock'
 import { useCreateProjectWorkflow, useCreateWorkspaceProject, useMyWorkspaces, useWorkspaceProjects } from '@/lib/api/hooks'
+import { formatRelative } from '@/lib/format'
 import { PACKAGED_WORKFLOW_PROJECT } from '@/lib/workflow/collection-pipeline'
 import { translateWorkflowDsl, type WorkflowImportResult } from '@/lib/workflow/codec'
 import { parseWorkflowProject } from '@/lib/workflow/schema'
@@ -28,13 +27,20 @@ const TEMPLATES = [
   { id: 'collection-to-consumption', title: '采集到消费完整链路', description: '采集、处理、决策、发送与运行观测的完整模板。', icon: Sparkles, tone: 'bg-orange-500/10 text-orange-500' },
 ] as const
 
+const PROJECT_TYPE_FILTERS = [
+  { value: 'all', label: '全部', icon: FolderKanban },
+  { value: 'collect', label: '采集', icon: Database },
+  { value: 'process', label: '处理', icon: Blocks },
+  { value: 'deliver', label: '发送', icon: Send },
+  { value: 'full', label: '完整链路', icon: Sparkles },
+] as const
+
 export default function StudioPage() {
   const router = useRouter()
   const workspaces = useMyWorkspaces()
   const [workspaceId, setWorkspaceId] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [type, setType] = useState('all')
-  const [tag, setTag] = useState('all')
   const [creator, setCreator] = useState('all')
   const [sort, setSort] = useState('updated-desc')
   const [createTemplate, setCreateTemplate] = useState<string | null>(null)
@@ -48,7 +54,10 @@ export default function StudioPage() {
   const createWorkflow = useCreateProjectWorkflow()
 
   useEffect(() => {
-    if (!workspaceId && workspaces.data?.length) setWorkspaceId(workspaces.data[0].id)
+    if (workspaceId || !workspaces.data?.length) return
+    const requestedWorkspaceId = new URLSearchParams(window.location.search).get('workspace')
+    const requestedWorkspace = workspaces.data.find((workspace) => workspace.id === requestedWorkspaceId)
+    setWorkspaceId(requestedWorkspace?.id ?? workspaces.data[0].id)
   }, [workspaceId, workspaces.data])
 
   const visibleProjects = useMemo(() => {
@@ -56,7 +65,7 @@ export default function StudioPage() {
     const result = (projects.data ?? []).filter((project) => {
       const haystack = `${project.name} ${project.description ?? ''} ${project.slug}`.toLowerCase()
       const projectType = inferProjectType(haystack)
-      return (!query || haystack.includes(query)) && (type === 'all' || projectType === type) && (tag === 'all' || projectType === tag) && (creator === 'all' || project.created_by_user_id === creator)
+      return (!query || haystack.includes(query)) && (type === 'all' || projectType === type) && (creator === 'all' || project.created_by_user_id === creator)
     })
     return result.sort((left, right) => {
       if (sort === 'name') return left.name.localeCompare(right.name, 'zh-CN')
@@ -64,7 +73,7 @@ export default function StudioPage() {
       const direction = sort === 'created-asc' ? 1 : -1
       return left[field].localeCompare(right[field]) * direction
     })
-  }, [creator, projects.data, search, sort, tag, type])
+  }, [creator, projects.data, search, sort, type])
 
   const creators = useMemo(() => Array.from(new Set((projects.data ?? []).map((project) => project.created_by_user_id))), [projects.data])
 
@@ -136,9 +145,9 @@ export default function StudioPage() {
 
   return (
     <PageContainer
-      title="工作区"
-      eyebrow="Workspace"
-      description="创建和管理数据节点应用。"
+      title="项目"
+      eyebrow="Workspace · Projects"
+      description="从真实工作区进入项目，在正式节点系统中编排、验证和发布工作流。"
       className="max-w-none"
       actions={
         <DropdownMenu>
@@ -152,40 +161,33 @@ export default function StudioPage() {
       }
     >
       <input ref={importInputRef} type="file" accept=".json,.yml,.yaml,application/json,text/yaml" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importDsl(file) }} />
-      <div className="flex flex-wrap items-center gap-2 rounded-2xl border bg-background/75 p-1.5 shadow-sm backdrop-blur-xl">
-        <Dock
-          className="border-0 bg-transparent p-0 shadow-none hover:shadow-none"
-          iconSize={32}
-          magnification={1.14}
-          distance={70}
-          borderRadius={10}
-          items={[
-            { label: '全部类型', icon: <FolderKanban />, active: type === 'all', onClick: () => setType('all') },
-            { label: '采集', icon: <Database />, active: type === 'collect', onClick: () => setType('collect') },
-            { label: '处理', icon: <Blocks />, active: type === 'process', onClick: () => setType('process') },
-            { label: '发送', icon: <Send />, active: type === 'deliver', onClick: () => setType('deliver') },
-            { label: '完整链路', icon: <Sparkles />, active: type === 'full', onClick: () => setType('full'), separator: true },
-          ]}
-        />
-        <Select value={workspaceId ?? ''} onValueChange={(value) => setWorkspaceId(value || null)}>
-          <SelectTrigger className="rounded-xl"><SelectValue placeholder="工作区" /></SelectTrigger>
-          <SelectContent>{(workspaces.data ?? []).map((workspace) => <SelectItem key={workspace.id} value={workspace.id}>{workspace.name}</SelectItem>)}</SelectContent>
-        </Select>
-        <Select value={tag} onValueChange={(value) => setTag(value ?? 'all')}>
-          <SelectTrigger className="rounded-xl"><SelectValue>{tag === 'all' ? '标签' : TYPE_LABELS[tag]}</SelectValue></SelectTrigger>
-          <SelectContent><SelectItem value="all">全部标签</SelectItem><SelectItem value="collect">采集</SelectItem><SelectItem value="process">处理</SelectItem><SelectItem value="deliver">发送</SelectItem><SelectItem value="full">完整链路</SelectItem></SelectContent>
-        </Select>
-        <Select value={creator} onValueChange={(value) => setCreator(value ?? 'all')}>
-          <SelectTrigger className="rounded-xl"><SelectValue>{creator === 'all' ? '创建者' : creator.slice(0, 8)}</SelectValue></SelectTrigger>
-          <SelectContent><SelectItem value="all">全部创建者</SelectItem>{creators.map((id) => <SelectItem key={id} value={id}>{id.slice(0, 8)}</SelectItem>)}</SelectContent>
-        </Select>
-        <Select value={sort} onValueChange={(value) => setSort(value ?? 'updated-desc')}>
-          <SelectTrigger className="rounded-xl"><SelectValue>{SORT_LABELS[sort]}</SelectValue></SelectTrigger>
-          <SelectContent><SelectItem value="updated-desc">最近修改</SelectItem><SelectItem value="created-asc">最早创建</SelectItem><SelectItem value="name">名称</SelectItem></SelectContent>
-        </Select>
-        <div className="relative min-w-52 flex-1 sm:max-w-72">
-          <Search className="absolute left-3 top-2.5 size-4 text-muted-foreground" />
-          <Input value={search} onChange={(event) => setSearch(event.target.value)} className="pl-9" placeholder="搜索项目" />
+      <div className="space-y-3 border-b pb-4" aria-label="项目浏览工具栏">
+        <div className="flex flex-wrap items-center gap-2">
+          <Select value={workspaceId ?? ''} onValueChange={(value) => setWorkspaceId(value || null)}>
+            <SelectTrigger className="min-w-48 rounded-lg border-0 bg-muted/60 shadow-none"><SelectValue placeholder="选择工作区" /></SelectTrigger>
+            <SelectContent>{(workspaces.data ?? []).map((workspace) => <SelectItem key={workspace.id} value={workspace.id}>{workspace.name}</SelectItem>)}</SelectContent>
+          </Select>
+          <div className="relative ml-auto min-w-52 flex-1 sm:max-w-80">
+            <Search className="pointer-events-none absolute left-3 top-2.5 size-4 text-muted-foreground" aria-hidden />
+            <Input value={search} onChange={(event) => setSearch(event.target.value)} className="rounded-lg pl-9" placeholder="搜索名称、描述或标识" />
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5" aria-label="项目类型筛选">
+          <span className="px-1 text-[10px] text-muted-foreground">快速分类</span>
+          {PROJECT_TYPE_FILTERS.map(({ value, label, icon: Icon }) => (
+            <Button key={value} type="button" size="sm" variant={type === value ? 'secondary' : 'ghost'} className="h-8 rounded-lg px-2.5 text-xs" onClick={() => setType(value)}>
+              <Icon className="size-3.5" aria-hidden />{label}
+            </Button>
+          ))}
+          <span className="mx-1 hidden h-4 w-px bg-border sm:block" aria-hidden />
+          <Select value={creator} onValueChange={(value) => setCreator(value ?? 'all')}>
+            <SelectTrigger className="h-8 rounded-lg border-0 bg-transparent text-xs shadow-none"><SelectValue>{creator === 'all' ? '创建者' : creator.slice(0, 8)}</SelectValue></SelectTrigger>
+            <SelectContent><SelectItem value="all">全部创建者</SelectItem>{creators.map((id) => <SelectItem key={id} value={id}>{id.slice(0, 8)}</SelectItem>)}</SelectContent>
+          </Select>
+          <Select value={sort} onValueChange={(value) => setSort(value ?? 'updated-desc')}>
+            <SelectTrigger className="h-8 rounded-lg border-0 bg-transparent text-xs shadow-none sm:ml-auto"><SelectValue>{SORT_LABELS[sort]}</SelectValue></SelectTrigger>
+            <SelectContent><SelectItem value="updated-desc">最近修改</SelectItem><SelectItem value="created-asc">最早创建</SelectItem><SelectItem value="name">名称</SelectItem></SelectContent>
+          </Select>
         </div>
       </div>
 
@@ -200,15 +202,20 @@ export default function StudioPage() {
       ) : projects.isLoading ? (
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">{Array.from({ length: 4 }).map((_, index) => <div key={index} className="h-40 animate-pulse rounded-xl bg-muted" />)}</div>
       ) : visibleProjects.length ? (
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <section aria-label="项目列表">
+          <div className="mb-3 flex items-center justify-between gap-3 text-xs"><span className="font-medium">{visibleProjects.length} 个项目</span><span className="text-muted-foreground">{SORT_LABELS[sort]}</span></div>
+          <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
           {visibleProjects.map((project) => (
-            <Link key={project.id} href={`/studio/workflow?workspace=${workspaceId}&project=${project.id}`} className="group rounded-xl border bg-card p-4 transition-[border-color,transform] hover:-translate-y-0.5 hover:border-foreground/20">
-              <div className="flex items-start justify-between gap-3"><div className="grid size-10 place-items-center rounded-lg bg-primary/10 text-primary"><FolderKanban className="size-5" /></div><Badge variant="outline">{project.slug}</Badge></div>
-              <h2 className="mt-5 truncate text-sm font-medium">{project.name}</h2>
+            <Link key={project.id} href={`/studio/workflow?workspace=${workspaceId}&project=${project.id}`} className="group min-w-0 rounded-xl border border-border/80 bg-card/30 p-3.5 transition-[border-color,background-color,transform] hover:-translate-y-0.5 hover:border-foreground/25 hover:bg-card/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
+              <div className="flex items-start justify-between gap-3"><div className="grid size-9 place-items-center rounded-lg bg-muted text-muted-foreground transition-colors group-hover:text-foreground"><FolderKanban className="size-4" aria-hidden /></div><Badge variant={project.archived ? 'secondary' : 'outline'}>{project.archived ? '已归档' : project.slug}</Badge></div>
+              <div className="mt-4 flex items-center gap-2"><span className="eyebrow-mono">{TYPE_LABELS[inferProjectType(`${project.name} ${project.description ?? ''} ${project.slug}`)]}</span><span className="truncate font-mono text-[10px] text-muted-foreground">{project.slug}</span></div>
+              <h2 className="mt-1 truncate text-sm font-semibold">{project.name}</h2>
               <p className="mt-1 line-clamp-2 min-h-10 text-xs leading-5 text-muted-foreground">{project.description || '数据节点项目'}</p>
+              <div className="mt-3 flex items-center justify-between border-t border-border/70 pt-2.5 text-[10px] text-muted-foreground"><span>创建者 {project.created_by_user_id.slice(0, 8)}</span><span>{formatRelative(project.updated_at)}</span></div>
             </Link>
           ))}
-        </div>
+          </div>
+        </section>
       ) : (
         <div className="flex min-h-[420px] items-center justify-center rounded-xl border border-dashed bg-muted/10 px-4">
           <div className="w-full max-w-xl text-center">
@@ -225,17 +232,6 @@ export default function StudioPage() {
         </div>
       )}
 
-      <section>
-        <h2 className="text-base font-medium">通过模板学习 OpenCLI</h2>
-        <p className="mt-1 text-xs text-muted-foreground">按采集、处理、发送与完整链路分层复用。</p>
-        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          {TEMPLATES.map((template) => {
-            const Icon = template.icon
-            const content = <Card className="h-full transition-colors hover:border-foreground/20"><CardContent className="p-4"><div className={`grid size-10 place-items-center rounded-xl ${template.tone}`}><Icon className="size-5" /></div><h3 className="mt-4 text-sm font-medium">{template.title}</h3><p className="mt-1 text-xs leading-5 text-muted-foreground">{template.description}</p></CardContent></Card>
-            return workspaceId ? <button key={template.id} type="button" className="text-left" onClick={() => openCreate(template.id)}>{content}</button> : <div key={template.id} className="opacity-60">{content}</div>
-          })}
-        </div>
-      </section>
       <Dialog open={createTemplate !== null} onOpenChange={(open) => !open && setCreateTemplate(null)}>
         <DialogContent>
           <DialogHeader><DialogTitle>创建数据节点项目</DialogTitle><DialogDescription>项目和第一份 WorkflowDraft 会同时保存到当前工作区。</DialogDescription></DialogHeader>
