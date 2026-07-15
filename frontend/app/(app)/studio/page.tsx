@@ -16,16 +16,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useCreateProjectWorkflow, useCreateWorkspaceProject, useMyWorkspaces, useWorkspaceProjects } from '@/lib/api/hooks'
 import { formatRelative } from '@/lib/format'
-import { PACKAGED_WORKFLOW_PROJECT } from '@/lib/workflow/collection-pipeline'
 import { translateWorkflowDsl, type WorkflowImportResult } from '@/lib/workflow/codec'
-import { parseWorkflowProject } from '@/lib/workflow/schema'
-
-const TEMPLATES = [
-  { id: 'collect', title: '实时网站采集器', description: '把网站或 CLI 封装为持续运行的数据入口。', icon: Database, tone: 'bg-cyan-500/10 text-cyan-500' },
-  { id: 'process', title: '结构化清洗管线', description: '标准化、去重、结构化与 Agent 增强处理。', icon: Blocks, tone: 'bg-violet-500/10 text-violet-500' },
-  { id: 'deliver', title: '数据消费 API', description: '将产物发送到 API、数据库、消息系统或其他 AI。', icon: Send, tone: 'bg-emerald-500/10 text-emerald-500' },
-  { id: 'collection-to-consumption', title: '采集到消费完整链路', description: '采集、处理、决策、发送与运行观测的完整模板。', icon: Sparkles, tone: 'bg-orange-500/10 text-orange-500' },
-] as const
+import { studioGraphForTemplate, studioSlug } from '@/lib/workflow/studio-templates'
 
 const PROJECT_TYPE_FILTERS = [
   { value: 'all', label: '全部', icon: FolderKanban },
@@ -65,7 +57,8 @@ export default function StudioPage() {
     if (!workspaceId || createIntentHandled.current) return
     if (new URLSearchParams(window.location.search).get('create') === 'workflow') {
       createIntentHandled.current = true
-      openCreate('collection-to-consumption')
+      setCreateTemplate('collection-to-consumption')
+      setProjectName('采集到消费完整链路')
       const url = new URL(window.location.href)
       url.searchParams.delete('create')
       window.history.replaceState(window.history.state, '', url)
@@ -89,22 +82,17 @@ export default function StudioPage() {
 
   const creators = useMemo(() => Array.from(new Set((projects.data ?? []).map((project) => project.created_by_user_id))), [projects.data])
 
-  function openCreate(template: string) {
-    setCreateTemplate(template)
-    setProjectName(template === 'blank' ? '未命名项目' : TEMPLATES.find((item) => item.id === template)?.title ?? '数据节点项目')
-  }
-
   async function submitCreate() {
     if (!workspaceId || !createTemplate || !projectName.trim()) return
     try {
       const project = await createProject.mutateAsync({
         workspaceId,
-        data: { name: projectName.trim(), slug: `${slugify(projectName)}-${Date.now().toString(36)}`, description: '由工作区模板创建' },
+        data: { name: projectName.trim(), slug: `${studioSlug(projectName)}-${Date.now().toString(36)}`, description: '由工作区模板创建' },
       })
       const workflow = await createWorkflow.mutateAsync({
         workspaceId,
         projectId: project.id,
-        data: { name: projectName.trim(), description: '工作区默认工作流', graph: graphForTemplate(createTemplate, projectName.trim()) },
+        data: { name: projectName.trim(), description: '工作区默认工作流', graph: studioGraphForTemplate(createTemplate as Parameters<typeof studioGraphForTemplate>[0], projectName.trim()) },
       })
       setCreateTemplate(null)
       toast.success('项目与工作流已创建')
@@ -137,7 +125,7 @@ export default function StudioPage() {
             workspaceId,
             data: {
               name: importProjectName.trim(),
-              slug: `${slugify(importProjectName)}-${Date.now().toString(36)}`,
+              slug: `${studioSlug(importProjectName)}-${Date.now().toString(36)}`,
               description: `${pendingImport.format} DSL 导入`,
             },
           })).id
@@ -165,8 +153,8 @@ export default function StudioPage() {
         <DropdownMenu>
           <DropdownMenuTrigger render={<Button disabled={!workspaceId} />}><Plus className="size-4" />创建<ChevronDown className="size-3.5" /></DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-48">
-            <DropdownMenuItem onClick={() => openCreate('collection-to-consumption')}>从模板创建</DropdownMenuItem>
-            <DropdownMenuItem onClick={() => openCreate('blank')}>创建空白项目</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => router.push(`/studio/templates?workspace=${workspaceId}`)}>从模板创建</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => router.push(`/studio/new?workspace=${workspaceId}`)}>创建空白项目</DropdownMenuItem>
             <DropdownMenuItem onClick={() => importInputRef.current?.click()}><FileUp className="size-4" />导入 DSL</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -235,8 +223,8 @@ export default function StudioPage() {
             <h2 className="mt-4 text-sm font-medium">创建你的第一个数据应用</h2>
             <p className="mt-1 text-xs text-muted-foreground">从成熟模板开始、创建空白节点图，或者导入 Dify / n8n DSL。</p>
             <div className="mt-5 grid gap-2 text-left">
-              <CreateChoice title="从应用模板创建" description="选择预设的数据链路，最快体验 OpenCLI。" onClick={workspaceId ? () => openCreate('collection-to-consumption') : undefined} icon={Sparkles} />
-              <CreateChoice title="创建空白项目" description="从节点画布开始，逐步搭建自己的执行系统。" onClick={workspaceId ? () => openCreate('blank') : undefined} icon={Plus} />
+              <CreateChoice title="从应用模板创建" description="选择预设的数据链路，最快体验 OpenCLI。" href={workspaceId ? `/studio/templates?workspace=${workspaceId}` : undefined} icon={Sparkles} />
+              <CreateChoice title="创建空白项目" description="从节点画布开始，逐步搭建自己的执行系统。" href={workspaceId ? `/studio/new?workspace=${workspaceId}` : undefined} icon={Plus} />
               <div className="my-0.5 flex items-center gap-3 text-[10px] text-muted-foreground before:h-px before:flex-1 before:bg-border after:h-px after:flex-1 after:bg-border">或</div>
               <CreateChoice title="导入 DSL 文件" description="兼容迁移 Dify、n8n 和 OpenCLI 工作流。" onClick={workspaceId ? () => importInputRef.current?.click() : undefined} icon={FileUp} />
             </div>
@@ -310,22 +298,4 @@ function CreateChoice({ title, description, href, onClick, icon: Icon }: { title
   if (href) return <Link href={href} className="flex items-center gap-3 rounded-xl border bg-card p-3 transition-colors hover:bg-accent">{content}</Link>
   if (onClick) return <button type="button" onClick={onClick} className="flex items-center gap-3 rounded-xl border bg-card p-3 text-left transition-colors hover:bg-accent">{content}</button>
   return <div className="flex items-center gap-3 rounded-xl border bg-card p-3 opacity-50">{content}</div>
-}
-
-function slugify(value: string) {
-  return value.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'project'
-}
-
-function graphForTemplate(template: string, name: string) {
-  const base = PACKAGED_WORKFLOW_PROJECT
-  const nodes = template === 'blank' ? base.nodes.slice(0, 1) : base.nodes.filter((node) => {
-    const x = (node.ui?.position as { x?: number } | undefined)?.x ?? 0
-    if (template === 'collect') return x <= 400
-    if (template === 'process') return x > 400 && x <= 1100
-    if (template === 'deliver') return x > 1100
-    return true
-  })
-  const ids = new Set(nodes.map((node) => node.id))
-  const adapters = base.adapters.filter((adapter) => nodes.some((node) => node.adapter === adapter.id))
-  return parseWorkflowProject({ ...base, id: `draft-${Date.now()}`, name, nodes, edges: base.edges.filter((edge) => ids.has(edge.source) && ids.has(edge.target)), adapters })
 }

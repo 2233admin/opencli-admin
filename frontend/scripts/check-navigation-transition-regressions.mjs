@@ -64,6 +64,21 @@ test('sidebar keeps the build-run-manage navigation contract without a global cr
   assert.doesNotMatch(sidebar, /新建工作/)
 })
 
+test('studio creation choices route through dedicated guided pages', async () => {
+  const [studio, templates, blank] = await Promise.all([
+    read('app/(app)/studio/page.tsx'),
+    read('app/(app)/studio/templates/page.tsx'),
+    read('app/(app)/studio/new/page.tsx'),
+  ])
+
+  assert.match(studio, /\/studio\/templates\?workspace=/)
+  assert.match(studio, /\/studio\/new\?workspace=/)
+  assert.match(templates, /先理解模板会搭出什么/)
+  assert.match(templates, /使用此模板/)
+  assert.match(blank, /接下来怎么做/)
+  assert.match(blank, /guide=blank/)
+})
+
 test('SSGOI boundary is pathname-keyed, interruptible, and reduced-motion safe', async () => {
   const transition = await read('components/motion/app-route-transition.tsx')
 
