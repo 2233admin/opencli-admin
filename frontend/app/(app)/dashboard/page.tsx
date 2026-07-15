@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import {
   Activity,
+  Bot,
   AlertTriangle,
   ArrowDownToLine,
   ArrowRight,
@@ -13,12 +14,13 @@ import {
   Database,
   GitBranch,
   Play,
+  Radio,
   Send,
   Server,
   Tags,
 } from 'lucide-react'
 
-import { useDashboardActivity, useDashboardStats, useOpinionMonitor, useWorkers } from '@/lib/api/hooks'
+import { useAgents, useDashboardActivity, useDashboardStats, useNotificationLogs, useOpinionMonitor, useWorkers } from '@/lib/api/hooks'
 import type { OpinionMonitor, WorkerNode } from '@/lib/api/types'
 import type { FailureItem, StreamTask, ThroughputPoint, WorkerView } from '@/lib/demo/monitor'
 import { formatNumber, formatRelative } from '@/lib/format'
@@ -32,17 +34,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
-function KpiCard({
-  title,
-  value,
-  sub,
-  icon: Icon,
-}: {
-  title: string
-  value: string
-  sub?: string
-  icon: typeof Activity
-}) {
+function KpiCard({ title, value, sub, icon: Icon }: { title: string; value: string; sub?: string; icon: typeof Activity }) {
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
@@ -57,17 +49,7 @@ function KpiCard({
   )
 }
 
-function ActionLink({
-  href,
-  title,
-  description,
-  icon: Icon,
-}: {
-  href: string
-  title: string
-  description: string
-  icon: typeof Activity
-}) {
+function ActionLink({ href, title, description, icon: Icon }: { href: string; title: string; description: string; icon: typeof Activity }) {
   return (
     <Link
       href={href}
@@ -80,23 +62,171 @@ function ActionLink({
         <span className="block text-sm font-medium">{title}</span>
         <span className="mt-0.5 block text-xs text-muted-foreground">{description}</span>
       </span>
-      <ArrowRight
-        className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-foreground"
-        aria-hidden
-      />
+      <ArrowRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" aria-hidden />
     </Link>
   )
 }
 
-function OpinionMonitorPanel({
-  data,
-  isLoading,
-  isError,
+function percent(value: number, total: number) {
+  return total > 0 ? Math.round((value / total) * 100) : 0
+}
+
+function normalizedSuccessRate(value: number) {
+  return Math.round(value <= 1 ? value * 100 : value)
+}
+
+function SignalFlow({
+  sources,
+  runs,
+  records,
+  aiProcessed,
+  delivered,
+  failures,
 }: {
-  data?: OpinionMonitor
-  isLoading: boolean
-  isError: boolean
+  sources: { enabled: number; total: number }
+  runs: { successRate: number; total: number }
+  records: number
+  aiProcessed: number
+  delivered: number
+  failures: number
 }) {
+  const stages = [
+    { label: '来源', detail: '已启用', value: `${sources.enabled}/${sources.total}`, progress: percent(sources.enabled, sources.total), icon: Database },
+    { label: '运行', detail: '成功率', value: `${runs.successRate}%`, progress: runs.total ? runs.successRate : 0, icon: Play },
+    { label: '数据', detail: '已采集', value: formatNumber(records), progress: records ? 100 : 0, icon: ArrowDownToLine },
+    { label: 'Agent', detail: 'AI 已处理', value: `${percent(aiProcessed, records)}%`, progress: percent(aiProcessed, records), icon: Bot },
+    { label: '交付', detail: '已连接渠道', value: formatNumber(delivered), progress: delivered ? 100 : 0, icon: Send },
+  ]
+
+  return (
+    <section className="relative overflow-hidden rounded-xl border bg-card/55 p-4 md:p-5" aria-labelledby="signal-flow-title">
+      <div className="pointer-events-none absolute inset-0 opacity-40 [background-image:linear-gradient(90deg,transparent,rgba(127,127,127,0.08),transparent)]" aria-hidden />
+      <div className="relative flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="eyebrow-mono">Signal flow / 实时链路</p>
+          <h2 id="signal-flow-title" className="mt-1 text-lg font-semibold">
+            从来源到 Agent，再到交付
+          </h2>
+          <p className="mt-1 text-sm text-muted-foreground">沿真实业务顺序定位停滞点；邮箱是本期 P0，专属投递统计等待后端接入。</p>
+        </div>
+        <Badge variant={failures ? 'destructive' : 'outline'}>{failures ? `${failures} 个运行异常` : '链路无阻塞'}</Badge>
+      </div>
+      <ol className="relative mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        {stages.map((stage, index) => {
+          const Icon = stage.icon
+          return (
+            <li key={stage.label} className="group relative rounded-lg border border-border/70 bg-background/65 p-3">
+              <div className="flex items-start justify-between gap-3">
+                <span className="grid size-8 place-items-center rounded-md bg-muted text-muted-foreground group-hover:text-foreground">
+                  <Icon className="size-4" aria-hidden />
+                </span>
+                <span className="font-mono text-lg tabular-nums">{stage.value}</span>
+              </div>
+              <div className="mt-4 flex items-end justify-between gap-2">
+                <span className="text-sm font-medium">{stage.label}</span>
+                <span className="text-[10px] text-muted-foreground">{stage.detail}</span>
+              </div>
+              <div className="mt-2 h-1 overflow-hidden rounded-full bg-muted">
+                <div className="h-full rounded-full bg-primary/75 transition-[width]" style={{ width: `${stage.progress}%` }} />
+              </div>
+              {index < stages.length - 1 ? (
+                <span className="absolute -right-2.5 top-1/2 z-10 hidden text-xs text-muted-foreground/50 xl:block" aria-hidden>
+                  →
+                </span>
+              ) : null}
+            </li>
+          )
+        })}
+      </ol>
+    </section>
+  )
+}
+
+function AgentDeliveryPanel({
+  agents,
+  notificationLogs,
+  agentsLoading,
+  logsLoading,
+}: {
+  agents: Array<{ id: string; name: string; processor_type: string; model?: string; enabled: boolean }>
+  notificationLogs: Array<{ id: string; status: string; ack_status: string; created_at: string }>
+  agentsLoading: boolean
+  logsLoading: boolean
+}) {
+  const enabledAgents = agents.filter((agent) => agent.enabled)
+  const delivered = notificationLogs.filter((log) => ['sent', 'success', 'completed'].includes(log.status.toLowerCase())).length
+  const failed = notificationLogs.filter((log) => log.status.toLowerCase().includes('fail') || log.status.toLowerCase().includes('error')).length
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-start justify-between gap-3">
+        <div>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Bot className="size-4 text-primary" aria-hidden />
+            Agent 与交付
+          </CardTitle>
+          <p className="mt-1 text-sm text-muted-foreground">谁在处理信号，以及结果是否抵达外部渠道。</p>
+        </div>
+        <Badge variant="outline">邮箱 P0</Badge>
+      </CardHeader>
+      <CardContent className="grid gap-4 md:grid-cols-[1.2fr_0.8fr]">
+        <div className="space-y-2">
+          {agentsLoading ? (
+            <p className="text-sm text-muted-foreground">正在同步 Agent…</p>
+          ) : enabledAgents.length ? (
+            enabledAgents.slice(0, 4).map((agent) => (
+              <Link key={agent.id} href="/agents" className="flex items-center gap-3 rounded-lg border border-border/70 p-3 transition-colors hover:bg-muted/50">
+                <span className="relative grid size-9 place-items-center rounded-lg bg-primary/10 text-primary">
+                  <Bot className="size-4" />
+                  <span className="absolute -right-0.5 -top-0.5 size-2 rounded-full border-2 border-background bg-success" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-medium">{agent.name}</span>
+                  <span className="block truncate text-xs text-muted-foreground">
+                    {agent.processor_type}
+                    {agent.model ? ` · ${agent.model}` : ''}
+                  </span>
+                </span>
+                <span className="font-mono text-[9px] text-success">READY</span>
+              </Link>
+            ))
+          ) : (
+            <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">还没有启用 Agent。先到 Agent 团队配置处理能力。</div>
+          )}
+        </div>
+        <div className="rounded-lg border border-border/70 bg-muted/20 p-4">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-muted-foreground">通知日志</span>
+            <Radio className="size-3.5 text-success" aria-hidden />
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-3">
+            <div>
+              <div className="font-mono text-2xl tabular-nums">{logsLoading ? '—' : delivered}</div>
+              <div className="text-[10px] text-muted-foreground">已送达</div>
+            </div>
+            <div>
+              <div className="font-mono text-2xl tabular-nums text-destructive">{logsLoading ? '—' : failed}</div>
+              <div className="text-[10px] text-muted-foreground">失败</div>
+            </div>
+          </div>
+          <div className="mt-4 border-t pt-3">
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-muted-foreground">邮箱专属统计</span>
+              <span>待后端接入</span>
+            </div>
+            <p className="mt-2 text-[10px] leading-4 text-muted-foreground">当前只展示通用通知日志，不把其他渠道计数冒充邮件发送结果。</p>
+          </div>
+          <Link href="/notifications" className="mt-4 inline-flex items-center gap-1 text-xs text-primary hover:underline">
+            查看通知与邮箱配置
+            <ArrowRight className="size-3" />
+          </Link>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function OpinionMonitorPanel({ data, isLoading, isError }: { data?: OpinionMonitor; isLoading: boolean; isError: boolean }) {
   const topTags = data?.tags.slice(0, 6) ?? []
   const topSentiment = data?.sentiment.slice(0, 4) ?? []
   const recent = data?.recent ?? []
@@ -173,9 +303,7 @@ function OpinionMonitorPanel({
                         飞书 {item.notification_status === 'sent' ? '已发' : item.notification_status === 'failed' ? '失败' : '待发'}
                       </Badge>
                     </div>
-                    <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
-                      {item.summary || item.source_name}
-                    </p>
+                    <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{item.summary || item.source_name}</p>
                     <div className="mt-2 flex flex-wrap gap-1.5">
                       {item.tags.slice(0, 4).map((tag) => (
                         <Badge key={tag} variant="outline">
@@ -238,14 +366,12 @@ export default function DashboardPage() {
   const activity = useDashboardActivity()
   const opinion = useOpinionMonitor()
   const workersQuery = useWorkers()
+  const agentsQuery = useAgents({ enabled: true })
+  const notificationLogsQuery = useNotificationLogs()
 
   if (stats.isLoading) {
     return (
-      <PageContainer
-        eyebrow="Control plane"
-        title="运营工作台"
-        description="先处理异常，再推进正在运行的工作。"
-      >
+      <PageContainer eyebrow="Control plane" title="运营工作台" description="先处理异常，再推进正在运行的工作。">
         <LoadingState rows={3} />
       </PageContainer>
     )
@@ -253,16 +379,8 @@ export default function DashboardPage() {
 
   if (stats.isError || !stats.data) {
     return (
-      <PageContainer
-        eyebrow="Control plane"
-        title="运营工作台"
-        description="先处理异常，再推进正在运行的工作。"
-      >
-        <ErrorState
-          message={(stats.error as Error)?.message}
-          hint={BACKEND_HINT}
-          action={<Button onClick={() => stats.refetch()}>重新连接</Button>}
-        />
+      <PageContainer eyebrow="Control plane" title="运营工作台" description="先处理异常，再推进正在运行的工作。">
+        <ErrorState message={(stats.error as Error)?.message} hint={BACKEND_HINT} action={<Button onClick={() => stats.refetch()}>重新连接</Button>} />
       </PageContainer>
     )
   }
@@ -326,6 +444,8 @@ export default function DashboardPage() {
     }))
   const latestRun = stream[0]
   const hasAttention = s.tasks.failed > 0 || failures.length > 0
+  const agents = agentsQuery.data?.data ?? []
+  const notificationLogs = notificationLogsQuery.data?.data ?? []
 
   return (
     <PageContainer
@@ -339,25 +459,14 @@ export default function DashboardPage() {
         </Badge>
       }
     >
-      <section
-        className="grid gap-4 lg:grid-cols-[minmax(0,1.45fr)_minmax(300px,0.75fr)]"
-        aria-labelledby="attention-title"
-      >
+      <section className="grid gap-4 lg:grid-cols-[minmax(0,1.45fr)_minmax(300px,0.75fr)]" aria-labelledby="attention-title">
         <Card
           className={cn(
             'relative isolate min-h-72 overflow-hidden border-0 py-0 ring-1',
-            hasAttention
-              ? 'bg-destructive/[0.055] ring-destructive/25'
-              : 'bg-primary/[0.045] ring-primary/20',
+            hasAttention ? 'bg-destructive/[0.055] ring-destructive/25' : 'bg-primary/[0.045] ring-primary/20',
           )}
         >
-          <div
-            className={cn(
-              'absolute inset-y-0 left-0 w-1',
-              hasAttention ? 'bg-destructive' : 'bg-success',
-            )}
-            aria-hidden
-          />
+          <div className={cn('absolute inset-y-0 left-0 w-1', hasAttention ? 'bg-destructive' : 'bg-success')} aria-hidden />
           <CardContent className="flex h-full flex-col justify-between gap-8 p-5 pl-6 md:p-7 md:pl-8">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
@@ -365,27 +474,14 @@ export default function DashboardPage() {
                   需要你处理
                 </p>
                 <h2 className="mt-3 max-w-2xl text-balance text-2xl font-semibold tracking-tight md:text-3xl">
-                  {hasAttention
-                    ? `${formatNumber(s.tasks.failed)} 个失败任务需要检查`
-                    : '当前没有阻塞，可以继续推进工作'}
+                  {hasAttention ? `${formatNumber(s.tasks.failed)} 个失败任务需要检查` : '当前没有阻塞，可以继续推进工作'}
                 </h2>
                 <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">
-                  {hasAttention
-                    ? '先查看失败原因和最近运行记录，再决定重试、调整来源或修改工作流。'
-                    : '运行链路没有发现失败任务。你可以创建工作流、接入来源，或检查下一次调度。'}
+                  {hasAttention ? '先查看失败原因和最近运行记录，再决定重试、调整来源或修改工作流。' : '运行链路没有发现失败任务。你可以创建工作流、接入来源，或检查下一次调度。'}
                 </p>
               </div>
-              <span
-                className={cn(
-                  'grid size-12 shrink-0 place-items-center rounded-xl',
-                  hasAttention ? 'bg-destructive/10 text-destructive' : 'bg-success/10 text-success',
-                )}
-              >
-                {hasAttention ? (
-                  <AlertTriangle className="size-6" aria-hidden />
-                ) : (
-                  <CheckCircle2 className="size-6" aria-hidden />
-                )}
+              <span className={cn('grid size-12 shrink-0 place-items-center rounded-xl', hasAttention ? 'bg-destructive/10 text-destructive' : 'bg-success/10 text-success')}>
+                {hasAttention ? <AlertTriangle className="size-6" aria-hidden /> : <CheckCircle2 className="size-6" aria-hidden />}
               </span>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -399,10 +495,7 @@ export default function DashboardPage() {
                 {hasAttention ? '查看失败工作项' : '查看工作项'}
                 <ArrowRight aria-hidden />
               </Link>
-              <Link
-                href="/control/actions"
-                className={buttonVariants({ variant: 'outline', size: 'lg' })}
-              >
+              <Link href="/control/actions" className={buttonVariants({ variant: 'outline', size: 'lg' })}>
                 查看控制记录
               </Link>
             </div>
@@ -434,22 +527,12 @@ export default function DashboardPage() {
                 </span>
                 <div>
                   <div className="text-sm font-medium">最近一次运行</div>
-                  <div className="text-xs text-muted-foreground">
-                    {latestRun
-                      ? formatRelative(new Date(latestRun.startedAt).toISOString())
-                      : '暂无运行记录'}
-                  </div>
+                  <div className="text-xs text-muted-foreground">{latestRun ? formatRelative(new Date(latestRun.startedAt).toISOString()) : '暂无运行记录'}</div>
                 </div>
               </div>
               {latestRun ? (
                 <Badge variant="outline">
-                  {latestRun.phase === 'success'
-                    ? '成功'
-                    : latestRun.phase === 'failed'
-                      ? '失败'
-                      : latestRun.phase === 'running'
-                        ? '运行中'
-                        : '排队中'}
+                  {latestRun.phase === 'success' ? '成功' : latestRun.phase === 'failed' ? '失败' : latestRun.phase === 'running' ? '运行中' : '排队中'}
                 </Badge>
               ) : null}
             </div>
@@ -481,44 +564,36 @@ export default function DashboardPage() {
           </div>
         </div>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <ActionLink
-            href="/studio/workflow"
-            title="编排工作流"
-            description="设计节点和执行链路"
-            icon={GitBranch}
-          />
-          <ActionLink
-            href="/sources"
-            title="接入数据源"
-            description="配置采集来源与凭证"
-            icon={Database}
-          />
-          <ActionLink
-            href="/schedules"
-            title="设置触发调度"
-            description="决定何时自动运行"
-            icon={Clock3}
-          />
-          <ActionLink
-            href="/tasks"
-            title="检查运行结果"
-            description="查看任务、记录与通知"
-            icon={Activity}
-          />
+          <ActionLink href="/studio/workflow" title="编排工作流" description="设计节点和执行链路" icon={GitBranch} />
+          <ActionLink href="/sources" title="接入数据源" description="配置采集来源与凭证" icon={Database} />
+          <ActionLink href="/schedules" title="设置触发调度" description="决定何时自动运行" icon={Clock3} />
+          <ActionLink href="/tasks" title="检查运行结果" description="查看任务、记录与通知" icon={Activity} />
         </div>
       </section>
 
       <section aria-labelledby="system-overview-title">
         <div className="mb-3">
           <p className="eyebrow-mono">系统概览</p>
-          <h2 id="system-overview-title" className="mt-1 text-lg font-semibold">关键指标</h2>
+          <h2 id="system-overview-title" className="mt-1 text-lg font-semibold">
+            关键指标
+          </h2>
         </div>
+        <SignalFlow
+          sources={s.sources}
+          runs={{ successRate: normalizedSuccessRate(s.runs.success_rate ?? 0), total: s.runs.total }}
+          records={s.records.total}
+          aiProcessed={s.records.ai_processed}
+          delivered={opinion.data?.summary.feishu_sent ?? notificationLogs.filter((log) => ['sent', 'success', 'completed'].includes(log.status.toLowerCase())).length}
+          failures={failures.length}
+        />
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {kpis.map((k) => (
             <KpiCard key={k.title} {...k} />
           ))}
         </div>
       </section>
+
+      <AgentDeliveryPanel agents={agents} notificationLogs={notificationLogs} agentsLoading={agentsQuery.isLoading} logsLoading={notificationLogsQuery.isLoading} />
 
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="lg:col-span-2">

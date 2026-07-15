@@ -11,8 +11,23 @@ test('dashboard is an action-first control plane backed by real hooks', async ()
   assert.match(dashboard, /useDashboardActivity\(\)/)
   assert.match(dashboard, /useOpinionMonitor\(\)/)
   assert.match(dashboard, /useWorkers\(\)/)
+  assert.match(dashboard, /useAgents\(\{ enabled: true \}\)/)
+  assert.match(dashboard, /useNotificationLogs\(\)/)
   assert.doesNotMatch(dashboard, /useMonitorFeed/)
   assert.doesNotMatch(dashboard, /演示数据/)
+})
+
+test('dashboard restores the real signal chain and makes Agent delivery visible', async () => {
+  const dashboard = await read('app/(app)/dashboard/page.tsx')
+
+  for (const label of ['从来源到 Agent，再到交付', '来源', '运行', '数据', 'Agent', '交付']) {
+    assert.match(dashboard, new RegExp(label))
+  }
+  assert.match(dashboard, /<AgentDeliveryPanel/)
+  assert.match(dashboard, /邮箱 P0/)
+  assert.match(dashboard, /邮箱专属统计/)
+  assert.match(dashboard, /待后端接入/)
+  assert.doesNotMatch(dashboard, /邮箱已发送/)
 })
 
 test('dashboard answers attention, live state, and next action before analytics', async () => {
