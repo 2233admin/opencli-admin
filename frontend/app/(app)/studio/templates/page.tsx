@@ -1,9 +1,9 @@
 'use client'
 
-import { ArrowLeft, Blocks, Database, Send, Sparkles } from 'lucide-react'
+import { ArrowLeft, Blocks, Database, Search, Send, Sparkles, Workflow } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 
 import { PageContainer } from '@/components/shell/page-container'
@@ -14,7 +14,8 @@ import { Input } from '@/components/ui/input'
 import { useCreateProjectWorkflow, useCreateWorkspaceProject, useMyWorkspaces } from '@/lib/api/hooks'
 import { STUDIO_TEMPLATES, studioGraphForTemplate, studioSlug, type StudioTemplateId } from '@/lib/workflow/studio-templates'
 
-const ICONS = { collect: Database, process: Blocks, deliver: Send, 'collection-to-consumption': Sparkles } as const
+const CATEGORIES = ['全部', '采集与监控', '内容处理', 'Agent 分析', '分发与集成', '完整链路'] as const
+const ICONS = { '采集与监控': Database, '内容处理': Blocks, 'Agent 分析': Sparkles, '分发与集成': Send, '完整链路': Workflow } as const
 
 export default function StudioTemplatesPage() {
   const router = useRouter()
@@ -23,12 +24,17 @@ export default function StudioTemplatesPage() {
   const createProject = useCreateWorkspaceProject()
   const createWorkflow = useCreateProjectWorkflow()
   const [workspaceId, setWorkspaceId] = useState<string | null>(searchParams.get('workspace'))
+  const [category, setCategory] = useState<(typeof CATEGORIES)[number]>('全部')
+  const [query, setQuery] = useState('')
   const [selected, setSelected] = useState<StudioTemplateId | null>(null)
   const [name, setName] = useState('')
 
-  useEffect(() => {
-    if (!workspaceId && workspaces.data?.length) setWorkspaceId(workspaces.data[0].id)
-  }, [workspaceId, workspaces.data])
+  useEffect(() => { if (!workspaceId && workspaces.data?.length) setWorkspaceId(workspaces.data[0].id) }, [workspaceId, workspaces.data])
+  const visible = useMemo(() => STUDIO_TEMPLATES.filter((template) => {
+    const matchesCategory = category === '全部' || template.category === category
+    const text = `${template.title} ${template.description} ${template.steps.join(' ')}`.toLowerCase()
+    return matchesCategory && text.includes(query.trim().toLowerCase())
+  }), [category, query])
 
   async function createFromTemplate() {
     if (!workspaceId || !selected || !name.trim()) return
@@ -37,28 +43,38 @@ export default function StudioTemplatesPage() {
       const workflow = await createWorkflow.mutateAsync({ workspaceId, projectId: project.id, data: { name: name.trim(), description: '模板工作流', graph: studioGraphForTemplate(selected, name.trim()) } })
       toast.success('模板已创建，可以继续编排')
       router.push(`/studio/workflow?workspace=${workspaceId}&project=${project.id}&workflow=${workflow.id}`)
-    } catch (reason) {
-      toast.error(reason instanceof Error ? reason.message : '创建失败')
-    }
+    } catch (reason) { toast.error(reason instanceof Error ? reason.message : '创建失败') }
   }
 
   return (
-    <PageContainer title="应用模板" eyebrow="Studio · Templates" description="先理解模板会搭出什么，再决定是否创建。" className="max-w-none" actions={<Button variant="outline" render={<Link href="/studio" />}><ArrowLeft className="size-4" />返回项目</Button>}>
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        {STUDIO_TEMPLATES.map((template) => {
-          const Icon = ICONS[template.id]
-          return <article key={template.id} className="flex min-h-72 flex-col rounded-2xl border bg-card p-5">
-            <div className="flex items-start justify-between"><div className="grid size-11 place-items-center rounded-xl bg-muted"><Icon className="size-5" /></div><Badge variant="outline">{template.category}</Badge></div>
-            <h2 className="mt-5 text-base font-semibold">{template.title}</h2>
-            <p className="mt-1 text-xs leading-5 text-muted-foreground">{template.description}</p>
-            <ol className="mt-5 space-y-2 border-l pl-4 text-xs text-muted-foreground">{template.steps.map((step, index) => <li key={step}><span className="mr-2 font-mono text-foreground">0{index + 1}</span>{step}</li>)}</ol>
-            <Button className="mt-auto" disabled={!workspaceId} onClick={() => { setSelected(template.id); setName(template.title) }}>使用此模板</Button>
-          </article>
-        })}
+    <PageContainer title="从模板创建" eyebrow="Studio · Template library" description="选择一条成熟链路作为起点，再按你的业务修改节点。" className="max-w-none" actions={<Button variant="outline" nativeButton={false} render={<Link href="/studio" />}><ArrowLeft className="size-4" />返回项目</Button>}>
+      <div className="overflow-hidden rounded-2xl border bg-card/25">
+        <div className="flex min-h-[680px]">
+          <aside className="hidden w-52 shrink-0 border-r bg-muted/15 p-3 md:block">
+            <div className="px-3 pb-3 pt-2 text-[10px] font-medium uppercase tracking-[0.18em] text-muted-foreground">模板分类</div>
+            <nav className="space-y-1">{CATEGORIES.map((item) => <button key={item} type="button" onClick={() => setCategory(item)} className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-xs transition-colors ${category === item ? 'bg-foreground text-background' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`}><span>{item}</span>{item === '全部' ? <span className="font-mono text-[10px]">{STUDIO_TEMPLATES.length}</span> : null}</button>)}</nav>
+            <Link href={`/studio/new?workspace=${workspaceId ?? ''}`} className="mt-8 flex items-center gap-2 border-t px-3 pt-4 text-xs text-muted-foreground transition-colors hover:text-foreground"><Workflow className="size-3.5" />不使用模板</Link>
+          </aside>
+          <section className="min-w-0 flex-1">
+            <div className="sticky top-0 z-10 flex flex-wrap items-center gap-3 border-b bg-background/90 p-4 backdrop-blur-xl">
+              <div className="relative min-w-64 flex-1 md:max-w-xl"><Search className="pointer-events-none absolute left-3 top-2.5 size-4 text-muted-foreground" /><Input value={query} onChange={(event) => setQuery(event.target.value)} className="rounded-xl bg-muted/35 pl-9" placeholder="搜索模板、节点或用途" /></div>
+              <div className="flex gap-1 overflow-x-auto md:hidden">{CATEGORIES.slice(0, 4).map((item) => <Button key={item} size="sm" variant={category === item ? 'secondary' : 'ghost'} onClick={() => setCategory(item)}>{item}</Button>)}</div>
+              <span className="ml-auto font-mono text-[10px] text-muted-foreground">{visible.length} TEMPLATES</span>
+            </div>
+            <div className="p-4"><div className="mb-4 flex items-end justify-between"><div><div className="eyebrow-mono">{category}</div><h2 className="mt-1 text-base font-semibold">可复用的执行链路</h2></div></div>
+              {visible.length ? <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-3">{visible.map((template) => {
+                const Icon = ICONS[template.category]
+                return <button key={template.id} type="button" disabled={!workspaceId} onClick={() => { setSelected(template.id); setName(template.title) }} className="group min-h-44 rounded-xl border bg-background/60 p-4 text-left transition-[border-color,background-color,transform] hover:-translate-y-0.5 hover:border-foreground/25 hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
+                  <div className="flex items-start gap-3"><div className="grid size-10 shrink-0 place-items-center rounded-xl border bg-muted/40"><Icon className="size-4.5" /></div><div className="min-w-0"><h3 className="truncate text-sm font-semibold">{template.title}</h3><Badge variant="outline" className="mt-1 h-5 px-1.5 text-[9px]">{template.category}</Badge></div></div>
+                  <p className="mt-3 line-clamp-2 text-xs leading-5 text-muted-foreground">{template.description}</p>
+                  <div className="mt-4 flex items-center gap-1.5 overflow-hidden">{template.steps.map((step, index) => <div key={step} className="contents"><span className="truncate rounded-md border bg-muted/25 px-2 py-1 font-mono text-[9px] text-muted-foreground">{step}</span>{index < template.steps.length - 1 ? <span className="text-[10px] text-muted-foreground/50">→</span> : null}</div>)}</div>
+                </button>
+              })}</div> : <div className="grid min-h-80 place-items-center rounded-xl border border-dashed text-sm text-muted-foreground">没有匹配的模板，换一个关键词试试。</div>}
+            </div>
+          </section>
+        </div>
       </div>
-      <Dialog open={selected !== null} onOpenChange={(open) => !open && setSelected(null)}>
-        <DialogContent><DialogHeader><DialogTitle>创建模板项目</DialogTitle><DialogDescription>确认名称后创建项目和第一份工作流草稿。</DialogDescription></DialogHeader><label className="space-y-2 text-sm"><span>项目名称</span><Input value={name} onChange={(event) => setName(event.target.value)} autoFocus /></label><DialogFooter><Button variant="outline" onClick={() => setSelected(null)}>取消</Button><Button onClick={createFromTemplate} disabled={!name.trim() || createProject.isPending || createWorkflow.isPending}>创建并打开</Button></DialogFooter></DialogContent>
-      </Dialog>
+      <Dialog open={selected !== null} onOpenChange={(open) => !open && setSelected(null)}><DialogContent><DialogHeader><DialogTitle>用这个模板创建项目</DialogTitle><DialogDescription>模板会生成项目和第一份工作流草稿，所有节点都可以继续修改。</DialogDescription></DialogHeader><label className="space-y-2 text-sm"><span>项目名称</span><Input value={name} onChange={(event) => setName(event.target.value)} autoFocus /></label><DialogFooter><Button variant="outline" onClick={() => setSelected(null)}>取消</Button><Button onClick={createFromTemplate} disabled={!name.trim() || createProject.isPending || createWorkflow.isPending}>创建并打开</Button></DialogFooter></DialogContent></Dialog>
     </PageContainer>
   )
 }

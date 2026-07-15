@@ -94,7 +94,7 @@ test('the production studio adopts the selected project-workspace concept with r
   assert.match(studio, /useWorkspaceProjects\(workspaceId\)/)
   assert.match(studio, /title="项目"/)
   assert.match(studio, /get\('create'\) === 'workflow'/)
-  assert.match(studio, /openCreate\('collection-to-consumption'\)/)
+  assert.match(studio, /setCreateTemplate\('collection-to-consumption'\)/)
   assert.match(studio, /aria-label="项目浏览工具栏"/)
   assert.match(studio, /aria-label="项目类型筛选"/)
   assert.match(studio, /\{visibleProjects\.length\} 个项目/)

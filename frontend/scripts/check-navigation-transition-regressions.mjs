@@ -73,9 +73,10 @@ test('studio creation choices route through dedicated guided pages', async () =>
 
   assert.match(studio, /\/studio\/templates\?workspace=/)
   assert.match(studio, /\/studio\/new\?workspace=/)
-  assert.match(templates, /先理解模板会搭出什么/)
-  assert.match(templates, /使用此模板/)
-  assert.match(blank, /接下来怎么做/)
+  assert.match(templates, /搜索模板、节点或用途/)
+  assert.match(templates, /可复用的执行链路/)
+  assert.match(blank, /选择编排方式/)
+  assert.match(blank, /空白工作流预览/)
   assert.match(blank, /guide=blank/)
 })
 
