@@ -153,8 +153,8 @@ export default function StudioPage() {
         <DropdownMenu>
           <DropdownMenuTrigger render={<Button disabled={!workspaceId} />}><Plus className="size-4" />创建<ChevronDown className="size-3.5" /></DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-48">
+            <DropdownMenuItem onClick={() => router.push(`/studio/new?workspace=${workspaceId}`)}><Bot className="size-4" />与 Agent 创建</DropdownMenuItem>
             <DropdownMenuItem onClick={() => router.push(`/studio/templates?workspace=${workspaceId}`)}>从模板创建</DropdownMenuItem>
-            <DropdownMenuItem onClick={() => router.push(`/studio/new?workspace=${workspaceId}`)}>创建空白项目</DropdownMenuItem>
             <DropdownMenuItem onClick={() => importInputRef.current?.click()}><FileUp className="size-4" />导入 DSL</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -223,8 +223,8 @@ export default function StudioPage() {
             <h2 className="mt-4 text-sm font-medium">创建你的第一个数据应用</h2>
             <p className="mt-1 text-xs text-muted-foreground">从成熟模板开始、创建空白节点图，或者导入 Dify / n8n DSL。</p>
             <div className="mt-5 grid gap-2 text-left">
+              <CreateChoice title="与 Agent 创建项目" description="描述目标，由 Agent 生成第一版节点工作流。" href={workspaceId ? `/studio/new?workspace=${workspaceId}` : undefined} icon={Bot} />
               <CreateChoice title="从应用模板创建" description="选择预设的数据链路，最快体验 OpenCLI。" href={workspaceId ? `/studio/templates?workspace=${workspaceId}` : undefined} icon={Sparkles} />
-              <CreateChoice title="创建空白项目" description="从节点画布开始，逐步搭建自己的执行系统。" href={workspaceId ? `/studio/new?workspace=${workspaceId}` : undefined} icon={Plus} />
               <div className="my-0.5 flex items-center gap-3 text-[10px] text-muted-foreground before:h-px before:flex-1 before:bg-border after:h-px after:flex-1 after:bg-border">或</div>
               <CreateChoice title="导入 DSL 文件" description="兼容迁移 Dify、n8n 和 OpenCLI 工作流。" onClick={workspaceId ? () => importInputRef.current?.click() : undefined} icon={FileUp} />
             </div>

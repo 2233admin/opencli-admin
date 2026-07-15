@@ -83,6 +83,21 @@ test('node workflow lives inside workspace while the legacy canvas route redirec
   assert.doesNotMatch(navigation, /BUILD_WORKFLOW_PATH|\/build\/workflow/)
 })
 
+test('agent-created project specs convert into the canonical persisted workflow model', async () => {
+  const [{ generateWorkflowLocally }, { generatedSpecToWorkflowProject }] = await Promise.all([
+    importTypeScript('lib/flow/local-generate.ts'),
+    importTypeScript('lib/workflow/generated-project.ts'),
+  ])
+  const spec = generateWorkflowLocally('每天抓取多个网站，摘要后发送通知')
+  const project = generatedSpecToWorkflowProject(spec, 'Agent 创建的项目')
+
+  assert.equal(project.name, 'Agent 创建的项目')
+  assert.equal(project.nodes.length, spec.nodes.length)
+  assert.equal(project.edges.length, spec.edges.length)
+  assert.equal(project.nodes[0].capability, 'trigger')
+  assert.ok(project.edges.every((edge) => project.nodes.some((node) => node.id === edge.source) && project.nodes.some((node) => node.id === edge.target)))
+})
+
 test('the production studio adopts the selected project-workspace concept with real data', async () => {
   const [studio, workflowPage, projectHeader] = await Promise.all([
     readSource('app/(app)/studio/page.tsx'),

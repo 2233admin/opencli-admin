@@ -75,8 +75,8 @@ test('studio creation choices route through dedicated guided pages', async () =>
   assert.match(studio, /\/studio\/new\?workspace=/)
   assert.match(templates, /搜索模板、节点或用途/)
   assert.match(templates, /可复用的执行链路/)
-  assert.match(blank, /选择编排方式/)
-  assert.match(blank, /空白工作流预览/)
+  assert.match(blank, /OpenCLI 项目 Agent/)
+  assert.match(blank, /Agent 工作流方案/)
   assert.match(blank, /guide=blank/)
 })
 

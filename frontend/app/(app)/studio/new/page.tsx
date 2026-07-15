@@ -1,72 +1,92 @@
 'use client'
 
-import { ArrowLeft, Bot, ChevronRight, CircleDot, GitBranch, Play, Workflow, X } from 'lucide-react'
+import { Bot, ChevronRight, CornerDownLeft, LoaderCircle, Plus, Sparkles, Workflow, X } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 
 import { PageContainer } from '@/components/shell/page-container'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { useCreateProjectWorkflow, useCreateWorkspaceProject, useMyWorkspaces } from '@/lib/api/hooks'
+import type { GeneratedWorkflowSpec } from '@/lib/flow/types'
+import { generateWorkflowLocally } from '@/lib/flow/local-generate'
+import { generatedSpecToWorkflowProject } from '@/lib/workflow/generated-project'
 import { studioGraphForTemplate, studioSlug } from '@/lib/workflow/studio-templates'
 
-export default function NewBlankStudioPage() {
+const STARTERS = ['每天汇总多个网站的新内容，提取重点并发送给我', '监控竞品页面变化，发现更新后交给 Agent 研判', '收到高优先级工单时补充背景并通知负责人']
+type Message = { role: 'agent' | 'user'; content: string }
+
+export default function NewAgentStudioPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const workspaces = useMyWorkspaces()
   const createProject = useCreateWorkspaceProject()
   const createWorkflow = useCreateProjectWorkflow()
   const [workspaceId, setWorkspaceId] = useState<string | null>(searchParams.get('workspace'))
+  const [messages, setMessages] = useState<Message[]>([{ role: 'agent', content: '先告诉我：这个项目要持续完成什么工作？可以写清数据从哪里来、需要怎样判断、最后交付到哪里。' }])
+  const [input, setInput] = useState('')
+  const [spec, setSpec] = useState<GeneratedWorkflowSpec | null>(null)
   const [name, setName] = useState('')
-  const [description, setDescription] = useState('')
+  const [generating, setGenerating] = useState(false)
 
   useEffect(() => { if (!workspaceId && workspaces.data?.length) setWorkspaceId(workspaces.data[0].id) }, [workspaceId, workspaces.data])
+  const userRequirements = useMemo(() => messages.filter((message) => message.role === 'user').map((message) => message.content), [messages])
 
-  async function createBlank() {
-    if (!workspaceId || !name.trim()) return
+  async function askAgent(text = input) {
+    const requirement = text.trim()
+    if (!requirement || generating) return
+    const nextRequirements = [...userRequirements, requirement]
+    setMessages((current) => [...current, { role: 'user', content: requirement }])
+    setInput('')
+    setGenerating(true)
     try {
-      const project = await createProject.mutateAsync({ workspaceId, data: { name: name.trim(), slug: `${studioSlug(name)}-${Date.now().toString(36)}`, description: description.trim() || '从空白画布创建' } })
-      const workflow = await createWorkflow.mutateAsync({ workspaceId, projectId: project.id, data: { name: name.trim(), description: description.trim() || '空白工作流', graph: studioGraphForTemplate('blank', name.trim()) } })
-      toast.success('空白项目已创建')
-      router.push(`/studio/workflow?workspace=${workspaceId}&project=${project.id}&workflow=${workflow.id}&guide=blank`)
+      let generated: GeneratedWorkflowSpec
+      let localFallback = false
+      try {
+        const response = await fetch('/api/generate-workflow', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt: nextRequirements.join('\n补充要求：') }) })
+        const payload = await response.json()
+        if (!response.ok) throw new Error(payload?.message ?? 'Agent generation failed')
+        generated = payload as GeneratedWorkflowSpec
+      } catch {
+        generated = generateWorkflowLocally(nextRequirements.join('；'))
+        localFallback = true
+      }
+      setSpec(generated)
+      setName(generated.title)
+      setMessages((current) => [...current, { role: 'agent', content: `我把需求整理成 ${generated.nodes.length} 个节点、${generated.edges.length} 条连接。${localFallback ? '当前使用本地推理引擎生成，' : ''}你可以继续补充条件，或确认右侧方案。` }])
+    } finally { setGenerating(false) }
+  }
+
+  async function persistProject(useBlank = false) {
+    if (!workspaceId || !(name.trim() || useBlank)) return
+    const finalName = name.trim() || '未命名项目'
+    try {
+      const project = await createProject.mutateAsync({ workspaceId, data: { name: finalName, slug: `${studioSlug(finalName)}-${Date.now().toString(36)}`, description: userRequirements.join('；') || '从空白画布创建' } })
+      const graph = spec && !useBlank ? generatedSpecToWorkflowProject(spec, finalName) : studioGraphForTemplate('blank', finalName)
+      const workflow = await createWorkflow.mutateAsync({ workspaceId, projectId: project.id, data: { name: finalName, description: userRequirements.join('；') || '空白工作流', graph } })
+      toast.success(spec && !useBlank ? 'Agent 方案已创建为项目' : '空白项目已创建')
+      router.push(`/studio/workflow?workspace=${workspaceId}&project=${project.id}&workflow=${workflow.id}${useBlank ? '&guide=blank' : ''}`)
     } catch (reason) { toast.error(reason instanceof Error ? reason.message : '创建失败') }
   }
 
   return (
-    <PageContainer title="创建空白项目" eyebrow="Studio · Blank project" description="定义目标后进入节点画布，从第一条执行链路开始。" className="max-w-none" actions={<Button size="icon" variant="ghost" nativeButton={false} render={<Link href="/studio" />} aria-label="关闭"><X className="size-4" /></Button>}>
-      <div className="grid min-h-[680px] overflow-hidden rounded-2xl border bg-card/25 xl:grid-cols-[minmax(440px,0.9fr)_minmax(560px,1.3fr)]">
-        <section className="flex flex-col border-b p-6 sm:p-10 xl:border-b-0 xl:border-r">
-          <div className="mx-auto w-full max-w-xl">
-            <Link href="/studio" className="mb-10 inline-flex items-center gap-2 text-xs text-muted-foreground transition-colors hover:text-foreground"><ArrowLeft className="size-3.5" />返回模板与项目</Link>
-            <div className="eyebrow-mono">选择编排方式</div>
-            <div className="mt-3 grid gap-2 sm:grid-cols-2">
-              <button type="button" className="rounded-xl border-2 border-foreground bg-background p-4 text-left shadow-[inset_0_0_0_1px_hsl(var(--background))]"><div className="grid size-9 place-items-center rounded-lg bg-foreground text-background"><Workflow className="size-4" /></div><h2 className="mt-3 text-sm font-semibold">节点工作流</h2><p className="mt-1 text-xs leading-5 text-muted-foreground">适合采集、处理、判断和分发任务。</p></button>
-              <div className="relative rounded-xl border bg-muted/15 p-4 text-left opacity-60"><span className="absolute right-3 top-3 font-mono text-[9px] text-muted-foreground">COMING SOON</span><div className="grid size-9 place-items-center rounded-lg border bg-background"><Bot className="size-4" /></div><h2 className="mt-3 text-sm font-semibold">Agent 协作</h2><p className="mt-1 text-xs leading-5 text-muted-foreground">面向多 Agent 分工与人工审批。</p></div>
-            </div>
-
-            <div className="my-8 h-px bg-border" />
-            <div className="eyebrow-mono">项目信息</div>
-            <div className="mt-4 space-y-5">
-              <label className="block space-y-2 text-sm"><span className="font-medium">项目名称</span><Input value={name} onChange={(event) => setName(event.target.value)} className="h-11 rounded-xl bg-background" placeholder="例如：竞品动态监控" autoFocus /></label>
-              <label className="block space-y-2 text-sm"><span className="font-medium">目标描述 <span className="font-normal text-muted-foreground">（可选）</span></span><Textarea value={description} onChange={(event) => setDescription(event.target.value)} className="min-h-28 resize-none rounded-xl bg-background" placeholder="这个工作流要读取什么、处理什么、最终交付什么？" /></label>
-            </div>
-          </div>
-          <div className="mx-auto mt-auto flex w-full max-w-xl items-center justify-between gap-4 border-t pt-6"><Link href={`/studio/templates?workspace=${workspaceId ?? ''}`} className="text-xs text-muted-foreground transition-colors hover:text-foreground">没有明确方案？从模板开始 <ChevronRight className="inline size-3" /></Link><div className="flex gap-2"><Button variant="outline" nativeButton={false} render={<Link href="/studio" />}>取消</Button><Button onClick={createBlank} disabled={!workspaceId || !name.trim() || createProject.isPending || createWorkflow.isPending}>创建项目</Button></div></div>
+    <PageContainer title="与 Agent 创建项目" eyebrow="Studio · Agent builder" description="先描述目标，Agent 会把需求整理成可以继续编辑的节点工作流。" className="max-w-none" actions={<Button size="icon" variant="ghost" nativeButton={false} render={<Link href="/studio" />} aria-label="关闭"><X className="size-4" /></Button>}>
+      <div className="grid min-h-[700px] overflow-hidden rounded-2xl border bg-card/25 xl:grid-cols-[minmax(400px,0.82fr)_minmax(620px,1.4fr)]">
+        <section className="flex min-h-0 flex-col border-b xl:border-b-0 xl:border-r">
+          <div className="border-b p-5"><div className="flex items-center gap-3"><div className="grid size-10 place-items-center rounded-xl bg-foreground text-background"><Bot className="size-5" /></div><div><h2 className="text-sm font-semibold">OpenCLI 项目 Agent</h2><div className="mt-0.5 flex items-center gap-1.5 font-mono text-[9px] text-muted-foreground"><span className="size-1.5 rounded-full bg-emerald-500" />READY · REQUIREMENT MODE</div></div></div></div>
+          <div className="flex-1 space-y-4 overflow-y-auto p-5">{messages.map((message, index) => <div key={`${message.role}-${index}`} className={`flex gap-3 ${message.role === 'user' ? 'justify-end' : ''}`}>{message.role === 'agent' ? <div className="mt-1 grid size-7 shrink-0 place-items-center rounded-lg border bg-background"><Sparkles className="size-3.5" /></div> : null}<div className={`max-w-[85%] rounded-xl px-3.5 py-3 text-xs leading-5 ${message.role === 'user' ? 'bg-foreground text-background' : 'border bg-background/70 text-muted-foreground'}`}>{message.content}</div></div>)}{generating ? <div className="flex items-center gap-3 text-xs text-muted-foreground"><LoaderCircle className="size-4 animate-spin" />正在拆解目标、选择节点并检查连接…</div> : null}</div>
+          {!userRequirements.length ? <div className="px-5 pb-3"><div className="mb-2 font-mono text-[9px] text-muted-foreground">从一个例子开始</div><div className="space-y-1">{STARTERS.map((starter) => <button key={starter} type="button" onClick={() => void askAgent(starter)} className="flex w-full items-center justify-between rounded-lg border bg-background/50 px-3 py-2 text-left text-[11px] text-muted-foreground transition-colors hover:border-foreground/20 hover:text-foreground"><span className="truncate">{starter}</span><ChevronRight className="size-3 shrink-0" /></button>)}</div></div> : null}
+          <div className="border-t p-4"><div className="rounded-xl border bg-background p-2 focus-within:ring-2 focus-within:ring-ring/40"><Textarea value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void askAgent() } }} className="min-h-20 resize-none border-0 bg-transparent p-2 shadow-none focus-visible:ring-0" placeholder={spec ? '继续补充：增加条件、修改来源或调整输出…' : '描述你希望项目持续完成的工作…'} /><div className="flex items-center justify-between px-1"><span className="font-mono text-[9px] text-muted-foreground">ENTER 发送 · SHIFT+ENTER 换行</span><Button size="icon" onClick={() => void askAgent()} disabled={!input.trim() || generating} aria-label="发送需求"><CornerDownLeft className="size-4" /></Button></div></div><div className="mt-3 flex items-center justify-between"><Link href={`/studio/templates?workspace=${workspaceId ?? ''}`} className="text-xs text-muted-foreground hover:text-foreground">从模板开始</Link><button type="button" onClick={() => void persistProject(true)} disabled={!workspaceId || createProject.isPending || createWorkflow.isPending} className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-50">跳过 Agent，直接空白</button></div></div>
         </section>
 
-        <section className="relative hidden overflow-hidden bg-muted/10 xl:block" aria-label="空白工作流预览">
-          <div className="absolute inset-0 opacity-50 [background-image:radial-gradient(circle_at_center,hsl(var(--border))_1px,transparent_1px)] [background-size:22px_22px]" />
-          <div className="relative flex h-full flex-col">
-            <div className="flex items-center justify-between border-b bg-background/70 px-6 py-4 backdrop-blur"><div><div className="text-xs font-medium">{name.trim() || '未命名项目'}</div><div className="mt-0.5 font-mono text-[9px] text-muted-foreground">DRAFT · AUTO-SAVED</div></div><div className="flex items-center gap-2"><Button size="sm" variant="outline" disabled><Play className="size-3.5" />试运行</Button><Button size="sm" disabled>发布</Button></div></div>
-            <div className="relative flex-1">
-              <div className="absolute left-[12%] top-[38%] w-48 rounded-xl border bg-background p-4 shadow-lg"><div className="flex items-center gap-2"><div className="grid size-8 place-items-center rounded-lg bg-foreground text-background"><CircleDot className="size-4" /></div><div><div className="text-xs font-semibold">开始</div><div className="font-mono text-[9px] text-muted-foreground">TRIGGER</div></div></div><p className="mt-3 text-[10px] leading-4 text-muted-foreground">选择数据源或触发方式</p><span className="absolute -right-1.5 top-1/2 size-3 rounded-full border-2 border-background bg-foreground" /></div>
-              <div className="absolute left-[calc(12%+12rem)] top-[calc(38%+3.1rem)] h-px w-[18%] bg-border"><ChevronRight className="absolute -right-2 -top-2 size-4 text-muted-foreground" /></div>
-              <div className="absolute left-[48%] top-[38%] w-52 rounded-xl border border-dashed bg-background/75 p-4"><div className="flex items-center gap-2"><div className="grid size-8 place-items-center rounded-lg border bg-muted/40"><GitBranch className="size-4 text-muted-foreground" /></div><div><div className="text-xs font-medium text-muted-foreground">添加处理节点</div><div className="font-mono text-[9px] text-muted-foreground/70">SELECT A NODE</div></div></div><p className="mt-3 text-[10px] leading-4 text-muted-foreground">解析、转换、Agent 或条件判断</p></div>
-              <div className="absolute bottom-8 left-8 max-w-sm rounded-xl border bg-background/80 p-4 backdrop-blur"><div className="eyebrow-mono">进入画布后的第一步</div><p className="mt-2 text-xs leading-5 text-muted-foreground">选中“开始”节点配置数据来源，然后从右侧端口拉出第一条连接。</p></div>
-            </div>
+        <section className="relative min-h-[560px] overflow-hidden bg-muted/10" aria-label="Agent 工作流方案">
+          <div className="absolute inset-0 opacity-45 [background-image:radial-gradient(circle_at_center,hsl(var(--border))_1px,transparent_1px)] [background-size:22px_22px]" />
+          <div className="relative flex h-full flex-col"><div className="flex items-center justify-between border-b bg-background/75 px-6 py-4 backdrop-blur"><div><div className="text-xs font-semibold">{spec ? 'Agent 生成的项目方案' : '等待需求'}</div><div className="mt-0.5 font-mono text-[9px] text-muted-foreground">{spec ? `${spec.nodes.length} NODES · ${spec.edges.length} CONNECTIONS` : 'DESCRIBE → GENERATE → CONFIRM'}</div></div>{spec ? <Badge variant="outline">可编辑草稿</Badge> : null}</div>
+            {spec ? <div className="flex min-h-0 flex-1 flex-col"><div className="border-b bg-background/35 p-5"><label className="block max-w-lg space-y-2 text-xs"><span className="font-medium">项目名称</span><Input value={name} onChange={(event) => setName(event.target.value)} className="h-10 rounded-xl bg-background" /></label></div><div className="flex-1 overflow-auto p-8"><div className="mx-auto flex min-w-max items-center justify-center gap-5 py-16">{spec.nodes.map((node, index) => <div key={node.id} className="contents"><article className="relative w-48 rounded-xl border bg-background p-4 shadow-lg"><div className="flex items-center gap-2"><div className="grid size-8 place-items-center rounded-lg bg-muted"><Workflow className="size-3.5" /></div><div className="min-w-0"><div className="truncate text-xs font-semibold">{node.label}</div><div className="font-mono text-[9px] text-muted-foreground">{node.type.toUpperCase()}</div></div></div><p className="mt-3 line-clamp-2 text-[10px] leading-4 text-muted-foreground">{node.description}</p></article>{index < spec.nodes.length - 1 ? <div className="flex items-center text-muted-foreground"><div className="h-px w-8 bg-border" /><ChevronRight className="-ml-1 size-4" /></div> : null}</div>)}</div></div><div className="flex items-center justify-between border-t bg-background/75 px-6 py-4 backdrop-blur"><p className="max-w-md text-[10px] leading-4 text-muted-foreground">创建后会保存为真实项目与工作流草稿，所有节点仍可在画布中修改。</p><Button onClick={() => void persistProject()} disabled={!name.trim() || createProject.isPending || createWorkflow.isPending}><Plus className="size-4" />创建这个项目</Button></div></div> : <div className="grid flex-1 place-items-center p-10"><div className="max-w-md text-center"><div className="mx-auto grid size-14 place-items-center rounded-2xl border bg-background"><Sparkles className="size-5 text-muted-foreground" /></div><h3 className="mt-5 text-sm font-semibold">项目从一次对话开始</h3><p className="mt-2 text-xs leading-5 text-muted-foreground">Agent 会识别触发方式、数据来源、处理逻辑、判断条件和最终交付，并把它们连接成第一版工作流。</p></div></div>}
           </div>
         </section>
       </div>
