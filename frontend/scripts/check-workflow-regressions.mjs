@@ -83,6 +83,34 @@ test('node workflow lives inside workspace while the legacy canvas route redirec
   assert.doesNotMatch(navigation, /BUILD_WORKFLOW_PATH|\/build\/workflow/)
 })
 
+test('studio creation is transactional and the editor anchors to the project primary workflow', async () => {
+  const [types, endpoints, hooks, studio, templates, newProject, session, lifecycle] = await Promise.all([
+    readSource('lib/api/types.ts'),
+    readSource('lib/api/endpoints.ts'),
+    readSource('lib/api/hooks.ts'),
+    readSource('app/(app)/studio/page.tsx'),
+    readSource('app/(app)/studio/templates/page.tsx'),
+    readSource('app/(app)/studio/new/page.tsx'),
+    readSource('components/flow/workflow-editor-session.tsx'),
+    readSource('components/studio/workflow-lifecycle-strip.logic.ts'),
+  ])
+
+  assert.match(types, /primary_workflow_id: string \| null/)
+  assert.match(endpoints, /projects\/bootstrap/)
+  assert.doesNotMatch(endpoints, /createWorkspaceProject/)
+  assert.match(hooks, /useBootstrapWorkspaceProject/)
+  assert.doesNotMatch(hooks, /useCreateWorkspaceProject/)
+  for (const source of [studio, templates, newProject]) {
+    assert.match(source, /useBootstrapWorkspaceProject/)
+    assert.doesNotMatch(source, /useCreateWorkspaceProject/)
+  }
+  assert.match(session, /project\?\.primary_workflow_id/)
+  assert.doesNotMatch(session, /projectWorkflows\.data\?\.\[0\]\?\.id/)
+  assert.match(session, /if \(!active\) return/)
+  assert.doesNotMatch(lifecycle, /activate|激活|待后端接入/)
+  assert.doesNotMatch(newProject, /可激活|正式激活|检查并激活/)
+})
+
 test('agent-created project specs convert into the canonical persisted workflow model', async () => {
   const [{ generateWorkflowLocally }, { generatedSpecToWorkflowProject }] = await Promise.all([
     importTypeScript('lib/flow/local-generate.ts'),

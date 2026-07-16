@@ -14,7 +14,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { useCreateProjectWorkflow, useCreateWorkspaceProject, useMyWorkspaces, useWorkspaceProjects } from '@/lib/api/hooks'
+import { useBootstrapWorkspaceProject, useCreateProjectWorkflow, useMyWorkspaces, useWorkspaceProjects } from '@/lib/api/hooks'
 import { formatRelative } from '@/lib/format'
 import { PROJECT_APP_TYPE_LABELS, projectAppTypeForDifyMode, projectMatchesAppType, type ProjectAppTypeFilter } from '@/lib/studio/app-types'
 import { translateWorkflowDsl, type WorkflowImportResult } from '@/lib/workflow/codec'
@@ -45,7 +45,7 @@ export default function StudioPage() {
   const importInputRef = useRef<HTMLInputElement>(null)
   const createIntentHandled = useRef(false)
   const projects = useWorkspaceProjects(workspaceId)
-  const createProject = useCreateWorkspaceProject()
+  const bootstrapProject = useBootstrapWorkspaceProject()
   const createWorkflow = useCreateProjectWorkflow()
 
   useEffect(() => {
@@ -87,18 +87,16 @@ export default function StudioPage() {
   async function submitCreate() {
     if (!workspaceId || !createTemplate || !projectName.trim()) return
     try {
-      const project = await createProject.mutateAsync({
+      const result = await bootstrapProject.mutateAsync({
         workspaceId,
-        data: { name: projectName.trim(), slug: `${studioSlug(projectName)}-${Date.now().toString(36)}`, description: '由工作区模板创建', app_type: studioAppTypeForTemplate(createTemplate) },
-      })
-      const workflow = await createWorkflow.mutateAsync({
-        workspaceId,
-        projectId: project.id,
-        data: { name: projectName.trim(), description: '工作区默认工作流', graph: studioGraphForTemplate(createTemplate, projectName.trim()) },
+        data: {
+          project: { name: projectName.trim(), slug: `${studioSlug(projectName)}-${Date.now().toString(36)}`, description: '由工作区模板创建', app_type: studioAppTypeForTemplate(createTemplate) },
+          workflow: { name: projectName.trim(), description: '工作区默认工作流', graph: studioGraphForTemplate(createTemplate, projectName.trim()) },
+        },
       })
       setCreateTemplate(null)
       toast.success('项目与工作流已创建')
-      router.push(`/studio/workflow?workspace=${workspaceId}&project=${project.id}&workflow=${workflow.id}`)
+      router.push(`/studio/workflow?workspace=${workspaceId}&project=${result.project.id}&workflow=${result.primary_workflow.id}`)
     } catch (reason) {
       toast.error(reason instanceof Error ? reason.message : '创建失败')
     }
@@ -122,25 +120,34 @@ export default function StudioPage() {
     if (!workspaceId || !pendingImport || !importProjectId) return
     try {
       const name = pendingImport.project.name
-      const projectId = importProjectId === '__new__'
-        ? (await createProject.mutateAsync({
+      let projectId = importProjectId
+      let workflowId: string
+      if (importProjectId === '__new__') {
+        const result = await bootstrapProject.mutateAsync({
             workspaceId,
             data: {
-              name: importProjectName.trim(),
-              slug: `${studioSlug(importProjectName)}-${Date.now().toString(36)}`,
-              description: `${pendingImport.format} DSL 导入`,
-              app_type: projectAppTypeForDifyMode(pendingImport.format === 'dify' && pendingImport.report?.source === 'dify' ? pendingImport.report.appMode : undefined),
+              project: {
+                name: importProjectName.trim(),
+                slug: `${studioSlug(importProjectName)}-${Date.now().toString(36)}`,
+                description: `${pendingImport.format} DSL 导入`,
+                app_type: projectAppTypeForDifyMode(pendingImport.format === 'dify' && pendingImport.report?.source === 'dify' ? pendingImport.report.appMode : undefined),
+              },
+              workflow: { name, description: `${pendingImport.format} 兼容工作流`, graph: pendingImport.project },
             },
-          })).id
-        : importProjectId
-      const workflow = await createWorkflow.mutateAsync({
-        workspaceId,
-        projectId,
-        data: { name, description: `${pendingImport.format} 兼容工作流`, graph: pendingImport.project },
-      })
+          })
+        projectId = result.project.id
+        workflowId = result.primary_workflow.id
+      } else {
+        const workflow = await createWorkflow.mutateAsync({
+          workspaceId,
+          projectId,
+          data: { name, description: `${pendingImport.format} 兼容工作流`, graph: pendingImport.project },
+        })
+        workflowId = workflow.id
+      }
       toast.success(`已创建 ${pendingImport.format} WorkflowDraft`)
       setPendingImport(null)
-      router.push(`/studio/workflow?workspace=${workspaceId}&project=${projectId}&workflow=${workflow.id}`)
+      router.push(`/studio/workflow?workspace=${workspaceId}&project=${projectId}&workflow=${workflowId}`)
     } catch (reason) {
       toast.error(reason instanceof Error ? reason.message : 'DSL 导入失败')
     }
@@ -249,7 +256,7 @@ export default function StudioPage() {
         <DialogContent>
           <DialogHeader><DialogTitle>创建数据节点项目</DialogTitle><DialogDescription>项目和第一份 WorkflowDraft 会同时保存到当前工作区。</DialogDescription></DialogHeader>
           <label className="space-y-2 text-sm"><span>项目名称</span><Input value={projectName} onChange={(event) => setProjectName(event.target.value)} autoFocus /></label>
-          <DialogFooter><Button variant="outline" onClick={() => setCreateTemplate(null)}>取消</Button><Button onClick={submitCreate} disabled={!projectName.trim() || createProject.isPending || createWorkflow.isPending}>创建并打开</Button></DialogFooter>
+          <DialogFooter><Button variant="outline" onClick={() => setCreateTemplate(null)}>取消</Button><Button onClick={submitCreate} disabled={!projectName.trim() || bootstrapProject.isPending}>创建并打开</Button></DialogFooter>
         </DialogContent>
       </Dialog>
       <Dialog open={pendingImport !== null} onOpenChange={(open) => !open && setPendingImport(null)}>
@@ -274,7 +281,7 @@ export default function StudioPage() {
           ) : null}
           <DialogFooter>
             <Button variant="outline" onClick={() => setPendingImport(null)}>取消</Button>
-            <Button onClick={submitImport} disabled={!importProjectId || (importProjectId === '__new__' && !importProjectName.trim()) || createProject.isPending || createWorkflow.isPending}>创建 Draft 并打开</Button>
+            <Button onClick={submitImport} disabled={!importProjectId || (importProjectId === '__new__' && !importProjectName.trim()) || bootstrapProject.isPending || createWorkflow.isPending}>创建 Draft 并打开</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -44,6 +44,7 @@ import type {
   WorkerNode,
   WorkspaceSummary,
   ProjectSummary,
+  ProjectBootstrapResult,
   ProjectAppType,
   WorkflowAssetSummary,
   WorkflowDraftRead,
@@ -78,8 +79,16 @@ export const listMyWorkspaces = () =>
 export const listWorkspaceProjects = (workspaceId: string) =>
   apiClient.get<ApiResponse<ProjectSummary[]>>(`/workspaces/${workspaceId}/projects`).then((r) => r.data.data)
 
-export const createWorkspaceProject = (workspaceId: string, data: { name: string; slug: string; description?: string; app_type?: ProjectAppType }) =>
-  apiClient.post<ApiResponse<ProjectSummary>>(`/workspaces/${workspaceId}/projects`, data).then((r) => r.data.data)
+export const bootstrapWorkspaceProject = (
+  workspaceId: string,
+  data: {
+    project: { name: string; slug: string; description?: string; app_type?: ProjectAppType }
+    workflow: { name: string; description?: string; graph: import('@/lib/workflow/schema').WorkflowProject }
+  },
+) =>
+  apiClient
+    .post<ApiResponse<ProjectBootstrapResult>>(`/workspaces/${workspaceId}/projects/bootstrap`, data)
+    .then((r) => r.data.data)
 
 export const listProjectWorkflows = (workspaceId: string, projectId: string) =>
   apiClient.get<ApiResponse<WorkflowAssetSummary[]>>(`/workspaces/${workspaceId}/projects/${projectId}/workflows`).then((r) => r.data.data)

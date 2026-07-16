@@ -876,6 +876,7 @@ export interface ProjectSummary {
   slug: string
   description: string | null
   app_type: ProjectAppType
+  primary_workflow_id: string | null
   created_by_user_id: string
   archived: boolean
   created_at: string
@@ -898,6 +899,12 @@ export interface WorkflowDraftRead {
   graph: import('@/lib/workflow/schema').WorkflowProject
   updated_by_user_id: string
   updated_at: string
+}
+
+export interface ProjectBootstrapResult {
+  project: ProjectSummary
+  primary_workflow: WorkflowAssetSummary
+  draft: WorkflowDraftRead
 }
 
 export interface WorkflowVersionSummary {

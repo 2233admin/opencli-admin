@@ -11,7 +11,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { useCreateProjectWorkflow, useCreateWorkspaceProject, useMyWorkspaces } from '@/lib/api/hooks'
+import { useBootstrapWorkspaceProject, useMyWorkspaces } from '@/lib/api/hooks'
 import { STUDIO_TEMPLATES, studioAppTypeForTemplate, studioGraphForTemplate, studioSlug, type StudioTemplateId } from '@/lib/workflow/studio-templates'
 
 const CATEGORIES = ['全部', '采集与监控', '内容处理', 'Agent 分析', '分发与集成', '完整链路'] as const
@@ -21,8 +21,7 @@ export default function StudioTemplatesPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const workspaces = useMyWorkspaces()
-  const createProject = useCreateWorkspaceProject()
-  const createWorkflow = useCreateProjectWorkflow()
+  const bootstrapProject = useBootstrapWorkspaceProject()
   const [workspaceId, setWorkspaceId] = useState<string | null>(searchParams.get('workspace'))
   const [category, setCategory] = useState<(typeof CATEGORIES)[number]>('全部')
   const [query, setQuery] = useState('')
@@ -39,10 +38,12 @@ export default function StudioTemplatesPage() {
   async function createFromTemplate() {
     if (!workspaceId || !selected || !name.trim()) return
     try {
-      const project = await createProject.mutateAsync({ workspaceId, data: { name: name.trim(), slug: `${studioSlug(name)}-${Date.now().toString(36)}`, description: '由应用模板创建', app_type: studioAppTypeForTemplate(selected) } })
-      const workflow = await createWorkflow.mutateAsync({ workspaceId, projectId: project.id, data: { name: name.trim(), description: '模板工作流', graph: studioGraphForTemplate(selected, name.trim()) } })
+      const result = await bootstrapProject.mutateAsync({ workspaceId, data: {
+        project: { name: name.trim(), slug: `${studioSlug(name)}-${Date.now().toString(36)}`, description: '由应用模板创建', app_type: studioAppTypeForTemplate(selected) },
+        workflow: { name: name.trim(), description: '模板工作流', graph: studioGraphForTemplate(selected, name.trim()) },
+      } })
       toast.success('模板已创建，可以继续编排')
-      router.push(`/studio/workflow?workspace=${workspaceId}&project=${project.id}&workflow=${workflow.id}`)
+      router.push(`/studio/workflow?workspace=${workspaceId}&project=${result.project.id}&workflow=${result.primary_workflow.id}`)
     } catch (reason) { toast.error(reason instanceof Error ? reason.message : '创建失败') }
   }
 
@@ -74,7 +75,7 @@ export default function StudioTemplatesPage() {
           </section>
         </div>
       </div>
-      <Dialog open={selected !== null} onOpenChange={(open) => !open && setSelected(null)}><DialogContent><DialogHeader><DialogTitle>用这个模板创建项目</DialogTitle><DialogDescription>模板会生成项目和第一份工作流草稿，所有节点都可以继续修改。</DialogDescription></DialogHeader><label className="space-y-2 text-sm"><span>项目名称</span><Input value={name} onChange={(event) => setName(event.target.value)} autoFocus /></label><DialogFooter><Button variant="outline" onClick={() => setSelected(null)}>取消</Button><Button onClick={createFromTemplate} disabled={!name.trim() || createProject.isPending || createWorkflow.isPending}>创建并打开</Button></DialogFooter></DialogContent></Dialog>
+      <Dialog open={selected !== null} onOpenChange={(open) => !open && setSelected(null)}><DialogContent><DialogHeader><DialogTitle>用这个模板创建项目</DialogTitle><DialogDescription>模板会生成项目和第一份工作流草稿，所有节点都可以继续修改。</DialogDescription></DialogHeader><label className="space-y-2 text-sm"><span>项目名称</span><Input value={name} onChange={(event) => setName(event.target.value)} autoFocus /></label><DialogFooter><Button variant="outline" onClick={() => setSelected(null)}>取消</Button><Button onClick={createFromTemplate} disabled={!name.trim() || bootstrapProject.isPending}>创建并打开</Button></DialogFooter></DialogContent></Dialog>
     </PageContainer>
   )
 }

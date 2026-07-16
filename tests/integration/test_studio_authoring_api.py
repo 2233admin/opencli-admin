@@ -1,6 +1,6 @@
 import pytest
 
-PROJECT_APP_TYPES = ("chatbot", "agent", "chatflow", "workflow", "text-generator")
+from tests.fixtures.workflow_conformance import workflow_conformance_project
 
 
 @pytest.mark.asyncio
@@ -9,21 +9,23 @@ async def test_studio_project_workflow_draft_persists(client):
     assert len(workspaces) == 1
     workspace_id = workspaces[0]["id"]
 
-    project_response = await client.post(
-        f"/api/v1/workspaces/{workspace_id}/projects",
-        json={"name": "采集项目", "slug": "collection", "description": "真实后端项目"},
+    graph = workflow_conformance_project()
+    bootstrap_response = await client.post(
+        f"/api/v1/workspaces/{workspace_id}/projects/bootstrap",
+        json={
+            "project": {
+                "name": "采集项目",
+                "slug": "collection",
+                "description": "真实后端项目",
+            },
+            "workflow": {"name": "采集流", "graph": graph},
+        },
     )
-    assert project_response.status_code == 201, project_response.text
-    project = project_response.json()["data"]
+    assert bootstrap_response.status_code == 201, bootstrap_response.text
+    bootstrap = bootstrap_response.json()["data"]
+    project = bootstrap["project"]
+    workflow = bootstrap["primary_workflow"]
     assert project["app_type"] == "workflow"
-
-    graph = {"id": "temporary", "name": "采集流", "nodes": [], "edges": [], "adapters": []}
-    workflow_response = await client.post(
-        f"/api/v1/workspaces/{workspace_id}/projects/{project['id']}/workflows",
-        json={"name": "采集流", "graph": graph},
-    )
-    assert workflow_response.status_code == 201, workflow_response.text
-    workflow = workflow_response.json()["data"]
 
     draft_url = (
         f"/api/v1/workspaces/{workspace_id}/projects/{project['id']}"
@@ -52,32 +54,17 @@ async def test_studio_project_workflow_draft_persists(client):
     ).json()["data"]
     assert [item["id"] for item in listed] == [workflow["id"]]
 
+    project_after_first_workflow = (
+        await client.get(f"/api/v1/workspaces/{workspace_id}/projects")
+    ).json()["data"][0]
+    assert project_after_first_workflow["primary_workflow_id"] == workflow["id"]
 
-@pytest.mark.asyncio
-async def test_studio_project_app_type_is_validated_and_listed(client):
-    workspace_id = (await client.get("/api/v1/workspaces")).json()["data"][0]["id"]
-
-    created = []
-    for app_type in PROJECT_APP_TYPES:
-        response = await client.post(
-            f"/api/v1/workspaces/{workspace_id}/projects",
-            json={
-                "name": f"{app_type} project",
-                "slug": f"{app_type}-project",
-                "app_type": app_type,
-            },
-        )
-        assert response.status_code == 201, response.text
-        project = response.json()["data"]
-        assert project["app_type"] == app_type
-        created.append(project)
-
-    invalid = await client.post(
-        f"/api/v1/workspaces/{workspace_id}/projects",
-        json={"name": "invalid project", "slug": "invalid-project", "app_type": "tool"},
+    second_workflow_response = await client.post(
+        f"/api/v1/workspaces/{workspace_id}/projects/{project['id']}/workflows",
+        json={"name": "辅助流", "graph": graph},
     )
-    assert invalid.status_code == 422
-
-    listed = (await client.get(f"/api/v1/workspaces/{workspace_id}/projects")).json()["data"]
-    listed_types = {project["slug"]: project["app_type"] for project in listed}
-    assert listed_types == {project["slug"]: project["app_type"] for project in created}
+    assert second_workflow_response.status_code == 201, second_workflow_response.text
+    project_after_second_workflow = (
+        await client.get(f"/api/v1/workspaces/{workspace_id}/projects")
+    ).json()["data"][0]
+    assert project_after_second_workflow["primary_workflow_id"] == workflow["id"]

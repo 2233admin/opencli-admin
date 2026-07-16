@@ -18,12 +18,10 @@ function test(name, fn) {
   console.log(`ok - ${name}`)
 }
 
-test('draft: activation stage carries the not-integrated note', () => {
+test('draft exposes only workflow authoring stages', () => {
   const view = deriveWorkflowLifecycleView('draft')
   assert.equal(view.primaryStatusLabel, '草稿')
-  const activate = view.stages.find((s) => s.key === 'activate')
-  assert.equal(activate.status, 'unavailable')
-  assert.equal(activate.note, '待后端接入')
+  assert.deepEqual(view.stages.map((stage) => stage.key), ['draft', 'validate', 'publish'])
 })
 
 test('validating -> validated -> publishing labels are distinct', () => {
@@ -32,18 +30,13 @@ test('validating -> validated -> publishing labels are distinct', () => {
   assert.equal(deriveWorkflowLifecycleView('publishing').primaryStatusLabel, '发布中')
 })
 
-test('published: publish stage is done but activation is still unavailable, never active', () => {
+test('published: publish stage is done', () => {
   const view = deriveWorkflowLifecycleView('published')
   assert.equal(view.primaryStatusLabel, '已发布')
 
   const publish = view.stages.find((s) => s.key === 'publish')
   assert.equal(publish.status, 'done')
 
-  const activate = view.stages.find((s) => s.key === 'activate')
-  assert.equal(activate.status, 'unavailable')
-  assert.notEqual(activate.status, 'active')
-  assert.notEqual(activate.status, 'done')
-  assert.equal(activate.note, '待后端接入')
 })
 
 test('blocked: exactly one blocker message surfaces and validate stage reports error', () => {
@@ -60,13 +53,13 @@ test('blocker text is only surfaced when state is actually blocked', () => {
   assert.equal(view.blockerText, undefined)
 })
 
-test('every state exposes exactly four stages in a stable order', () => {
+test('every state exposes exactly three workflow authoring stages in a stable order', () => {
   const states = ['draft', 'validating', 'validated', 'publishing', 'published', 'blocked']
   for (const state of states) {
     const view = deriveWorkflowLifecycleView(state)
     assert.deepEqual(
       view.stages.map((s) => s.key),
-      ['draft', 'validate', 'publish', 'activate'],
+      ['draft', 'validate', 'publish'],
     )
   }
 })
@@ -80,7 +73,7 @@ test('render contract carries authoring revision and published version separatel
   assert.match(source, /revision: number \| null/)
   assert.match(source, /publishedVersion\?: number \| null/)
   assert.match(source, /aria-label="工作流生命周期"/)
-  assert.match(logic, /待后端接入/)
+  assert.doesNotMatch(logic, /activate|激活|待后端接入/)
 })
 
 console.log(`\n${passed} passed`)

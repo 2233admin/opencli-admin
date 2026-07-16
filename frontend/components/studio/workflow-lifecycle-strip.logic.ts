@@ -12,15 +12,14 @@ export type WorkflowLifecycleState =
   | 'published'
   | 'blocked'
 
-export type LifecycleStageKey = 'draft' | 'validate' | 'publish' | 'activate'
+export type LifecycleStageKey = 'draft' | 'validate' | 'publish'
 
-export type LifecycleStageStatus = 'pending' | 'active' | 'done' | 'error' | 'unavailable'
+export type LifecycleStageStatus = 'pending' | 'active' | 'done' | 'error'
 
 export interface LifecycleStageView {
   key: LifecycleStageKey
   label: string
   status: LifecycleStageStatus
-  note?: string
 }
 
 export interface WorkflowLifecycleView {
@@ -30,13 +29,12 @@ export interface WorkflowLifecycleView {
   stages: LifecycleStageView[]
 }
 
-const STAGE_ORDER: LifecycleStageKey[] = ['draft', 'validate', 'publish', 'activate']
+const STAGE_ORDER: LifecycleStageKey[] = ['draft', 'validate', 'publish']
 
 const STAGE_LABELS: Record<LifecycleStageKey, string> = {
   draft: '草稿',
   validate: '验证',
   publish: '版本发布',
-  activate: '激活',
 }
 
 const PRIMARY_STATUS_LABELS: Record<WorkflowLifecycleState, string> = {
@@ -48,23 +46,16 @@ const PRIMARY_STATUS_LABELS: Record<WorkflowLifecycleState, string> = {
   blocked: '已阻塞',
 }
 
-/**
- * Activation has no backend-integrated meaning yet. This note must render
- * unconditionally regardless of state — publishing/published must never
- * imply the project is active.
- */
-const ACTIVATION_NOTE = '待后端接入'
-
 const STAGE_STATUSES_BY_STATE: Record<
   WorkflowLifecycleState,
   Record<LifecycleStageKey, LifecycleStageStatus>
 > = {
-  draft: { draft: 'active', validate: 'pending', publish: 'pending', activate: 'unavailable' },
-  validating: { draft: 'done', validate: 'active', publish: 'pending', activate: 'unavailable' },
-  validated: { draft: 'done', validate: 'done', publish: 'pending', activate: 'unavailable' },
-  publishing: { draft: 'done', validate: 'done', publish: 'active', activate: 'unavailable' },
-  published: { draft: 'done', validate: 'done', publish: 'done', activate: 'unavailable' },
-  blocked: { draft: 'done', validate: 'error', publish: 'pending', activate: 'unavailable' },
+  draft: { draft: 'active', validate: 'pending', publish: 'pending' },
+  validating: { draft: 'done', validate: 'active', publish: 'pending' },
+  validated: { draft: 'done', validate: 'done', publish: 'pending' },
+  publishing: { draft: 'done', validate: 'done', publish: 'active' },
+  published: { draft: 'done', validate: 'done', publish: 'done' },
+  blocked: { draft: 'done', validate: 'error', publish: 'pending' },
 }
 
 export function deriveWorkflowLifecycleView(
@@ -77,7 +68,6 @@ export function deriveWorkflowLifecycleView(
     key,
     label: STAGE_LABELS[key],
     status: statuses[key],
-    note: key === 'activate' ? ACTIVATION_NOTE : undefined,
   }))
 
   return {

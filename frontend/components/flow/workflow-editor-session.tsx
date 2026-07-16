@@ -10,7 +10,7 @@ import { ErrorBoundary } from '@/components/error-boundary'
 import { WorkflowLifecycleStrip } from '@/components/studio/workflow-lifecycle-strip'
 import { loader, Matrix } from '@/components/unlumen-ui/matrix'
 import { getProjectWorkflowDraft, publishProjectWorkflow, updateProjectWorkflowDraft, validateProjectWorkflowDraft } from '@/lib/api/endpoints'
-import { useProjectWorkflows } from '@/lib/api/hooks'
+import { useWorkspaceProjects } from '@/lib/api/hooks'
 import { useFlowStore } from '@/lib/flow/store'
 import { useWorkflowCapabilities } from '@/lib/workflow/use-workflow-capabilities'
 import { parseWorkflowProject, type WorkflowProject, type WorkflowProjectNode } from '@/lib/workflow/schema'
@@ -48,7 +48,10 @@ export function WorkflowEditorSession({ forceStandalone = false }: WorkflowEdito
   const workspaceId = forceStandalone ? null : params.get('workspace')
   const projectId = forceStandalone ? null : params.get('project')
   const requestedWorkflowId = forceStandalone ? null : params.get('workflow')
-  const projectWorkflows = useProjectWorkflows(workspaceId, projectId)
+  const workspaceProjects = useWorkspaceProjects(workspaceId)
+  const project = workspaceProjects.data?.find((item) => item.id === projectId)
+  const resolvedWorkflowId = requestedWorkflowId ?? project?.primary_workflow_id
+  const primaryWorkflowPending = !requestedWorkflowId && workspaceProjects.isLoading
   const workflowProject = useFlowStore((state) => state.workflowProject)
   const importWorkflowProject = useFlowStore((state) => state.importWorkflowProject)
   const [workflowId, setWorkflowId] = useState<string | null>(null)
@@ -104,7 +107,8 @@ export function WorkflowEditorSession({ forceStandalone = false }: WorkflowEdito
 
   useEffect(() => {
     if (!workspaceId || !projectId) return
-    if (!requestedWorkflowId && projectWorkflows.isLoading) return
+    if (primaryWorkflowPending) return
+    let active = true
     loaded.current = false
     revision.current = null
     setSavedRevision(null)
@@ -114,23 +118,27 @@ export function WorkflowEditorSession({ forceStandalone = false }: WorkflowEdito
     setDocumentState('loading')
     ;(async () => {
       try {
-        const resolvedId = requestedWorkflowId ?? projectWorkflows.data?.[0]?.id
-        if (!resolvedId) throw new Error('项目中没有可编辑的工作流')
-        const draft = await getProjectWorkflowDraft(workspaceId, projectId, resolvedId)
+        if (!resolvedWorkflowId) throw new Error('项目中没有可编辑的工作流')
+        const draft = await getProjectWorkflowDraft(workspaceId, projectId, resolvedWorkflowId)
+        if (!active) return
         const graph = parseWorkflowProject(draft.graph)
         importWorkflowProject(graph)
         revision.current = draft.revision
         setSavedRevision(draft.revision)
         lastSavedFingerprint.current = projectFingerprint(graph)
-        setWorkflowId(resolvedId)
+        setWorkflowId(resolvedWorkflowId)
         loaded.current = true
         setDocumentState('saved')
       } catch (reason) {
+        if (!active) return
         setDocumentState('error')
         toast.error(reason instanceof Error ? reason.message : '工作流加载失败')
       }
     })()
-  }, [importWorkflowProject, projectId, projectWorkflows.data, projectWorkflows.isLoading, requestedWorkflowId, workspaceId])
+    return () => {
+      active = false
+    }
+  }, [importWorkflowProject, primaryWorkflowPending, projectId, resolvedWorkflowId, workspaceId])
 
   useEffect(() => {
     if (!loaded.current || !workspaceId || !projectId || !workflowId) return
@@ -164,7 +172,10 @@ export function WorkflowEditorSession({ forceStandalone = false }: WorkflowEdito
     try {
       await saveDraft(workflowProject)
       const run = await validateProjectWorkflowDraft(workspaceId, projectId, workflowId)
-      if (run.status !== 'completed') throw new Error(`验证 Run 状态：${run.status}`)
+      if (!run.valid || run.status !== 'completed') {
+        const details = run.errors.slice(0, 3).map((error) => error.message).filter(Boolean)
+        throw new Error(details.length ? `验证失败：${details.join('；')}` : `验证 Run 状态：${run.status}`)
+      }
       setValidationRunId(run.runId)
       setReleaseState('validated')
       toast.success('验证 Run 已通过，可以发布')

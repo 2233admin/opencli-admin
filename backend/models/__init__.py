@@ -20,7 +20,14 @@ from backend.models.source import DataSource
 from backend.models.source_credential import SourceCredential
 from backend.models.source_cursor import SourceCursor
 from backend.models.source_measurement import SourceMeasurement
-from backend.models.studio import StudioProject, StudioWorkflow, StudioWorkflowDraft, StudioWorkspace
+from backend.models.studio import (
+    StudioProject,
+    StudioWorkflow,
+    StudioWorkflowDraft,
+    StudioWorkflowValidationRun,
+    StudioWorkflowVersion,
+    StudioWorkspace,
+)
 from backend.models.task import CollectionTask, TaskRun, TaskRunEvent
 from backend.models.worker import WorkerNode
 from backend.models.workflow_run import WorkflowRun, WorkflowRunEvent
@@ -49,6 +56,8 @@ __all__ = [
     "StudioProject",
     "StudioWorkflow",
     "StudioWorkflowDraft",
+    "StudioWorkflowValidationRun",
+    "StudioWorkflowVersion",
     "OdpSystemMeasurement",
     "ControlActionRecord",
     "CollectionTask",

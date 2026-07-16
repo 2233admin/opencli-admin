@@ -25,11 +25,14 @@ export function useProjectWorkflows(workspaceId: string | null, projectId: strin
   })
 }
 
-export function useCreateWorkspaceProject() {
+export function useBootstrapWorkspaceProject() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ workspaceId, data }: { workspaceId: string; data: Parameters<typeof api.createWorkspaceProject>[1] }) => api.createWorkspaceProject(workspaceId, data),
-    onSuccess: (_project, { workspaceId }) => queryClient.invalidateQueries({ queryKey: ['workspace-projects', workspaceId] }),
+    mutationFn: ({ workspaceId, data }: { workspaceId: string; data: Parameters<typeof api.bootstrapWorkspaceProject>[1] }) => api.bootstrapWorkspaceProject(workspaceId, data),
+    onSuccess: (result, { workspaceId }) => {
+      void queryClient.invalidateQueries({ queryKey: ['workspace-projects', workspaceId] })
+      queryClient.setQueryData(['project-workflows', workspaceId, result.project.id], [result.primary_workflow])
+    },
   })
 }
 
