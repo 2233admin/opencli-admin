@@ -126,7 +126,16 @@ test('the production studio adopts the selected project-workspace concept with r
   assert.match(studio, /get\('create'\) === 'workflow'/)
   assert.match(studio, /setCreateTemplate\('collection-to-consumption'\)/)
   assert.match(studio, /aria-label="项目浏览工具栏"/)
-  assert.match(studio, /aria-label="项目类型筛选"/)
+  assert.match(studio, /aria-label="Dify 应用类型筛选"/)
+  for (const appType of ['聊天助手', 'Agent', 'Chatflow', 'Workflow', '文本生成']) {
+    assert.match(studio, new RegExp(`label:\\s*['"]${appType}['"]`))
+  }
+  assert.match(studio, /const selectedWorkspace = workspaces\.data\?\.find/)
+  assert.match(studio, /workspaces\.data\?\.length[\s\S]*> 1/)
+  assert.match(studio, /<SelectValue>\{selectedWorkspace\?\.name \?\? '选择工作区'\}<\/SelectValue>/)
+  assert.match(studio, /aria-label="当前工作区"/)
+  assert.doesNotMatch(studio, /<SelectValue placeholder="选择工作区"\s*\/>/)
+  assert.match(studio, /const normalized = value\.toLowerCase\(\)/)
   assert.match(studio, /\{visibleProjects\.length\} 个项目/)
   assert.match(studio, /project\.updated_at/)
   assert.match(studio, /\/studio\/workflow\?workspace=\$\{workspaceId\}&project=\$\{project\.id\}/)

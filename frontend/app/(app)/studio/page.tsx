@@ -1,6 +1,6 @@
 'use client'
 
-import { Blocks, Bot, ChevronDown, Database, FileUp, FolderKanban, Plus, Search, Send, Sparkles } from 'lucide-react'
+import { Bot, Building2, ChevronDown, FileText, FileUp, FolderKanban, MessageCircle, MessagesSquare, Plus, Search, Sparkles, Workflow } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -21,10 +21,11 @@ import { studioGraphForTemplate, studioSlug } from '@/lib/workflow/studio-templa
 
 const PROJECT_TYPE_FILTERS = [
   { value: 'all', label: '全部', icon: FolderKanban },
-  { value: 'collect', label: '采集', icon: Database },
-  { value: 'process', label: '处理', icon: Blocks },
-  { value: 'deliver', label: '发送', icon: Send },
-  { value: 'full', label: '完整链路', icon: Sparkles },
+  { value: 'chatbot', label: '聊天助手', icon: MessageCircle },
+  { value: 'agent', label: 'Agent', icon: Bot },
+  { value: 'chatflow', label: 'Chatflow', icon: MessagesSquare },
+  { value: 'workflow', label: 'Workflow', icon: Workflow },
+  { value: 'text-generator', label: '文本生成', icon: FileText },
 ] as const
 
 export default function StudioPage() {
@@ -81,6 +82,7 @@ export default function StudioPage() {
   }, [creator, projects.data, search, sort, type])
 
   const creators = useMemo(() => Array.from(new Set((projects.data ?? []).map((project) => project.created_by_user_id))), [projects.data])
+  const selectedWorkspace = workspaces.data?.find((workspace) => workspace.id === workspaceId)
 
   async function submitCreate() {
     if (!workspaceId || !createTemplate || !projectName.trim()) return
@@ -163,17 +165,27 @@ export default function StudioPage() {
       <input ref={importInputRef} type="file" accept=".json,.yml,.yaml,application/json,text/yaml" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importDsl(file) }} />
       <div className="space-y-3 border-b pb-4" aria-label="项目浏览工具栏">
         <div className="flex flex-wrap items-center gap-2">
-          <Select value={workspaceId ?? ''} onValueChange={(value) => setWorkspaceId(value || null)}>
-            <SelectTrigger className="min-w-48 rounded-lg border-0 bg-muted/60 shadow-none"><SelectValue placeholder="选择工作区" /></SelectTrigger>
-            <SelectContent>{(workspaces.data ?? []).map((workspace) => <SelectItem key={workspace.id} value={workspace.id}>{workspace.name}</SelectItem>)}</SelectContent>
-          </Select>
+          {(workspaces.data?.length ?? 0) > 1 ? (
+            <Select value={workspaceId ?? ''} onValueChange={(value) => setWorkspaceId(value || null)}>
+              <SelectTrigger className="min-w-48 rounded-lg border-0 bg-muted/60 shadow-none" aria-label="切换工作区">
+                <Building2 className="size-3.5 text-muted-foreground" aria-hidden />
+                <SelectValue>{selectedWorkspace?.name ?? '选择工作区'}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>{(workspaces.data ?? []).map((workspace) => <SelectItem key={workspace.id} value={workspace.id}>{workspace.name}</SelectItem>)}</SelectContent>
+            </Select>
+          ) : selectedWorkspace ? (
+            <div className="flex h-8 items-center gap-2 px-1 text-xs" aria-label="当前工作区">
+              <Building2 className="size-3.5 text-muted-foreground" aria-hidden />
+              <span className="font-medium">{selectedWorkspace.name}</span>
+            </div>
+          ) : null}
           <div className="relative ml-auto min-w-52 flex-1 sm:max-w-80">
             <Search className="pointer-events-none absolute left-3 top-2.5 size-4 text-muted-foreground" aria-hidden />
             <Input value={search} onChange={(event) => setSearch(event.target.value)} className="rounded-lg pl-9" placeholder="搜索名称、描述或标识" />
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-1.5" aria-label="项目类型筛选">
-          <span className="px-1 text-[10px] text-muted-foreground">快速分类</span>
+        <div className="flex flex-wrap items-center gap-1.5" aria-label="Dify 应用类型筛选">
+          <span className="px-1 text-2xs text-muted-foreground">应用类型</span>
           {PROJECT_TYPE_FILTERS.map(({ value, label, icon: Icon }) => (
             <Button key={value} type="button" size="sm" variant={type === value ? 'secondary' : 'ghost'} className="h-8 rounded-lg px-2.5 text-xs" onClick={() => setType(value)}>
               <Icon className="size-3.5" aria-hidden />{label}
@@ -284,13 +296,15 @@ function ImportCompatibilitySummary({ imported }: { imported: Extract<WorkflowIm
 }
 
 function inferProjectType(value: string) {
-  if (/采集|collect|source|scrape/.test(value)) return 'collect'
-  if (/清洗|处理|process|transform/.test(value)) return 'process'
-  if (/发送|消费|deliver|api|notify/.test(value)) return 'deliver'
-  return 'full'
+  const normalized = value.toLowerCase()
+  if (/chatflow|对话流|会话流/.test(normalized)) return 'chatflow'
+  if (/\bagent\b|智能体|专题研究|research/.test(normalized)) return 'agent'
+  if (/chatbot|聊天|客服|问答/.test(normalized)) return 'chatbot'
+  if (/text.generator|文本生成|文案|摘要|翻译|写作/.test(normalized)) return 'text-generator'
+  return 'workflow'
 }
 
-const TYPE_LABELS: Record<string, string> = { collect: '采集', process: '处理', deliver: '发送', full: '完整链路' }
+const TYPE_LABELS: Record<string, string> = { chatbot: '聊天助手', agent: 'Agent', chatflow: 'Chatflow', workflow: 'Workflow', 'text-generator': '文本生成' }
 const SORT_LABELS: Record<string, string> = { 'updated-desc': '最近修改', 'created-asc': '最早创建', name: '名称' }
 
 function CreateChoice({ title, description, href, onClick, icon: Icon }: { title: string; description: string; href?: string; onClick?: () => void; icon: typeof Plus }) {
