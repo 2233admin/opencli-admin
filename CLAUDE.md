@@ -10,3 +10,17 @@
 - 字号禁 `text-[Npx]` 任意值, 用 `text-2xs`(11px)/`text-3xs`(10px)
 - 圆角: 控件 `rounded-xs`, 面板 `rounded-md`; 阴影用 `shadow-panel/overlay/drag`
 - 缺 ui 原语用 `npx shadcn@latest add <x>` 拉, 禁手搓
+
+## Agent skills
+
+### Issue tracker
+
+规格与任务发布到公开仓库 `2233admin/opencli-admin` 的 GitHub Issues；所有 `gh` 写操作必须显式指定该仓库。See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+使用默认五阶段标签：`needs-triage`、`needs-info`、`ready-for-agent`、`ready-for-human`、`wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+采用 single-context：根目录 `CONTEXT.md` 是领域词汇表，`docs/adr/` 保存架构决策。See `docs/agents/domain.md`.
