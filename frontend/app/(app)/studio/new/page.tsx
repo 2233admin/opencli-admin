@@ -74,7 +74,7 @@ export default function NewAgentStudioPage() {
     if (!workspaceId || !(name.trim() || useBlank) || (!useBlank && !emailReady)) return
     const finalName = name.trim() || '未命名项目'
     try {
-      const project = await createProject.mutateAsync({ workspaceId, data: { name: finalName, slug: `${studioSlug(finalName)}-${Date.now().toString(36)}`, description: userRequirements.join('；') || '从空白画布创建' } })
+      const project = await createProject.mutateAsync({ workspaceId, data: { name: finalName, slug: `${studioSlug(finalName)}-${Date.now().toString(36)}`, description: userRequirements.join('；') || '从空白画布创建', app_type: useBlank ? 'workflow' : 'agent' } })
       const graph = spec && !useBlank ? generatedSpecToWorkflowProject(spec, finalName, { deliveryEmail: finalEmail }) : studioGraphForTemplate('blank', finalName)
       const workflow = await createWorkflow.mutateAsync({ workspaceId, projectId: project.id, data: { name: finalName, description: userRequirements.join('；') || '空白工作流', graph } })
       toast.success(spec && !useBlank ? '项目草稿已保存，下一步可检查并激活' : '空白项目已创建')

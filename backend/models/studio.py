@@ -1,4 +1,13 @@
-from sqlalchemy import JSON, Boolean, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    CheckConstraint,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.models.base import TimestampMixin
@@ -14,7 +23,13 @@ class StudioWorkspace(TimestampMixin):
 
 class StudioProject(TimestampMixin):
     __tablename__ = "studio_projects"
-    __table_args__ = (UniqueConstraint("workspace_id", "slug"),)
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "slug"),
+        CheckConstraint(
+            "app_type IN ('chatbot', 'agent', 'chatflow', 'workflow', 'text-generator')",
+            name="ck_studio_projects_app_type",
+        ),
+    )
 
     workspace_id: Mapped[str] = mapped_column(
         ForeignKey("studio_workspaces.id", ondelete="CASCADE"), nullable=False, index=True
@@ -22,6 +37,9 @@ class StudioProject(TimestampMixin):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     slug: Mapped[str] = mapped_column(String(100), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    app_type: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="workflow", server_default="workflow"
+    )
     created_by_user_id: Mapped[str] = mapped_column(String(100), nullable=False)
     archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 

@@ -1,5 +1,7 @@
 import pytest
 
+PROJECT_APP_TYPES = ("chatbot", "agent", "chatflow", "workflow", "text-generator")
+
 
 @pytest.mark.asyncio
 async def test_studio_project_workflow_draft_persists(client):
@@ -13,6 +15,7 @@ async def test_studio_project_workflow_draft_persists(client):
     )
     assert project_response.status_code == 201, project_response.text
     project = project_response.json()["data"]
+    assert project["app_type"] == "workflow"
 
     graph = {"id": "temporary", "name": "采集流", "nodes": [], "edges": [], "adapters": []}
     workflow_response = await client.post(
@@ -48,3 +51,33 @@ async def test_studio_project_workflow_draft_persists(client):
         )
     ).json()["data"]
     assert [item["id"] for item in listed] == [workflow["id"]]
+
+
+@pytest.mark.asyncio
+async def test_studio_project_app_type_is_validated_and_listed(client):
+    workspace_id = (await client.get("/api/v1/workspaces")).json()["data"][0]["id"]
+
+    created = []
+    for app_type in PROJECT_APP_TYPES:
+        response = await client.post(
+            f"/api/v1/workspaces/{workspace_id}/projects",
+            json={
+                "name": f"{app_type} project",
+                "slug": f"{app_type}-project",
+                "app_type": app_type,
+            },
+        )
+        assert response.status_code == 201, response.text
+        project = response.json()["data"]
+        assert project["app_type"] == app_type
+        created.append(project)
+
+    invalid = await client.post(
+        f"/api/v1/workspaces/{workspace_id}/projects",
+        json={"name": "invalid project", "slug": "invalid-project", "app_type": "tool"},
+    )
+    assert invalid.status_code == 422
+
+    listed = (await client.get(f"/api/v1/workspaces/{workspace_id}/projects")).json()["data"]
+    listed_types = {project["slug"]: project["app_type"] for project in listed}
+    assert listed_types == {project["slug"]: project["app_type"] for project in created}

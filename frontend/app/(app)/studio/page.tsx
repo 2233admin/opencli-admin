@@ -16,27 +16,28 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useCreateProjectWorkflow, useCreateWorkspaceProject, useMyWorkspaces, useWorkspaceProjects } from '@/lib/api/hooks'
 import { formatRelative } from '@/lib/format'
+import { PROJECT_APP_TYPE_LABELS, projectAppTypeForDifyMode, projectMatchesAppType, type ProjectAppTypeFilter } from '@/lib/studio/app-types'
 import { translateWorkflowDsl, type WorkflowImportResult } from '@/lib/workflow/codec'
-import { studioGraphForTemplate, studioSlug } from '@/lib/workflow/studio-templates'
+import { studioAppTypeForTemplate, studioGraphForTemplate, studioSlug, type StudioTemplateId } from '@/lib/workflow/studio-templates'
 
 const PROJECT_TYPE_FILTERS = [
   { value: 'all', label: '全部', icon: FolderKanban },
-  { value: 'chatbot', label: '聊天助手', icon: MessageCircle },
-  { value: 'agent', label: 'Agent', icon: Bot },
-  { value: 'chatflow', label: 'Chatflow', icon: MessagesSquare },
-  { value: 'workflow', label: 'Workflow', icon: Workflow },
-  { value: 'text-generator', label: '文本生成', icon: FileText },
-] as const
+  { value: 'chatbot', label: PROJECT_APP_TYPE_LABELS.chatbot, icon: MessageCircle },
+  { value: 'agent', label: PROJECT_APP_TYPE_LABELS.agent, icon: Bot },
+  { value: 'chatflow', label: PROJECT_APP_TYPE_LABELS.chatflow, icon: MessagesSquare },
+  { value: 'workflow', label: PROJECT_APP_TYPE_LABELS.workflow, icon: Workflow },
+  { value: 'text-generator', label: PROJECT_APP_TYPE_LABELS['text-generator'], icon: FileText },
+] as const satisfies ReadonlyArray<{ value: ProjectAppTypeFilter; label: string; icon: typeof FolderKanban }>
 
 export default function StudioPage() {
   const router = useRouter()
   const workspaces = useMyWorkspaces()
   const [workspaceId, setWorkspaceId] = useState<string | null>(null)
   const [search, setSearch] = useState('')
-  const [type, setType] = useState('all')
+  const [type, setType] = useState<ProjectAppTypeFilter>('all')
   const [creator, setCreator] = useState('all')
   const [sort, setSort] = useState('updated-desc')
-  const [createTemplate, setCreateTemplate] = useState<string | null>(null)
+  const [createTemplate, setCreateTemplate] = useState<StudioTemplateId | null>(null)
   const [projectName, setProjectName] = useState('')
   const [pendingImport, setPendingImport] = useState<Extract<WorkflowImportResult, { ok: true }> | null>(null)
   const [importProjectId, setImportProjectId] = useState('')
@@ -70,8 +71,7 @@ export default function StudioPage() {
     const query = search.trim().toLowerCase()
     const result = (projects.data ?? []).filter((project) => {
       const haystack = `${project.name} ${project.description ?? ''} ${project.slug}`.toLowerCase()
-      const projectType = inferProjectType(haystack)
-      return (!query || haystack.includes(query)) && (type === 'all' || projectType === type) && (creator === 'all' || project.created_by_user_id === creator)
+      return (!query || haystack.includes(query)) && projectMatchesAppType(project, type) && (creator === 'all' || project.created_by_user_id === creator)
     })
     return result.sort((left, right) => {
       if (sort === 'name') return left.name.localeCompare(right.name, 'zh-CN')
@@ -89,12 +89,12 @@ export default function StudioPage() {
     try {
       const project = await createProject.mutateAsync({
         workspaceId,
-        data: { name: projectName.trim(), slug: `${studioSlug(projectName)}-${Date.now().toString(36)}`, description: '由工作区模板创建' },
+        data: { name: projectName.trim(), slug: `${studioSlug(projectName)}-${Date.now().toString(36)}`, description: '由工作区模板创建', app_type: studioAppTypeForTemplate(createTemplate) },
       })
       const workflow = await createWorkflow.mutateAsync({
         workspaceId,
         projectId: project.id,
-        data: { name: projectName.trim(), description: '工作区默认工作流', graph: studioGraphForTemplate(createTemplate as Parameters<typeof studioGraphForTemplate>[0], projectName.trim()) },
+        data: { name: projectName.trim(), description: '工作区默认工作流', graph: studioGraphForTemplate(createTemplate, projectName.trim()) },
       })
       setCreateTemplate(null)
       toast.success('项目与工作流已创建')
@@ -129,6 +129,7 @@ export default function StudioPage() {
               name: importProjectName.trim(),
               slug: `${studioSlug(importProjectName)}-${Date.now().toString(36)}`,
               description: `${pendingImport.format} DSL 导入`,
+              app_type: projectAppTypeForDifyMode(pendingImport.format === 'dify' && pendingImport.report?.source === 'dify' ? pendingImport.report.appMode : undefined),
             },
           })).id
         : importProjectId
@@ -220,7 +221,7 @@ export default function StudioPage() {
           {visibleProjects.map((project) => (
             <Link key={project.id} href={`/studio/workflow?workspace=${workspaceId}&project=${project.id}`} className="group min-w-0 rounded-xl border border-border/80 bg-card/30 p-3.5 transition-[border-color,background-color,transform] hover:-translate-y-0.5 hover:border-foreground/25 hover:bg-card/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
               <div className="flex items-start justify-between gap-3"><div className="grid size-9 place-items-center rounded-lg bg-muted text-muted-foreground transition-colors group-hover:text-foreground"><FolderKanban className="size-4" aria-hidden /></div><Badge variant={project.archived ? 'secondary' : 'outline'}>{project.archived ? '已归档' : project.slug}</Badge></div>
-              <div className="mt-4 flex items-center gap-2"><span className="eyebrow-mono">{TYPE_LABELS[inferProjectType(`${project.name} ${project.description ?? ''} ${project.slug}`)]}</span><span className="truncate font-mono text-[10px] text-muted-foreground">{project.slug}</span></div>
+              <div className="mt-4 flex items-center gap-2"><span className="eyebrow-mono">{PROJECT_APP_TYPE_LABELS[project.app_type]}</span><span className="truncate font-mono text-[10px] text-muted-foreground">{project.slug}</span></div>
               <h2 className="mt-1 truncate text-sm font-semibold">{project.name}</h2>
               <p className="mt-1 line-clamp-2 min-h-10 text-xs leading-5 text-muted-foreground">{project.description || '数据节点项目'}</p>
               <div className="mt-3 flex items-center justify-between border-t border-border/70 pt-2.5 text-[10px] text-muted-foreground"><span>创建者 {project.created_by_user_id.slice(0, 8)}</span><span>{formatRelative(project.updated_at)}</span></div>
@@ -295,16 +296,6 @@ function ImportCompatibilitySummary({ imported }: { imported: Extract<WorkflowIm
   )
 }
 
-function inferProjectType(value: string) {
-  const normalized = value.toLowerCase()
-  if (/chatflow|对话流|会话流/.test(normalized)) return 'chatflow'
-  if (/\bagent\b|智能体|专题研究|research/.test(normalized)) return 'agent'
-  if (/chatbot|聊天|客服|问答/.test(normalized)) return 'chatbot'
-  if (/text.generator|文本生成|文案|摘要|翻译|写作/.test(normalized)) return 'text-generator'
-  return 'workflow'
-}
-
-const TYPE_LABELS: Record<string, string> = { chatbot: '聊天助手', agent: 'Agent', chatflow: 'Chatflow', workflow: 'Workflow', 'text-generator': '文本生成' }
 const SORT_LABELS: Record<string, string> = { 'updated-desc': '最近修改', 'created-asc': '最早创建', name: '名称' }
 
 function CreateChoice({ title, description, href, onClick, icon: Icon }: { title: string; description: string; href?: string; onClick?: () => void; icon: typeof Plus }) {

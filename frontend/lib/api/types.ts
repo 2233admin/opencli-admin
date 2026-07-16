@@ -867,12 +867,15 @@ export interface WorkspaceSummary {
   updated_at: string
 }
 
+export type ProjectAppType = 'chatbot' | 'agent' | 'chatflow' | 'workflow' | 'text-generator'
+
 export interface ProjectSummary {
   id: string
   workspace_id: string
   name: string
   slug: string
   description: string | null
+  app_type: ProjectAppType
   created_by_user_id: string
   archived: boolean
   created_at: string

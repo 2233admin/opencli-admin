@@ -113,6 +113,37 @@ test('agent-created monitoring projects persist the P0 email delivery target', a
   assert.ok(project.edges.some((edge) => edge.target === emailNode.id))
 })
 
+test('project application types use persisted values and preserve Dify modes', async () => {
+  const [{ PROJECT_APP_TYPE_LABELS, projectAppTypeForDifyMode, projectMatchesAppType }, { translateWorkflowDsl }, { studioAppTypeForTemplate }] = await Promise.all([
+    importTypeScript('lib/studio/app-types.ts'),
+    importTypeScript('lib/workflow/codec.ts'),
+    importTypeScript('lib/workflow/studio-templates.ts'),
+  ])
+
+  assert.deepEqual(
+    ['chat', 'agent-chat', 'advanced-chat', 'workflow', 'completion'].map(projectAppTypeForDifyMode),
+    ['chatbot', 'agent', 'chatflow', 'workflow', 'text-generator'],
+  )
+  assert.equal(projectAppTypeForDifyMode('unknown'), 'workflow')
+  assert.equal(projectMatchesAppType({ app_type: 'chatbot' }, 'chatbot'), true)
+  assert.equal(projectMatchesAppType({ app_type: 'chatbot' }, 'agent'), false)
+  assert.equal(PROJECT_APP_TYPE_LABELS['text-generator'], '文本生成')
+  assert.equal(studioAppTypeForTemplate('research-agent'), 'agent')
+  assert.equal(studioAppTypeForTemplate('content-summary'), 'text-generator')
+  assert.equal(studioAppTypeForTemplate('blank'), 'workflow')
+
+  const imported = translateWorkflowDsl(JSON.stringify({
+    kind: 'app',
+    app: { name: 'Support flow', mode: 'advanced-chat' },
+    version: '0.3.0',
+    workflow: { graph: { nodes: [{ id: 'start', data: { type: 'start', title: 'Start' } }], edges: [] } },
+  }))
+  assert.equal(imported.ok, true)
+  assert.equal(imported.report?.source, 'dify')
+  assert.equal(imported.report?.appMode, 'advanced-chat')
+  assert.equal(projectAppTypeForDifyMode(imported.report?.appMode), 'chatflow')
+})
+
 test('the production studio adopts the selected project-workspace concept with real data', async () => {
   const [studio, workflowPage, projectHeader] = await Promise.all([
     readSource('app/(app)/studio/page.tsx'),
@@ -127,15 +158,16 @@ test('the production studio adopts the selected project-workspace concept with r
   assert.match(studio, /setCreateTemplate\('collection-to-consumption'\)/)
   assert.match(studio, /aria-label="项目浏览工具栏"/)
   assert.match(studio, /aria-label="Dify 应用类型筛选"/)
-  for (const appType of ['聊天助手', 'Agent', 'Chatflow', 'Workflow', '文本生成']) {
-    assert.match(studio, new RegExp(`label:\\s*['"]${appType}['"]`))
-  }
+  assert.match(studio, /PROJECT_APP_TYPE_LABELS\.chatbot/)
+  assert.match(studio, /PROJECT_APP_TYPE_LABELS\['text-generator'\]/)
   assert.match(studio, /const selectedWorkspace = workspaces\.data\?\.find/)
   assert.match(studio, /workspaces\.data\?\.length[\s\S]*> 1/)
   assert.match(studio, /<SelectValue>\{selectedWorkspace\?\.name \?\? '选择工作区'\}<\/SelectValue>/)
   assert.match(studio, /aria-label="当前工作区"/)
   assert.doesNotMatch(studio, /<SelectValue placeholder="选择工作区"\s*\/>/)
-  assert.match(studio, /const normalized = value\.toLowerCase\(\)/)
+  assert.match(studio, /projectMatchesAppType\(project, type\)/)
+  assert.match(studio, /PROJECT_APP_TYPE_LABELS\[project\.app_type\]/)
+  assert.doesNotMatch(studio, /inferProjectType/)
   assert.match(studio, /\{visibleProjects\.length\} 个项目/)
   assert.match(studio, /project\.updated_at/)
   assert.match(studio, /\/studio\/workflow\?workspace=\$\{workspaceId\}&project=\$\{project\.id\}/)

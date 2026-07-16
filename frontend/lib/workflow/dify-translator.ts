@@ -28,6 +28,7 @@ type NodeMapping = {
 export type DifyTranslationReport = {
   source: "dify"
   workflowName: string
+  appMode?: string
   nodeCount: number
   edgeCount: number
   adapterCount: number
@@ -117,6 +118,7 @@ export function translateDifyWorkflowToWorkflowProject(input: unknown): DifyTran
     report: {
       source: "dify",
       workflowName,
+      appMode: readString(app.mode),
       nodeCount: nodes.length,
       edgeCount: translatedEdges.edges.length,
       adapterCount: project.adapters.length,
@@ -316,4 +318,3 @@ function readString(value: unknown): string | undefined {
 function isRecord(value: unknown): value is JsonRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value)
 }
-

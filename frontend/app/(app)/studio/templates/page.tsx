@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { useCreateProjectWorkflow, useCreateWorkspaceProject, useMyWorkspaces } from '@/lib/api/hooks'
-import { STUDIO_TEMPLATES, studioGraphForTemplate, studioSlug, type StudioTemplateId } from '@/lib/workflow/studio-templates'
+import { STUDIO_TEMPLATES, studioAppTypeForTemplate, studioGraphForTemplate, studioSlug, type StudioTemplateId } from '@/lib/workflow/studio-templates'
 
 const CATEGORIES = ['全部', '采集与监控', '内容处理', 'Agent 分析', '分发与集成', '完整链路'] as const
 const ICONS = { '采集与监控': Database, '内容处理': Blocks, 'Agent 分析': Sparkles, '分发与集成': Send, '完整链路': Workflow } as const
@@ -39,7 +39,7 @@ export default function StudioTemplatesPage() {
   async function createFromTemplate() {
     if (!workspaceId || !selected || !name.trim()) return
     try {
-      const project = await createProject.mutateAsync({ workspaceId, data: { name: name.trim(), slug: `${studioSlug(name)}-${Date.now().toString(36)}`, description: '由应用模板创建' } })
+      const project = await createProject.mutateAsync({ workspaceId, data: { name: name.trim(), slug: `${studioSlug(name)}-${Date.now().toString(36)}`, description: '由应用模板创建', app_type: studioAppTypeForTemplate(selected) } })
       const workflow = await createWorkflow.mutateAsync({ workspaceId, projectId: project.id, data: { name: name.trim(), description: '模板工作流', graph: studioGraphForTemplate(selected, name.trim()) } })
       toast.success('模板已创建，可以继续编排')
       router.push(`/studio/workflow?workspace=${workspaceId}&project=${project.id}&workflow=${workflow.id}`)

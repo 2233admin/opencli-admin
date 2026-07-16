@@ -1,6 +1,7 @@
 """Persistent Workspace -> Project -> Workflow authoring API used by Studio."""
 
 from datetime import datetime
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
@@ -19,6 +20,7 @@ from backend.schemas.common import ApiResponse, UTCModel
 
 router = APIRouter(tags=["studio-authoring"])
 LOCAL_USER_ID = "local-development-user"
+ProjectAppType = Literal["chatbot", "agent", "chatflow", "workflow", "text-generator"]
 
 
 class WorkspaceRead(UTCModel):
@@ -35,6 +37,7 @@ class ProjectCreate(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     slug: str = Field(min_length=1, max_length=100)
     description: str | None = None
+    app_type: ProjectAppType = "workflow"
 
 
 class ProjectRead(UTCModel):
@@ -44,6 +47,7 @@ class ProjectRead(UTCModel):
     name: str
     slug: str
     description: str | None
+    app_type: ProjectAppType
     created_by_user_id: str
     archived: bool
     created_at: datetime
@@ -165,6 +169,7 @@ async def create_project(
         name=body.name,
         slug=body.slug,
         description=body.description,
+        app_type=body.app_type,
         created_by_user_id=LOCAL_USER_ID,
     )
     db.add(row)

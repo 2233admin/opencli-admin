@@ -44,6 +44,7 @@ import type {
   WorkerNode,
   WorkspaceSummary,
   ProjectSummary,
+  ProjectAppType,
   WorkflowAssetSummary,
   WorkflowDraftRead,
   WorkflowVersionSummary,
@@ -77,7 +78,7 @@ export const listMyWorkspaces = () =>
 export const listWorkspaceProjects = (workspaceId: string) =>
   apiClient.get<ApiResponse<ProjectSummary[]>>(`/workspaces/${workspaceId}/projects`).then((r) => r.data.data)
 
-export const createWorkspaceProject = (workspaceId: string, data: { name: string; slug: string; description?: string }) =>
+export const createWorkspaceProject = (workspaceId: string, data: { name: string; slug: string; description?: string; app_type?: ProjectAppType }) =>
   apiClient.post<ApiResponse<ProjectSummary>>(`/workspaces/${workspaceId}/projects`, data).then((r) => r.data.data)
 
 export const listProjectWorkflows = (workspaceId: string, projectId: string) =>
