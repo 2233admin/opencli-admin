@@ -20,6 +20,7 @@ import {
 
 import type { CanvasSettings } from "@/lib/flow/settings-store"
 import type { FlowState } from "@/lib/flow/store"
+import type { EvidenceWorkbenchState } from "@/lib/workflow/evidence-workbench"
 import type { ToolMode, WorkflowEdge, WorkflowNode } from "@/lib/flow/types"
 import type { WorkflowCapabilitiesResponse } from "@/lib/workflow/capabilities"
 import type { WorkflowNodeCatalogItem } from "@/lib/workflow/node-catalog"
@@ -92,6 +93,7 @@ type WorkflowCanvasSurfaceProps = {
   networkLocked: boolean
   networkStack: FlowState["networkStack"]
   nodeManagementOpen: boolean
+  resultWorkbenchState?: EvidenceWorkbenchState
   nodeMenu: NodeMenuState | null
   nodes: WorkflowNode[]
   onBeforeDelete: OnBeforeDelete<WorkflowNode, WorkflowEdge>
@@ -263,6 +265,44 @@ function CanvasLayers({
   )
 }
 
+function ResultWorkbenchOverlay({ state }: { state: EvidenceWorkbenchState }) {
+  const batches = state.batches
+  const records = batches.reduce((sum, batch) => sum + batch.recordCount, 0)
+  return (
+    <aside className="absolute bottom-3 right-3 top-3 z-40 flex w-80 max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-md border bg-card/95 shadow-overlay backdrop-blur-sm" aria-label="Evidence result workbench">
+      <div className="border-b border-border px-4 py-3">
+        <p className="font-mono text-2xs uppercase tracking-[0.12em] text-muted-foreground">Result Workbench</p>
+        <h2 className="mt-1 text-sm font-medium">Evidence batches</h2>
+        <div className="mt-3 grid grid-cols-3 gap-1.5 font-mono text-2xs">
+          <span className="rounded-xs border border-border bg-background p-1.5">{batches.length} batches</span>
+          <span className="rounded-xs border border-border bg-background p-1.5">{records} records</span>
+          <span className="rounded-xs border border-border bg-background p-1.5">{state.projection?.missingSources.length ?? 0} missing</span>
+        </div>
+      </div>
+      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
+        {state.error ? <p className="rounded-xs border border-amber-500/30 bg-amber-500/10 p-2 text-2xs text-amber-400">{state.error}</p> : null}
+        {state.projection?.missingSources.map((source) => (
+          <div key={`${source.nodeId}-${source.code}`} className="rounded-xs border border-amber-500/30 bg-amber-500/10 p-2 text-2xs">
+            <p className="font-mono text-amber-400">{source.nodeId ?? source.sourceGroup ?? "source"}</p>
+            <p className="mt-1 text-muted-foreground">{source.reason ?? source.code ?? "Source is incomplete"}</p>
+          </div>
+        ))}
+        {batches.map((batch) => (
+          <div key={batch.batchId} className="rounded-xs border border-border bg-background p-2">
+            <div className="flex items-center justify-between gap-2 font-mono text-2xs">
+              <span className="truncate">{batch.batchId}</span>
+              <span className="uppercase text-muted-foreground">{batch.status}</span>
+            </div>
+            <p className="mt-1 truncate font-mono text-3xs text-muted-foreground">{batch.nodeId} · {batch.sourceGroup ?? "ungrouped"}</p>
+            <p className="mt-1 font-mono text-3xs text-muted-foreground">{batch.itemCount} items · {batch.recordCount} records</p>
+          </div>
+        ))}
+        {state.status === "ready" && batches.length === 0 ? <p className="rounded-xs border border-dashed border-border p-3 text-center text-2xs text-muted-foreground">No evidence batch output.</p> : null}
+      </div>
+    </aside>
+  )
+}
+
 export function WorkflowCanvasSurface(props: WorkflowCanvasSurfaceProps) {
   const interactionLocked = props.isDraw || props.isScissors
   const flowInteraction = flowInteractionProps(props.settings, interactionLocked)
@@ -356,6 +396,9 @@ export function WorkflowCanvasSurface(props: WorkflowCanvasSurfaceProps) {
       />
 
       <WorkflowToast message={props.toast} />
+      {props.resultWorkbenchState && props.resultWorkbenchState.status !== "idle" ? (
+        <ResultWorkbenchOverlay state={props.resultWorkbenchState} />
+      ) : null}
     </div>
   )
 }

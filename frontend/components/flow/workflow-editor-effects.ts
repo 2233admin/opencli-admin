@@ -1,10 +1,19 @@
 "use client"
 
-import { useCallback, useEffect, type Dispatch, type SetStateAction } from "react"
+import { useCallback, useEffect, useState, type Dispatch, type SetStateAction } from "react"
 
 import { useFlowStore } from "@/lib/flow/store"
-import { loadShareStateFromUrl } from "@/lib/flow/share-state"
+import { getApiAuthToken } from "@/lib/api/auth-token"
+import {
+  fetchWorkflowEvidenceBatches,
+  fetchWorkflowEvidenceProjection,
+  fetchWorkflowRunProjection,
+  replayWorkflowRunEventStream,
+} from "@/lib/workflow/backend-runs"
+import type { WorkflowRunProjection } from "@/lib/workflow/backend-runs"
 import type { WorkflowCapabilitiesResponse } from "@/lib/workflow/capabilities"
+import { loadShareStateFromUrl } from "@/lib/flow/share-state"
+import { emptyEvidenceWorkbenchState, type EvidenceWorkbenchState } from "@/lib/workflow/evidence-workbench"
 import type { WorkflowNode } from "@/lib/flow/types"
 import type { NodeMenuState } from "./workflow-node-menu-actions"
 
@@ -89,6 +98,82 @@ export function useCompactViewportEffect(applyCompactViewport: () => number | un
       if (timer) window.clearTimeout(timer)
     }
   }, [applyCompactViewport])
+}
+
+export function useWorkflowResultSubscription(options: {
+  projection: WorkflowRunProjection | null
+  setWorkbenchState: Dispatch<SetStateAction<EvidenceWorkbenchState>>
+}) {
+  const { projection: requestedProjection, setWorkbenchState } = options
+  const [, setActiveProjection] = useState<WorkflowRunProjection | null>(requestedProjection)
+  const applyWorkflowNodeRunEvent = useFlowStore((state) => state.applyWorkflowNodeRunEvent)
+  const applyWorkflowRunProjection = useFlowStore((state) => state.applyWorkflowRunProjection)
+  const applyWorkflowEvidenceBatchProjection = useFlowStore(
+    (state) => state.applyWorkflowEvidenceBatchProjection,
+  )
+
+  useEffect(() => {
+    if (!requestedProjection?.runId) {
+      setActiveProjection(null)
+      setWorkbenchState(emptyEvidenceWorkbenchState())
+      return
+    }
+
+    const runId = requestedProjection.runId
+    const controller = new AbortController()
+    const token = getApiAuthToken()
+    const authorization = token ? `Bearer ${token}` : null
+    setWorkbenchState((current) => ({ ...current, status: "loading", error: null }))
+
+    void (async () => {
+      try {
+        const latestProjection = await fetchWorkflowRunProjection(runId, { authorization })
+        applyWorkflowRunProjection(latestProjection)
+        const replay = await replayWorkflowRunEventStream(runId, {
+          authorization,
+          signal: controller.signal,
+        })
+        if (controller.signal.aborted) return
+        for (const event of replay.events) applyWorkflowNodeRunEvent(event)
+        if (replay.projection) {
+          setActiveProjection(replay.projection)
+          applyWorkflowRunProjection(replay.projection)
+        }
+
+        const [batchList, evidenceProjection] = await Promise.all([
+          fetchWorkflowEvidenceBatches(runId, { authorization }),
+          fetchWorkflowEvidenceProjection(runId, {
+            authorization,
+            include: ["clusters", "missingSources", "summaries", "conflicts"],
+          }),
+        ])
+        if (controller.signal.aborted) return
+        applyWorkflowEvidenceBatchProjection(evidenceProjection, batchList.batches)
+        setWorkbenchState({
+          status: "ready",
+          projection: evidenceProjection,
+          batches: batchList.batches,
+          selectedBatchId: null,
+          error: null,
+        })
+      } catch (error) {
+        if (controller.signal.aborted) return
+        setWorkbenchState((current) => ({
+          ...current,
+          status: "error",
+          error: error instanceof Error ? error.message : "Workflow result subscription failed",
+        }))
+      }
+    })()
+
+    return () => controller.abort()
+  }, [
+    applyWorkflowEvidenceBatchProjection,
+    applyWorkflowNodeRunEvent,
+    applyWorkflowRunProjection,
+    requestedProjection?.runId,
+    setWorkbenchState,
+  ])
 }
 
 export function useExitCurrentNetwork(options: {

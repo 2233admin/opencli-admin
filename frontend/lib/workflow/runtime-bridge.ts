@@ -1,6 +1,8 @@
 import type { WorkflowNode, WorkflowNodeData } from "@/lib/flow/types"
 import type { WorkflowCompileError, WorkflowCompileResponse } from "./backend-compile"
 import type { WorkflowOpenCLIHDATraceDispatchItem, WorkflowOpenCLIHDATraceResponse } from "./backend-opencli-hda-trace"
+import type { WorkflowEvidenceBatchSummary, WorkflowEvidenceProjection } from "./backend-runs"
+import { applyEvidenceWorkbenchNodeState } from "./evidence-workbench"
 
 export type WorkflowRuntimeBridgePreview = {
   compile?: WorkflowCompileResponse | null
@@ -119,6 +121,15 @@ export function applyRuntimeNodePatches(nodes: WorkflowNode[], patches: Workflow
       },
     }
   })
+}
+
+export function applyEvidenceBatchRuntimePatches(
+  nodes: WorkflowNode[],
+  edges: import("@/lib/flow/types").WorkflowEdge[],
+  projection: WorkflowEvidenceProjection,
+  batches: WorkflowEvidenceBatchSummary[],
+): { nodes: WorkflowNode[]; edges: import("@/lib/flow/types").WorkflowEdge[] } {
+  return applyEvidenceWorkbenchNodeState(nodes, edges, projection, batches)
 }
 
 function errorPatch(error: WorkflowCompileError): Partial<WorkflowNodeData> {

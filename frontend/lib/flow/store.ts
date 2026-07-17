@@ -52,7 +52,10 @@ import type {
   WorkflowRunNodeState,
   WorkflowRunProjection,
   WorkflowRunStatus,
+  WorkflowEvidenceBatchSummary,
+  WorkflowEvidenceProjection,
 } from "../workflow/backend-runs"
+import { applyEvidenceBatchRuntimePatches } from "../workflow/runtime-bridge"
 
 export type { GeneratedWorkflowSpec } from "./types"
 
@@ -62,6 +65,7 @@ const initialWorkflowFlow = workflowProjectToReactFlow(initialWorkflowProject)
 
 export type FlowState = {
   workflowProject: WorkflowProject
+  workflowRunProjection: WorkflowRunProjection | null
   nodes: WorkflowNode[]
   edges: WorkflowEdge[]
   networkStack: { nodeId: string; label: string; snapshot: FlowSnapshot }[]
@@ -157,6 +161,10 @@ export type FlowState = {
   applyWorkflowCapabilities: (capabilities: WorkflowCapabilitiesResponse) => void
   applyWorkflowNodeRunEvent: (event: WorkflowNodeRunEvent) => void
   applyWorkflowRunProjection: (projection: WorkflowRunProjection) => void
+  applyWorkflowEvidenceBatchProjection: (
+    projection: WorkflowEvidenceProjection,
+    batches: WorkflowEvidenceBatchSummary[],
+  ) => void
   updateWorkflowProfile: (profile: WorkflowProfile) => void
   queueAgentProposal: (proposal: AgentProposal) => void
   clearPendingAgentProposal: () => void
@@ -578,6 +586,7 @@ function writeBoundValueToNode(
 
 export const useFlowStore = create<FlowState>((set, get) => ({
   workflowProject: initialWorkflowProject,
+  workflowRunProjection: null,
   nodes: initialWorkflowFlow.nodes,
   edges: initialWorkflowFlow.edges,
   networkStack: [],
@@ -1113,6 +1122,7 @@ export const useFlowStore = create<FlowState>((set, get) => ({
       })
       return {
         workflowProject: nextProject,
+        workflowRunProjection: projection,
         nodes: state.nodes.map((node) => {
           const runtimeRunState = stateByCanvasNodeId.get(node.id)
           if (!runtimeRunState) return node
@@ -1135,6 +1145,13 @@ export const useFlowStore = create<FlowState>((set, get) => ({
           }
         }),
       }
+    })
+  },
+
+  applyWorkflowEvidenceBatchProjection: (projection, batches) => {
+    set((state) => {
+      const patched = applyEvidenceBatchRuntimePatches(state.nodes, state.edges, projection, batches)
+      return { nodes: patched.nodes, edges: patched.edges }
     })
   },
 

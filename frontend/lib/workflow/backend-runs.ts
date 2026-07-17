@@ -37,6 +37,91 @@ export type WorkflowRunBatchReference = {
   manifestUri?: string | null
 }
 
+export type WorkflowEvidenceBatchStatus =
+  | "ready"
+  | "partial"
+  | "blocked"
+  | "failed"
+  | "completed"
+  | "ingested"
+  | "missing"
+
+export type WorkflowEvidenceBatchSummary = WorkflowRunBatchReference & {
+  runId: string
+  nodeId: string
+  packageNodeId?: string | null
+  internalNodeId?: string | null
+  sourceGroup?: string | null
+  adapterTaskId?: string | null
+  traceId?: string | null
+  status: WorkflowEvidenceBatchStatus
+  createdAt?: string | null
+}
+
+export type WorkflowEvidenceBatchListResponse = {
+  runId: string
+  batches: WorkflowEvidenceBatchSummary[]
+  nextCursor?: string | null
+}
+
+export type WorkflowEvidenceBatchSourceCoverage = {
+  sourceGroup?: string | null
+  site?: string | null
+  command?: string | null
+  itemCount: number
+  recordCount: number
+  status: WorkflowEvidenceBatchStatus
+}
+
+export type WorkflowEvidenceBatchDetailResponse = {
+  runId: string
+  batch: WorkflowEvidenceBatchSummary
+  manifestUri?: string | null
+  odpRef?: string | null
+  recordCount: number
+  itemCount: number
+  sourceCoverage: WorkflowEvidenceBatchSourceCoverage[]
+}
+
+export type WorkflowEvidenceNodeProjection = {
+  nodeId: string
+  packageNodeId?: string | null
+  internalNodeId?: string | null
+  sourceGroup?: string | null
+  status?: string | null
+  itemCount: number
+  batchRefs: string[]
+  blockReasons: string[]
+}
+
+export type WorkflowEvidenceMissingSource = {
+  nodeId?: string | null
+  packageNodeId?: string | null
+  internalNodeId?: string | null
+  sourceGroup?: string | null
+  site?: string | null
+  command?: string | null
+  reason?: string | null
+  code?: string | null
+  details: Record<string, unknown>
+}
+
+export type WorkflowEvidenceProjection = {
+  runId: string
+  status: WorkflowRunStatus
+  valid: boolean
+  nodes: WorkflowEvidenceNodeProjection[]
+  clusters: Array<Record<string, unknown>>
+  missingSources: WorkflowEvidenceMissingSource[]
+  summaries: Array<Record<string, unknown>>
+  conflicts: Array<Record<string, unknown>>
+  artifacts: Array<Record<string, unknown>>
+  batches: WorkflowEvidenceBatchSummary[]
+}
+
+const workflowRunEndpoint = (runId: string) => `/api/workflow/runs/${encodeURIComponent(runId)}`
+const workflowEvidenceBatchesEndpoint = (runId: string) => `${workflowRunEndpoint(runId)}/evidence-batches`
+
 export type WorkflowNodeRunEvent = {
   id: string
   sequence: number
@@ -238,13 +323,14 @@ export async function continueWorkflowRunWithSourceOutputs(
 
 export async function replayWorkflowRunEventStream(
   runId: string,
-  options: { authorization?: string | null } = {},
+  options: { authorization?: string | null; signal?: AbortSignal } = {},
 ): Promise<WorkflowRunStreamReplay> {
   const response = await fetch(`/api/workflow/runs/${encodeURIComponent(runId)}/events/stream`, {
     headers: {
       ...(options.authorization ? { Authorization: options.authorization } : {}),
     },
     cache: "no-store",
+    signal: options.signal,
   })
   if (!response.ok) {
     const payload = (await response.json().catch(() => null)) as { message?: string; error?: string } | null
@@ -252,6 +338,73 @@ export async function replayWorkflowRunEventStream(
   }
   const text = await response.text()
   return parseWorkflowRunEventStream(text)
+}
+
+export async function fetchWorkflowEvidenceBatches(
+  runId: string,
+  options: {
+    authorization?: string | null
+    nodeId?: string
+    sourceGroup?: string
+    cursor?: string
+    limit?: number
+    signal?: AbortSignal
+  } = {},
+): Promise<WorkflowEvidenceBatchListResponse> {
+  const search = new URLSearchParams()
+  if (options.nodeId) search.set("nodeId", options.nodeId)
+  if (options.sourceGroup) search.set("sourceGroup", options.sourceGroup)
+  if (options.cursor) search.set("cursor", options.cursor)
+  if (typeof options.limit === "number") search.set("limit", String(options.limit))
+  const suffix = search.size > 0 ? `?${search.toString()}` : ""
+  const response = await fetch(`/api/workflow/runs/${encodeURIComponent(runId)}/evidence-batches${suffix}`, {
+    headers: {
+      ...(options.authorization ? { Authorization: options.authorization } : {}),
+    },
+    cache: "no-store",
+    signal: options.signal,
+  })
+  return readApiResponse(response, "Workflow evidence batches failed")
+}
+
+export async function fetchWorkflowEvidenceBatchDetail(
+  runId: string,
+  batchId: string,
+  options: { authorization?: string | null } = {},
+): Promise<WorkflowEvidenceBatchDetailResponse> {
+  const response = await fetch(
+    `${workflowRunEndpoint(runId)}/evidence-batches/${encodeURIComponent(batchId)}`,
+    {
+      headers: {
+        ...(options.authorization ? { Authorization: options.authorization } : {}),
+      },
+      cache: "no-store",
+    },
+  )
+  return readApiResponse(response, "Workflow evidence batch detail failed")
+}
+
+export async function fetchWorkflowEvidenceProjection(
+  runId: string,
+  options: {
+    authorization?: string | null
+    nodeId?: string
+    sourceGroup?: string
+    include?: string[]
+  } = {},
+): Promise<WorkflowEvidenceProjection> {
+  const search = new URLSearchParams()
+  if (options.nodeId) search.set("nodeId", options.nodeId)
+  if (options.sourceGroup) search.set("sourceGroup", options.sourceGroup)
+  if (options.include?.length) search.set("include", options.include.join(","))
+  const suffix = search.size > 0 ? `?${search.toString()}` : ""
+  const response = await fetch(`/api/workflow/runs/${encodeURIComponent(runId)}/evidence-batches/projection${suffix}`, {
+    headers: {
+      ...(options.authorization ? { Authorization: options.authorization } : {}),
+    },
+    cache: "no-store",
+  })
+  return readApiResponse(response, "Workflow evidence projection failed")
 }
 
 export function parseWorkflowRunEventStream(text: string): WorkflowRunStreamReplay {

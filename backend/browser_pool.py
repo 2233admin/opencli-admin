@@ -18,10 +18,34 @@ a specific site (e.g. only chrome-2 is logged into Twitter).
 
 import asyncio
 import logging
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import AsyncIterator
+from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class BrowserWorker:
+    """Registered browser-worker capacity advertised by a container or host."""
+
+    worker_id: str
+    endpoint: str
+    capacity: int = 1
+    active: int = 0
+    status: str = "online"
+    node_type: str = "docker"
+    capabilities: tuple[str, ...] = ()
+
+    @property
+    def available(self) -> int:
+        return max(0, self.capacity - self.active)
+
+
+class BrowserCapacityError(RuntimeError):
+    """Raised when no registered browser worker can accept a lease."""
+
+    code = "missing_worker_capacity"
 
 
 class LocalBrowserPool:
@@ -51,6 +75,9 @@ class LocalBrowserPool:
         self._agent_protocols: dict[str, str | None] = {ep: None for ep in endpoints}
         # node_type per endpoint: "docker" (started in container) | "shell" (native process)
         self._node_types: dict[str, str] = {ep: "docker" for ep in endpoints}
+        self._workers: dict[str, BrowserWorker] = {
+            ep: BrowserWorker(worker_id=ep, endpoint=ep) for ep in endpoints
+        }
         logger.info(
             "BrowserPool (local): %d Chrome instance(s): %s",
             self._total,
@@ -154,6 +181,60 @@ class LocalBrowserPool:
         self._node_types[endpoint] = node_type
         logger.info("BrowserPool: endpoint %s node_type set to %s", endpoint, node_type)
 
+    def worker_capacity(self) -> list[BrowserWorker]:
+        """Return the registered browser-worker capacity view."""
+        return list(self._workers.values())
+
+    def register_worker(
+        self,
+        worker_id: str,
+        endpoint: str,
+        *,
+        capacity: int = 1,
+        status: str = "online",
+        node_type: str = "docker",
+        capabilities: list[str] | tuple[str, ...] = (),
+    ) -> BrowserWorker:
+        """Register or update a worker and its browser capacity."""
+        if capacity < 1:
+            raise ValueError("capacity must be at least 1")
+        if endpoint not in self._slots:
+            self.add_endpoint(endpoint)
+        current = self._workers.get(worker_id)
+        active = current.active if current else 0
+        worker = BrowserWorker(
+            worker_id=worker_id,
+            endpoint=endpoint,
+            capacity=capacity,
+            active=min(active, capacity),
+            status=status,
+            node_type=node_type,
+            capabilities=tuple(capabilities),
+        )
+        self._workers[worker_id] = worker
+        self._node_types[endpoint] = node_type
+        logger.info(
+            "BrowserPool: worker %s registered at %s (capacity=%d)",
+            worker_id,
+            endpoint,
+            capacity,
+        )
+        return worker
+
+    def unregister_worker(self, worker_id: str) -> bool:
+        """Remove a worker registration without removing its browser endpoint."""
+        return self._workers.pop(worker_id, None) is not None
+
+    def get_worker(self, worker_id: str) -> BrowserWorker | None:
+        return self._workers.get(worker_id)
+
+    def available_worker_capacity(self) -> int:
+        return sum(worker.available for worker in self._workers.values())
+
+    @property
+    def workers(self) -> list[BrowserWorker]:
+        return self.worker_capacity()
+
     def add_endpoint(self, endpoint: str) -> None:
         """Hot-add a new Chrome instance to the pool without restarting."""
         if endpoint in self._slots:
@@ -165,6 +246,10 @@ class LocalBrowserPool:
         self._agent_urls.setdefault(endpoint, None)
         self._agent_protocols.setdefault(endpoint, None)
         self._node_types.setdefault(endpoint, "docker")
+        self._workers.setdefault(
+            endpoint,
+            BrowserWorker(worker_id=endpoint, endpoint=endpoint),
+        )
         self._total += 1
         logger.info("BrowserPool: added endpoint %s (total: %d)", endpoint, self._total)
 
@@ -177,6 +262,11 @@ class LocalBrowserPool:
         self._agent_urls.pop(endpoint, None)
         self._agent_protocols.pop(endpoint, None)
         self._node_types.pop(endpoint, None)
+        self._workers = {
+            worker_id: worker
+            for worker_id, worker in self._workers.items()
+            if worker.endpoint != endpoint
+        }
         self._total -= 1
         logger.info("BrowserPool: removed endpoint %s (total: %d)", endpoint, self._total)
 
@@ -210,6 +300,9 @@ class RedisBrowserPool:
         self._endpoints = list(endpoints)
         self._redis_url = redis_url
         self._total = len(endpoints)
+        self._workers: dict[str, BrowserWorker] = {
+            ep: BrowserWorker(worker_id=ep, endpoint=ep) for ep in endpoints
+        }
 
     def _client(self):
         import redis.asyncio as aioredis  # type: ignore[import]
@@ -273,6 +366,63 @@ class RedisBrowserPool:
                 await r.rpush(release_key, ep)
             logger.debug("Chrome released (Redis): %s", ep)
 
+    def register_worker(
+        self,
+        worker_id: str,
+        endpoint: str,
+        *,
+        capacity: int = 1,
+        status: str = "online",
+        node_type: str = "docker",
+        capabilities: list[str] | tuple[str, ...] = (),
+    ) -> BrowserWorker:
+        """Register or update worker metadata for a distributed pool."""
+        if capacity < 1:
+            raise ValueError("capacity must be at least 1")
+        if endpoint not in self._endpoints:
+            self._endpoints.append(endpoint)
+            self._total += 1
+        current = self._workers.get(worker_id)
+        worker = BrowserWorker(
+            worker_id=worker_id,
+            endpoint=endpoint,
+            capacity=capacity,
+            active=min(current.active, capacity) if current else 0,
+            status=status,
+            node_type=node_type,
+            capabilities=tuple(capabilities),
+        )
+        self._workers[worker_id] = worker
+        logger.info(
+            "BrowserPool (Redis): worker %s registered at %s (capacity=%d)",
+            worker_id,
+            endpoint,
+            capacity,
+        )
+        return worker
+
+    def unregister_worker(self, worker_id: str) -> bool:
+        return self._workers.pop(worker_id, None) is not None
+
+    def get_worker(self, worker_id: str) -> BrowserWorker | None:
+        return self._workers.get(worker_id)
+
+    def worker_capacity(self) -> list[BrowserWorker]:
+        return list(self._workers.values())
+
+    def available_worker_capacity(self) -> int:
+        return sum(worker.available for worker in self._workers.values())
+
+    @property
+    def workers(self) -> list[BrowserWorker]:
+        return self.worker_capacity()
+
+    def get_mode(self, endpoint: str) -> str:
+        return "bridge"
+
+    def set_mode(self, endpoint: str, mode: str) -> None:
+        logger.info("BrowserPool (Redis): endpoint %s mode set to %s", endpoint, mode)
+
     @property
     def total(self) -> int:
         return self._total
@@ -286,7 +436,7 @@ class RedisBrowserPool:
         return list(self._endpoints)
 
     def available_for(self, endpoint: str) -> bool:
-        return endpoint in self._endpoints  # approximate; real check would need Redis
+        return endpoint in self._endpoints
 
 
 # ── Module-level singleton ────────────────────────────────────────────────────

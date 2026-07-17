@@ -497,6 +497,9 @@ class WorkflowOpenCLIHDATraceDispatch(BaseModel):
     command: str
     args: dict[str, Any] = Field(default_factory=dict)
     iii: dict[str, Any]
+    workerSlotId: Optional[str] = None
+    profileBindingId: Optional[str] = None
+    sessionSnapshotId: Optional[str] = None
 
 
 class WorkflowOpenCLIHDATraceResponse(BaseModel):
@@ -541,6 +544,27 @@ class WorkflowRunBlockReason(BaseModel):
     message: str = Field(..., min_length=1)
     source: Optional[str] = None
     details: dict[str, Any] = Field(default_factory=dict)
+
+
+class WorkflowRuntimeResourceRequirement(BaseModel):
+    nodeId: str = Field(..., min_length=1)
+    sourceGroup: str = Field(..., min_length=1)
+    site: str = Field(..., min_length=1)
+    mutationMode: Literal["read", "write"]
+    requestedCapability: str = Field(..., min_length=1)
+    adapterNodeId: Optional[str] = None
+
+
+class WorkflowRuntimeResourceResolution(BaseModel):
+    status: Literal["resolved", "blocked"]
+    adapterNodeId: Optional[str] = None
+    command: Optional[str] = None
+    workerSlotId: Optional[str] = None
+    profileBindingId: Optional[str] = None
+    sessionSnapshotId: Optional[str] = None
+    lockId: Optional[str] = None
+    concurrencyLimit: Optional[int] = Field(default=None, ge=1)
+    blockReason: Optional[WorkflowRunBlockReason] = None
 
 
 class WorkflowRunBatchReference(BaseModel):

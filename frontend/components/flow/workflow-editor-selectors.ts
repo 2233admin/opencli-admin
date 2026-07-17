@@ -45,5 +45,6 @@ export function selectEditorCanvasState(state: FlowState) {
     unlockNodeInternals: state.unlockNodeInternals,
     updateWorkflowProfile: state.updateWorkflowProfile,
     workflowProject: state.workflowProject,
+    workflowRunProjection: state.workflowRunProjection,
   }
 }

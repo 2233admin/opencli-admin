@@ -713,14 +713,106 @@ export const WORKFLOW_NODE_CATALOG: WorkflowNodeCatalogItem[] = [
   },
 ]
 
+type CanvasSourceManifest = {
+  catalogId: string
+  idPrefix: string
+  label: string
+  description: string
+  category: "source"
+  icon: string
+  color: string
+  keywords: string[]
+  adapter: AdapterBinding
+  params: Record<string, unknown>
+}
+
 export function getWorkflowNodeCatalog(
   profile: WorkflowProfile,
   capabilities?: WorkflowCapabilitiesResponse | null,
 ): WorkflowNodeCatalogItem[] {
-  return WORKFLOW_NODE_CATALOG.filter((item) => item.profile === profile).map((item) => ({
+  const staticItems = WORKFLOW_NODE_CATALOG.filter((item) => item.profile === profile).map((item) => ({
     ...item,
     runtimeCapability: catalogRuntimeCapability(capabilities, item.id),
   }))
+  if (profile !== "intelligence") return staticItems
+
+  const staticIds = new Set(staticItems.map((item) => item.id))
+  const projectedSources = (capabilities?.catalog ?? [])
+    .map(channelSourceCatalogItem)
+    .filter((item): item is WorkflowNodeCatalogItem => item !== null && !staticIds.has(item.id))
+  return [...staticItems, ...projectedSources]
+}
+
+function channelSourceCatalogItem(
+  capability: WorkflowRuntimeCapability,
+): WorkflowNodeCatalogItem | null {
+  if (capability.surface !== "catalog" || capability.kind !== "source") return null
+  const canvas = readCanvasSourceManifest(capability.manifest?.canvas)
+  if (!canvas || canvas.catalogId !== capability.id) return null
+
+  return {
+    id: canvas.catalogId,
+    idPrefix: canvas.idPrefix,
+    label: canvas.label,
+    description: canvas.description,
+    category: canvas.category,
+    profile: "intelligence",
+    kind: "source",
+    capability: "fetch",
+    icon: canvas.icon,
+    color: canvas.color,
+    adapter: canvas.adapter.id,
+    requiredAdapters: [canvas.adapter],
+    params: canvas.params,
+    runtimeCapability: capability,
+    keywords: canvas.keywords,
+  }
+}
+
+function readCanvasSourceManifest(value: unknown): CanvasSourceManifest | null {
+  if (!isRecord(value) || value.node !== true) return null
+  const adapter = value.adapter
+  const params = value.params
+  const keywords = value.keywords
+  if (
+    typeof value.catalogId !== "string"
+    || typeof value.idPrefix !== "string"
+    || typeof value.label !== "string"
+    || typeof value.description !== "string"
+    || value.category !== "source"
+    || typeof value.icon !== "string"
+    || typeof value.color !== "string"
+    || !Array.isArray(keywords)
+    || !keywords.every((keyword) => typeof keyword === "string")
+    || !isAdapterBinding(adapter)
+    || !isRecord(params)
+  ) return null
+
+  return {
+    catalogId: value.catalogId,
+    idPrefix: value.idPrefix,
+    label: value.label,
+    description: value.description,
+    category: value.category,
+    icon: value.icon,
+    color: value.color,
+    keywords,
+    adapter,
+    params,
+  }
+}
+
+function isAdapterBinding(value: unknown): value is AdapterBinding {
+  return isRecord(value)
+    && typeof value.id === "string"
+    && value.type === "source"
+    && typeof value.provider === "string"
+    && ["fixture", "mock", "webhook", "live"].includes(String(value.mode))
+    && isRecord(value.config)
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
 }
 
 export function createWorkflowNodeFromCatalog(

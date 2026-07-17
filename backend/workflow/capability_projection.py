@@ -7,7 +7,7 @@ visible nodes are blocked until a real binding is added.
 
 from __future__ import annotations
 
-from backend.channels.registry import list_channel_types
+from backend.channels.registry import get_channel, list_channel_types
 from backend.notifiers.registry import list_notifier_types
 from backend.schemas.workflow import (
     WorkflowCapabilitiesResponse,
@@ -30,12 +30,85 @@ from backend.workflow.runtime_registry import (
     RECORD_ACCEPTANCE_BINDING_ID,
     RECORD_SINK_BINDING_ID,
     SCHEDULE_TRIGGER_BINDING_ID,
+    SOURCE_FETCH_BINDING_ID,
     SOURCE_POOL_BINDING_ID,
     TURBOPUSH_BINDING_ID,
     WEBHOOK_NOTIFY_BINDING_ID,
 )
 from backend.workflow.tool_capabilities import list_workflow_tool_capabilities
 from backend.workflow.turbopush_runtime import TURBOPUSH_PROVIDER
+
+CANVAS_SOURCE_CHANNEL_TYPES = (
+    "opencli",
+    "web_scraper",
+    "api",
+    "rss",
+    "cli",
+    "skill",
+    "crawl4ai",
+)
+
+CHANNEL_LABELS = {
+    "opencli": "OpenCLI",
+    "web_scraper": "Web Scraper",
+    "api": "API",
+    "rss": "RSS",
+    "cli": "CLI",
+    "skill": "Skill",
+    "crawl4ai": "Crawl4AI",
+}
+
+CHANNEL_REQUIRED_CONFIG = {
+    "opencli": ["site", "command"],
+    "web_scraper": ["url", "selectors"],
+    "api": ["base_url", "endpoint"],
+    "rss": ["feed_url"],
+    "cli": ["binary", "command"],
+    "skill": ["skill_md_or_skill_id_or_domain_capability"],
+    "crawl4ai": ["url", "selectors_or_instruction"],
+}
+
+CHANNEL_DEFAULT_PARAMS: dict[str, dict[str, object]] = {
+    "opencli": {
+        "site": "bilibili",
+        "command": "search",
+        "sourceGroup": "video",
+        "args": {"keyword": "ai"},
+    },
+    "web_scraper": {"url": "", "selectors": {}},
+    "api": {"base_url": "", "endpoint": "", "method": "GET"},
+    "rss": {"feed_url": "", "max_entries": 50},
+    "cli": {"binary": "", "command": [], "output_format": "json"},
+    "skill": {"task": ""},
+    "crawl4ai": {"url": "", "selectors": {}, "instruction": ""},
+}
+
+CHANNEL_BLOCKED_REASONS = {
+    "web_scraper": (
+        "The Web Scraper DataSource channel is implemented, but Canvas runs still "
+        "need a live source executor plus a configured URL and CSS selectors."
+    ),
+    "api": (
+        "The API DataSource channel is implemented, but Canvas runs still need a "
+        "live source executor plus a configured base URL and endpoint."
+    ),
+    "rss": (
+        "The RSS DataSource channel is implemented, but Canvas runs still need a "
+        "live source executor plus a configured feed URL."
+    ),
+    "cli": (
+        "The CLI DataSource channel is implemented, but Canvas runs still need a "
+        "live source executor plus an operator-allowlisted binary and command."
+    ),
+    "skill": (
+        "The Skill DataSource channel is implemented, but Canvas runs still need a "
+        "live source executor plus a saved skill binding and browser session resource."
+    ),
+    "crawl4ai": (
+        "The Crawl4AI DataSource channel is implemented, but Canvas runs still need "
+        "a live source executor plus a URL and selectors or extraction instruction."
+    ),
+}
 
 
 def build_workflow_capabilities() -> WorkflowCapabilitiesResponse:
@@ -92,6 +165,13 @@ def _capability(
 
 
 def _catalog_capabilities() -> list[WorkflowRuntimeCapability]:
+    return [
+        *_catalog_base_capabilities(),
+        *_canvas_source_catalog_capabilities(),
+    ]
+
+
+def _catalog_base_capabilities() -> list[WorkflowRuntimeCapability]:
     return [
         _capability(
             id="intelligence.input.collection-need",
@@ -537,6 +617,113 @@ def _catalog_capabilities() -> list[WorkflowRuntimeCapability]:
     ]
 
 
+def _canvas_source_catalog_capabilities() -> list[WorkflowRuntimeCapability]:
+    return [
+        _channel_capability(channel_type, surface="catalog")
+        for channel_type in CANVAS_SOURCE_CHANNEL_TYPES
+    ]
+
+
+def _channel_capability(
+    channel_type: str,
+    *,
+    surface: WorkflowCapabilitySurface = "channel",
+) -> WorkflowRuntimeCapability:
+    channel = get_channel(channel_type)
+    label = CHANNEL_LABELS[channel_type]
+    runtime_binding = OPENCLI_BINDING_ID if channel_type == "opencli" else SOURCE_FETCH_BINDING_ID
+    is_runnable = channel_type == "opencli"
+    missing = (
+        ["canvas_resource_resolution"]
+        if is_runnable
+        else [
+            "live_source_executor",
+            *[f"channel_config.{field}" for field in CHANNEL_REQUIRED_CONFIG[channel_type]],
+        ]
+    )
+    if channel.capabilities.session_affinity:
+        missing.append("browser_session_resource")
+    if channel_type == "cli":
+        missing.append("cli_binary_allowlist")
+
+    return _capability(
+        id=(
+            f"channel.{channel_type}"
+            if surface == "channel"
+            else f"intelligence.source.channel.{channel_type}"
+        ),
+        label=f"{label} Source" if surface == "catalog" else f"{label} channel",
+        surface=surface,
+        status="runnable" if is_runnable else "blocked",
+        backend_available=True,
+        kind="source",
+        capability="fetch",
+        provider=channel_type,
+        channel_type=channel_type,
+        runtime_binding=runtime_binding,
+        reason=(
+            "The workflow runtime registry resolves OpenCLI source/fetch nodes "
+            "to the dedicated OpenCLI collector binding."
+            if is_runnable
+            else CHANNEL_BLOCKED_REASONS[channel_type]
+        ),
+        missing=missing,
+        tags=["channel", "source", channel_type],
+        source=f"backend.channels.{channel_type}_channel",
+        manifest=_channel_manifest(channel_type),
+    )
+
+
+def _channel_manifest(channel_type: str) -> dict[str, object]:
+    channel = get_channel(channel_type)
+    label = CHANNEL_LABELS[channel_type]
+    runtime_binding = OPENCLI_BINDING_ID if channel_type == "opencli" else SOURCE_FETCH_BINDING_ID
+    adapter_id = f"channel-{channel_type}"
+    config = CHANNEL_DEFAULT_PARAMS[channel_type]
+    return {
+        "schema": "capability.source.channel.v1",
+        "ports": {
+            "inputs": [_port("in", "trigger")],
+            "outputs": [_port("items", "items[]")],
+        },
+        "resources": ["saved_data_source", "source_credentials"],
+        "permissions": ["canFetchNetwork"],
+        "runtime": {"binding": runtime_binding},
+        "trace": {"events": ["partial:itemCount", "blocked", "completed"]},
+        "probes": ["channel_registered", "channel_config_valid"],
+        "channel": {
+            "type": channel_type,
+            "capabilities": {
+                "incremental": channel.capabilities.incremental,
+                "paginated": channel.capabilities.paginated,
+                "authKind": channel.capabilities.auth_kind,
+                "sessionAffinity": channel.capabilities.session_affinity,
+                "defaultRate": channel.capabilities.default_rate,
+            },
+            "requiredConfig": CHANNEL_REQUIRED_CONFIG[channel_type],
+        },
+        "canvas": {
+            "node": True,
+            "catalogId": f"intelligence.source.channel.{channel_type}",
+            "idPrefix": f"source-{channel_type.replace('_', '-')}",
+            "label": f"{label} Source",
+            "description": f"Collect items through the backend {label} DataSource channel.",
+            "category": "source",
+            "icon": "Globe",
+            "color": "var(--chart-4)",
+            "keywords": [channel_type, label.lower(), "source", "channel", "fetch"],
+            "adapter": {
+                "id": adapter_id,
+                "type": "source",
+                "provider": channel_type,
+                "mode": "live",
+                "config": {"channel": channel_type, **config},
+            },
+            "params": {"channelType": channel_type, **config},
+        },
+    }
+
+
 def _manifest(
     *,
     schema: str,
@@ -672,49 +859,27 @@ def _primitive_capabilities() -> list[WorkflowRuntimeCapability]:
 
 
 def _channel_capabilities() -> list[WorkflowRuntimeCapability]:
-    rows: list[WorkflowRuntimeCapability] = []
-    for channel_type in sorted(list_channel_types()):
-        if channel_type == "opencli":
-            rows.append(
-                _capability(
-                    id=f"channel.{channel_type}",
-                    label="OpenCLI channel",
-                    surface="channel",
-                    status="runnable",
-                    backend_available=True,
-                    kind="source",
-                    capability="fetch",
-                    provider="opencli",
-                    channel_type=channel_type,
-                    runtime_binding=OPENCLI_BINDING_ID,
-                    reason="The workflow runtime registry resolves OpenCLI "
-                    "source/fetch nodes to this channel.",
-                    missing=["canvas_resource_resolution"],
-                    tags=["channel", "source", "opencli"],
-                    source="backend.channels.opencli_channel",
-                )
-            )
-            continue
-
-        rows.append(
-            _capability(
-                id=f"channel.{channel_type}",
-                label=f"{channel_type} channel",
-                surface="channel",
-                status="blocked",
-                backend_available=True,
-                kind="source",
-                capability="fetch",
-                provider=channel_type,
-                channel_type=channel_type,
-                reason="A real DataSource channel exists, but it has not been "
-                "projected into Canvas source nodes or workflow runtime binding.",
-                missing=["canvas_source_projection", "workflow_runtime_binding"],
-                tags=["channel", "source"],
-                source=f"backend.channels.{channel_type}_channel",
-            )
+    return [
+        _channel_capability(channel_type)
+        if channel_type in CANVAS_SOURCE_CHANNEL_TYPES
+        else _capability(
+            id=f"channel.{channel_type}",
+            label=f"{channel_type} channel",
+            surface="channel",
+            status="blocked",
+            backend_available=True,
+            kind="source",
+            capability="fetch",
+            provider=channel_type,
+            channel_type=channel_type,
+            reason="The registered channel exists outside the seven Canvas source "
+            "projections and has no Canvas source-node contract.",
+            missing=["canvas_source_projection", "workflow_runtime_binding"],
+            tags=["channel", "source"],
+            source=f"backend.channels.{channel_type}_channel",
         )
-    return rows
+        for channel_type in sorted(list_channel_types())
+    ]
 
 
 def _notifier_capabilities() -> list[WorkflowRuntimeCapability]:

@@ -65,6 +65,7 @@ from backend.workflow.runtime_registry import (
     SOURCE_FETCH_BINDING_ID,
     WEBHOOK_NOTIFY_BINDING_ID,
 )
+from backend.workflow.runtime_resources import resolve_runtime_resources
 from backend.workflow.turbopush_executor import (
     TurboPushPublishError,
     execute_turbopush_publish,
@@ -487,9 +488,49 @@ async def start_workflow_run(
             node,
             session=session,
         )
+        resource_requirement, resource_resolution = resolve_runtime_resources(
+            dispatch,
+            node,
+            fleet_match,
+        )
+        resource_details = {
+            "resourceRequirement": resource_requirement.model_dump(
+                mode="json",
+                exclude_none=True,
+            ),
+            "resourceResolution": resource_resolution.model_dump(
+                mode="json",
+                exclude_none=True,
+            ),
+        }
         fleet_match_details = _fleet_match_trace_details(fleet_match)
         if fleet_match_details:
             emitter.events[-1].details["fleetMatch"] = fleet_match_details
+        emitter.events[-1].details.update(resource_details)
+
+        if resource_resolution.status == "blocked":
+            reason = resource_resolution.blockReason
+            assert reason is not None
+            emitter.emit(
+                node,
+                "blocked",
+                message=reason.message,
+                block_reason=reason,
+                details=reason.details,
+            )
+            if package_parent_id:
+                blocked_by_package.setdefault(package_parent_id, []).append(reason)
+            outputs_by_node[node.id] = []
+            continue
+
+        resource_id_updates = {
+            "workerSlotId": resource_resolution.workerSlotId,
+            "profileBindingId": resource_resolution.profileBindingId,
+            "sessionSnapshotId": resource_resolution.sessionSnapshotId,
+        }
+        dispatch = dispatch.model_copy(update={
+            key: value for key, value in resource_id_updates.items() if value is not None
+        })
 
         output_items, agent_dispatch_details = await _dispatch_opencli_source_to_fleet(
             dispatch,
@@ -501,6 +542,7 @@ async def start_workflow_run(
         dispatch_trace_details = {
             **({"fleetMatch": fleet_match_details} if fleet_match_details else {}),
             **({"agentDispatch": agent_dispatch_details} if agent_dispatch_details else {}),
+            **resource_details,
         }
         emitter.emit(
             node,

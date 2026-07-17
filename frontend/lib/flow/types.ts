@@ -126,6 +126,7 @@ export interface WorkflowNodeData extends Record<string, unknown> {
   runtimeCapability?: WorkflowRuntimeCapability
   runtimeRunState?: WorkflowRunNodeState
   runtimeLatestEvent?: WorkflowNodeRunEvent
+  runtimeEvidenceBatches?: import("@/lib/workflow/backend-runs").WorkflowEvidenceBatchSummary[]
   /** node-internal mini network preview */
   miniNetwork?: MiniNetworkPreview
   /** topic collapse as package internals */
@@ -152,6 +153,13 @@ export interface WorkflowEdgeData extends Record<string, unknown> {
   waypoints?: XYPosition[]
   /** enable smart orthogonal routing that avoids nodes */
   routed?: boolean
+  runtimeEvidenceBatch?: {
+    runId: string
+    status: "queued" | "running" | "partial" | "blocked" | "completed" | "failed"
+    batchIds: string[]
+    itemCount: number
+    recordCount: number
+  }
 }
 
 export type WorkflowEdge = Edge<WorkflowEdgeData>

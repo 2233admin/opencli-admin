@@ -6,7 +6,11 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from backend.schemas.workflow import WorkflowAdapterBinding, WorkflowProjectNode
+from backend.schemas.workflow import (
+    WorkflowAdapterBinding,
+    WorkflowProjectNode,
+    WorkflowRuntimeResourceRequirement,
+)
 from backend.workflow.block_reasons import (
     MISSING_DELIVERY_PROJECTION,
     MISSING_RUNTIME_BINDING,
@@ -168,16 +172,25 @@ def _resolve_opencli_source(
             )
         }
 
-    return {
-        "binding": WorkflowRuntimeBinding(
-            binding_id=OPENCLI_BINDING_ID,
-            runtime="iii",
-            worker=OPENCLI_WORKER,
-            function_id=OPENCLI_FUNCTION_ID,
-            channel="opencli",
-            input={"site": site, "command": command},
-        ).model_dump()
-    }
+    binding = WorkflowRuntimeBinding(
+        binding_id=OPENCLI_BINDING_ID,
+        runtime="iii",
+        worker=OPENCLI_WORKER,
+        function_id=OPENCLI_FUNCTION_ID,
+        channel="opencli",
+        input={"site": site, "command": command},
+    ).model_dump()
+    binding["resource_requirement"] = WorkflowRuntimeResourceRequirement(
+        nodeId=node_id,
+        sourceGroup=_read_string(node.params.get("sourceGroup")) or node_id,
+        site=site,
+        mutationMode=(
+            "write" if _read_string(node.params.get("mutationMode")) == "write" else "read"
+        ),
+        requestedCapability=f"opencli.{site}.{command}",
+        adapterNodeId=adapter.id if adapter else None,
+    ).model_dump()
+    return {"binding": binding}
 
 
 def _resolve_collection_need(node: WorkflowProjectNode, *, node_id: str) -> dict[str, Any]:
@@ -269,6 +282,12 @@ def _resolve_source_fetch_node(
             "provider": provider,
             "channelType": channel_type,
             "dispatch": "runtime_source_binding",
+            "status_anchor": node_id,
+            "result_projection": {
+                "events": "/api/v1/workflows/runs/{run_id}/events/stream",
+                "evidenceBatches": "/api/v1/workflows/runs/{run_id}/evidence-batches",
+                "projection": "/api/v1/workflows/runs/{run_id}/projection",
+            },
         },
     }
 

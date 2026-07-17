@@ -1,16 +1,16 @@
 import re
-from urllib.parse import urlparse
 from typing import Literal
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.browser_pool import get_pool
 from backend.config import get_settings
 from backend.database import get_db
 from backend.schemas.common import ApiResponse
-from backend.browser_pool import get_pool
 
 router = APIRouter(prefix="/workers", tags=["workers"])
 
@@ -19,6 +19,69 @@ def _inspect_workers() -> tuple[dict, dict]:
     from backend.worker.celery_app import celery_app
     inspect = celery_app.control.inspect(timeout=3)
     return inspect.stats() or {}, inspect.active() or {}
+
+
+class BrowserWorkerRegisterRequest(BaseModel):
+    worker_id: str
+    endpoint: str
+    capacity: int = 1
+    status: Literal["online", "offline", "draining"] = "online"
+    node_type: Literal["docker", "shell"] = "docker"
+    capabilities: list[str] = []
+
+
+@router.post("/browser-workers/register", response_model=ApiResponse[dict])
+async def register_browser_worker(body: BrowserWorkerRegisterRequest) -> ApiResponse:
+    """Register browser-worker capacity for routing compiled browser tasks."""
+    if body.capacity < 1:
+        raise HTTPException(status_code=400, detail="capacity must be at least 1")
+    pool = get_pool()
+    worker = pool.register_worker(
+        body.worker_id,
+        body.endpoint.rstrip("/"),
+        capacity=body.capacity,
+        status=body.status,
+        node_type=body.node_type,
+        capabilities=body.capabilities,
+    )
+    return ApiResponse.ok({
+        "workerId": worker.worker_id,
+        "endpoint": worker.endpoint,
+        "capacity": worker.capacity,
+        "active": worker.active,
+        "available": worker.available,
+        "status": worker.status,
+        "nodeType": worker.node_type,
+        "capabilities": list(worker.capabilities),
+    })
+
+
+@router.get("/browser-workers", response_model=ApiResponse[list[dict]])
+async def list_browser_workers() -> ApiResponse:
+    """Return registered browser-worker capacity without profile secrets."""
+    pool = get_pool()
+    return ApiResponse.ok([
+        {
+            "workerId": worker.worker_id,
+            "endpoint": worker.endpoint,
+            "capacity": worker.capacity,
+            "active": worker.active,
+            "available": worker.available,
+            "status": worker.status,
+            "nodeType": worker.node_type,
+            "capabilities": list(worker.capabilities),
+        }
+        for worker in pool.worker_capacity()
+    ])
+
+
+@router.delete("/browser-workers/{worker_id}", response_model=ApiResponse[dict])
+async def unregister_browser_worker(worker_id: str) -> ApiResponse:
+    """Remove a browser-worker registration while preserving its endpoint."""
+    removed = get_pool().unregister_worker(worker_id)
+    if not removed:
+        raise HTTPException(status_code=404, detail="Browser worker not found")
+    return ApiResponse.ok({"workerId": worker_id, "removed": True})
 
 
 @router.get("", response_model=ApiResponse[list[dict]])
@@ -80,7 +143,9 @@ async def chrome_pool_status() -> ApiResponse:
             "container_status": _container_status(urlparse(ep).hostname or ""),
             "mode": pool.get_mode(ep),
             "agent_url": pool.get_agent_url(ep) if isinstance(pool, LocalBrowserPool) else None,
-            "agent_protocol": pool.get_agent_protocol(ep) if isinstance(pool, LocalBrowserPool) else None,
+            "agent_protocol": (
+                pool.get_agent_protocol(ep) if isinstance(pool, LocalBrowserPool) else None
+            ),
         }
         for ep in pool.endpoints
     ]
@@ -103,6 +168,7 @@ async def update_endpoint_mode(
 ) -> ApiResponse:
     """Update the connection mode (bridge/cdp) for an agent pool endpoint."""
     import base64
+
     from backend.models.browser import BrowserInstance
 
     try:

@@ -1,6 +1,12 @@
 from backend.models.agent import AIAgent
 from backend.models.base import TimestampMixin
-from backend.models.browser import BrowserBinding, BrowserInstance
+from backend.models.browser import (
+    BrowserBinding,
+    BrowserInstance,
+    ProfileBinding,
+    ProfileLock,
+    SessionSnapshot,
+)
 from backend.models.control_action import ControlActionRecord
 from backend.models.cookie_jar import CookieJarEntry
 from backend.models.edge_node import EdgeNode, EdgeNodeEvent
@@ -28,6 +34,9 @@ __all__ = [
     "AIAgent",
     "BrowserBinding",
     "BrowserInstance",
+    "ProfileBinding",
+    "ProfileLock",
+    "SessionSnapshot",
     "CookieJarEntry",
     "EdgeNode",
     "EdgeNodeEvent",

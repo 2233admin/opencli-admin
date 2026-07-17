@@ -1,4 +1,4 @@
-from sqlalchemy import String, Text, UniqueConstraint
+from sqlalchemy import Boolean, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.models.base import TimestampMixin
@@ -13,6 +13,46 @@ class BrowserBinding(TimestampMixin):
     browser_endpoint: Mapped[str] = mapped_column(String(255), nullable=False)
     site: Mapped[str] = mapped_column(String(100), nullable=False)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class ProfileBinding(TimestampMixin):
+    """Saved profile identity shared by browser-worker containers."""
+
+    __tablename__ = "profile_bindings"
+    __table_args__ = (UniqueConstraint("profile_id", name="uq_profile_bindings_profile_id"),)
+
+    profile_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    site: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    browser_endpoint: Mapped[str] = mapped_column(String(255), nullable=False)
+    mutation_mode: Mapped[str] = mapped_column(String(20), nullable=False, default="read")
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class SessionSnapshot(TimestampMixin):
+    """Immutable session snapshot reference usable by read-only workers."""
+
+    __tablename__ = "session_snapshots"
+
+    profile_binding_id: Mapped[str] = mapped_column(
+        String(36), nullable=False, index=True
+    )
+    blob_uri: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    snapshot_id: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    snapshot_type: Mapped[str] = mapped_column(String(20), nullable=False, default="read")
+
+
+class ProfileLock(TimestampMixin):
+    """Database-visible profile mutation lease."""
+
+    __tablename__ = "profile_locks"
+    __table_args__ = (
+        UniqueConstraint("profile_binding_id", name="uq_profile_locks_binding"),
+    )
+
+    profile_binding_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    worker_slot_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    lock_token: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
 
 
 class BrowserInstance(TimestampMixin):

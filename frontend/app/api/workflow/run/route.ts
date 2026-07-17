@@ -1,4 +1,3 @@
-import workflowFixture from "../../../../lib/workflow/fixtures/workflow-intelligence.json"
 import { parseWorkflowProject } from "../../../../lib/workflow/schema"
 
 export const dynamic = "force-dynamic"
@@ -7,8 +6,8 @@ const BACKEND_URL = process.env.BACKEND_URL ?? "http://127.0.0.1:8031"
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json().catch(() => ({ project: workflowFixture }))
-    const project = parseWorkflowProject(body?.project ?? body ?? workflowFixture)
+    const body = await req.json()
+    const project = parseWorkflowProject(body?.project ?? body)
     const response = await fetch(`${BACKEND_URL}/api/v1/workflows/runs`, {
       method: "POST",
       headers: {

@@ -20,6 +20,13 @@ MISSING_RUNTIME_BINDING = "missing_runtime_binding"
 MISSING_RUNTIME_IO_CONTRACT = "missing_runtime_io_contract"
 MISSING_RUNTIME_PARAMETER = "missing_runtime_parameter"
 MISSING_SOURCE_CREDENTIAL = "missing_source_credential"
+MISSING_ADAPTER_RESOURCE = "missing_adapter_resource"
+MISSING_OPENCLI_COMMAND = "missing_opencli_command"
+MISSING_PROFILE_BINDING = "missing_profile_binding"
+MISSING_SESSION_SNAPSHOT = "missing_session_snapshot"
+MISSING_WORKER_CAPACITY = "missing_worker_capacity"
+PROFILE_LOCK_CONTENDED = "profile_lock_contended"
+MUTATION_MODE_UNSUPPORTED = "mutation_mode_unsupported"
 MISSING_TOOL_CAPABILITY_BINDING = "missing_tool_capability_binding"
 MISSING_TURBOPUSH_CONTENT_TYPE = "missing_turbopush_content_type"
 MISSING_TURBOPUSH_SERVICE = "missing_turbopush_service"
@@ -95,6 +102,48 @@ WORKFLOW_BLOCK_REASON_TAXONOMY: dict[str, WorkflowBlockReasonDefinition] = {
         volatile_fields=("message",),
         description="Tool-capability node has no registered backend tool binding.",
     ),
+    MISSING_ADAPTER_RESOURCE: WorkflowBlockReasonDefinition(
+        code=MISSING_ADAPTER_RESOURCE,
+        category="missing_runtime_resource",
+        stable_fields=("code", "source", "details.adapterNodeId"),
+        description="OpenCLI adapter capability is unavailable.",
+    ),
+    MISSING_OPENCLI_COMMAND: WorkflowBlockReasonDefinition(
+        code=MISSING_OPENCLI_COMMAND,
+        category="missing_runtime_resource",
+        stable_fields=("code", "source", "details.site"),
+        description="The OpenCLI command could not be resolved.",
+    ),
+    MISSING_PROFILE_BINDING: WorkflowBlockReasonDefinition(
+        code=MISSING_PROFILE_BINDING,
+        category="missing_runtime_resource",
+        stable_fields=("code", "source", "details.site"),
+        description="Browser execution requires a profile binding that is unavailable.",
+    ),
+    MISSING_SESSION_SNAPSHOT: WorkflowBlockReasonDefinition(
+        code=MISSING_SESSION_SNAPSHOT,
+        category="missing_runtime_resource",
+        stable_fields=("code", "source", "details.site"),
+        description="Read-only browser fanout requires a shareable session snapshot.",
+    ),
+    MISSING_WORKER_CAPACITY: WorkflowBlockReasonDefinition(
+        code=MISSING_WORKER_CAPACITY,
+        category="missing_runtime_resource",
+        stable_fields=("code", "source", "details.requestedCapability"),
+        description="No worker slot currently satisfies the runtime requirement.",
+    ),
+    PROFILE_LOCK_CONTENDED: WorkflowBlockReasonDefinition(
+        code=PROFILE_LOCK_CONTENDED,
+        category="missing_runtime_resource",
+        stable_fields=("code", "source", "details.site"),
+        description="A mutating browser task cannot acquire the profile lock.",
+    ),
+    MUTATION_MODE_UNSUPPORTED: WorkflowBlockReasonDefinition(
+        code=MUTATION_MODE_UNSUPPORTED,
+        category="missing_runtime_resource",
+        stable_fields=("code", "source", "details.site"),
+        description="The requested browser mutation mode is unsupported.",
+    ),
     MISSING_TURBOPUSH_CONTENT_TYPE: WorkflowBlockReasonDefinition(
         code=MISSING_TURBOPUSH_CONTENT_TYPE,
         category="missing_config",
@@ -136,6 +185,13 @@ __all__ = [
     "MISSING_RUNTIME_IO_CONTRACT",
     "MISSING_RUNTIME_PARAMETER",
     "MISSING_SOURCE_CREDENTIAL",
+    "MISSING_ADAPTER_RESOURCE",
+    "MISSING_OPENCLI_COMMAND",
+    "MISSING_PROFILE_BINDING",
+    "MISSING_SESSION_SNAPSHOT",
+    "MISSING_WORKER_CAPACITY",
+    "PROFILE_LOCK_CONTENDED",
+    "MUTATION_MODE_UNSUPPORTED",
     "MISSING_TOOL_CAPABILITY_BINDING",
     "MISSING_TURBOPUSH_CONTENT_TYPE",
     "MISSING_TURBOPUSH_SERVICE",

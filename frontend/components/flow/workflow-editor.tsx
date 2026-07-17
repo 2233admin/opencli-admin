@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react"
+import { emptyEvidenceWorkbenchState, type EvidenceWorkbenchState } from "@/lib/workflow/evidence-workbench"
 import { ReactFlowProvider, useReactFlow, type NodeMouseHandler } from "@xyflow/react"
 import "@xyflow/react/dist/style.css"
 
@@ -35,6 +36,7 @@ import {
   useDismissNodeMenu,
   useExitCurrentNetwork,
   useSharedWorkflowImport,
+  useWorkflowResultSubscription,
 } from "./workflow-editor-effects"
 
 function buildPrimitiveMenuGroups() {
@@ -86,6 +88,7 @@ function EditorCanvas() {
     unlockNodeInternals,
     updateWorkflowProfile,
     workflowProject,
+    workflowRunProjection,
   } = useFlowStore(selectEditorCanvasState)
 
   const settings = useSettingsStore()
@@ -109,6 +112,7 @@ function EditorCanvas() {
   const [zoom, setZoom] = useState(1)
   const [compactViewport, setCompactViewport] = useState(false)
   const [nodeMenu, setNodeMenu] = useState<NodeMenuState | null>(null)
+  const [resultWorkbenchState, setResultWorkbenchState] = useState<EvidenceWorkbenchState>(emptyEvidenceWorkbenchState)
   const { capabilities } = useWorkflowCapabilities(true)
   const dopNodeMenuItems = useMemo(
     () => getWorkflowNodeCatalog(workflowProject.profile, capabilities),
@@ -126,6 +130,10 @@ function EditorCanvas() {
   useCompactViewportMedia(setCompactViewport)
   const applyCompactViewport = useCanvasViewportCompaction({ compactViewport, nodes, setViewport })
   useCompactViewportEffect(applyCompactViewport)
+  useWorkflowResultSubscription({
+    projection: workflowRunProjection,
+    setWorkbenchState: setResultWorkbenchState,
+  })
 
   useWorkflowKeyboardShortcuts({
     autoLayout,
@@ -285,6 +293,7 @@ function EditorCanvas() {
           nodeManagementOpen={nodeManagementOpen}
           nodeMenu={nodeMenu}
           nodes={nodes}
+          resultWorkbenchState={resultWorkbenchState}
           onBeforeDelete={onBeforeDelete}
           onCanvasMouseDownCapture={onCanvasMouseDownCapture}
           onCanvasMouseMoveCapture={onCanvasMouseMoveCapture}
