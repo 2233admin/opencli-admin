@@ -44,3 +44,19 @@ def test_leaked_429_and_5xx_are_retryable(status):
 @pytest.mark.parametrize("status", [400, 401, 403, 404, 422])
 def test_client_4xx_are_permanent(status):
     assert is_retryable_http_status(status) is False
+
+
+# ── AUDIT C13: gateway statuses + 408 must classify retryable ───────────────
+
+@pytest.mark.parametrize("status", [504, 520, 522, 524])
+def test_gateway_statuses_are_retryable(status):
+    """504 (gateway timeout) and Cloudflare's own 520/522/524 gateway-error
+    codes are transient upstream/proxy conditions, same as 502/503 — not
+    reasons to give up permanently."""
+    assert is_retryable_http_status(status) is True
+
+
+def test_request_timeout_408_is_retryable():
+    """408 is a transient per-request timeout, not a durably broken request —
+    it belongs with 429/5xx, not with the permanent 4xx family."""
+    assert is_retryable_http_status(408) is True

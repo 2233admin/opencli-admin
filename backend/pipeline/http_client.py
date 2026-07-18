@@ -16,7 +16,11 @@ from typing import Any
 import httpx
 
 #: HTTP statuses the client retries (rate limit + transient server errors).
-RETRY_STATUS = frozenset({429, 500, 502, 503})
+#: AUDIT C13: 504/520/522/524 (gateway timeout + Cloudflare's own gateway-error
+#: codes) belong alongside 502/503 — a slow/misbehaving upstream through a
+#: proxy surfaces as any of these, not just 502/503, and none of them are
+#: reasons to give up permanently.
+RETRY_STATUS = frozenset({429, 500, 502, 503, 504, 520, 522, 524})
 
 
 def parse_rate(rate: str) -> float:

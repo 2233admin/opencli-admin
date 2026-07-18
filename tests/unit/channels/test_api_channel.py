@@ -647,6 +647,63 @@ async def test_fetch_http_error_raises_channel_fetch_error(channel):
         await channel.fetch(ctx)
 
 
+# ── AUDIT C13: gateway statuses classify retryable, other 4xx stay permanent ──
+
+def _mock_status_error(status: int):
+    import httpx
+
+    return httpx.HTTPStatusError(
+        message=f"HTTP {status}",
+        request=MagicMock(),
+        response=MagicMock(status_code=status, text=f"error {status}"),
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", [502, 503, 504, 520, 522, 524])
+async def test_fetch_gateway_status_classified_retryable(channel, status):
+    """504/520/522/524 (and 502/503) must set error_type="RetryableHTTPStatus"
+    on the raised ChannelFetchError so pipeline.py's retry taxonomy sees them
+    as transient, not a permanent failure — previously these all leaked
+    through as a bare wrapper with no retry-classification hint."""
+    mock_response = MagicMock()
+    mock_response.status_code = status
+    mock_response.raise_for_status = MagicMock(side_effect=_mock_status_error(status))
+    http = AsyncMock()
+    http.request = AsyncMock(return_value=mock_response)
+    ctx = FetchContext(
+        config={"base_url": "https://api.example.com", "endpoint": "/err"},
+        params={},
+        http=http,
+    )
+
+    with pytest.raises(ChannelFetchError) as exc_info:
+        await channel.fetch(ctx)
+
+    assert exc_info.value.error_type == "RetryableHTTPStatus"
+
+
+@pytest.mark.asyncio
+async def test_fetch_client_404_classified_permanent(channel):
+    """A genuine 4xx (not 408/429) stays permanent — retrying an unchanged
+    malformed/missing-resource request can't succeed."""
+    mock_response = MagicMock()
+    mock_response.status_code = 404
+    mock_response.raise_for_status = MagicMock(side_effect=_mock_status_error(404))
+    http = AsyncMock()
+    http.request = AsyncMock(return_value=mock_response)
+    ctx = FetchContext(
+        config={"base_url": "https://api.example.com", "endpoint": "/missing"},
+        params={},
+        http=http,
+    )
+
+    with pytest.raises(ChannelFetchError) as exc_info:
+        await channel.fetch(ctx)
+
+    assert exc_info.value.error_type == "PermanentHTTPStatus"
+
+
 # ── health_check (GOAL-4 PR-E: real per-source probe) ───────────────────────────
 
 @pytest.mark.asyncio

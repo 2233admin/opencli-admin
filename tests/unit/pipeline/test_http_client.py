@@ -93,5 +93,23 @@ async def test_gives_up_after_max_retries(monkeypatch):
     assert client.calls == 4  # initial + 3 retries
 
 
+# ── AUDIT C13: gateway statuses (504 + Cloudflare 520/522/524) retry too ────
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", [504, 520, 522, 524])
+async def test_retries_on_gateway_statuses_then_succeeds(monkeypatch, status):
+    """504 (gateway timeout) and Cloudflare's 520/522/524 are transient
+    upstream/proxy conditions same as 502/503 — RETRY_STATUS previously
+    stopped at 503, so these leaked straight to the caller with zero retry."""
+    monkeypatch.setattr("backend.pipeline.http_client.asyncio.sleep", lambda d: _noop())
+
+    client = FakeClient([httpx.Response(status), httpx.Response(200)])
+    rl = RateLimitedClient(client, TokenBucket(1000), log=None)
+    resp = await rl.get("http://x")
+
+    assert resp.status_code == 200
+    assert client.calls == 2
+
+
 async def _noop() -> None:
     return None
