@@ -125,6 +125,18 @@ class Settings(BaseSettings):
     # WS dispatch timeout when center sends a task over a reverse WS channel
     agent_ws_timeout: int = 130
 
+    # AI enrichment processors (processors/openai_processor.py, claude_processor.py,
+    # local_processor.py): explicit per-request timeout on the LLM API call itself
+    # (AUDIT C8) — the SDKs' own default is a 600s x 2-retry black hole that can
+    # otherwise pin a whole batch in ai_processing for hours behind a dead/slow
+    # gateway. A source's ai_config can still override this per call via
+    # config["timeout"]; this is only the fallback default.
+    llm_request_timeout_seconds: int = 120
+    # Bound how many per-record LLM calls run concurrently within one enrichment
+    # batch (AUDIT C25) — replaces a plain await-in-a-for-loop, where wall-clock
+    # cost was record_count x per-call latency.
+    llm_max_concurrency: int = 4
+
     # Webhooks
     webhook_secret: str = "change-me-webhook-secret"
 

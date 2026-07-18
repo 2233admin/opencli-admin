@@ -1,5 +1,6 @@
 """Unit tests for the RSS channel."""
 
+import threading
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -116,6 +117,43 @@ async def test_collect_metadata_includes_feed_title(channel):
 
     assert result.success is True
     assert result.metadata.get("feed_title") == "Test Feed"
+
+
+# ── AUDIT C22: feedparser.parse() off-loaded via asyncio.to_thread ─────────────
+
+@pytest.mark.asyncio
+async def test_collect_parses_feed_off_event_loop_thread(channel):
+    """feedparser.parse() must run via asyncio.to_thread, not inline on the
+    event loop — a multi-MB feed would otherwise freeze every other
+    request/task on this process for the duration of the parse."""
+    mock_response = MagicMock()
+    mock_response.text = VALID_RSS_XML
+    mock_response.raise_for_status = MagicMock()
+
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(return_value=mock_response)
+    mock_client_ctx = AsyncMock()
+    mock_client_ctx.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client_ctx.__aexit__ = AsyncMock(return_value=False)
+
+    import feedparser
+
+    seen_threads: list[int] = []
+    real_parse = feedparser.parse
+
+    def spy_parse(content):
+        seen_threads.append(threading.get_ident())
+        return real_parse(content)
+
+    with patch("httpx.AsyncClient", return_value=mock_client_ctx):
+        with patch("feedparser.parse", side_effect=spy_parse):
+            result = await channel.collect(
+                {"feed_url": "https://example.com/rss"}, {}
+            )
+
+    assert result.success is True
+    assert len(seen_threads) == 1
+    assert seen_threads[0] != threading.get_ident()
 
 
 # ── collect: error cases ───────────────────────────────────────────────────────

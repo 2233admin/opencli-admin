@@ -1,6 +1,7 @@
 """Unit tests for the pipeline orchestrator."""
 
 import pytest
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from backend.channels.base import ChannelResult
@@ -103,6 +104,22 @@ async def test_run_pipeline_collector_exception(db_session):
     assert "collect crash" in result.error
 
 
+class _FakeScalarsResult:
+    """Minimal stand-in for what `session.execute(select(...))` returns —
+    supports the sync `.scalars().all()` chain the AUDIT C21 bulk-fetch uses
+    (unlike a bare AsyncMock, whose auto-created child attributes are also
+    async and break that chain — see the N+1 test below for the same fake)."""
+
+    def __init__(self, rows):
+        self._rows = rows
+
+    def scalars(self):
+        return self
+
+    def all(self):
+        return self._rows
+
+
 @pytest.mark.asyncio
 async def test_run_pipeline_with_ai(db_session):
     """Pipeline with ai_config calls process_with_ai."""
@@ -121,9 +138,16 @@ async def test_run_pipeline_with_ai(db_session):
         "prompt_template": "Summarize: {{content}}",
     }
 
+    # AUDIT C21: the persist step now does one bulk `session.execute(select(...
+    # ).where(id.in_(...)))` instead of one `session.get` per record — the DB
+    # row it should find and update.
+    db_row = MagicMock()
+    db_row.id = "rec-ai-1"
+
     # Mock the inner AsyncSessionLocal calls used for AI status update and enrichment save
     mock_inner_session = AsyncMock()
     mock_inner_session.get = AsyncMock(return_value=MagicMock())
+    mock_inner_session.execute = AsyncMock(return_value=_FakeScalarsResult([db_row]))
     mock_inner_session.commit = AsyncMock()
     inner_cm = AsyncMock()
     inner_cm.__aenter__ = AsyncMock(return_value=mock_inner_session)
@@ -145,6 +169,77 @@ async def test_run_pipeline_with_ai(db_session):
 
     assert result.success is True
     assert result.ai_processed == 1
+    # same field writes as before the N+1 fix: enrichment + status landed on
+    # the row the bulk SELECT found.
+    assert db_row.ai_enrichment == {"summary": "AI summary"}
+    assert db_row.status == "ai_processed"
+
+
+@pytest.mark.asyncio
+async def test_run_pipeline_ai_persist_is_bulk_not_n_plus_one(db_session):
+    """AUDIT C21: persisting N enriched records must cost exactly one
+    `session.execute` (bulk SELECT ... WHERE id IN (...)) + one commit, not N
+    `session.get` calls — spies on how many times execute() is invoked."""
+    source, task = await _setup_source_task(db_session)
+
+    n = 5
+    mock_items = [{"title": f"Item {i}", "url": f"https://ex.com/{i}"} for i in range(n)]
+    channel_result = ChannelResult.ok(mock_items)
+
+    mock_records = []
+    for i in range(n):
+        rec = MagicMock()
+        rec.id = f"rec-{i}"
+        rec.ai_enrichment = {"summary": f"s{i}"}
+        mock_records.append(rec)
+
+    db_rows = []
+    for rec in mock_records:
+        row = MagicMock()
+        row.id = rec.id
+        db_rows.append(row)
+
+    agent_config = {"processor_type": "claude", "model": "claude-3-haiku-20240307"}
+
+    execute_calls: list[Any] = []
+
+    def _spy_execute(stmt):
+        execute_calls.append(stmt)
+        return _FakeScalarsResult(db_rows)
+
+    mock_inner_session = AsyncMock()
+    mock_inner_session.get = AsyncMock(return_value=MagicMock())  # ai_processing status row
+    mock_inner_session.execute = AsyncMock(side_effect=_spy_execute)
+    mock_inner_session.commit = AsyncMock()
+    inner_cm = AsyncMock()
+    inner_cm.__aenter__ = AsyncMock(return_value=mock_inner_session)
+    inner_cm.__aexit__ = AsyncMock(return_value=False)
+
+    with (
+        patch("backend.pipeline.collector.collect", return_value=channel_result),
+        patch("backend.pipeline.storer.store_records", new=AsyncMock(return_value=(mock_records, 0))),
+        patch("backend.pipeline.ai_processor.process_with_ai", new=AsyncMock(return_value=n)),
+        patch("backend.database.AsyncSessionLocal", return_value=inner_cm),
+    ):
+        result = await run_pipeline(
+            task.id,
+            source,
+            agent_config=agent_config,
+            enable_ai=True,
+            enable_notifications=False,
+        )
+
+    assert result.success is True
+    assert result.ai_processed == n
+
+    # exactly one execute() call persists all n enrichments — not n (N+1).
+    assert len(execute_calls) == 1
+
+    # same field writes as before: every row got its enrichment + status set.
+    for i, row in enumerate(db_rows):
+        assert row.ai_enrichment == {"summary": f"s{i}"}
+        assert row.status == "ai_processed"
+    assert mock_inner_session.commit.await_count >= 1
 
 
 @pytest.mark.asyncio

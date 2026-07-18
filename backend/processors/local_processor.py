@@ -11,11 +11,12 @@ processors. Two real incompatibilities, not just "not bothered yet":
     OpenAI ``/v1/chat/completions`` shape. There is no adapter call that
     reaches ``/api/generate`` without changing what gets sent over the wire.
   * even the ``api_style="openai"`` branch has a per-call configurable
-    ``timeout`` (``config.get("timeout", 120)``) threaded straight into the
-    raw ``httpx.AsyncClient`` — ``OpenAICompatAdapter`` (frozen behavior,
-    PR-B, 1599-test baseline) has no parameter to accept a caller-supplied
-    timeout, so swapping in the adapter here would silently drop that
-    config knob for anyone using it.
+    ``timeout`` (``config.get("timeout", ...)``, defaulting to the shared
+    ``Settings.llm_request_timeout_seconds`` — AUDIT C8) threaded straight
+    into the raw ``httpx.AsyncClient`` — ``OpenAICompatAdapter`` (frozen
+    behavior, PR-B, 1599-test baseline) has no parameter to accept a
+    caller-supplied timeout, so swapping in the adapter here would silently
+    drop that config knob for anyone using it.
 
 Also has no SSRF guard today for either branch (raw ``httpx.AsyncClient``,
 no ``url_guard`` call) — unlike ``openai_processor``/``skill_channel``. This
@@ -24,6 +25,7 @@ is pre-existing behavior, left as-is; closing it would need its own change
 regression" scope.
 """
 
+import asyncio
 import json
 import re
 from typing import TYPE_CHECKING, Any
@@ -55,43 +57,64 @@ class LocalProcessor(AbstractProcessor):
         prompt_template: str,
         config: dict[str, Any],
     ) -> ProcessingResult:
+        from backend.config import get_settings
+
+        settings = get_settings()
+
         base_url = config.get("base_url", "http://localhost:11434")
         model = config.get("model", "llama3")
-        timeout = config.get("timeout", 120)
+        # AUDIT C8: fallback now comes from the shared llm_request_timeout_seconds
+        # setting instead of a hardcoded 120 — an explicit config["timeout"]
+        # still wins, unchanged.
+        timeout = config.get("timeout", settings.llm_request_timeout_seconds)
         # Support both Ollama (/api/generate) and OpenAI-compatible (/v1/chat/completions)
         api_style = config.get("api_style", "ollama")
+        # AUDIT C25: bound how many records are in flight at once instead of
+        # a plain await-in-a-for-loop (wall clock == record_count x latency).
+        max_concurrency = max(1, settings.llm_max_concurrency)
 
-        enrichments: list[dict[str, Any]] = []
+        semaphore = asyncio.Semaphore(max_concurrency)
 
         async with httpx.AsyncClient(base_url=base_url, timeout=timeout) as client:
-            for record in records:
-                prompt = _render(prompt_template, record.normalized_data)
-                try:
-                    if api_style == "ollama":
-                        resp = await client.post(
-                            "/api/generate",
-                            json={"model": model, "prompt": prompt, "stream": False},
-                        )
-                        resp.raise_for_status()
-                        text = resp.json().get("response", "")
-                    else:
-                        # OpenAI-compatible
-                        resp = await client.post(
-                            "/v1/chat/completions",
-                            json={
-                                "model": model,
-                                "messages": [{"role": "user", "content": prompt}],
-                            },
-                        )
-                        resp.raise_for_status()
-                        text = resp.json()["choices"][0]["message"]["content"]
-
+            # httpx.AsyncClient is safe to share across concurrent requests
+            # (connection-pool backed) — the semaphore just caps how many of
+            # `records` are in flight through it at once.
+            async def _process_one(record: "CollectedRecord") -> dict[str, Any]:
+                async with semaphore:
+                    prompt = _render(prompt_template, record.normalized_data)
                     try:
-                        enrichment = json.loads(text)
-                    except json.JSONDecodeError:
-                        enrichment = {"analysis": text}
-                    enrichments.append(enrichment)
-                except Exception as exc:
-                    enrichments.append({"error": str(exc)})
+                        if api_style == "ollama":
+                            resp = await client.post(
+                                "/api/generate",
+                                json={"model": model, "prompt": prompt, "stream": False},
+                            )
+                            resp.raise_for_status()
+                            text = resp.json().get("response", "")
+                        else:
+                            # OpenAI-compatible
+                            resp = await client.post(
+                                "/v1/chat/completions",
+                                json={
+                                    "model": model,
+                                    "messages": [{"role": "user", "content": prompt}],
+                                },
+                            )
+                            resp.raise_for_status()
+                            text = resp.json()["choices"][0]["message"]["content"]
+
+                        try:
+                            return json.loads(text)
+                        except json.JSONDecodeError:
+                            return {"analysis": text}
+                    except Exception as exc:
+                        # A single record's failure must not abort the batch.
+                        return {"error": str(exc)}
+
+            # asyncio.gather returns results in the same order as the input
+            # awaitables (not completion order), so enrichments[i] still
+            # lines up with records[i].
+            enrichments: list[dict[str, Any]] = list(await asyncio.gather(
+                *(_process_one(record) for record in records)
+            ))
 
         return ProcessingResult(success=True, enrichments=enrichments)

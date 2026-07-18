@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from typing import Any
 
+from sqlalchemy import select
+
 from backend.channels.base import ChannelFetchError
 from backend.control.error_kinds import map_error_type, map_exception
 from backend.control.recorder import FreshnessInfo, record_run_measurement
@@ -400,16 +402,28 @@ async def run_pipeline(
                 # in backend.pipeline.runner phase 2, so it's used as-is.
                 resolve_provider=agent_config is None,
             )
-            # Persist enrichments — new_records are detached after step3 session closed
+            # Persist enrichments — new_records are detached after step3 session
+            # closed. AUDIT C21: one bulk SELECT ... WHERE id IN (...) + an
+            # in-memory id->row map, instead of one `session.get` per record
+            # (N+1) — same field writes (ai_enrichment, status="ai_processed").
             from backend.models.record import CollectedRecord
-            async with AsyncSessionLocal() as session:
-                for rec in new_records:
-                    if rec.ai_enrichment is not None:
-                        db_rec = await session.get(CollectedRecord, rec.id)
+            enriched_ids = [rec.id for rec in new_records if rec.ai_enrichment is not None]
+            if enriched_ids:
+                async with AsyncSessionLocal() as session:
+                    db_recs = (
+                        await session.execute(
+                            select(CollectedRecord).where(CollectedRecord.id.in_(enriched_ids))
+                        )
+                    ).scalars().all()
+                    db_recs_by_id = {db_rec.id: db_rec for db_rec in db_recs}
+                    for rec in new_records:
+                        if rec.ai_enrichment is None:
+                            continue
+                        db_rec = db_recs_by_id.get(rec.id)
                         if db_rec:
                             db_rec.ai_enrichment = rec.ai_enrichment
                             db_rec.status = "ai_processed"
-                await session.commit()
+                    await session.commit()
             logger.info("[task:%s] step4/ai done | processed=%d", task_id, ai_count)
             if run_id:
                 # AUDIT C3: ai_count is now the real enrichment count (0 when

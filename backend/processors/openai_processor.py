@@ -1,5 +1,6 @@
 """OpenAI AI processor."""
 
+import asyncio
 import json
 import logging
 import os
@@ -40,14 +41,30 @@ class OpenAIProcessor(AbstractProcessor):
         except ImportError:
             return ProcessingResult(success=False, error="openai package not installed")
 
+        from backend.config import get_settings
+
+        settings = get_settings()
+
         api_key = config.get("api_key") or os.environ.get("OPENAI_API_KEY", "")
         base_url: str | None = config.get("base_url") or None
         model = config.get("model", "gpt-4o-mini")
         max_tokens = config.get("max_tokens", 1024)
         use_json_mode = config.get("json_mode", base_url is None)
+        # AUDIT C8: explicit per-request timeout — the SDK default (600s x 2
+        # retries) can otherwise pin a whole batch in ai_processing for hours
+        # behind a dead/slow gateway. A source's ai_config can still override
+        # this per call via config["timeout"].
+        request_timeout = config.get("timeout", settings.llm_request_timeout_seconds)
+        # AUDIT C25: bound how many records are in flight at once instead of
+        # a plain await-in-a-for-loop (wall clock == record_count x latency).
+        max_concurrency = max(1, settings.llm_max_concurrency)
 
-        logger.info("openai processor | model=%s base_url=%s max_tokens=%d records=%d",
-                    model, base_url or "(default)", max_tokens, len(records))
+        logger.info(
+            "openai processor | model=%s base_url=%s max_tokens=%d records=%d "
+            "timeout=%s max_concurrency=%d",
+            model, base_url or "(default)", max_tokens, len(records),
+            request_timeout, max_concurrency,
+        )
 
         # GOAL-6 PR-E: client construction (SSRF guard + DNS-rebind pinning)
         # is consolidated through backend.llm.openai_compat.OpenAICompatAdapter
@@ -62,18 +79,24 @@ class OpenAIProcessor(AbstractProcessor):
             client = await adapter.get_client()
         except LlmAdapterError as exc:
             return ProcessingResult(success=False, error=f"openai processor: {exc}")
-        enrichments: list[dict[str, Any]] = []
 
-        try:
-            for i, record in enumerate(records):
-                prompt = _render(prompt_template, record.normalized_data)
-                logger.debug("openai req [%d/%d] | prompt_preview=%s",
-                             i + 1, len(records), prompt[:200])
+        semaphore = asyncio.Semaphore(max_concurrency)
+
+        async def _process_one(i: int, record: "CollectedRecord") -> dict[str, Any]:
+            # AUDIT C25: the semaphore (not the for-loop) is what bounds
+            # concurrency now — every record's coroutine is created up front
+            # and handed to gather, but only `max_concurrency` run their LLM
+            # call at once.
+            async with semaphore:
                 try:
+                    prompt = _render(prompt_template, record.normalized_data)
+                    logger.debug("openai req [%d/%d] | prompt_preview=%s",
+                                 i + 1, len(records), prompt[:200])
                     kwargs: dict[str, Any] = dict(
                         model=model,
                         max_tokens=max_tokens,
                         messages=[{"role": "user", "content": prompt}],
+                        timeout=request_timeout,
                     )
                     if use_json_mode:
                         kwargs["response_format"] = {"type": "json_object"}
@@ -86,13 +109,24 @@ class OpenAIProcessor(AbstractProcessor):
                                 usage.completion_tokens if usage else -1,
                                 text[:200])
                     try:
-                        enrichment = json.loads(text)
+                        return json.loads(text)
                     except json.JSONDecodeError:
-                        enrichment = {"analysis": text}
-                    enrichments.append(enrichment)
+                        return {"analysis": text}
                 except Exception as exc:
+                    # A single record's failure must not abort the batch —
+                    # it becomes an {"error": ...} enrichment, exactly like
+                    # the old sequential loop's inner except did.
                     logger.error("openai error [%d/%d] | %s", i + 1, len(records), exc)
-                    enrichments.append({"error": str(exc)})
+                    return {"error": str(exc)}
+
+        try:
+            # asyncio.gather returns results in the same order as the input
+            # awaitables (not completion order), so enrichments[i] still
+            # lines up with records[i] — process_with_ai's zip(records,
+            # enrichments) contract (and the C3 enriched-count fix) holds.
+            enrichments: list[dict[str, Any]] = list(await asyncio.gather(
+                *(_process_one(i, record) for i, record in enumerate(records))
+            ))
         finally:
             # AsyncOpenAI does not close an externally-supplied http_client
             # (it doesn't own it) — close ours ourselves, same as the
