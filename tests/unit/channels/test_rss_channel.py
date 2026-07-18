@@ -1,17 +1,11 @@
-"""Unit tests for the RSS channel."""
+"""Core unit tests for the RSS channel."""
 
 import threading
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from backend.channels.rss_channel import RSSChannel
-
-
-@pytest.fixture
-def channel():
-    return RSSChannel()
-
 
 VALID_RSS_XML = """<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">
@@ -30,7 +24,25 @@ VALID_RSS_XML = """<?xml version="1.0" encoding="UTF-8"?>
 </rss>"""
 
 
-# ── validate_config ────────────────────────────────────────────────────────────
+@pytest.fixture
+def channel():
+    return RSSChannel()
+
+
+class _HttpClient:
+    def __init__(self, text: str):
+        self.response = MagicMock(text=text)
+        self.response.raise_for_status = MagicMock()
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_args):
+        return False
+
+    async def get(self, *_args, **_kwargs):
+        return self.response
+
 
 @pytest.mark.asyncio
 async def test_channel_type(channel):
@@ -40,7 +52,7 @@ async def test_channel_type(channel):
 @pytest.mark.asyncio
 async def test_validate_config_missing_feed_url(channel):
     errors = await channel.validate_config({})
-    assert any("feed_url" in e for e in errors)
+    assert any("feed_url" in error for error in errors)
 
 
 @pytest.mark.asyncio
@@ -49,25 +61,11 @@ async def test_validate_config_valid(channel):
     assert errors == []
 
 
-# ── collect: success ───────────────────────────────────────────────────────────
-
 @pytest.mark.asyncio
 async def test_collect_success_returns_items(channel):
-    """Successful RSS fetch returns ChannelResult with parsed items."""
-    mock_response = MagicMock()
-    mock_response.text = VALID_RSS_XML
-    mock_response.raise_for_status = MagicMock()
-
-    mock_client = AsyncMock()
-    mock_client.get = AsyncMock(return_value=mock_response)
-    mock_client_ctx = AsyncMock()
-    mock_client_ctx.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client_ctx.__aexit__ = AsyncMock(return_value=False)
-
-    with patch("httpx.AsyncClient", return_value=mock_client_ctx):
-        result = await channel.collect(
-            {"feed_url": "https://example.com/rss"}, {}
-        )
+    """Successful RSS fetch returns parsed items."""
+    with patch("httpx.AsyncClient", return_value=_HttpClient(VALID_RSS_XML)):
+        result = await channel.collect({"feed_url": "https://example.com/rss"}, {})
 
     assert result.success is True
     assert len(result.items) == 2
@@ -77,20 +75,11 @@ async def test_collect_success_returns_items(channel):
 
 @pytest.mark.asyncio
 async def test_collect_max_entries_limits_results(channel):
-    """max_entries config option trims entries."""
-    mock_response = MagicMock()
-    mock_response.text = VALID_RSS_XML
-    mock_response.raise_for_status = MagicMock()
-
-    mock_client = AsyncMock()
-    mock_client.get = AsyncMock(return_value=mock_response)
-    mock_client_ctx = AsyncMock()
-    mock_client_ctx.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client_ctx.__aexit__ = AsyncMock(return_value=False)
-
-    with patch("httpx.AsyncClient", return_value=mock_client_ctx):
+    """max_entries trims parsed entries."""
+    with patch("httpx.AsyncClient", return_value=_HttpClient(VALID_RSS_XML)):
         result = await channel.collect(
-            {"feed_url": "https://example.com/rss", "max_entries": 1}, {}
+            {"feed_url": "https://example.com/rss", "max_entries": 1},
+            {},
         )
 
     assert result.success is True
@@ -100,42 +89,16 @@ async def test_collect_max_entries_limits_results(channel):
 @pytest.mark.asyncio
 async def test_collect_metadata_includes_feed_title(channel):
     """ChannelResult metadata contains the feed title."""
-    mock_response = MagicMock()
-    mock_response.text = VALID_RSS_XML
-    mock_response.raise_for_status = MagicMock()
-
-    mock_client = AsyncMock()
-    mock_client.get = AsyncMock(return_value=mock_response)
-    mock_client_ctx = AsyncMock()
-    mock_client_ctx.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client_ctx.__aexit__ = AsyncMock(return_value=False)
-
-    with patch("httpx.AsyncClient", return_value=mock_client_ctx):
-        result = await channel.collect(
-            {"feed_url": "https://example.com/rss"}, {}
-        )
+    with patch("httpx.AsyncClient", return_value=_HttpClient(VALID_RSS_XML)):
+        result = await channel.collect({"feed_url": "https://example.com/rss"}, {})
 
     assert result.success is True
     assert result.metadata.get("feed_title") == "Test Feed"
 
 
-# ── AUDIT C22: feedparser.parse() off-loaded via asyncio.to_thread ─────────────
-
 @pytest.mark.asyncio
 async def test_collect_parses_feed_off_event_loop_thread(channel):
-    """feedparser.parse() must run via asyncio.to_thread, not inline on the
-    event loop — a multi-MB feed would otherwise freeze every other
-    request/task on this process for the duration of the parse."""
-    mock_response = MagicMock()
-    mock_response.text = VALID_RSS_XML
-    mock_response.raise_for_status = MagicMock()
-
-    mock_client = AsyncMock()
-    mock_client.get = AsyncMock(return_value=mock_response)
-    mock_client_ctx = AsyncMock()
-    mock_client_ctx.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client_ctx.__aexit__ = AsyncMock(return_value=False)
-
+    """feedparser.parse runs via asyncio.to_thread instead of on the event loop."""
     import feedparser
 
     seen_threads: list[int] = []
@@ -145,268 +108,12 @@ async def test_collect_parses_feed_off_event_loop_thread(channel):
         seen_threads.append(threading.get_ident())
         return real_parse(content)
 
-    with patch("httpx.AsyncClient", return_value=mock_client_ctx):
-        with patch("feedparser.parse", side_effect=spy_parse):
-            result = await channel.collect(
-                {"feed_url": "https://example.com/rss"}, {}
-            )
+    with (
+        patch("httpx.AsyncClient", return_value=_HttpClient(VALID_RSS_XML)),
+        patch("feedparser.parse", side_effect=spy_parse),
+    ):
+        result = await channel.collect({"feed_url": "https://example.com/rss"}, {})
 
     assert result.success is True
     assert len(seen_threads) == 1
     assert seen_threads[0] != threading.get_ident()
-
-
-# ── collect: error cases ───────────────────────────────────────────────────────
-
-@pytest.mark.asyncio
-async def test_collect_timeout_returns_fail(channel):
-    """TimeoutException should produce a failed ChannelResult."""
-    import httpx
-
-    mock_client = AsyncMock()
-    mock_client.get = AsyncMock(side_effect=httpx.TimeoutException("timeout"))
-    mock_client_ctx = AsyncMock()
-    mock_client_ctx.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client_ctx.__aexit__ = AsyncMock(return_value=False)
-
-    with patch("httpx.AsyncClient", return_value=mock_client_ctx):
-        result = await channel.collect(
-            {"feed_url": "https://example.com/rss"}, {}
-        )
-
-    assert result.success is False
-    assert "timed out" in result.error.lower()
-
-
-@pytest.mark.asyncio
-async def test_collect_http_404_returns_fail(channel):
-    """HTTP 404 status should produce a failed ChannelResult."""
-    import httpx
-
-    mock_response = MagicMock()
-    mock_response.status_code = 404
-    mock_response.raise_for_status = MagicMock(
-        side_effect=httpx.HTTPStatusError(
-            message="Not Found",
-            request=MagicMock(),
-            response=MagicMock(status_code=404),
-        )
-    )
-    mock_client = AsyncMock()
-    mock_client.get = AsyncMock(return_value=mock_response)
-    mock_client_ctx = AsyncMock()
-    mock_client_ctx.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client_ctx.__aexit__ = AsyncMock(return_value=False)
-
-    with patch("httpx.AsyncClient", return_value=mock_client_ctx):
-        result = await channel.collect(
-            {"feed_url": "https://example.com/rss"}, {}
-        )
-
-    assert result.success is False
-    assert "404" in result.error
-
-
-@pytest.mark.asyncio
-async def test_collect_generic_exception_returns_fail(channel):
-    """Any other request exception should produce a failed ChannelResult."""
-    mock_client = AsyncMock()
-    mock_client.get = AsyncMock(side_effect=ConnectionError("network down"))
-    mock_client_ctx = AsyncMock()
-    mock_client_ctx.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client_ctx.__aexit__ = AsyncMock(return_value=False)
-
-    with patch("httpx.AsyncClient", return_value=mock_client_ctx):
-        result = await channel.collect(
-            {"feed_url": "https://example.com/rss"}, {}
-        )
-
-    assert result.success is False
-    assert "Failed to fetch" in result.error
-
-
-@pytest.mark.asyncio
-async def test_collect_bozo_feed_no_entries_returns_fail(channel):
-    """A bozo (broken) feed with no entries should return a failed ChannelResult."""
-    mock_response = MagicMock()
-    mock_response.text = "NOT VALID XML AT ALL !!!"
-    mock_response.raise_for_status = MagicMock()
-
-    mock_client = AsyncMock()
-    mock_client.get = AsyncMock(return_value=mock_response)
-    mock_client_ctx = AsyncMock()
-    mock_client_ctx.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client_ctx.__aexit__ = AsyncMock(return_value=False)
-
-    # Force feedparser to report bozo with no entries
-    fake_parsed = MagicMock()
-    fake_parsed.bozo = True
-    fake_parsed.entries = []
-
-    with patch("httpx.AsyncClient", return_value=mock_client_ctx):
-        with patch("feedparser.parse", return_value=fake_parsed):
-            result = await channel.collect(
-                {"feed_url": "https://example.com/rss"}, {}
-            )
-
-    assert result.success is False
-    assert result.error is not None
-
-
-@pytest.mark.asyncio
-async def test_collect_bozo_feed_error_type_maps_to_schema_drift(channel):
-    """WIRING_GAP_LEDGER W1: the bozo failure must carry error_type set from
-    feedparser's real bozo_exception class (e.g. SAXParseException for
-    malformed XML) so error_kinds.map_error_type resolves it to SCHEMA_DRIFT
-    -- previously this branch passed no error_type at all, so control's
-    recorder (`elif error_type is not None`) silently dropped it and the
-    SCHEMA_DRIFT chain never fired for a broken RSS feed."""
-    from xml.sax import SAXParseException
-
-    from backend.control.error_kinds import ErrorKind, map_error_type
-
-    mock_response = MagicMock()
-    mock_response.text = "NOT VALID XML AT ALL !!!"
-    mock_response.raise_for_status = MagicMock()
-
-    mock_client = AsyncMock()
-    mock_client.get = AsyncMock(return_value=mock_response)
-    mock_client_ctx = AsyncMock()
-    mock_client_ctx.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client_ctx.__aexit__ = AsyncMock(return_value=False)
-
-    # Force feedparser to report bozo with no entries, with the same
-    # exception class real feedparser attaches for malformed markup.
-    fake_parsed = MagicMock()
-    fake_parsed.bozo = True
-    fake_parsed.entries = []
-    fake_parsed.bozo_exception = SAXParseException("syntax error", None, MagicMock())
-
-    with patch("httpx.AsyncClient", return_value=mock_client_ctx):
-        with patch("feedparser.parse", return_value=fake_parsed):
-            result = await channel.collect(
-                {"feed_url": "https://example.com/rss"}, {}
-            )
-
-    assert result.success is False
-    assert result.error_type == "SAXParseException"
-    assert map_error_type(result.error_type) is ErrorKind.SCHEMA_DRIFT
-
-
-@pytest.mark.asyncio
-async def test_collect_bozo_feed_without_bozo_exception_falls_back_to_parse_error(channel):
-    """Defensive fallback: if feedparser reports bozo with no bozo_exception
-    attached at all, error_type still lands on a SCHEMA_DRIFT-mapped constant
-    ("ParseError") instead of None, which the recorder's guard would drop."""
-    from types import SimpleNamespace
-
-    from backend.control.error_kinds import ErrorKind, map_error_type
-
-    mock_response = MagicMock()
-    mock_response.text = "NOT VALID XML AT ALL !!!"
-    mock_response.raise_for_status = MagicMock()
-
-    mock_client = AsyncMock()
-    mock_client.get = AsyncMock(return_value=mock_response)
-    mock_client_ctx = AsyncMock()
-    mock_client_ctx.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client_ctx.__aexit__ = AsyncMock(return_value=False)
-
-    # SimpleNamespace genuinely has no bozo_exception attribute (unlike
-    # MagicMock, which would auto-vivify one on access).
-    fake_parsed = SimpleNamespace(bozo=True, entries=[])
-
-    with patch("httpx.AsyncClient", return_value=mock_client_ctx):
-        with patch("feedparser.parse", return_value=fake_parsed):
-            result = await channel.collect(
-                {"feed_url": "https://example.com/rss"}, {}
-            )
-
-    assert result.success is False
-    assert result.error_type == "ParseError"
-    assert map_error_type(result.error_type) is ErrorKind.SCHEMA_DRIFT
-
-
-@pytest.mark.asyncio
-async def test_collect_bozo_feed_with_entries_succeeds(channel):
-    """A bozo feed that still has entries should succeed (feedparser partial parse)."""
-    mock_response = MagicMock()
-    mock_response.text = VALID_RSS_XML
-    mock_response.raise_for_status = MagicMock()
-
-    mock_client = AsyncMock()
-    mock_client.get = AsyncMock(return_value=mock_response)
-    mock_client_ctx = AsyncMock()
-    mock_client_ctx.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client_ctx.__aexit__ = AsyncMock(return_value=False)
-
-    fake_entry = MagicMock()
-    fake_entry.get = lambda k, default="": {
-        "title": "Partial Item",
-        "link": "https://ex.com/p",
-        "summary": "",
-        "author": "",
-        "published": "",
-        "id": "pid1",
-        "tags": [],
-    }.get(k, default)
-
-    fake_parsed = MagicMock()
-    fake_parsed.bozo = True
-    fake_parsed.entries = [fake_entry]
-    fake_parsed.feed = MagicMock()
-    fake_parsed.feed.get = lambda k, default="": default
-
-    with patch("httpx.AsyncClient", return_value=mock_client_ctx):
-        with patch("feedparser.parse", return_value=fake_parsed):
-            result = await channel.collect(
-                {"feed_url": "https://example.com/rss"}, {}
-            )
-
-    assert result.success is True
-    assert len(result.items) == 1
-
-
-# ── _entry_to_dict ─────────────────────────────────────────────────────────────
-
-@pytest.mark.asyncio
-async def test_entry_to_dict(channel):
-    class FakeEntry:
-        def get(self, key, default=""):
-            data = {
-                "title": "Test Title",
-                "link": "https://example.com/post",
-                "summary": "A summary",
-                "author": "Alice",
-                "published": "2024-01-01",
-                "tags": [{"term": "python"}],
-                "id": "abc123",
-            }
-            return data.get(key, default)
-
-    result = channel._entry_to_dict(FakeEntry())
-    assert result["title"] == "Test Title"
-    assert result["link"] == "https://example.com/post"
-    assert "python" in result["tags"]
-
-
-def test_entry_to_dict_missing_optional_fields(channel):
-    """Entry with only link should use link as id fallback."""
-    class MinimalEntry:
-        def get(self, key, default=""):
-            return {"link": "https://ex.com/x"}.get(key, default)
-
-    result = channel._entry_to_dict(MinimalEntry())
-    assert result["link"] == "https://ex.com/x"
-    assert result["id"] == "https://ex.com/x"
-    assert result["tags"] == []
-
-
-def test_entry_to_dict_all_tags(channel):
-    """Multiple tags are all extracted."""
-    class TaggedEntry:
-        def get(self, key, default=""):
-            return {"tags": [{"term": "a"}, {"term": "b"}, {"term": "c"}]}.get(key, default)
-
-    result = channel._entry_to_dict(TaggedEntry())
-    assert result["tags"] == ["a", "b", "c"]
