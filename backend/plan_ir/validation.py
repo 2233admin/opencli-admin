@@ -204,7 +204,15 @@ def _check_orphan_merges(
 ) -> list[PlanValidationError]:
     """A merge node exists to combine two or more upstream branches — one
     with fewer than two connected inputs is not merging anything and is
-    reported as orphaned (PRD story 23 / issue 01 acceptance criterion)."""
+    reported as orphaned (PRD story 23 / issue 01 acceptance criterion).
+
+    Draft graphs are exempt: compile previews, external-runtime imports and
+    demand drafts (all compiled with ``PlanGraph(draft=True)``) legitimately
+    hold partially wired merges the operator finishes in the studio. The
+    strict rule keeps gating non-draft validation (``POST /plan-ir/validate``
+    with ``draft=False`` and future publish gates)."""
+    if plan.draft:
+        return []
     errors: list[PlanValidationError] = []
     incoming_count: dict[str, int] = {n.id: 0 for n in plan.nodes}
     for e in plan.edges:
@@ -233,7 +241,10 @@ def _check_port_type_mismatches(
     plan: PlanGraph, nodes_by_id: dict[str, PlanNode]
 ) -> list[PlanValidationError]:
     """An edge's source-port type and target-port type must match, unless
-    either side is declared "any". Dangling edges (already reported by
+    either side is declared "any" or "unknown" — the same wildcard semantics
+    the workflow compiler's own edge check uses (``_types_compatible``), so
+    imported ``external.tool.capability`` nodes (fallback port type
+    "unknown") stay connectable. Dangling edges (already reported by
     ``_check_dangling_edges``) are skipped here to avoid duplicate noise."""
     errors: list[PlanValidationError] = []
     for e in plan.edges:
@@ -245,7 +256,9 @@ def _check_port_type_mismatches(
         tgt_port = next((p for p in tgt.inputs if p.name == e.target_port), None)
         if src_port is None or tgt_port is None:
             continue  # already reported as unknown_source_port / unknown_target_port
-        if src_port.type != tgt_port.type and "any" not in (src_port.type, tgt_port.type):
+        if src_port.type != tgt_port.type and not (
+            {"any", "unknown"} & {src_port.type, tgt_port.type}
+        ):
             errors.append(
                 PlanValidationError(
                     code="port_type_mismatch",

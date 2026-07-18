@@ -84,7 +84,11 @@ _PORT_CONTRACTS: dict[str, tuple[list[_PortContract], list[_PortContract]]] = {
         [_PortContract("out", "output", "storedItems[]", required=False)],
     ),
     "intelligence.output.inbox": (
-        [_PortContract("in", "input", "items[]")],
+        # recordCandidate[] like its kind-level fallback (kind=inbox/sink +
+        # store) and the sibling collection-result contract — the old
+        # items[] here predated the recordCandidate[] type chain and made
+        # normalize -> inbox unconnectable.
+        [_PortContract("in", "input", "recordCandidate[]")],
         [_PortContract("out", "output", "storedItems[]", required=False)],
     ),
     "intelligence.output.webhook": (
