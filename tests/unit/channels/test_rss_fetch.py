@@ -165,6 +165,33 @@ async def test_fetch_client_404_classified_permanent():
 
 
 @pytest.mark.asyncio
+async def test_fetch_bozo_feed_raises_error_type_mapped_to_schema_drift():
+    """WIRING_GAP_LEDGER W1: fetch()'s bozo branch must carry error_type (from
+    feedparser's real bozo_exception class) so error_kinds.map_error_type
+    resolves it to SCHEMA_DRIFT -- previously this raise passed no error_type,
+    so control.recorder's `elif error_type is not None` guard silently
+    dropped it and the SCHEMA_DRIFT chain never fired."""
+    from xml.sax import SAXParseException
+
+    from backend.control.error_kinds import ErrorKind, map_error_type
+
+    http = _Http(_Resp(200, text="NOT VALID XML AT ALL !!!", headers={}))
+    ctx = FetchContext(config={"feed_url": "https://x/feed"}, params={}, cursor=None, http=http)
+
+    fake_parsed = MagicMock()
+    fake_parsed.bozo = True
+    fake_parsed.entries = []
+    fake_parsed.bozo_exception = SAXParseException("syntax error", None, MagicMock())
+
+    with patch("feedparser.parse", return_value=fake_parsed):
+        with pytest.raises(ChannelFetchError) as exc_info:
+            await RSSChannel().fetch(ctx)
+
+    assert exc_info.value.error_type == "SAXParseException"
+    assert map_error_type(exc_info.value.error_type) is ErrorKind.SCHEMA_DRIFT
+
+
+@pytest.mark.asyncio
 async def test_run_channel_drives_rss_and_persists_cursor():
     from backend.pipeline.channel_runner import run_channel
     from backend.pipeline.cursor_store import InMemoryCursorStore

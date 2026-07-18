@@ -254,7 +254,12 @@ async def test_collect_nonzero_exit_code(channel):
 
 @pytest.mark.asyncio
 async def test_collect_invalid_json_output(channel):
-    """Invalid JSON output returns failed ChannelResult."""
+    """Invalid JSON output returns failed ChannelResult with error_type set so
+    the SCHEMA_DRIFT chain (error_kinds -> control.recorder) actually fires,
+    instead of being dropped by recorder's `elif error_type is not None`
+    guard (WIRING_GAP_LEDGER W1)."""
+    from backend.control.error_kinds import ErrorKind, map_error_type
+
     with _allow(sys.executable):
         result = await channel.collect(
             {
@@ -266,6 +271,8 @@ async def test_collect_invalid_json_output(channel):
         )
     assert result.success is False
     assert "parse" in result.error.lower()
+    assert result.error_type == "JSONDecodeError"
+    assert map_error_type(result.error_type) is ErrorKind.SCHEMA_DRIFT
 
 
 @pytest.mark.asyncio

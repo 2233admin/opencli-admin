@@ -72,6 +72,11 @@ _ERROR_TYPE_MAP: dict[str, ErrorKind] = {
     "JSONDecodeError": ErrorKind.SCHEMA_DRIFT,
     "SchemaDriftError": ErrorKind.SCHEMA_DRIFT,
     "ParseError": ErrorKind.SCHEMA_DRIFT,
+    # feedparser's bozo_exception class for malformed/truncated XML or an
+    # encoding mismatch (rss_channel.py's bozo branch) — verified empirically
+    # across markup corruption, truncated declarations, and encoding
+    # mismatches; feedparser's strict parser wraps all of them the same way.
+    "SAXParseException": ErrorKind.SCHEMA_DRIFT,
     # Validation / permanent bad input (including SSRF rejections — a
     # config/validation problem with the source, not a transient network fault)
     "ValueError": ErrorKind.VALIDATION,

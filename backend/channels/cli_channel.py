@@ -104,7 +104,12 @@ class CLIChannel(AbstractChannel):
                 data = json.loads(output)
                 items = data if isinstance(data, list) else [data]
             except json.JSONDecodeError as exc:
-                return ChannelResult.fail(f"Failed to parse CLI JSON output: {exc}")
+                # WIRING_GAP_LEDGER W1: error_type must be set so the SCHEMA_DRIFT
+                # chain (error_kinds -> control.recorder) actually fires instead of
+                # being dropped by recorder's `elif error_type is not None` guard.
+                return ChannelResult.fail(
+                    f"Failed to parse CLI JSON output: {exc}", error_type=type(exc).__name__
+                )
         else:
             # Plain text: each line is a record
             items = [{"line": line} for line in output.splitlines() if line.strip()]

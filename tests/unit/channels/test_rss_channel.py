@@ -254,6 +254,80 @@ async def test_collect_bozo_feed_no_entries_returns_fail(channel):
 
 
 @pytest.mark.asyncio
+async def test_collect_bozo_feed_error_type_maps_to_schema_drift(channel):
+    """WIRING_GAP_LEDGER W1: the bozo failure must carry error_type set from
+    feedparser's real bozo_exception class (e.g. SAXParseException for
+    malformed XML) so error_kinds.map_error_type resolves it to SCHEMA_DRIFT
+    -- previously this branch passed no error_type at all, so control's
+    recorder (`elif error_type is not None`) silently dropped it and the
+    SCHEMA_DRIFT chain never fired for a broken RSS feed."""
+    from xml.sax import SAXParseException
+
+    from backend.control.error_kinds import ErrorKind, map_error_type
+
+    mock_response = MagicMock()
+    mock_response.text = "NOT VALID XML AT ALL !!!"
+    mock_response.raise_for_status = MagicMock()
+
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(return_value=mock_response)
+    mock_client_ctx = AsyncMock()
+    mock_client_ctx.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client_ctx.__aexit__ = AsyncMock(return_value=False)
+
+    # Force feedparser to report bozo with no entries, with the same
+    # exception class real feedparser attaches for malformed markup.
+    fake_parsed = MagicMock()
+    fake_parsed.bozo = True
+    fake_parsed.entries = []
+    fake_parsed.bozo_exception = SAXParseException("syntax error", None, MagicMock())
+
+    with patch("httpx.AsyncClient", return_value=mock_client_ctx):
+        with patch("feedparser.parse", return_value=fake_parsed):
+            result = await channel.collect(
+                {"feed_url": "https://example.com/rss"}, {}
+            )
+
+    assert result.success is False
+    assert result.error_type == "SAXParseException"
+    assert map_error_type(result.error_type) is ErrorKind.SCHEMA_DRIFT
+
+
+@pytest.mark.asyncio
+async def test_collect_bozo_feed_without_bozo_exception_falls_back_to_parse_error(channel):
+    """Defensive fallback: if feedparser reports bozo with no bozo_exception
+    attached at all, error_type still lands on a SCHEMA_DRIFT-mapped constant
+    ("ParseError") instead of None, which the recorder's guard would drop."""
+    from types import SimpleNamespace
+
+    from backend.control.error_kinds import ErrorKind, map_error_type
+
+    mock_response = MagicMock()
+    mock_response.text = "NOT VALID XML AT ALL !!!"
+    mock_response.raise_for_status = MagicMock()
+
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(return_value=mock_response)
+    mock_client_ctx = AsyncMock()
+    mock_client_ctx.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client_ctx.__aexit__ = AsyncMock(return_value=False)
+
+    # SimpleNamespace genuinely has no bozo_exception attribute (unlike
+    # MagicMock, which would auto-vivify one on access).
+    fake_parsed = SimpleNamespace(bozo=True, entries=[])
+
+    with patch("httpx.AsyncClient", return_value=mock_client_ctx):
+        with patch("feedparser.parse", return_value=fake_parsed):
+            result = await channel.collect(
+                {"feed_url": "https://example.com/rss"}, {}
+            )
+
+    assert result.success is False
+    assert result.error_type == "ParseError"
+    assert map_error_type(result.error_type) is ErrorKind.SCHEMA_DRIFT
+
+
+@pytest.mark.asyncio
 async def test_collect_bozo_feed_with_entries_succeeds(channel):
     """A bozo feed that still has entries should succeed (feedparser partial parse)."""
     mock_response = MagicMock()
