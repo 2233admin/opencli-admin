@@ -6,7 +6,7 @@ default (empty allowlist) denies everything.
 """
 
 import sys
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -199,16 +199,19 @@ async def test_collect_text_output(channel):
 
 @pytest.mark.asyncio
 async def test_collect_timeout(channel):
-    """asyncio.TimeoutError returns failed ChannelResult and kills the child
-    so a timed-out subprocess is never orphaned (issue 05)."""
+    """asyncio.TimeoutError returns failed ChannelResult and kills the whole
+    process tree so a timed-out subprocess (and any shell-wrapped or forked
+    grandchild) is never orphaned (issue 05, C16)."""
     import asyncio
 
     mock_proc = AsyncMock()
-    mock_proc.kill = Mock()
     with (
         _allow(sys.executable),
         patch("asyncio.create_subprocess_exec", return_value=mock_proc),
         patch("asyncio.wait_for", side_effect=asyncio.TimeoutError()),
+        patch(
+            "backend.channels.cli_channel._kill_subprocess", new=AsyncMock()
+        ) as kill_tree,
     ):
         result = await channel.collect(
             {
@@ -221,7 +224,38 @@ async def test_collect_timeout(channel):
 
     assert result.success is False
     assert "timed out" in result.error.lower()
-    mock_proc.kill.assert_called_once()
+    kill_tree.assert_awaited_once_with(mock_proc)
+
+
+@pytest.mark.asyncio
+async def test_collect_timeout_logs_reap_failure(channel):
+    """If killing/reaping the process tree itself raises, that failure is
+    logged (not silently swallowed) and the timeout is still reported (C16)."""
+    import asyncio
+
+    mock_proc = AsyncMock()
+    with (
+        _allow(sys.executable),
+        patch("asyncio.create_subprocess_exec", return_value=mock_proc),
+        patch("asyncio.wait_for", side_effect=asyncio.TimeoutError()),
+        patch(
+            "backend.channels.cli_channel._kill_subprocess",
+            new=AsyncMock(side_effect=RuntimeError("reap failed")),
+        ),
+        patch("backend.channels.cli_channel.logger") as mock_logger,
+    ):
+        result = await channel.collect(
+            {
+                "binary": sys.executable,
+                "command": ["-c", "import time; time.sleep(10)"],
+                "timeout": 1,
+            },
+            {},
+        )
+
+    assert result.success is False
+    assert "timed out" in result.error.lower()
+    mock_logger.warning.assert_called_once()
 
 
 @pytest.mark.asyncio

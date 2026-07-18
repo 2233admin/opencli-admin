@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "frontend-dev",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["-C", "frontend", "exec", "next", "dev", "-p", "8030"],
+      "port": 8030
+    },
+    {
+      "name": "backend-stack",
+      "runtimeExecutable": "docker",
+      "runtimeArgs": ["compose", "up", "api", "agent-1"],
+      "port": 8031
+    }
+  ]
+}

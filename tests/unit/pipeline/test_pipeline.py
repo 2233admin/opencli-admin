@@ -576,6 +576,112 @@ async def test_run_pipeline_opencli_auto_binding(db_session):
         )
 
 
+# ── C17: opencli display-string must not spawn --help on the hot path ──────
+
+@pytest.mark.asyncio
+async def test_run_pipeline_opencli_display_string_cold_cache_no_subprocess(db_session):
+    """The event-log 'command' display string must not spawn an opencli
+    --help subprocess on the collection hot path (C17). A cold cache falls
+    back to exactly the same 'treat every arg as named' behavior a failed
+    --help fetch always produced — just without ever spawning anything."""
+    from backend.models.source import DataSource
+    from backend.models.task import CollectionTask
+
+    source = DataSource(
+        name="OpenCLI Display Source",
+        channel_type="opencli",
+        channel_config={
+            "site": "", "command": "cold-cache-observe-cmd",
+            "args": {"query": "x"},
+        },
+    )
+    db_session.add(source)
+    await db_session.flush()
+    task = CollectionTask(source_id=source.id, trigger_type="manual", parameters={})
+    db_session.add(task)
+    await db_session.flush()
+
+    channel_result = ChannelResult.ok([{"title": "t"}])
+    captured: list[dict] = []
+
+    async def fake_emit(run_id, step, message, level="info", detail=None, elapsed_ms=None):
+        captured.append(detail or {})
+
+    with (
+        patch("backend.pipeline.collector.collect", return_value=channel_result),
+        patch("backend.pipeline.storer.store_records", new=AsyncMock(return_value=([], 0))),
+        patch("backend.pipeline.events.emit", new=fake_emit),
+        patch("asyncio.create_subprocess_exec") as spawn,
+    ):
+        result = await run_pipeline(
+            task.id, source, parameters={}, enable_ai=False,
+            enable_notifications=False, run_id="run-cold",
+        )
+
+    assert result.success is True
+    spawn.assert_not_called()
+    commands = [d["command"] for d in captured if "command" in d]
+    assert len(commands) == 1
+    assert "--query x" in commands[0]
+
+
+@pytest.mark.asyncio
+async def test_run_pipeline_opencli_display_string_uses_warm_cache(db_session):
+    """A warm --help cache (as populated by a real prior collection run
+    through the channel itself) still produces the nicer named/positional
+    split in the display string — C17 only removes the redundant spawn on
+    a cache miss, it doesn't regress the warm-cache case."""
+    import time
+
+    import backend.channels.opencli_channel as oc
+    from backend.channels.opencli_channel import _OPENCLI_BIN
+    from backend.models.source import DataSource
+    from backend.models.task import CollectionTask
+
+    site, command = "", "warm-cache-observe-cmd"
+    oc._help_cache[(_OPENCLI_BIN, site, command)] = (
+        time.monotonic(), frozenset({"query"})
+    )
+
+    source = DataSource(
+        name="OpenCLI Display Source Warm",
+        channel_type="opencli",
+        channel_config={
+            "site": site, "command": command,
+            "args": {"query": "x"}, "positional_args": ["extra"],
+        },
+    )
+    db_session.add(source)
+    await db_session.flush()
+    task = CollectionTask(source_id=source.id, trigger_type="manual", parameters={})
+    db_session.add(task)
+    await db_session.flush()
+
+    channel_result = ChannelResult.ok([{"title": "t"}])
+    captured: list[dict] = []
+
+    async def fake_emit(run_id, step, message, level="info", detail=None, elapsed_ms=None):
+        captured.append(detail or {})
+
+    with (
+        patch("backend.pipeline.collector.collect", return_value=channel_result),
+        patch("backend.pipeline.storer.store_records", new=AsyncMock(return_value=([], 0))),
+        patch("backend.pipeline.events.emit", new=fake_emit),
+        patch("asyncio.create_subprocess_exec") as spawn,
+    ):
+        result = await run_pipeline(
+            task.id, source, parameters={}, enable_ai=False,
+            enable_notifications=False, run_id="run-warm",
+        )
+
+    assert result.success is True
+    spawn.assert_not_called()  # peek-only, never spawns regardless of cache state
+    commands = [d["command"] for d in captured if "command" in d]
+    assert len(commands) == 1
+    assert "--query x" in commands[0]
+    assert "extra" in commands[0]
+
+
 # ── P1-7: DualSink shadow errors must surface, not vanish ──────────────────
 
 @pytest.mark.asyncio
