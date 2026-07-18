@@ -1,9 +1,18 @@
 'use client'
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import * as api from './endpoints'
-import type { ApprovalDecision, Automation, ModelDefaultCandidate, ModelProviderInput, ModelRole, OperationsAgentMode } from './types'
+import type {
+  ApprovalDecision,
+  Automation,
+  FeedProviderInput,
+  ModelDefaultCandidate,
+  ModelProviderInput,
+  ModelRole,
+  OperationsAgentMode,
+  ProviderModelDiscoveryInput,
+} from './types'
 
 export function useMyWorkspaces() {
   return useQuery({ queryKey: ['workspaces'], queryFn: api.listMyWorkspaces })
@@ -17,11 +26,39 @@ export function useWorkspaceProjects(workspaceId: string | null) {
   })
 }
 
+export function useDeleteWorkspaceProject() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ workspaceId, projectId }: { workspaceId: string; projectId: string }) =>
+      api.deleteWorkspaceProject(workspaceId, projectId),
+    onSuccess: (_result, { workspaceId, projectId }) => {
+      void queryClient.invalidateQueries({ queryKey: ['workspace-projects', workspaceId] })
+      queryClient.removeQueries({ queryKey: ['project-workflows', workspaceId, projectId] })
+    },
+  })
+}
+
 export function useProjectWorkflows(workspaceId: string | null, projectId: string | null) {
   return useQuery({
     queryKey: ['project-workflows', workspaceId, projectId],
     queryFn: () => api.listProjectWorkflows(workspaceId as string, projectId as string),
     enabled: !!workspaceId && !!projectId,
+  })
+}
+
+export function useProjectRecordGraph(
+  workspaceId: string | null,
+  projectId: string | null,
+  maxNodes: number,
+) {
+  return useQuery({
+    queryKey: ['project-record-graph', workspaceId, projectId, maxNodes],
+    queryFn: () =>
+      api.getProjectRecordGraph(workspaceId as string, projectId as string, {
+        max_nodes: maxNodes,
+      }),
+    enabled: !!workspaceId && !!projectId,
+    staleTime: 30_000,
   })
 }
 
@@ -37,8 +74,13 @@ export function useBootstrapWorkspaceProject() {
 }
 
 export function useCreateProjectWorkflow() {
+  const queryClient = useQueryClient()
   return useMutation({
     mutationFn: ({ workspaceId, projectId, data }: { workspaceId: string; projectId: string; data: Parameters<typeof api.createProjectWorkflow>[2] }) => api.createProjectWorkflow(workspaceId, projectId, data),
+    onSuccess: (_workflow, { workspaceId, projectId }) => {
+      void queryClient.invalidateQueries({ queryKey: ['project-workflows', workspaceId, projectId] })
+      void queryClient.invalidateQueries({ queryKey: ['workspace-projects', workspaceId] })
+    },
   })
 }
 
@@ -186,6 +228,20 @@ export function useTasks(params?: { source_id?: string; status?: string; page?: 
   })
 }
 
+export function useInfiniteTasks(
+  params?: { source_id?: string; status?: string; limit?: number },
+) {
+  return useInfiniteQuery({
+    queryKey: ['tasks', 'infinite', params],
+    initialPageParam: 1,
+    queryFn: ({ pageParam }) => api.listTasks({ ...params, page: pageParam }),
+    getNextPageParam: (lastPage) => {
+      const meta = lastPage.meta
+      return meta && meta.page < meta.pages ? meta.page + 1 : undefined
+    },
+  })
+}
+
 export function useRecords(params?: {
   source_id?: string
   status?: string
@@ -283,10 +339,24 @@ export function useNotificationRules() {
   })
 }
 
-export function useNotificationLogs(params?: { rule_id?: string }) {
+export function useNotificationLogs(params?: { rule_id?: string; page?: number; limit?: number }) {
   return useQuery({
     queryKey: ['notification-logs', params],
     queryFn: () => api.listNotificationLogs(params),
+  })
+}
+
+export function useInfiniteNotificationLogs(
+  params?: { rule_id?: string; limit?: number },
+) {
+  return useInfiniteQuery({
+    queryKey: ['notification-logs', 'infinite', params],
+    initialPageParam: 1,
+    queryFn: ({ pageParam }) => api.listNotificationLogs({ ...params, page: pageParam }),
+    getNextPageParam: (lastPage) => {
+      const meta = lastPage.meta
+      return meta && meta.page < meta.pages ? meta.page + 1 : undefined
+    },
   })
 }
 
@@ -320,6 +390,12 @@ export function useCreateProvider() {
   })
 }
 
+export function useDiscoverProviderModels() {
+  return useMutation({
+    mutationFn: (data: ProviderModelDiscoveryInput) => api.discoverProviderModels(data),
+  })
+}
+
 export function useUpdateProvider() {
   const queryClient = useQueryClient()
   return useMutation({
@@ -342,6 +418,62 @@ export function useDeleteProvider() {
 export function useTestProvider() {
   return useMutation({
     mutationFn: (id: string) => api.testProvider(id),
+  })
+}
+
+export function useFeedProviders() {
+  return useQuery({
+    queryKey: ['feed-providers'],
+    queryFn: () => api.listFeedProviders(),
+  })
+}
+
+export function useCreateFeedProvider() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (data: FeedProviderInput) => api.createFeedProvider(data),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['feed-providers'] }),
+  })
+}
+
+export function useUpdateFeedProvider() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: FeedProviderInput }) =>
+      api.updateFeedProvider(id, data),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['feed-providers'] }),
+  })
+}
+
+export function useDeleteFeedProvider() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => api.deleteFeedProvider(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['feed-providers'] }),
+  })
+}
+
+export function useTestFeedProvider() {
+  return useMutation({ mutationFn: (id: string) => api.testFeedProvider(id) })
+}
+
+export function useFeedProviderCatalog(providerId: string | null) {
+  return useQuery({
+    queryKey: ['feed-providers', providerId, 'catalog'],
+    queryFn: () => api.getFeedProviderCatalog(providerId as string),
+    enabled: !!providerId,
+  })
+}
+
+export function useBuildFeedProviderWorkflowNode() {
+  return useMutation({
+    mutationFn: ({
+      providerId,
+      data,
+    }: {
+      providerId: string
+      data: Parameters<typeof api.buildFeedProviderWorkflowNode>[1]
+    }) => api.buildFeedProviderWorkflowNode(providerId, data),
   })
 }
 
@@ -430,5 +562,22 @@ export function useControlActions(params?: {
   return useQuery({
     queryKey: ['control-actions', params],
     queryFn: () => api.listControlActions(params),
+  })
+}
+
+export function useInfiniteControlActions(params?: {
+  source_id?: string
+  mode?: string
+  outcome?: string
+  limit?: number
+}) {
+  return useInfiniteQuery({
+    queryKey: ['control-actions', 'infinite', params],
+    initialPageParam: 1,
+    queryFn: ({ pageParam }) => api.listControlActions({ ...params, page: pageParam }),
+    getNextPageParam: (lastPage) => {
+      const meta = lastPage.meta
+      return meta && meta.page < meta.pages ? meta.page + 1 : undefined
+    },
   })
 }

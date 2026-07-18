@@ -3,7 +3,7 @@
 import { useNotificationRules } from '@/lib/api/hooks'
 import { BACKEND_HINT, EmptyState, ErrorState, LoadingState } from '@/components/shell/data-states'
 import { PageContainer } from '@/components/shell/page-container'
-import { RouteTabs, RUN_CENTER_TABS } from '@/components/shell/route-tabs'
+import { ACTION_CENTER_TABS, RouteTabs } from '@/components/shell/route-tabs'
 import { StatusBadge } from '@/components/shell/status-badge'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
@@ -30,9 +30,10 @@ export default function NotificationsPage() {
 
   return (
     <PageContainer
-      title="运行中心"
-      description="采集事件触发的通知规则"
-      tabs={<RouteTabs tabs={RUN_CENTER_TABS} />}
+      eyebrow="Delivery rules"
+      title="任务与通知"
+      description="管理采集事件触发的通知规则；投递失败会汇入待处理视图。"
+      tabs={<RouteTabs tabs={ACTION_CENTER_TABS} />}
     >
       {isLoading ? (
         <LoadingState />

@@ -1,3 +1,4 @@
+import re
 import xml.etree.ElementTree as ET
 from typing import Any, Optional
 from urllib.parse import urljoin, urlparse
@@ -21,6 +22,7 @@ from backend.security.url_guard import (
 #: feed tags at all (many blogs/CMSes still serve a feed at one of these).
 _COMMON_FEED_PATHS = ["/feed", "/rss", "/rss.xml", "/atom.xml", "/feed.xml", "/index.xml"]
 _FEED_MIME_TYPES = {"application/rss+xml", "application/atom+xml", "application/xml", "text/xml"}
+_MAX_REMOTE_OPML_BYTES = 2 * 1024 * 1024
 
 
 async def list_sources(
@@ -201,6 +203,44 @@ async def discover_feeds(url: str) -> list[dict[str, Any]]:
     return candidates
 
 
+async def fetch_remote_opml(url: str) -> str:
+    """Fetch a public OPML catalog without allowing redirects or unbounded
+    response bodies.
+
+    GitHub source catalogs are commonly published as raw ``.opml`` files.
+    This setup-time helper keeps the same SSRF and DNS-rebinding protections
+    as feed discovery, and caps downloads before the catalog reaches the XML
+    parser.
+    """
+    try:
+        client, validated_url = await guarded_async_client(
+            url, follow_redirects=False, timeout=20
+        )
+    except SSRFValidationError as exc:
+        raise ValueError(str(exc)) from exc
+
+    try:
+        chunks: list[bytes] = []
+        size = 0
+        async with client as opened_client:
+            async with opened_client.stream("GET", validated_url) as response:
+                response.raise_for_status()
+                async for chunk in response.aiter_bytes():
+                    size += len(chunk)
+                    if size > _MAX_REMOTE_OPML_BYTES:
+                        raise ValueError("OPML catalog exceeds the 2 MB import limit")
+                    chunks.append(chunk)
+    except ValueError:
+        raise
+    except Exception as exc:
+        raise ValueError(f"unable to fetch OPML catalog: {exc}") from exc
+
+    try:
+        return b"".join(chunks).decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise ValueError("OPML catalog must be UTF-8 encoded") from exc
+
+
 def parse_opml(xml_text: str) -> list[dict[str, str]]:
     """Walk an OPML document's (possibly nested, folder-grouped) <outline>
     elements and collect every one carrying xmlUrl (a feed). Malformed XML
@@ -213,22 +253,37 @@ def parse_opml(xml_text: str) -> list[dict[str, str]]:
     entries: list[dict[str, str]] = []
     seen: set[str] = set()
 
-    def _walk(node: ET.Element) -> None:
+    def _walk(node: ET.Element, folders: tuple[str, ...] = ()) -> None:
         for outline in node.findall("outline"):
             feed_url = outline.get("xmlUrl")
+            label = outline.get("title") or outline.get("text")
             if feed_url and feed_url not in seen:
                 seen.add(feed_url)
-                title = outline.get("title") or outline.get("text") or feed_url
-                entries.append({"url": feed_url, "title": title})
-            _walk(outline)  # folders nest outlines without xmlUrl inside them
+                entry = {"url": feed_url, "title": label or feed_url}
+                if folders:
+                    entry["group"] = folders[-1]
+                entries.append(entry)
+
+            child_folders = folders
+            if not feed_url and label:
+                child_folders = (*folders, label)
+            _walk(outline, child_folders)
 
     body = root.find("body")
     _walk(body if body is not None else root)
     return entries
 
 
+def _source_group_slug(value: str) -> str:
+    normalized = re.sub(r"[^\w]+", "-", value.casefold(), flags=re.UNICODE)
+    return normalized.strip("-_")[:80]
+
+
 async def bulk_import_rss(
-    session: AsyncSession, entries: list[dict[str, str]]
+    session: AsyncSession,
+    entries: list[dict[str, str]],
+    *,
+    catalog_url: Optional[str] = None,
 ) -> tuple[list[DataSource], list[str]]:
     """Create one disabled channel_type="rss" DataSource per entry, deduped
     against BOTH already-stored sources and duplicates within the same OPML
@@ -249,11 +304,21 @@ async def bulk_import_rss(
             skipped.append(feed_url)
             continue
         seen_this_batch.add(feed_url)
+        source_group = _source_group_slug(entry.get("group", ""))
+        channel_config: dict[str, str] = {"feed_url": feed_url}
+        tags = ["rss"]
+        if source_group:
+            channel_config["source_group"] = source_group
+            tags.append(f"source-group:{source_group}")
+        if catalog_url:
+            channel_config["catalog_url"] = catalog_url
+            tags.append("catalog:opml")
         source = DataSource(
             name=entry.get("title") or feed_url,
             channel_type="rss",
-            channel_config={"feed_url": feed_url},
+            channel_config=channel_config,
             enabled=False,
+            tags=tags,
         )
         session.add(source)
         created.append(source)

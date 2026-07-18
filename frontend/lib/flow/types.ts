@@ -100,7 +100,7 @@ export interface WorkflowNodeData extends Record<string, unknown> {
   nodeType: WorkflowNodeType
   category: NodeCategory
   icon: string
-  status?: "idle" | "running" | "success" | "error"
+  status?: "idle" | "running" | "success" | "partial_success" | "error"
   fields?: FieldConfig[]
   /** for condition nodes */
   condition?: string
@@ -159,6 +159,7 @@ export type WorkflowNode = Node<WorkflowNodeData>
 
 export interface WorkflowEdgeData extends Record<string, unknown> {
   label?: string
+  mapping?: GeneratedWorkflowEdgeMapping
   semantic?: SemanticLinkMeta
   weight?: number
   contractId?: string
@@ -169,7 +170,7 @@ export interface WorkflowEdgeData extends Record<string, unknown> {
   routed?: boolean
   runtimeEvidenceBatch?: {
     runId: string
-    status: "queued" | "running" | "partial" | "blocked" | "completed" | "failed"
+    status: "queued" | "running" | "partial" | "partial_success" | "blocked" | "completed" | "failed"
     batchIds: string[]
     itemCount: number
     recordCount: number
@@ -204,8 +205,124 @@ export interface FlowSnapshot {
   drawings?: FreehandStroke[]
 }
 
-export interface GeneratedWorkflowSpec {
+export type GeneratedWorkflowNodeType =
+  | "manual-trigger"
+  | "schedule-trigger"
+  | "api-agent"
+  | "opencli-agent"
+  | "governed-tool-agent"
+  | "llm-transform-agent"
+  | "router"
+  | "merge"
+  | "records-output"
+  | "email-output"
+  | "webhook-output"
+  // Legacy AI-generation values remain accepted while callers migrate.
+  | "trigger"
+  | "http"
+  | "action"
+  | "condition"
+  | "transform"
+  | "delay"
+  | "note"
+  | "shape"
+
+export type GeneratedWorkflowRunStatus =
+  | "idle"
+  | "running"
+  | "success"
+  | "partial_success"
+  | "error"
+
+export type GeneratedWorkflowReadinessStatus = "ready" | "incomplete" | "blocked"
+
+export type GeneratedWorkflowCapabilityGap = {
+  id: string
+  nodeId?: string
+  capability: "configuration" | "connection" | "mapping" | "agent-definition"
   title: string
-  nodes: { id: string; type: string; label: string; description: string; config?: string }[]
-  edges: { source: string; target: string; label?: string }[]
+  detail: string
+  blockingActions: Array<"publish" | "run">
+}
+
+export type GeneratedWorkflowReadiness = {
+  status: GeneratedWorkflowReadinessStatus
+  canSave: true
+  canPublish: boolean
+  canRun: boolean
+  blockingGapIds: string[]
+}
+
+export type GeneratedWorkflowFieldMapping = {
+  source: string
+  target: string
+  transform?: string
+}
+
+export type GeneratedWorkflowEdgeMapping = {
+  mode: "auto" | "override"
+  fields: GeneratedWorkflowFieldMapping[]
+  preserveRaw: true
+  compatible: boolean
+  conflicts: string[]
+}
+
+export type GeneratedWorkflowEnvelope = {
+  contract: "typed-envelope.v1"
+  fields: ["data", "schema", "metadata", "provenance", "trace"]
+  rawPath: "data.raw"
+  execution: "batch"
+}
+
+export type GeneratedWorkflowNode = {
+  id: string
+  type: GeneratedWorkflowNodeType
+  label: string
+  description: string
+  config?: string
+  params?: Record<string, unknown>
+  definitionRef?: {
+    kind: "api" | "opencli" | "governed-tool" | "llm-transform"
+    id: string
+    version: string
+  }
+  inputMode?: "single" | "batch"
+  outputMode?: "single" | "batch"
+  retryPolicy?: {
+    maxAttempts: number
+    backoff: "none" | "fixed" | "exponential"
+  }
+  readiness?: GeneratedWorkflowReadinessStatus
+  capabilityGapIds?: string[]
+  recentStatus?: GeneratedWorkflowRunStatus
+  outputStatus?: GeneratedWorkflowRunStatus
+}
+
+export type GeneratedWorkflowEdge = {
+  source: string
+  target: string
+  label?: string
+  sourcePort?: string
+  targetPort?: string
+  mapping?: GeneratedWorkflowEdgeMapping
+}
+
+export interface GeneratedWorkflowSpec {
+  version: 1
+  title: string
+  intent: {
+    mode: "one_time" | "scheduled" | "hybrid"
+    execution: "batch"
+    acyclic: true
+  }
+  executionPolicy: {
+    crossRunState: "none"
+    branchFailure: "isolate-descendants"
+    outputFailureStatus: "partial_success"
+  }
+  envelope: GeneratedWorkflowEnvelope
+  nodes: GeneratedWorkflowNode[]
+  edges: GeneratedWorkflowEdge[]
+  capabilityGaps: GeneratedWorkflowCapabilityGap[]
+  readiness: GeneratedWorkflowReadiness
 }

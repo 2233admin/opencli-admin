@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { LogOut, Search } from 'lucide-react'
 import { usePathname, useRouter } from 'next/navigation'
 import { Fragment } from 'react'
@@ -11,6 +12,7 @@ import { Button } from '@/components/ui/button'
 import {
   Breadcrumb,
   BreadcrumbItem,
+  BreadcrumbLink,
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
@@ -30,7 +32,8 @@ import { SidebarTrigger } from '@/components/ui/sidebar'
 import { ThemeToggle } from '@/components/shell/theme-toggle'
 
 function resolveLabels(pathname: string): string[] {
-  if (pathname.startsWith('/studio/workflow')) return ['工作区', '节点工作流']
+  if (pathname.startsWith('/studio/projects/')) return ['项目', '项目概览']
+  if (pathname.startsWith('/studio/workflow')) return ['项目', '工作流编排']
   if (ROUTE_LABELS[pathname]) return [ROUTE_LABELS[pathname]]
   const match = Object.keys(ROUTE_LABELS).find((href) => pathname.startsWith(`${href}/`))
   return match ? [ROUTE_LABELS[match]] : []
@@ -55,7 +58,7 @@ export function AppHeader({ onOpenCommand }: { onOpenCommand?: () => void }) {
       <Breadcrumb>
         <BreadcrumbList>
           <BreadcrumbItem>
-            <BreadcrumbPage className="text-muted-foreground">主页</BreadcrumbPage>
+            <BreadcrumbLink render={<Link href="/dashboard" />}>主页</BreadcrumbLink>
           </BreadcrumbItem>
           {labels.map((label) => (
             <Fragment key={label}>

@@ -8,6 +8,12 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import path from 'node:path'
 
 const frontendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+const repositoryRoot = path.resolve(frontendRoot, '..')
+const windowsRepositoryPython = path.join(repositoryRoot, '.venv', 'Scripts', 'python.exe')
+const unixRepositoryPython = path.join(repositoryRoot, '.venv', 'bin', 'python')
+const pythonExecutable = existsSync(windowsRepositoryPython)
+  ? windowsRepositoryPython
+  : (process.env.PYTHON ?? (existsSync(unixRepositoryPython) ? unixRepositoryPython : 'python'))
 
 registerHooks({
   resolve(specifier, context, nextResolve) {
@@ -54,6 +60,25 @@ registerHooks({
 const readSource = (relativePath) => readFile(path.join(frontendRoot, relativePath), 'utf8')
 const importTypeScript = (relativePath) => import(pathToFileURL(path.join(frontendRoot, relativePath)).href)
 
+function compileWithBackend(project) {
+  const result = spawnSync(pythonExecutable, ['-c', [
+    'import json, sys',
+    'from backend.schemas.workflow import WorkflowProject',
+    'from backend.workflow.compiler import compile_workflow_project',
+    'project = WorkflowProject.model_validate(json.load(sys.stdin))',
+    'result = compile_workflow_project(project)',
+    'print(result.model_dump_json())',
+    'raise SystemExit(0 if result.valid else 1)',
+  ].join('; ')], {
+    cwd: repositoryRoot,
+    input: JSON.stringify(project),
+    encoding: 'utf8',
+    maxBuffer: 1024 * 1024,
+  })
+
+  return { ...result, report: result.stdout ? JSON.parse(result.stdout) : null }
+}
+
 function sourceSection(source, start, end) {
   const startIndex = source.indexOf(start)
   assert.notEqual(startIndex, -1, `missing source section: ${start}`)
@@ -62,21 +87,25 @@ function sourceSection(source, start, end) {
   return source.slice(startIndex, endIndex)
 }
 
-test('node workflow lives inside workspace while the legacy canvas route redirects', async () => {
-  const [navigation, canvasPage, workspaceWorkflowPage, studioPage, rootPage] = await Promise.all([
+test('node workflow lives inside a project shell while the legacy canvas route redirects', async () => {
+  const [navigation, canvasPage, workspaceWorkflowPage, projectOverviewPage, studioPage, rootPage] = await Promise.all([
     readSource('lib/navigation.ts'),
     readSource('app/(app)/canvas/page.tsx'),
     readSource('app/(app)/studio/workflow/page.tsx'),
+    readSource('app/(app)/studio/projects/[projectId]/page.tsx'),
     readSource('app/(app)/studio/page.tsx'),
     readSource('app/page.tsx'),
   ])
 
-  for (const label of ['概览', '工作区', '自动化', '工作项', '执行资源']) {
+  for (const label of ['概览', '项目', '自动化与 Agent', '任务与通知', '执行资源']) {
     assert.match(navigation, new RegExp(`label:\\s*['"]${label}['"]`))
   }
   assert.doesNotMatch(navigation, /href:\s*['"]\/canvas['"][\s\S]{0,80}label:\s*['"]节点工作流['"]/) 
-  assert.match(canvasPage, /redirect\(`\/studio\/workflow/)
+  assert.match(canvasPage, /if \(workspaceId && projectId\) redirect\(`\/studio\/workflow\?/)
+  assert.match(canvasPage, /redirect\(`\/studio\$\{suffix/)
   assert.match(workspaceWorkflowPage, /<WorkflowEditorSession\s*\/>/)
+  assert.match(projectOverviewPage, /<ProjectNavigation/)
+  assert.match(projectOverviewPage, /active="overview"/)
   assert.match(studioPage, /useMyWorkspaces[\s\S]*useWorkspaceProjects/)
   assert.match(studioPage, /router\.push\(`\/studio\/workflow\?workspace=/)
   assert.match(rootPage, /redirect\(['"]\/studio['"]\)/)
@@ -107,8 +136,67 @@ test('studio creation is transactional and the editor anchors to the project pri
   assert.match(session, /project\?\.primary_workflow_id/)
   assert.doesNotMatch(session, /projectWorkflows\.data\?\.\[0\]\?\.id/)
   assert.match(session, /if \(!active\) return/)
+  assert.match(session, /loadState === 'empty'/)
+  assert.match(session, /createBlankWorkflow/)
+  assert.match(session, /loadState === 'error'/)
+  assert.match(session, /返回项目/)
+  assert.match(templates, /CATEGORIES\.map/)
+  assert.doesNotMatch(templates, /CATEGORIES\.slice\(0,\s*4\)/)
+  assert.match(templates, /aria-pressed=\{active\}/)
+  assert.match(newProject, /nextRequirementPrompt/)
+  assert.match(newProject, /role="log"/)
+  assert.match(newProject, /const studioHref = workspaceId \? `\/studio\?workspace=\$\{workspaceId\}` : '\/studio'/)
   assert.doesNotMatch(lifecycle, /activate|激活|待后端接入/)
   assert.doesNotMatch(newProject, /可激活|正式激活|检查并激活/)
+})
+
+test('Agent Builder exposes capability gaps and requires conflict confirmation before applying a conversational patch', async () => {
+  const [newProject, builderCanvas] = await Promise.all([
+    readSource('app/(app)/studio/new/page.tsx'),
+    readSource('components/studio/agent-builder-canvas.tsx'),
+  ])
+
+  for (const contract of [
+    /Capability Gap/,
+    /发布与运行已阻止/,
+    /Patch \/ Diff/,
+    /检测到手工画布编辑冲突/,
+    /确认应用 Patch/,
+    /保留手工编辑/,
+    /capabilityGaps/,
+    /pendingPatch/,
+    /manualEditVersion/,
+  ]) {
+    assert.match(newProject, contract)
+  }
+  assert.match(newProject, /workflowReadiness\?\.canRun[^\n]+<Play/)
+  assert.match(newProject, /workflowReadiness\?\.canPublish[^\n]+<Rocket/)
+  assert.match(newProject, /manual\?\.type === node\.type/)
+  assert.match(newProject, /sameLogicalEndpoints/)
+  assert.match(newProject, /mapping: manual\.mapping \?\? edge\.mapping/)
+  assert.match(builderCanvas, /READY/)
+  assert.match(builderCanvas, /NEEDS CONFIG/)
+  assert.match(builderCanvas, /最近状态/)
+  assert.match(builderCanvas, /字段映射/)
+  assert.match(builderCanvas, /onManualEdit/)
+})
+
+test('P0 Builder and Canvas enforce a DAG without Loop, Retry-control, cross-Run Store, or recovery surfaces', async () => {
+  const [settingsStore, interactionPanel, flowTypes, newProject] = await Promise.all([
+    readSource('lib/flow/settings-store.ts'),
+    readSource('components/flow/interaction-settings-panel.tsx'),
+    readSource('lib/flow/types.ts'),
+    readSource('app/(app)/studio/new/page.tsx'),
+  ])
+  const validationToggles = sourceSection(interactionPanel, 'const VALIDATION_BOOLS', 'export function InteractionSettingsPanel')
+  const generatedNodeTypes = sourceSection(flowTypes, 'export type GeneratedWorkflowNodeType', 'export type GeneratedWorkflowRunStatus')
+
+  assert.match(settingsStore, /preventCycles:\s*true/)
+  assert.doesNotMatch(validationToggles, /preventCycles/)
+  assert.match(interactionPanel, /DAG only/)
+  assert.match(interactionPanel, /始终启用/)
+  assert.doesNotMatch(generatedNodeTypes, /"loop"|"retry"|"store"|"inbox"/)
+  assert.doesNotMatch(newProject, /Recovery Case|recoveryCase|Inbox/)
 })
 
 test('agent-created project specs convert into the canonical persisted workflow model', async () => {
@@ -137,12 +225,263 @@ test('agent-created monitoring projects persist the P0 email delivery target', a
 
   assert.ok(emailNode)
   assert.equal(emailNode.params.channel, 'email')
-  assert.deepEqual(emailNode.params.to, ['brief@example.com'])
+  assert.equal(emailNode.params.to, 'brief@example.com')
   assert.ok(project.edges.some((edge) => edge.target === emailNode.id))
+  assert.ok(emailNode.adapter)
+  assert.ok(project.adapters.some((adapter) => adapter.id === emailNode.adapter && adapter.type === 'notification'))
+})
+
+test('agent-created monitoring projects preserve parsed source and cadence and compile in the backend', async () => {
+  const [{ extractWorkflowSchedule, extractWorkflowSource, generateWorkflowLocally }, { generatedSpecToWorkflowProject }] = await Promise.all([
+    importTypeScript('lib/flow/local-generate.ts'),
+    importTypeScript('lib/workflow/generated-project.ts'),
+  ])
+  assert.equal(extractWorkflowSource('抓取多个网站的新内容'), null)
+  assert.equal(extractWorkflowSchedule('定时检查一次'), null)
+  assert.equal(extractWorkflowSchedule('每天检查'), null)
+  assert.equal(extractWorkflowSchedule('工作日检查'), null)
+  assert.equal(extractWorkflowSchedule('每周五检查'), null)
+  assert.equal(extractWorkflowSchedule('每 90 分钟检查'), null)
+  assert.equal(extractWorkflowSchedule('每天 25 点检查'), null)
+  assert.equal(extractWorkflowSchedule('工作日晚上 7 点检查')?.config, 'cron: 0 19 * * 1-5')
+  assert.equal(extractWorkflowSchedule('每周五上午 9 点检查')?.config, 'cron: 0 9 * * 5')
+  assert.equal(extractWorkflowSource('先看知乎，再改成 https://example.com/feed.xml'), 'https://example.com/feed.xml')
+  assert.equal(extractWorkflowSchedule('原来每天，后来改为每小时')?.config, 'cron: 0 * * * *')
+  const spec = generateWorkflowLocally('每小时抓取 https://example.com/feed.xml，摘要后发送邮件')
+  const sourceSpec = spec.nodes.find((node) => node.type === 'api-agent')
+  const scheduleSpec = spec.nodes.find((node) => node.type === 'schedule-trigger')
+  const project = generatedSpecToWorkflowProject(spec, '每小时监测', { deliveryEmail: 'brief@example.com' })
+  const sourceNode = project.nodes.find((node) => node.kind === 'source')
+
+  assert.equal(sourceSpec?.config, 'https://example.com/feed.xml')
+  assert.equal(scheduleSpec?.config, 'cron: 0 * * * *')
+  assert.ok(sourceNode?.adapter)
+  assert.ok(project.adapters.some((adapter) => adapter.id === sourceNode.adapter && adapter.provider === 'http'))
+
+  const compiled = compileWithBackend(project)
+  assert.equal(compiled.status, 0, `${compiled.stdout}\n${compiled.stderr}`)
+  assert.equal(compiled.report.valid, true)
+})
+
+test('Agent Builder defaults one-time API work to Manual Trigger and Records without inventing Email', async () => {
+  const [{ generateWorkflowLocally, analyzeGeneratedWorkflowReadiness }, { generatedSpecToWorkflowProject }] = await Promise.all([
+    importTypeScript('lib/flow/local-generate.ts'),
+    importTypeScript('lib/workflow/generated-project.ts'),
+  ])
+  const spec = generateWorkflowLocally('一次性查询 https://api.example.com/news，保存到 Records')
+  const readiness = analyzeGeneratedWorkflowReadiness(spec)
+  const project = generatedSpecToWorkflowProject(spec, '一次性 API 查询')
+
+  assert.equal(spec.version, 1)
+  assert.deepEqual(spec.intent, { mode: 'one_time', execution: 'batch', acyclic: true })
+  assert.equal(spec.envelope.rawPath, 'data.raw')
+  assert.deepEqual(spec.envelope.fields, ['data', 'schema', 'metadata', 'provenance', 'trace'])
+  assert.equal(spec.nodes.filter((node) => node.type === 'manual-trigger').length, 1)
+  assert.equal(spec.nodes.filter((node) => node.type === 'schedule-trigger').length, 0)
+  assert.ok(spec.nodes.some((node) => node.type === 'api-agent'))
+  assert.ok(spec.nodes.some((node) => node.type === 'records-output'))
+  assert.equal(spec.nodes.some((node) => node.type === 'email-output'), false)
+  assert.equal(spec.nodes.some((node) => ['loop', 'retry', 'store', 'inbox'].includes(node.type)), false)
+  assert.equal(readiness.canSave, true)
+  assert.equal(readiness.canPublish, true)
+  assert.equal(readiness.canRun, true)
+  assert.ok(spec.nodes.find((node) => node.type === 'manual-trigger')?.params?.inputSchema)
+  assert.ok(Array.isArray(spec.nodes.find((node) => node.type === 'manual-trigger')?.params?.presets))
+  assert.ok(spec.nodes.filter((node) => node.type.endsWith('-agent')).every((node) => node.retryPolicy && typeof node.retryPolicy.maxAttempts === 'number'))
+  assert.ok(spec.nodes.filter((node) => node.type.endsWith('-agent')).every((node) => node.definitionRef?.version))
+
+  const compiled = compileWithBackend(project)
+  assert.equal(compiled.status, 0, `${compiled.stdout}\n${compiled.stderr}`)
+  assert.equal(compiled.report.valid, true)
+})
+
+test('Agent Builder keeps scheduled Records and Email journeys distinct', async () => {
+  const { generateWorkflowLocally, analyzeGeneratedWorkflowReadiness } = await importTypeScript('lib/flow/local-generate.ts')
+  const recordsSpec = generateWorkflowLocally('每天 9 点查询 https://api.example.com/news，保存到 Records')
+  const emailSpec = generateWorkflowLocally('每天 9 点查询 https://api.example.com/news，并发送邮件到 ops@example.com')
+
+  assert.deepEqual(recordsSpec.intent, { mode: 'scheduled', execution: 'batch', acyclic: true })
+  assert.equal(recordsSpec.nodes.filter((node) => node.type === 'schedule-trigger').length, 1)
+  assert.equal(recordsSpec.nodes.find((node) => node.type === 'schedule-trigger')?.params?.overlap, 'coalesce-one-pending')
+  assert.equal(recordsSpec.nodes.find((node) => node.type === 'schedule-trigger')?.params?.missedRuns, 'skip')
+  assert.equal(recordsSpec.nodes.find((node) => node.type === 'schedule-trigger')?.params?.timezone, 'Asia/Shanghai')
+  assert.ok(recordsSpec.nodes.some((node) => node.type === 'records-output'))
+  assert.equal(recordsSpec.nodes.some((node) => node.type === 'email-output'), false)
+  assert.equal(analyzeGeneratedWorkflowReadiness(recordsSpec).canRun, true)
+
+  assert.equal(emailSpec.nodes.filter((node) => node.type === 'schedule-trigger').length, 1)
+  assert.ok(emailSpec.nodes.some((node) => node.type === 'email-output'))
+  assert.equal(emailSpec.nodes.find((node) => node.type === 'email-output')?.params.to, 'ops@example.com')
+  assert.equal(analyzeGeneratedWorkflowReadiness(emailSpec).canPublish, true)
+})
+
+test('Agent Builder persists partial_success on an independently failed output without adding recovery work', async () => {
+  const [{ generateWorkflowLocally }, { generatedSpecToWorkflowProject }] = await Promise.all([
+    importTypeScript('lib/flow/local-generate.ts'),
+    importTypeScript('lib/workflow/generated-project.ts'),
+  ])
+  const spec = generateWorkflowLocally('每天 9 点查询 https://api.example.com/news，并发送邮件到 ops@example.com')
+  const emailOutput = spec.nodes.find((node) => node.type === 'email-output')
+  assert.ok(emailOutput)
+  emailOutput.recentStatus = 'partial_success'
+  emailOutput.outputStatus = 'partial_success'
+
+  const project = generatedSpecToWorkflowProject(spec, '部分成功状态')
+  const canonicalEmail = project.nodes.find((node) => node.id === emailOutput.id)
+  assert.equal(canonicalEmail?.ui?.recentStatus, 'partial_success')
+  assert.equal(canonicalEmail?.ui?.outputStatus, 'partial_success')
+  assert.equal(project.nodes.some((node) => node.kind === 'inbox'), false)
+})
+
+test('Agent Builder supports hybrid entrances, chained Agents, edge mapping, and parallel outputs', async () => {
+  const [{ generateWorkflowLocally, analyzeGeneratedWorkflowReadiness }, { generatedSpecToWorkflowProject }] = await Promise.all([
+    importTypeScript('lib/flow/local-generate.ts'),
+    importTypeScript('lib/workflow/generated-project.ts'),
+  ])
+  const hybrid = generateWorkflowLocally('支持一次性查询和每天 9 点定时监控 https://api.example.com/news，保存到 Records')
+  assert.deepEqual(hybrid.intent, { mode: 'hybrid', execution: 'batch', acyclic: true })
+  assert.equal(hybrid.nodes.filter((node) => node.type === 'manual-trigger').length, 1)
+  assert.equal(hybrid.nodes.filter((node) => node.type === 'schedule-trigger').length, 1)
+  const hybridMerge = hybrid.nodes.find((node) => node.type === 'merge')
+  assert.ok(hybridMerge)
+  assert.equal(hybridMerge.params?.strategy, 'available')
+  const incomingCounts = new Map()
+  for (const edge of hybrid.edges) incomingCounts.set(edge.target, (incomingCounts.get(edge.target) ?? 0) + 1)
+  assert.ok([...incomingCounts].filter(([, count]) => count > 1).every(([nodeId]) => hybrid.nodes.find((node) => node.id === nodeId)?.type === 'merge'))
+
+  const spec = generateWorkflowLocally('先用 API Agent 查询 https://api.example.com/news，再用 OpenCLI Agent 搜索小红书，然后交给 LLM Transform Agent 总结，同时输出到 Records、Email ops@example.com 和 Webhook https://hooks.example.com/notify')
+  const project = generatedSpecToWorkflowProject(spec, '多 Agent 多输出')
+  const nodeTypes = spec.nodes.map((node) => node.type)
+  const outputTypes = nodeTypes.filter((type) => type.endsWith('-output'))
+
+  assert.ok(nodeTypes.indexOf('api-agent') < nodeTypes.indexOf('opencli-agent'))
+  assert.ok(nodeTypes.indexOf('opencli-agent') < nodeTypes.indexOf('llm-transform-agent'))
+  assert.deepEqual(new Set(outputTypes), new Set(['records-output', 'email-output', 'webhook-output']))
+  assert.ok(spec.edges.every((edge) => edge.mapping))
+  assert.ok(spec.edges.every((edge) => edge.mapping.preserveRaw === true))
+  assert.ok(spec.edges.every((edge) => edge.mapping.compatible === true))
+  assert.ok(spec.edges.some((edge) => edge.mapping.mode === 'auto'))
+  assert.equal(analyzeGeneratedWorkflowReadiness(spec).canRun, true)
+  assert.equal(project.nodes.some((node) => node.kind === 'inbox'), false)
+
+  const terminalTargets = new Set(spec.edges.filter((edge) => outputTypes.includes(spec.nodes.find((node) => node.id === edge.target)?.type)).map((edge) => edge.target))
+  assert.equal(terminalTargets.size, 3)
+  const compiled = compileWithBackend(project)
+  assert.equal(compiled.status, 0, `${compiled.stdout}\n${compiled.stderr}`)
+  assert.equal(compiled.report.valid, true)
+})
+
+test('Agent Builder saves incomplete drafts but blocks publish and run for capability or mapping gaps', async () => {
+  const { generateWorkflowLocally, analyzeGeneratedWorkflowReadiness } = await importTypeScript('lib/flow/local-generate.ts')
+  const incomplete = generateWorkflowLocally('每天 9 点查询数据并发送邮件')
+  const incompleteReadiness = analyzeGeneratedWorkflowReadiness(incomplete)
+
+  assert.ok(incomplete.capabilityGaps.length >= 2)
+  assert.equal(incompleteReadiness.canSave, true)
+  assert.equal(incompleteReadiness.canPublish, false)
+  assert.equal(incompleteReadiness.canRun, false)
+  assert.ok(incompleteReadiness.blockingGapIds.length >= 2)
+
+  const vagueMonitoring = generateWorkflowLocally('监控竞品官网和社交平台，发现重要变化后生成简报')
+  assert.ok(vagueMonitoring.nodes.some((node) => node.type.endsWith('-agent')))
+  assert.ok(vagueMonitoring.capabilityGaps.some((gap) => /数据来源/.test(`${gap.title} ${gap.detail}`)))
+  assert.equal(analyzeGeneratedWorkflowReadiness(vagueMonitoring).canRun, false)
+
+  const incompatible = generateWorkflowLocally('一次性查询 https://api.example.com/news，保存到 Records，字段类型冲突')
+  const incompatibleEdge = incompatible.edges.find((edge) => edge.mapping.compatible === false)
+  const incompatibleReadiness = analyzeGeneratedWorkflowReadiness(incompatible)
+  assert.ok(incompatibleEdge)
+  assert.ok(incompatibleEdge.mapping.conflicts.length > 0)
+  assert.equal(incompatibleReadiness.canSave, true)
+  assert.equal(incompatibleReadiness.canPublish, false)
+  assert.equal(incompatibleReadiness.canRun, false)
+})
+
+test('Capability Gap survives draft persistence, blocks backend compile, and clears when Email is configured', async () => {
+  const [{ generateWorkflowLocally, analyzeGeneratedWorkflowReadiness }, { generatedSpecToWorkflowProject }] = await Promise.all([
+    importTypeScript('lib/flow/local-generate.ts'),
+    importTypeScript('lib/workflow/generated-project.ts'),
+  ])
+  const spec = generateWorkflowLocally('每天 9 点查询 https://api.example.com/news 并发送邮件')
+  const readiness = analyzeGeneratedWorkflowReadiness(spec)
+  assert.equal(readiness.canSave, true)
+  assert.equal(readiness.canPublish, false)
+  assert.equal(readiness.canRun, false)
+  assert.ok(spec.capabilityGaps.some((gap) => gap.capability === 'configuration'))
+
+  const incompleteProject = generatedSpecToWorkflowProject(spec, '待配置邮件 Draft')
+  const incompleteCompile = compileWithBackend(incompleteProject)
+  assert.equal(incompleteCompile.status, 1)
+  assert.ok(incompleteCompile.report.errors.some((error) => error.code === 'capability_gap'))
+
+  const resolvedProject = generatedSpecToWorkflowProject(spec, '已配置邮件 Draft', { deliveryEmail: 'ops@example.com' })
+  assert.ok(resolvedProject.nodes.every((node) => (node.ui?.builder?.capabilityGaps?.length ?? 0) === 0))
+  const resolvedCompile = compileWithBackend(resolvedProject)
+  assert.equal(resolvedCompile.status, 0, `${resolvedCompile.stdout}\n${resolvedCompile.stderr}`)
+  assert.equal(resolvedCompile.report.valid, true)
+})
+
+test('studio blank and packaged template drafts retain canonical adapters and compile', async () => {
+  const { STUDIO_TEMPLATES, studioGraphForTemplate } = await importTypeScript('lib/workflow/studio-templates.ts')
+  const blank = studioGraphForTemplate('blank', '空白项目')
+  const packaged = STUDIO_TEMPLATES.map((template) => studioGraphForTemplate(template.id, template.title))
+
+  assert.equal(blank.nodes.length, 1)
+  assert.equal(blank.nodes[0].ui?.catalogId, 'intelligence.input.collection-need')
+  assert.equal(blank.nodes[0].internals?.nodes?.length ?? 0, 0)
+
+  for (const project of [blank, ...packaged]) {
+    const visit = (node) => {
+      if (node.adapter) assert.ok(project.adapters.some((adapter) => adapter.id === node.adapter), `${project.name}: ${node.adapter}`)
+      for (const child of node.internals?.nodes ?? []) visit(child)
+    }
+    project.nodes.forEach(visit)
+    const compiled = compileWithBackend(project)
+    assert.equal(compiled.status, 0, `${project.name}\n${compiled.stdout}\n${compiled.stderr}`)
+    assert.equal(compiled.report.valid, true)
+  }
+})
+
+test('studio templates persist template-specific source, cadence, and delivery intent', async () => {
+  const [{ studioGraphForTemplate }, { inferWorkflowRunTrigger }] = await Promise.all([
+    importTypeScript('lib/workflow/studio-templates.ts'),
+    importTypeScript('lib/workflow/backend-runs.ts'),
+  ])
+  const websiteWatch = studioGraphForTemplate('website-watch', '网站变化监控')
+  const newsBrief = studioGraphForTemplate('news-brief', '每日资讯简报')
+  const opencliLive = studioGraphForTemplate('opencli-live-pipeline', 'OpenCLI 实时管线')
+  const financialRss = studioGraphForTemplate('financial-rss-intelligence', '财经多源 RSS 情报')
+
+  assert.notDeepEqual(websiteWatch.nodes, newsBrief.nodes)
+  assert.equal(websiteWatch.nodes[0].params.templateId, 'website-watch')
+  assert.equal(newsBrief.nodes[0].params.templateId, 'news-brief')
+  assert.equal(websiteWatch.nodes[0].params.cadence, 'hourly')
+  assert.equal(newsBrief.nodes[0].params.cadence, 'daily')
+  assert.equal(opencliLive.nodes.find((node) => node.id === 'source-opencli-bbc-news')?.params.opencliAdapterNodeId, 'opencli.adapter.bbc.news')
+  assert.deepEqual(
+    opencliLive.nodes.map((node) => node.id),
+    ['schedule', 'source-opencli-bbc-news', 'normalize', 'dedupe', 'record-acceptance', 'records', 'notify-webhook'],
+  )
+  assert.equal(opencliLive.agentPermissions.canSendNotifications, true)
+  assert.deepEqual(
+    financialRss.nodes.filter((node) => node.kind === 'source').map((node) => node.params.sourceGroup),
+    ['macro-policy', 'market-regulation', 'central-bank-research'],
+  )
+  assert.ok(financialRss.nodes.filter((node) => node.kind === 'source').every((node) => node.ui?.catalogId === 'intelligence.source.rss'))
+  assert.deepEqual(financialRss.agentPermissions.allowedDomains, ['federalreserve.gov', 'sec.gov', 'ecb.europa.eu'])
+  assert.equal(financialRss.nodes.at(-1)?.ui?.catalogId, 'intelligence.sink.records')
+  assert.deepEqual(inferWorkflowRunTrigger(financialRss), {
+    kind: 'schedule',
+    triggerNodeId: 'schedule-finance-rss',
+  })
+  assert.deepEqual(inferWorkflowRunTrigger({
+    ...financialRss,
+    nodes: financialRss.nodes.filter((node) => node.kind !== 'schedule'),
+  }), { kind: 'manual' })
 })
 
 test('project application types use persisted values and preserve Dify modes', async () => {
-  const [{ PROJECT_APP_TYPE_LABELS, projectAppTypeForDifyMode, projectMatchesAppType }, { translateWorkflowDsl }, { studioAppTypeForTemplate }] = await Promise.all([
+  const [{ PROJECT_APP_TYPE_LABELS, projectAppCategoryLabel, projectAppTypeForDifyMode, projectAppTypeLabel, projectMatchesAppType }, { translateWorkflowDsl }, { studioAppTypeForTemplate }] = await Promise.all([
     importTypeScript('lib/studio/app-types.ts'),
     importTypeScript('lib/workflow/codec.ts'),
     importTypeScript('lib/workflow/studio-templates.ts'),
@@ -153,9 +492,13 @@ test('project application types use persisted values and preserve Dify modes', a
     ['chatbot', 'agent', 'chatflow', 'workflow', 'text-generator'],
   )
   assert.equal(projectAppTypeForDifyMode('unknown'), 'workflow')
-  assert.equal(projectMatchesAppType({ app_type: 'chatbot' }, 'chatbot'), true)
-  assert.equal(projectMatchesAppType({ app_type: 'chatbot' }, 'agent'), false)
+  assert.equal(projectMatchesAppType({ app_type: 'chatbot' }, 'conversation'), true)
+  assert.equal(projectMatchesAppType({ app_type: 'agent' }, 'conversation'), true)
+  assert.equal(projectMatchesAppType({ app_type: 'workflow' }, 'conversation'), false)
+  assert.equal(projectMatchesAppType({ app_type: 'workflow' }, 'orchestration'), true)
+  assert.equal(projectAppCategoryLabel('chatflow'), '对话应用')
   assert.equal(PROJECT_APP_TYPE_LABELS['text-generator'], '文本生成')
+  assert.equal(projectAppTypeLabel(undefined), '未分类')
   assert.equal(studioAppTypeForTemplate('research-agent'), 'agent')
   assert.equal(studioAppTypeForTemplate('content-summary'), 'text-generator')
   assert.equal(studioAppTypeForTemplate('blank'), 'workflow')
@@ -172,9 +515,11 @@ test('project application types use persisted values and preserve Dify modes', a
   assert.equal(projectAppTypeForDifyMode(imported.report?.appMode), 'chatflow')
 })
 
-test('the production studio adopts the selected project-workspace concept with real data', async () => {
-  const [studio, workflowPage, projectHeader] = await Promise.all([
+test('the production studio adopts the selected project-workspace concept with a real project overview', async () => {
+  const [studio, projectOverview, projectNavigation, workflowPage, projectHeader] = await Promise.all([
     readSource('app/(app)/studio/page.tsx'),
+    readSource('app/(app)/studio/projects/[projectId]/page.tsx'),
+    readSource('components/studio/project-navigation.tsx'),
     readSource('app/(app)/studio/workflow/page.tsx'),
     readSource('components/studio/workflow-project-header.tsx'),
   ])
@@ -183,32 +528,72 @@ test('the production studio adopts the selected project-workspace concept with r
   assert.match(studio, /useWorkspaceProjects\(workspaceId\)/)
   assert.match(studio, /title="项目"/)
   assert.match(studio, /get\('create'\) === 'workflow'/)
-  assert.match(studio, /setCreateTemplate\('collection-to-consumption'\)/)
+  assert.match(studio, /setCreateTemplate\('opencli-live-pipeline'\)/)
   assert.match(studio, /aria-label="项目浏览工具栏"/)
-  assert.match(studio, /aria-label="Dify 应用类型筛选"/)
-  assert.match(studio, /PROJECT_APP_TYPE_LABELS\.chatbot/)
-  assert.match(studio, /PROJECT_APP_TYPE_LABELS\['text-generator'\]/)
+  assert.match(studio, /aria-label="项目分类筛选"/)
+  assert.match(studio, /PROJECT_APP_CATEGORY_LABELS\.conversation/)
+  assert.match(studio, /PROJECT_APP_CATEGORY_LABELS\.generation/)
+  assert.match(studio, /onContextMenu=/)
+  assert.match(studio, /useDeleteWorkspaceProject\(\)/)
+  assert.doesNotMatch(studio, /全部创建者/)
   assert.match(studio, /const selectedWorkspace = workspaces\.data\?\.find/)
   assert.match(studio, /workspaces\.data\?\.length[\s\S]*> 1/)
   assert.match(studio, /<SelectValue>\{selectedWorkspace\?\.name \?\? '选择工作区'\}<\/SelectValue>/)
   assert.match(studio, /aria-label="当前工作区"/)
   assert.doesNotMatch(studio, /<SelectValue placeholder="选择工作区"\s*\/>/)
   assert.match(studio, /projectMatchesAppType\(project, type\)/)
-  assert.match(studio, /PROJECT_APP_TYPE_LABELS\[project\.app_type\]/)
+  assert.match(studio, /projectAppTypeLabel\(project\.app_type\)/)
   assert.doesNotMatch(studio, /inferProjectType/)
   assert.match(studio, /\{visibleProjects\.length\} 个项目/)
   assert.match(studio, /project\.updated_at/)
-  assert.match(studio, /\/studio\/workflow\?workspace=\$\{workspaceId\}&project=\$\{project\.id\}/)
+  assert.match(studio, /\/studio\/projects\/\$\{project\.id\}\?workspace=\$\{workspaceId\}/)
   assert.doesNotMatch(studio, /ProductShellPrototype|PrototypeNotice|workspaceProjects|forceStandalone/)
+  assert.match(projectOverview, /useWorkspaceProjects\(workspaceId\)/)
+  assert.match(projectOverview, /useProjectWorkflows\(workspaceId, projectId\)/)
+  assert.match(projectOverview, /project\?\.primary_workflow_id/)
+  assert.match(projectOverview, /aria-label="项目下一步"/)
+  assert.ok(projectOverview.indexOf('if (projectWorkflows.isError)') < projectOverview.indexOf('const needsWorkflow'))
+  assert.match(projectOverview, /projectWorkflows\.refetch\(\)/)
+  assert.match(projectOverview, /title="创建草稿"[\s\S]*done=\{Boolean\(primaryWorkflow\)\}/)
+  assert.doesNotMatch(projectOverview, /title="检查草稿"[\s\S]*done=\{Boolean\(primaryWorkflow\)\}/)
+  assert.match(projectNavigation, /概览/)
+  assert.match(projectNavigation, /编排/)
+  assert.match(projectNavigation, /运行/)
+  assert.match(projectNavigation, /数据/)
+  assert.match(projectNavigation, /协作/)
+  assert.match(projectNavigation, /设置/)
+  assert.match(projectNavigation, /id: 'operations',[\s\S]*enabled: false/)
+  assert.match(projectNavigation, /aria-disabled="true"/)
   assert.match(workflowPage, /<WorkflowProjectHeader\s*\/>/)
   assert.match(workflowPage, /<WorkflowEditorSession\s*\/>/)
   assert.match(projectHeader, /useWorkspaceProjects\(workspaceId\)/)
   assert.match(projectHeader, /useProjectWorkflows\(workspaceId, projectId\)/)
-  assert.match(projectHeader, /`\/studio\?workspace=\$\{workspaceId\}`/)
-  assert.match(projectHeader, /aria-label="项目生命周期"/)
+  assert.match(projectHeader, /`\/studio\/projects\/\$\{projectId\}\?workspace=\$\{workspaceId\}`/)
+  assert.match(projectHeader, /<ProjectNavigation/)
   assert.match(projectHeader, /aria-label="选择工作流"/)
+  assert.match(projectHeader, /selectedWorkflow\?\.name/)
   assert.match(projectHeader, /正式节点系统/)
   assert.doesNotMatch(projectHeader, /PrototypeNotice|forceStandalone|comparisonProfiles/)
+})
+
+test('studio and workflow primary controls keep touch targets and explicit selected state', async () => {
+  const [studio, templates, newProject, projectNavigation, projectHeader, commandStrip] = await Promise.all([
+    readSource('app/(app)/studio/page.tsx'),
+    readSource('app/(app)/studio/templates/page.tsx'),
+    readSource('app/(app)/studio/new/page.tsx'),
+    readSource('components/studio/project-navigation.tsx'),
+    readSource('components/studio/workflow-project-header.tsx'),
+    readSource('components/flow/command-strip.tsx'),
+  ])
+
+  assert.match(studio, /aria-pressed=\{type === value\}/)
+  assert.doesNotMatch(studio, /\b(?:h-8|sm:h-8|sm:h-9)\b/)
+  for (const source of [templates, newProject, projectNavigation, projectHeader]) {
+    assert.doesNotMatch(source, /(?:sm|md):min-h-[89]\b/)
+  }
+  assert.match(commandStrip, /"size-11 text-muted-foreground hover:text-foreground"/)
+  assert.match(commandStrip, /className="min-h-11 gap-1\.5 rounded-lg" onClick=\{onToggleRunTrace\}/)
+  assert.doesNotMatch(commandStrip, /text-\[#ff7a17\]|className="size-[78] rounded-lg"/)
 })
 
 test('the product-shell prototype reuses the canonical editor without project draft mutations', async () => {
@@ -293,12 +678,6 @@ test('the default canvas is an operator network with recursive four-layer lookup
 
 test('the actual packaged default project satisfies backend node and typed-port contracts', async () => {
   const { PACKAGED_WORKFLOW_PROJECT } = await importTypeScript('lib/workflow/collection-pipeline.ts')
-  const repositoryRoot = path.resolve(frontendRoot, '..')
-  const windowsRepositoryPython = path.join(repositoryRoot, '.venv', 'Scripts', 'python.exe')
-  const unixRepositoryPython = path.join(repositoryRoot, '.venv', 'bin', 'python')
-  const pythonExecutable = existsSync(windowsRepositoryPython)
-    ? windowsRepositoryPython
-    : (process.env.PYTHON ?? (existsSync(unixRepositoryPython) ? unixRepositoryPython : 'python'))
   const sourceOperator = PACKAGED_WORKFLOW_PROJECT.nodes.find((node) => node.id === 'source-operator')
   const sourcePackage = sourceOperator?.internals?.nodes.find((node) => node.id === 'source-package')
 
@@ -320,20 +699,7 @@ test('the actual packaged default project satisfies backend node and typed-port 
     ],
   )
 
-  const backendCheck = spawnSync(pythonExecutable, ['-c', [
-    'import json, sys',
-    'from backend.schemas.workflow import WorkflowProject',
-    'from backend.workflow.compiler import compile_workflow_project',
-    'project = WorkflowProject.model_validate(json.load(sys.stdin))',
-    'result = compile_workflow_project(project)',
-    'print(result.model_dump_json())',
-    'raise SystemExit(0 if result.valid else 1)',
-  ].join('; ')], {
-    cwd: repositoryRoot,
-    input: JSON.stringify(PACKAGED_WORKFLOW_PROJECT),
-    encoding: 'utf8',
-    maxBuffer: 1024 * 1024,
-  })
+  const backendCheck = compileWithBackend(PACKAGED_WORKFLOW_PROJECT)
 
   assert.equal(backendCheck.status, 0, `${backendCheck.stdout}\n${backendCheck.stderr}`)
   assert.equal(JSON.parse(backendCheck.stdout).valid, true)
@@ -448,7 +814,10 @@ test('EvidenceBatch projection produces stable node and edge view-models', async
 })
 
 test('EvidenceBatch workbench consumes projection, list, selection, and detail state', async () => {
-  const panel = await readSource('components/flow/run-trace-panel.tsx')
+  const [panel, proxy] = await Promise.all([
+    readSource('components/flow/run-trace-panel.tsx'),
+    readSource('app/api/workflow/evidence-batch-proxy.ts'),
+  ])
   const workbench = sourceSection(panel, 'function EvidenceBatchWorkbench(', 'function EvidenceBatchDetailCard(')
 
   assert.match(workbench, /aria-label="EvidenceBatch results"/)
@@ -457,6 +826,19 @@ test('EvidenceBatch workbench consumes projection, list, selection, and detail s
   assert.match(workbench, /batches\.map/)
   assert.match(workbench, /onSelectBatch\(batch\.batchId\)/)
   assert.match(workbench, /state\.detail\s*\?\s*<EvidenceBatchDetailCard/)
+  assert.match(proxy, /suffix === "\/projection"/)
+  assert.match(proxy, /`\$\{runRoot\}\/projection`/)
+  assert.match(proxy, /`\$\{runRoot\}\/evidence-batches\$\{suffix\}`/)
+})
+
+test('backend Preview traces OpenCLI HDA only when the workflow contains that package', async () => {
+  const panel = await readSource('components/flow/run-trace-panel.tsx')
+  const preview = sourceSection(panel, 'const runBackendPreview = async () => {', 'const resetRun = () => {')
+
+  assert.match(preview, /compile\.valid && hasOpenCLIHdaPackage\(workflowProject\.nodes\)/)
+  assert.match(preview, /traceOpenCLIHDAWorkflow\(workflowProject, \{ authorization \}\)/)
+  assert.match(panel, /value === "package\.opencli\.multi-source-hda"/)
+  assert.match(panel, /value === "opencli-multi-source"/)
 })
 
 test('L2-L4 network edits persist in the canonical workflow graph across scope re-entry', async () => {

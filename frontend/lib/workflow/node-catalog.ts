@@ -61,6 +61,14 @@ const JIN10_ADAPTER: AdapterBinding = {
   config: { feed: "kuaixun" },
 }
 
+const RSS_ADAPTER: AdapterBinding = {
+  id: "rss-feed",
+  type: "source",
+  provider: "rss",
+  mode: "live",
+  config: { channel: "rss" },
+}
+
 const WEBHOOK_NOTIFY_ADAPTER: AdapterBinding = {
   id: "webhook-notifier",
   type: "notification",
@@ -285,6 +293,27 @@ export const WORKFLOW_NODE_CATALOG: WorkflowNodeCatalogItem[] = [
     requiredAdapters: [JIN10_ADAPTER],
     params: { limit: 20, importantOnly: false, channel: "kuaixun" },
     keywords: ["jin10", "金十", "source", "news", "kuaixun", "fetch"],
+  },
+  {
+    id: "intelligence.source.rss",
+    idPrefix: "source-rss",
+    label: "RSS / Atom Source",
+    description: "实时读取官方 RSS、RSSHub 或 RSS-Bridge feed，并以 sourceGroup 保留来源分组和血缘",
+    category: "source",
+    profile: "intelligence",
+    kind: "source",
+    capability: "fetch",
+    icon: "Rss",
+    color: "var(--chart-4)",
+    adapter: RSS_ADAPTER.id,
+    requiredAdapters: [RSS_ADAPTER],
+    params: {
+      feedUrl: "https://www.federalreserve.gov/feeds/press_all.xml",
+      maxEntries: 20,
+      sourceGroup: "macro-policy",
+      site: "federal-reserve",
+    },
+    keywords: ["rss", "atom", "rsshub", "rss-bridge", "bridge", "feed", "finance", "news", "财经", "订阅", "数据源"],
   },
   {
     id: "intelligence.processing.normalize",

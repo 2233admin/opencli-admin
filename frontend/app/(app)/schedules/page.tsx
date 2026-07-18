@@ -4,6 +4,7 @@ import { useSchedules } from '@/lib/api/hooks'
 import { formatDateTime, formatRelative } from '@/lib/format'
 import { BACKEND_HINT, EmptyState, ErrorState, LoadingState } from '@/components/shell/data-states'
 import { PageContainer } from '@/components/shell/page-container'
+import { AUTOMATION_TABS, RouteTabs } from '@/components/shell/route-tabs'
 import { StatusBadge } from '@/components/shell/status-badge'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
@@ -21,7 +22,12 @@ export default function SchedulesPage() {
   const schedules = data?.data ?? []
 
   return (
-    <PageContainer title="调度" description="定时采集任务的 Cron 计划">
+    <PageContainer
+      eyebrow="Automation"
+      title="自动化与 Agent"
+      description="管理自动化链路的定时触发计划。"
+      tabs={<RouteTabs tabs={AUTOMATION_TABS} />}
+    >
       {isLoading ? (
         <LoadingState />
       ) : isError ? (

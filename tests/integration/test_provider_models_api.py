@@ -54,6 +54,35 @@ def _patch_adapter(**method_results):
 
 
 # ---------------------------------------------------------------------------
+# POST /providers/discover-models
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_discover_models_before_provider_is_saved(client):
+    mock_adapter = AsyncMock()
+    mock_adapter.list_models.return_value = ["model-a", "model-b"]
+
+    with patch("backend.api.v1.providers.get_adapter", return_value=mock_adapter) as factory:
+        resp = await client.post(
+            "/api/v1/providers/discover-models",
+            json={
+                "provider_type": "local",
+                "base_url": "http://127.0.0.1:11434/v1",
+                "api_key": SECRET_KEY,
+            },
+        )
+
+    assert resp.status_code == 200
+    assert resp.json()["data"] == ["model-a", "model-b"]
+    assert SECRET_KEY not in resp.text
+    provider_view = factory.call_args.args[0]
+    assert provider_view.provider_type == "local"
+    assert provider_view.base_url == "http://127.0.0.1:11434/v1"
+    assert provider_view.api_key == SECRET_KEY
+
+
+# ---------------------------------------------------------------------------
 # POST /providers/{id}/test
 # ---------------------------------------------------------------------------
 

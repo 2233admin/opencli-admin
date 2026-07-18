@@ -20,6 +20,7 @@ WORKFLOW_CATALOG_IDS = {
     "intelligence.input.collection-need",
     "intelligence.schedule.cron",
     "intelligence.source.jin10",
+    "intelligence.source.rss",
     "intelligence.source.pool",
     "intelligence.source.opencli-slot",
     "intelligence.processing.normalize",

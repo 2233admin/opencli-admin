@@ -21,6 +21,8 @@ async def store_records(
     *,
     channel_type: str = "unknown",
     forward_to_odp: bool = False,
+    workflow_id: str | None = None,
+    workflow_run_id: str | None = None,
 ) -> tuple[list[CollectedRecord], int]:
     """Insert new records; skip existing ones by content_hash.
 
@@ -81,6 +83,8 @@ async def store_records(
         record = CollectedRecord(
             task_id=task_id,
             source_id=source_id,
+            workflow_id=workflow_id,
+            workflow_run_id=workflow_run_id,
             raw_data=raw,
             normalized_data=normalized,
             content_hash=content_hash,

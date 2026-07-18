@@ -42,6 +42,30 @@ services:
       retries: 5
     restart: unless-stopped
 
+  # ── Self-hosted RSS generators ───────────────────────────────────────────
+  # docker compose --profile rss up -d rsshub rss-bridge
+  rsshub:
+    profiles: ["rss"]
+    image: diygod/rsshub:latest
+    ports:
+      - "${RSSHUB_PORT:-1200}:1200"
+    environment:
+      NODE_ENV: production
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:1200/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    restart: unless-stopped
+
+  rss-bridge:
+    profiles: ["rss"]
+    image: rssbridge/rss-bridge:latest
+    ports:
+      - "${RSS_BRIDGE_PORT:-3001}:80"
+    restart: unless-stopped
+
   # ── Backend API ───────────────────────────────────────────────────────────
   api:
     <<: *backend-common

@@ -42,9 +42,10 @@ test('dashboard answers attention, live state, and next action before analytics'
   assert.ok(nextAction > liveState, 'next actions should follow live state')
   assert.ok(overview > nextAction, 'analytics should be secondary to actions')
 
-  for (const href of ['/studio/workflow', '/sources', '/schedules', '/tasks']) {
+  for (const href of ['/studio', '/sources', '/schedules', '/tasks']) {
     assert.match(dashboard, new RegExp(`href="${href.replace('/', '\\/')}"`))
   }
+  assert.doesNotMatch(dashboard, /href="\/studio\/workflow"/)
 })
 
 test('dashboard keeps existing real operational views after the action layer', async () => {

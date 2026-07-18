@@ -132,7 +132,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener(AUTH_REQUIRED_EVENT, onAuthRequired)
   }, [becomeAnonymous, developmentLoginEnabled])
 
-  const signInWithOidc = useCallback(async (returnTo = '/studio/workflow', fleetToken?: string) => {
+  const signInWithOidc = useCallback(async (returnTo = '/studio', fleetToken?: string) => {
     const manager = getOidcManager()
     if (!manager) throw new Error('OIDC 登录尚未配置')
     if (fleetToken !== undefined) setApiAuthToken(fleetToken)

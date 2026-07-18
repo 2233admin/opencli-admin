@@ -5,7 +5,12 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.api.v1.studio_helpers import LOCAL_USER_ID, get_project, get_workflow
+from backend.api.v1.studio_helpers import (
+    LOCAL_USER_ID,
+    canonicalize_studio_graph,
+    get_project,
+    get_workflow,
+)
 from backend.api.v1.studio_schemas import DraftRead, DraftUpdate, WorkflowCreate, WorkflowRead
 from backend.database import get_db
 from backend.models.studio import StudioProject, StudioWorkflow, StudioWorkflowDraft
@@ -66,7 +71,7 @@ async def create_workflow(
         await db.flush()
     except IntegrityError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, "Workflow name already exists") from exc
-    graph = {**body.graph, "id": row.id}
+    graph = canonicalize_studio_graph(body.graph, workflow_id=row.id)
     db.add(
         StudioWorkflowDraft(
             workflow_id=row.id,
@@ -97,7 +102,17 @@ async def get_draft(
     )
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Workflow draft not found")
-    return ApiResponse.ok(DraftRead.model_validate(row, from_attributes=True))
+    draft = DraftRead.model_validate(row, from_attributes=True)
+    return ApiResponse.ok(
+        draft.model_copy(
+            update={
+                "graph": canonicalize_studio_graph(
+                    draft.graph,
+                    workflow_id=workflow_id,
+                )
+            }
+        )
+    )
 
 
 @router.put(
@@ -121,7 +136,7 @@ async def update_draft(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Workflow draft not found")
     if row.revision != body.revision:
         raise HTTPException(status.HTTP_409_CONFLICT, "Workflow draft revision conflict")
-    row.graph = {**body.graph, "id": workflow_id}
+    row.graph = canonicalize_studio_graph(body.graph, workflow_id=workflow_id)
     row.revision += 1
     row.updated_by_user_id = LOCAL_USER_ID
     await db.flush()

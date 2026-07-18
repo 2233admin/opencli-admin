@@ -8,7 +8,7 @@ import { useTasks } from '@/lib/api/hooks'
 import { formatRelative } from '@/lib/format'
 import { BACKEND_HINT, EmptyState, ErrorState, LoadingState } from '@/components/shell/data-states'
 import { PageContainer } from '@/components/shell/page-container'
-import { RouteTabs, RUN_CENTER_TABS } from '@/components/shell/route-tabs'
+import { ACTION_CENTER_TABS, RouteTabs } from '@/components/shell/route-tabs'
 import { StatusBadge } from '@/components/shell/status-badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -36,10 +36,10 @@ export default function TasksPage() {
 
   return (
     <PageContainer
-      eyebrow="Work"
-      title="工作项"
-      description="每个工作项都关联来源、执行运行与最终数据成果。"
-      tabs={<RouteTabs tabs={RUN_CENTER_TABS} />}
+      eyebrow="Task history"
+      title="任务与通知"
+      description="查看所有采集工作项及其执行状态；需要立即处理的异常会进入待处理视图。"
+      tabs={<RouteTabs tabs={ACTION_CENTER_TABS} />}
       actions={
         <div className="flex items-center gap-1 rounded-md border p-0.5">
           {STATUS_FILTERS.map((f) => (

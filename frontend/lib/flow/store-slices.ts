@@ -528,9 +528,49 @@ export function createEdgeActions(
     },
 
     updateEdgeData: (edgeId, data) => {
-      set((state) => ({
-        edges: state.edges.map((e) => (e.id === edgeId ? { ...e, data: { ...e.data, ...data } } : e)),
-      }))
+      const state = get()
+      const canvasEdge = state.edges.find((edge) => edge.id === edgeId)
+      if (!canvasEdge) return
+      const parentNetwork = state.networkStack.at(-1)
+      const scopeId = parentNetwork?.nodeId ?? null
+      const localEdgeId = canonicalEdgeId(scopeId, canvasEdge)
+      const { label, semantic, weight, contractId, proposalState } = data
+      const uiPatch = { ...data }
+      delete uiPatch.internalOf
+      delete uiPatch.internalEdgeId
+      delete uiPatch.sourcePort
+      delete uiPatch.targetPort
+      delete uiPatch.label
+      delete uiPatch.semantic
+      delete uiPatch.weight
+      delete uiPatch.contractId
+      delete uiPatch.proposalState
+      const workflowProject = localEdgeId
+        ? parseWorkflowProject(
+            updateCanonicalNetworkScope(state.workflowProject, scopeId, (scope) => ({
+              ...scope,
+              edges: scope.edges.map((edge) =>
+                edge.id === localEdgeId
+                  ? {
+                      ...edge,
+                      ...(label !== undefined ? { label } : {}),
+                      ...(semantic !== undefined ? { semantic } : {}),
+                      ...(weight !== undefined ? { weight } : {}),
+                      ...(contractId !== undefined ? { contractId } : {}),
+                      ...(proposalState !== undefined ? { proposalState } : {}),
+                      ui: { ...edge.ui, ...uiPatch },
+                    }
+                  : edge,
+              ),
+            })),
+          )
+        : state.workflowProject
+      set({
+        workflowProject,
+        edges: state.edges.map((edge) =>
+          edge.id === edgeId ? { ...edge, data: { ...edge.data, ...data } } : edge,
+        ),
+      })
     },
 
     updateEdgeType: (edgeId, type) => {

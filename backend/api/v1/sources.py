@@ -85,6 +85,10 @@ class OpmlImportResult(BaseModel):
     skipped_existing: list[str]
 
 
+class OpmlUrlImportRequest(BaseModel):
+    url: str
+
+
 @router.post("/import-opml", response_model=ApiResponse[OpmlImportResult])
 async def import_opml(
     file: UploadFile = File(...), db: AsyncSession = Depends(get_db)
@@ -94,11 +98,36 @@ async def import_opml(
     duplicates within the same file are skipped, not re-created."""
     raw = await file.read()
     try:
-        entries = source_service.parse_opml(raw.decode("utf-8"))
-    except ValueError as exc:
+        entries = source_service.parse_opml(raw.decode("utf-8-sig"))
+    except (UnicodeDecodeError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     created, skipped = await source_service.bulk_import_rss(db, entries)
+    await db.commit()
+    return ApiResponse.ok(
+        OpmlImportResult(
+            created=[DataSourceRead.model_validate(s) for s in created],
+            skipped_existing=skipped,
+        )
+    )
+
+
+@router.post("/import-opml-url", response_model=ApiResponse[OpmlImportResult])
+async def import_opml_url(
+    body: OpmlUrlImportRequest, db: AsyncSession = Depends(get_db)
+) -> ApiResponse:
+    """Import a public OPML catalog directly from GitHub or another public
+    catalog URL. Sources land disabled and retain their OPML folder plus
+    catalog provenance for review and later grouping."""
+    try:
+        xml_text = await source_service.fetch_remote_opml(body.url)
+        entries = source_service.parse_opml(xml_text)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    created, skipped = await source_service.bulk_import_rss(
+        db, entries, catalog_url=body.url
+    )
     await db.commit()
     return ApiResponse.ok(
         OpmlImportResult(

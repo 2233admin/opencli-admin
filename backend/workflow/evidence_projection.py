@@ -24,8 +24,9 @@ EVIDENCE_PROJECTION_INCLUDES = frozenset(
 )
 
 _STATUS_PRIORITY: dict[WorkflowRunStatus, int] = {
-    "failed": 6,
-    "blocked": 5,
+    "failed": 7,
+    "blocked": 6,
+    "partial_success": 5,
     "partial": 4,
     "running": 3,
     "queued": 2,

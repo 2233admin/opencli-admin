@@ -13,9 +13,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Separator } from '@/components/ui/separator'
 
 const ROLE_META: Record<ModelRole, { label: string; description: string }> = {
-  chat: { label: '对话', description: 'agent 坞对话模型' },
-  executor: { label: '执行', description: 'skill_channel 执行模型（轻量/低成本）' },
-  enrichment: { label: '富化兜底', description: 'pipeline 富化兜底模型' },
+  chat: { label: '对话', description: 'Agent 对话使用的模型' },
+  executor: { label: '执行', description: '自动化执行使用的模型' },
+  enrichment: { label: '内容处理', description: '提取、总结和内容处理使用的模型' },
 }
 
 const ROLES: ModelRole[] = ['chat', 'executor', 'enrichment']
@@ -79,7 +79,7 @@ function RoleEditor({
       { role, candidates },
       {
         onSuccess: (result) => {
-          toast.success(`已保存「${ROLE_META[role].label}」候选列表`)
+          toast.success(`已保存「${ROLE_META[role].label}」模型路由`)
           setSynced(result.candidates)
         },
         onError: (e: Error) => toast.error(e.message),
@@ -195,8 +195,10 @@ export function ModelDefaultsCard({ providers }: { providers: ModelProvider[] })
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">角色默认模型</CardTitle>
-        <CardDescription>为对话 / 执行 / 富化兜底三种角色配置候选模型的故障转移顺序</CardDescription>
+        <CardTitle className="text-base">高级模型路由</CardTitle>
+        <CardDescription>
+          可选设置。只有需要按场景拆分模型或配置故障转移时才需要修改。
+        </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         {isLoading ? (

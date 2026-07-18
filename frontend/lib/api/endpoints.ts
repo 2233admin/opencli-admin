@@ -5,10 +5,16 @@ import type {
   AdvisoryReport,
   ApiResponse,
   ConnectionTestResult,
+  FeedProvider,
+  FeedProviderConnectionTest,
+  FeedProviderInput,
+  FeedProviderWorkflowNode,
+  FeedProviderWorkflowNodeInput,
   ModelDefaultCandidate,
   ModelDefaultRead,
   ModelProvider,
   ModelProviderInput,
+  ProviderModelDiscoveryInput,
   ModelRole,
   ProviderModelRead,
   ProviderModelSyncResult,
@@ -20,6 +26,7 @@ import type {
   ControlActionRecord,
   CronSchedule,
   DataSource,
+  RssCatalogImportResult,
   DashboardActivity,
   DashboardStats,
   EdgeNode,
@@ -44,6 +51,7 @@ import type {
   WorkerNode,
   WorkspaceSummary,
   ProjectSummary,
+  ProjectRecordGraphPreview,
   ProjectBootstrapResult,
   ProjectAppType,
   WorkflowAssetSummary,
@@ -79,6 +87,9 @@ export const listMyWorkspaces = () =>
 export const listWorkspaceProjects = (workspaceId: string) =>
   apiClient.get<ApiResponse<ProjectSummary[]>>(`/workspaces/${workspaceId}/projects`).then((r) => r.data.data)
 
+export const deleteWorkspaceProject = (workspaceId: string, projectId: string) =>
+  apiClient.delete<ApiResponse<null>>(`/workspaces/${workspaceId}/projects/${projectId}`).then((r) => r.data)
+
 export const bootstrapWorkspaceProject = (
   workspaceId: string,
   data: {
@@ -92,6 +103,18 @@ export const bootstrapWorkspaceProject = (
 
 export const listProjectWorkflows = (workspaceId: string, projectId: string) =>
   apiClient.get<ApiResponse<WorkflowAssetSummary[]>>(`/workspaces/${workspaceId}/projects/${projectId}/workflows`).then((r) => r.data.data)
+
+export const getProjectRecordGraph = (
+  workspaceId: string,
+  projectId: string,
+  params?: { max_nodes?: number },
+) =>
+  apiClient
+    .get<ApiResponse<ProjectRecordGraphPreview>>(
+      `/workspaces/${workspaceId}/projects/${projectId}/record-graph`,
+      { params },
+    )
+    .then((r) => r.data.data)
 
 export const createProjectWorkflow = (workspaceId: string, projectId: string, data: { name: string; description?: string; graph: import('@/lib/workflow/schema').WorkflowProject }) =>
   apiClient.post<ApiResponse<WorkflowAssetSummary>>(`/workspaces/${workspaceId}/projects/${projectId}/workflows`, data).then((r) => r.data.data)
@@ -209,6 +232,11 @@ export const deleteSource = (id: string) =>
 export const testSourceConnectivity = (id: string) =>
   apiClient
     .post<ApiResponse<{ connected: boolean; errors: string[] }>>(`/sources/${id}/test`)
+    .then((r) => r.data.data)
+
+export const importRssCatalog = (url: string) =>
+  apiClient
+    .post<ApiResponse<RssCatalogImportResult>>('/sources/import-opml-url', { url })
     .then((r) => r.data.data)
 
 // Encrypted credential store (backend.auth.AuthManager) — key names only ever
@@ -407,7 +435,7 @@ export const updateNotificationRule = (id: string, data: Partial<NotificationRul
 export const deleteNotificationRule = (id: string) =>
   apiClient.delete<ApiResponse<null>>(`/notifications/rules/${id}`).then((r) => r.data)
 
-export const listNotificationLogs = (params?: { rule_id?: string }) =>
+export const listNotificationLogs = (params?: { rule_id?: string; page?: number; limit?: number }) =>
   apiClient
     .get<ApiResponse<NotificationLog[]>>('/notifications/logs', { params })
     .then((r) => r.data)
@@ -424,6 +452,9 @@ export const updateProvider = (id: string, data: ModelProviderInput) =>
 
 export const deleteProvider = (id: string) =>
   apiClient.delete<ApiResponse<null>>(`/providers/${id}`).then((r) => r.data)
+
+export const discoverProviderModels = (data: ProviderModelDiscoveryInput) =>
+  apiClient.post<ApiResponse<string[]>>('/providers/discover-models', data).then((r) => r.data.data)
 
 // Probes the provider's live endpoint (backend/llm adapter). NEVER raises for
 // an ordinary connection failure — the failure is `ok: false` in a normal 200
@@ -468,6 +499,44 @@ export const updateProviderModel = (
 
 export const deleteProviderModel = (providerId: string, modelRowId: string) =>
   apiClient.delete<ApiResponse<null>>(`/providers/${providerId}/models/${modelRowId}`).then((r) => r.data)
+
+// ── RSS generator Providers ───────────────────────────────────────────────────
+export const listFeedProviders = () =>
+  apiClient.get<ApiResponse<FeedProvider[]>>('/providers/feed-generators').then((r) => r.data)
+
+export const createFeedProvider = (data: FeedProviderInput) =>
+  apiClient
+    .post<ApiResponse<FeedProvider>>('/providers/feed-generators', data)
+    .then((r) => r.data.data)
+
+export const updateFeedProvider = (id: string, data: FeedProviderInput) =>
+  apiClient
+    .patch<ApiResponse<FeedProvider>>(`/providers/feed-generators/${id}`, data)
+    .then((r) => r.data.data)
+
+export const deleteFeedProvider = (id: string) =>
+  apiClient.delete<ApiResponse<null>>(`/providers/feed-generators/${id}`).then((r) => r.data)
+
+export const testFeedProvider = (id: string) =>
+  apiClient
+    .post<ApiResponse<FeedProviderConnectionTest>>(`/providers/feed-generators/${id}/test`)
+    .then((r) => r.data.data)
+
+export const getFeedProviderCatalog = (id: string) =>
+  apiClient
+    .get<ApiResponse<Record<string, unknown>>>(`/providers/feed-generators/${id}/catalog`)
+    .then((r) => r.data.data)
+
+export const buildFeedProviderWorkflowNode = (
+  id: string,
+  data: FeedProviderWorkflowNodeInput,
+) =>
+  apiClient
+    .post<ApiResponse<FeedProviderWorkflowNode>>(
+      `/providers/feed-generators/${id}/workflow-node`,
+      data,
+    )
+    .then((r) => r.data.data)
 
 // ── Model defaults (GOAL-6 — role-based failover candidate lists) ───────────────
 // A role can be entirely absent from the list on a fresh install — that's a

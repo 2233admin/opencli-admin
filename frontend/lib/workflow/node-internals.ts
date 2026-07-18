@@ -110,6 +110,25 @@ const NODE_INTERNALS: Record<string, NodeInternals> = {
       step("output", "Output schema", "validate", "Ensures downstream receives items[].", "items[] contract", "simulated"),
     ],
   },
+  "intelligence.source.rss": {
+    title: "RSS / Atom Source Internals",
+    summary: "Fetches an official or provider-generated feed through the backend RSS channel and preserves its business source group in lineage.",
+    steps: [
+      step("feed", "Feed binding", "fetch", "Reads the configured RSS or Atom URL through the guarded network client.", "params.feedUrl", "ready", [
+        exposedParam("feedUrl", "Feed URL", "source", "Source", "text", "https://www.federalreserve.gov/feeds/press_all.xml", { order: 1 }),
+        exposedParam("sourceGroup", "Source Group", "source", "Source", "text", "macro-policy", { order: 2 }),
+      ]),
+      step("parse", "Parse RSS / Atom", "parse", "Maps feed entries to stable source items.", "RSSChannel", "ready"),
+      step("provider", "Generator Provider", "guard", "Resolves RSSHub/RSS-Bridge route metadata and backend-only credentials when providerId is present.", "params.providerId", "ready", [
+        exposedParam("providerId", "Provider ID", "source", "Source", "text", "", { order: 3 }),
+        exposedParam("generatorType", "Generator Type", "source", "Source", "text", "rsshub", { order: 4 }),
+      ]),
+      step("limit", "Entry limit", "filter", "Caps entries by node and project run limits.", "params.maxEntries", "ready", [
+        exposedParam("maxEntries", "Max Entries", "transform", "Transform", "number", 20, { min: 1, max: 500, step: 1, groupOrder: 2, order: 1 }),
+      ]),
+      step("output", "Output with lineage", "validate", "Returns items[] with sourceGroup and live RSS lineage.", "items[] contract", "ready"),
+    ],
+  },
   "intelligence.source.opencli-slot": {
     title: "OpenCLI Source Slot Internals",
     summary: "A source slot keeps package-selected OpenCLI command params structured while delegating execution to the runtime resource resolver.",
@@ -561,6 +580,7 @@ export function getNodeInternals(node: WorkflowProjectNode | undefined): NodeInt
   if (isCollectionNeedNode(node)) return NODE_INTERNALS["intelligence.input.collection-need"]
   if (node.kind === "schedule" && node.capability === "trigger") return NODE_INTERNALS["intelligence.schedule.cron"]
   if (node.kind === "source" && node.adapter === "jin10-kuaixun") return NODE_INTERNALS["intelligence.source.jin10"]
+  if (node.kind === "source" && node.adapter === "rss-feed") return NODE_INTERNALS["intelligence.source.rss"]
   if (node.kind === "source" && node.adapter?.startsWith("opencli-")) return NODE_INTERNALS["intelligence.source.opencli-slot"]
   if (node.kind === "agent" && node.capability === "normalize" && node.params.fanout === "parallel") return NODE_INTERNALS["intelligence.source.pool"]
   if (node.kind === "agent" && node.capability === "normalize") return NODE_INTERNALS["intelligence.processing.normalize"]

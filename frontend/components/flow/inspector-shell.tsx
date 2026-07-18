@@ -8,6 +8,7 @@ const stateText: Record<string, string> = {
   idle: "Idle",
   running: "Running",
   success: "Done",
+  partial_success: "Partial success",
   error: "Error",
 }
 
@@ -15,6 +16,7 @@ const stateDotClass: Record<string, string> = {
   idle: "border-muted-foreground/50 bg-transparent",
   running: "border-[#ff7a17] bg-[#ff7a17]",
   success: "border-[#4ade80] bg-[#4ade80]",
+  partial_success: "border-warning bg-warning",
   error: "border-destructive bg-destructive",
 }
 

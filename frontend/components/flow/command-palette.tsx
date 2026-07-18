@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useReactFlow } from "@xyflow/react"
-import { Loader2, Sparkles, Network, Save, RotateCcw, CornerDownLeft } from "lucide-react"
+import { Loader2, Sparkles, Network, Save, RotateCcw, CornerDownLeft, Globe, ArrowLeft } from "lucide-react"
 import { NODE_PALETTE } from "@/lib/flow/palette"
 import type { PaletteItem } from "@/lib/flow/types"
 import { getWorkflowNodeCatalog, type WorkflowNodeCatalogItem } from "@/lib/workflow/node-catalog"
@@ -18,6 +18,11 @@ import { generateWorkflowLocally } from "@/lib/flow/local-generate"
 import type { LayoutDirection, LayoutEngine } from "@/lib/flow/layout"
 import { localizeNodeText } from "@/lib/workflow/node-i18n"
 import { cn } from "@/lib/utils"
+import {
+  fetchWorkflowOpenCLIAdapterNodes,
+  workflowCatalogItemForOpenCLIAdapterNode,
+  type WorkflowOpenCLIAdapterNode,
+} from "@/lib/workflow/backend-opencli-adapter-nodes"
 
 const AI_EXAMPLES = [
   "用户注册后发送欢迎邮件，24 小时后如果未激活则再次提醒",
@@ -55,6 +60,11 @@ export function CommandPalette({
   const [aiMode, setAiMode] = useState(false)
   const [aiPrompt, setAiPrompt] = useState("")
   const [loading, setLoading] = useState(false)
+  const [opencliLoading, setOpencliLoading] = useState(false)
+  const [opencliNodes, setOpencliNodes] = useState<WorkflowOpenCLIAdapterNode[]>([])
+  const [opencliSummary, setOpencliSummary] = useState<Record<string, unknown>>({})
+  const [selectedOpenCLI, setSelectedOpenCLI] = useState<WorkflowOpenCLIAdapterNode | null>(null)
+  const [requiredValues, setRequiredValues] = useState<Record<string, string>>({})
   const inputRef = useRef<HTMLInputElement>(null)
   const aiRef = useRef<HTMLTextAreaElement>(null)
 
@@ -79,9 +89,22 @@ export function CommandPalette({
       setQuery("")
       setAiMode(false)
       setAiPrompt("")
+      setSelectedOpenCLI(null)
+      setRequiredValues({})
       requestAnimationFrame(() => inputRef.current?.focus())
     }
   }, [open])
+
+  useEffect(() => {
+    if (!open || opencliNodes.length || opencliLoading) return
+    setOpencliLoading(true)
+    void fetchWorkflowOpenCLIAdapterNodes({ includeWrite: false, limit: 5000 })
+      .then((result) => {
+        setOpencliNodes(result.nodes)
+        setOpencliSummary(result.summary)
+      })
+      .finally(() => setOpencliLoading(false))
+  }, [open, opencliLoading, opencliNodes.length])
 
   useEffect(() => {
     if (aiMode) requestAnimationFrame(() => aiRef.current?.focus())
@@ -142,6 +165,27 @@ export function CommandPalette({
       onClose()
     },
     [getAnchor, screenToFlowPosition, addPrimitiveNode, capabilities, language, onMessage, onClose],
+  )
+
+  const addOpenCLIAdapter = useCallback(
+    (item: WorkflowOpenCLIAdapterNode, values: Record<string, string> = {}) => {
+      const missing = item.requiredArgs.filter((name) => !values[name]?.trim())
+      if (missing.length) {
+        setSelectedOpenCLI(item)
+        setRequiredValues(values)
+        return
+      }
+      const position =
+        getAnchor?.() ??
+        screenToFlowPosition({
+          x: window.innerWidth / 2,
+          y: window.innerHeight / 2,
+        })
+      addWorkflowNodeFromCatalog(workflowCatalogItemForOpenCLIAdapterNode(item, values), position)
+      onMessage?.(`已添加实时 OpenCLI 数据源：${item.label}`)
+      onClose()
+    },
+    [addWorkflowNodeFromCatalog, getAnchor, onClose, onMessage, screenToFlowPosition],
   )
 
   const generate = useCallback(
@@ -243,6 +287,13 @@ export function CommandPalette({
         },
       )
     : catalogOperators
+  const filteredOpenCLINodes = (q
+    ? opencliNodes.filter((item) => {
+        const haystack = `${item.label} ${item.description} ${item.site} ${item.command}`.toLowerCase()
+        return haystack.includes(q)
+      })
+    : opencliNodes
+  ).slice(0, q ? 100 : 24)
   const primitiveOperators = (inNodeNetwork ? getWorkflowPrimitives() : []).filter((item) => {
     if (!q) return true
     const text = localizeNodeText(item.id, { label: item.label, description: item.description }, language)
@@ -266,6 +317,41 @@ export function CommandPalette({
   const filteredCommands = q ? commands.filter((c) => c.label.toLowerCase().includes(q)) : []
 
   if (!open) return null
+
+  if (selectedOpenCLI) {
+    const missingRequired = selectedOpenCLI.requiredArgs.filter((name) => !requiredValues[name]?.trim())
+    return (
+      <div className="fixed inset-0 z-50 flex items-start justify-center bg-background/85 pt-[15vh]" role="dialog" aria-modal="true" aria-label="配置 OpenCLI 数据源">
+        <form
+          className="w-[32rem] max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border bg-popover shadow-2xl"
+          onSubmit={(event) => {
+            event.preventDefault()
+            addOpenCLIAdapter(selectedOpenCLI, requiredValues)
+          }}
+        >
+          <div className="flex items-center gap-3 border-b px-4 py-3">
+            <button type="button" className="grid size-9 place-items-center rounded-md hover:bg-accent" onClick={() => setSelectedOpenCLI(null)} aria-label="返回数据源列表"><ArrowLeft className="size-4" /></button>
+            <div className="min-w-0"><div className="truncate text-sm font-medium">{selectedOpenCLI.label}</div><div className="truncate text-xs text-muted-foreground">配置必填参数后作为实时 Source 加入画布</div></div>
+          </div>
+          <div className="grid max-h-[50vh] gap-3 overflow-y-auto p-4">
+            {selectedOpenCLI.args.filter((arg) => arg.required).map((arg) => (
+              <label key={arg.name} className="grid gap-1.5 text-xs">
+                <span>{arg.name}<span className="ml-1 text-destructive">*</span></span>
+                <input
+                  value={requiredValues[arg.name] ?? ""}
+                  onChange={(event) => setRequiredValues((current) => ({ ...current, [arg.name]: event.target.value }))}
+                  placeholder={arg.help ?? `输入 ${arg.name}`}
+                  className="min-h-11 rounded-md border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring/50"
+                  autoFocus={selectedOpenCLI.requiredArgs[0] === arg.name}
+                />
+              </label>
+            ))}
+          </div>
+          <div className="flex justify-end gap-2 border-t p-4"><button type="button" className="min-h-10 rounded-md border px-4 text-xs" onClick={() => setSelectedOpenCLI(null)}>取消</button><button type="submit" className="min-h-10 rounded-md bg-primary px-4 text-xs text-primary-foreground disabled:opacity-50" disabled={missingRequired.length > 0}>添加实时数据源</button></div>
+        </form>
+      </div>
+    )
+  }
 
   return (
     <div
@@ -294,7 +380,9 @@ export function CommandPalette({
                 onChange={(e) => setQuery(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.nativeEvent.isComposing) {
-                    if (filteredCatalogOperators[0]) {
+                    if (q && filteredOpenCLINodes[0]) {
+                      addOpenCLIAdapter(filteredOpenCLINodes[0])
+                    } else if (filteredCatalogOperators[0]) {
                       addCatalogOperator(filteredCatalogOperators[0])
                     } else if (primitiveOperators[0]) {
                       addPrimitive(primitiveOperators[0])
@@ -345,6 +433,23 @@ export function CommandPalette({
                       </button>
                     )
                   })}
+                </>
+              ) : null}
+
+              {opencliLoading || filteredOpenCLINodes.length > 0 ? (
+                <>
+                  <p className="flex items-center justify-between px-4 pb-1 pt-3 font-mono text-[9px] uppercase tracking-[0.2em] text-muted-foreground/60">
+                    <span>OpenCLI 实时数据源</span>
+                    <span>{opencliLoading ? "读取中…" : `${String(opencliSummary.sourceSlotReady ?? opencliNodes.length)} 可直接运行 · ${opencliNodes.length} 个读命令`}</span>
+                  </p>
+                  {opencliLoading ? <div className="flex items-center gap-2 px-4 py-3 text-xs text-muted-foreground"><Loader2 className="size-3.5 animate-spin" />正在读取本机 OpenCLI 目录</div> : filteredOpenCLINodes.map((item) => (
+                    <button key={item.id} type="button" onClick={() => addOpenCLIAdapter(item)} className="flex w-full items-center gap-3 px-4 py-2 text-left transition-colors hover:bg-accent">
+                      <Globe className="size-3.5 text-[#ff7a17]" />
+                      <span className="min-w-0 flex-1"><span className="block truncate text-sm">{item.label}</span><span className="block truncate text-[10px] text-muted-foreground">{item.description || `${item.site} ${item.command}`}</span></span>
+                      <span className={cn("rounded-[3px] border px-1 py-0.5 font-mono text-[8px] uppercase tracking-wider", item.requiredArgs.length ? "border-warning/40 text-warning" : "border-success/40 text-success")}>{item.requiredArgs.length ? `${item.requiredArgs.length} 参数` : "实时"}</span>
+                    </button>
+                  ))}
+                  {!opencliLoading && opencliNodes.length > filteredOpenCLINodes.length && !q ? <p className="px-4 py-2 text-center text-[10px] text-muted-foreground">输入站点或命令名可搜索全部 {opencliNodes.length} 个 OpenCLI 读命令</p> : null}
                 </>
               ) : null}
 
@@ -445,7 +550,7 @@ export function CommandPalette({
                 </>
               ) : null}
 
-              {filteredCommands.length === 0 && filteredCatalogOperators.length === 0 && primitiveOperators.length === 0 && filteredOperators.length === 0 ? (
+              {filteredCommands.length === 0 && filteredOpenCLINodes.length === 0 && filteredCatalogOperators.length === 0 && primitiveOperators.length === 0 && filteredOperators.length === 0 ? (
                 <p className="px-4 py-6 text-center font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
                   没有匹配的节点或操作
                 </p>

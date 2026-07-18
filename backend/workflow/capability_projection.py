@@ -30,6 +30,7 @@ from backend.workflow.runtime_registry import (
     RECORD_ACCEPTANCE_BINDING_ID,
     RECORD_SINK_BINDING_ID,
     SCHEDULE_TRIGGER_BINDING_ID,
+    SOURCE_FETCH_BINDING_ID,
     SOURCE_POOL_BINDING_ID,
     TURBOPUSH_BINDING_ID,
     WEBHOOK_NOTIFY_BINDING_ID,
@@ -147,6 +148,32 @@ def _catalog_capabilities() -> list[WorkflowRuntimeCapability]:
             "an authoritative backend workflow runtime binding.",
             missing=["backend_source_channel_binding"],
             tags=["source", "adapter", "preview"],
+        ),
+        _capability(
+            id="intelligence.source.rss",
+            label="RSS / Atom Source",
+            surface="catalog",
+            status="runnable",
+            backend_available=True,
+            kind="source",
+            capability="fetch",
+            provider="rss",
+            channel_type="rss",
+            runtime_binding=SOURCE_FETCH_BINDING_ID,
+            reason=(
+                "Canvas Run executes RSS and Atom feeds through the backend RSS "
+                "channel while preserving sourceGroup lineage."
+            ),
+            tags=["source", "rss", "atom", "live"],
+            source="backend.workflow.rss_source_executor",
+            manifest=_manifest(
+                schema="capability.source.rss.v1",
+                input_ports=[_port("in", "trigger")],
+                output_ports=[_port("out", "items[]")],
+                resources=["rss_channel", "feed_provider_registry", "allowed_domains"],
+                permissions=["network.fetch"],
+                runtime_binding=SOURCE_FETCH_BINDING_ID,
+            ),
         ),
         _capability(
             id="intelligence.source.opencli-slot",

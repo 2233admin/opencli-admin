@@ -1,6 +1,7 @@
 """RSS channel using feedparser."""
 
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 import feedparser
 import httpx
@@ -36,15 +37,33 @@ class RSSChannel(AbstractChannel):
         feed_url: str = config.get("feed_url", "")
         max_entries: int = config.get("max_entries", 50)
         timeout: int = config.get("timeout", 30)
+        allow_private_network = bool(config.get("allow_private_network"))
+        allowed_domains = [
+            str(domain).strip().lower().lstrip(".")
+            for domain in config.get("allowed_domains", [])
+            if str(domain).strip()
+        ]
 
         try:
             # guarded_async_client validates feed_url AND pins the connection
             # to the IP(s) that validation resolved (DNS-rebinding TOCTOU
             # closure — AUDIT B3 follow-up; see backend.security.url_guard's
             # module docstring). TLS/SNI/cert verification are unaffected.
-            client, feed_url = await guarded_async_client(
-                feed_url, timeout=timeout, follow_redirects=False
-            )
+            if allow_private_network:
+                host = (urlsplit(feed_url).hostname or "").lower()
+                if not host or not any(
+                    host == domain or host.endswith(f".{domain}")
+                    for domain in allowed_domains
+                ):
+                    return ChannelResult.fail(
+                        f"RSS feed host {host!r} is not allowed for private-network access",
+                        error_type="SSRFValidationError",
+                    )
+                client = httpx.AsyncClient(timeout=timeout, follow_redirects=False)
+            else:
+                client, feed_url = await guarded_async_client(
+                    feed_url, timeout=timeout, follow_redirects=False
+                )
         except SSRFValidationError as exc:
             return ChannelResult.fail(
                 f"RSS feed URL rejected: {exc}", error_type="SSRFValidationError"
@@ -64,15 +83,16 @@ class RSSChannel(AbstractChannel):
                 content = response.text
         except httpx.TimeoutException as exc:
             return ChannelResult.fail(
-                f"RSS feed request timed out: {feed_url}", error_type=type(exc).__name__
+                f"RSS feed request timed out: {_safe_url(feed_url)}", error_type=type(exc).__name__
             )
         except httpx.HTTPStatusError as exc:
             return ChannelResult.fail(
                 f"HTTP {exc.response.status_code} fetching feed", error_type=type(exc).__name__
             )
         except Exception as exc:
+            detail = str(exc).strip() or type(exc).__name__
             return ChannelResult.fail(
-                f"Failed to fetch RSS feed: {exc}", error_type=type(exc).__name__
+                f"Failed to fetch RSS feed: {detail}", error_type=type(exc).__name__
             )
 
         parsed = feedparser.parse(content)
@@ -173,8 +193,21 @@ class RSSChannel(AbstractChannel):
         # so editing two chars of a title is the same item, not a new one.
         return item.get("id") or None
 
+    async def health_check(
+        self, config: dict[str, Any] | None = None, source_id: str | None = None
+    ) -> bool:
+        probe_config = dict(config or {})
+        probe_config["max_entries"] = 1
+        result = await self.collect(probe_config, {})
+        return result.success
+
     async def validate_config(self, config: dict[str, Any]) -> list[str]:
         errors: list[str] = []
         if not config.get("feed_url"):
             errors.append("'feed_url' is required for rss channel")
         return errors
+
+
+def _safe_url(value: str) -> str:
+    parsed = urlsplit(value)
+    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, "", ""))

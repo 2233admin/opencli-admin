@@ -26,6 +26,19 @@ class ModelProviderUpdate(BaseModel):
     enabled: Optional[bool] = None
 
 
+class ProviderModelDiscoveryRequest(BaseModel):
+    """Unsaved provider settings used to discover model IDs before create.
+
+    The API key is write-only just like ModelProviderCreate.api_key: it is
+    passed directly to the adapter for this request and is never persisted or
+    returned in the response.
+    """
+
+    provider_type: str = "openai"
+    base_url: Optional[str] = None
+    api_key: Optional[str] = None
+
+
 class ModelProviderRead(UTCModel):
     """Response shape for GET/POST/PATCH /providers.
 

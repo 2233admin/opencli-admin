@@ -564,7 +564,7 @@ export default function DashboardPage() {
           </div>
         </div>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <ActionLink href="/studio/workflow" title="编排工作流" description="设计节点和执行链路" icon={GitBranch} />
+          <ActionLink href="/studio" title="编排工作流" description="先选择项目，再设计节点和执行链路" icon={GitBranch} />
           <ActionLink href="/sources" title="接入数据源" description="配置采集来源与凭证" icon={Database} />
           <ActionLink href="/schedules" title="设置触发调度" description="决定何时自动运行" icon={Clock3} />
           <ActionLink href="/tasks" title="检查运行结果" description="查看任务、记录与通知" icon={Activity} />

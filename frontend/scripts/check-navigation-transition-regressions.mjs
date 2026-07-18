@@ -32,7 +32,7 @@ test('persistent application chrome stays outside the routed animation boundary'
   assert.match(shell, /className="[^"]*relative[^"]*z-0[^"]*overflow-x-clip[^"]*bg-background[^"]*"/)
 })
 
-test('sidebar keeps the build-run-manage navigation contract without a global create shortcut', async () => {
+test('sidebar consolidates tasks, notifications, automation, and agents into clear work areas', async () => {
   const [navigation, sidebar] = await Promise.all([
     read('lib/navigation.ts'),
     read('components/shell/app-sidebar.tsx'),
@@ -40,28 +40,66 @@ test('sidebar keeps the build-run-manage navigation contract without a global cr
 
   for (const label of [
     '概览',
-    '待我处理',
-    '工作区',
-    '工作项',
-    '自动化',
+    '任务与通知',
+    '项目',
+    '自动化与 Agent',
     '执行资源',
     '成果与数据',
-    'Agent 团队',
-    '治理与设置',
+    '模型与连接',
   ]) {
     assert.match(navigation, new RegExp(`label: '${label}'`))
   }
 
   assert.match(navigation, /href: '\/inbox'/)
-  assert.match(navigation, /match: \['\/sources', '\/schedules'\]/)
+  assert.match(navigation, /match: \['\/inbox', '\/tasks', '\/notifications'\]/)
+  assert.match(navigation, /match: \['\/sources', '\/schedules', '\/agents', '\/skills'\]/)
   assert.match(navigation, /match: \['\/nodes', '\/workers'\]/)
   assert.match(navigation, /match: \['\/providers', '\/control\/actions'\]/)
-  for (const group of ['工作台', '构建', '运行', '管理']) {
+  for (const group of ['工作台', '构建', '运行与数据', '管理']) {
     assert.match(navigation, new RegExp(`label: '${group}'`))
   }
+  assert.doesNotMatch(navigation, /label: '工作项'/)
+  assert.doesNotMatch(navigation, /label: 'Agent 团队'/)
   assert.doesNotMatch(navigation, /CREATE_WORK_ITEM/)
   assert.doesNotMatch(sidebar, /CREATE_WORK_ITEM/)
   assert.doesNotMatch(sidebar, /新建工作/)
+})
+
+test('records use a scalable source-to-table explorer with pagination and raw evidence detail', async () => {
+  const records = await read('app/(app)/records/page.tsx')
+
+  assert.match(records, /lg:grid-cols-\[17rem_minmax\(0,1fr\)\]/)
+  assert.match(records, /aria-label="成果数据集"/)
+  assert.match(records, /useSources\(\{ page: 1, limit: 100 \}\)/)
+  assert.match(records, /limit: PAGE_SIZE/)
+  assert.match(records, /visibleFields/)
+  assert.match(records, /第 \{page\.toLocaleString/)
+  assert.match(records, /<Sheet open=\{Boolean\(selectedRecord\)\}/)
+  assert.match(records, /标准化数据/)
+  assert.match(records, /原始数据/)
+})
+
+test('task and automation sibling routes share their consolidated route tabs', async () => {
+  const [tabs, inbox, tasks, notifications, sources, schedules, agents, skills] = await Promise.all([
+    read('components/shell/route-tabs.tsx'),
+    read('app/(app)/inbox/page.tsx'),
+    read('app/(app)/tasks/page.tsx'),
+    read('app/(app)/notifications/page.tsx'),
+    read('app/(app)/sources/page.tsx'),
+    read('app/(app)/schedules/page.tsx'),
+    read('app/(app)/agents/page.tsx'),
+    read('app/(app)/skills/page.tsx'),
+  ])
+
+  for (const label of ['待处理', '工作项', '通知规则', '数据源', '调度', 'Agent', '技能']) {
+    assert.match(tabs, new RegExp(`label: '${label}'`))
+  }
+  for (const page of [inbox, tasks, notifications]) {
+    assert.match(page, /ACTION_CENTER_TABS/)
+  }
+  for (const page of [sources, schedules, agents, skills]) {
+    assert.match(page, /AUTOMATION_TABS/)
+  }
 })
 
 test('studio creation choices route through dedicated guided pages', async () => {

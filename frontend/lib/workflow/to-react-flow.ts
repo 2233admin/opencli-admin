@@ -118,6 +118,8 @@ function workflowNodeStatusFromRun(status: WorkflowRunStatus): WorkflowNodeData[
       return "running"
     case "completed":
       return "success"
+    case "partial_success":
+      return "partial_success"
     case "blocked":
     case "failed":
       return "error"
@@ -174,6 +176,7 @@ function isWorkflowRunStatus(value: string): value is WorkflowRunStatus {
     value === "queued" ||
     value === "running" ||
     value === "partial" ||
+    value === "partial_success" ||
     value === "blocked" ||
     value === "completed" ||
     value === "failed"

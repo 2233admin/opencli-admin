@@ -17,8 +17,10 @@ import {
   type WorkflowEvidenceBatchSummary,
   type WorkflowNodeRunEvent,
   type WorkflowRunProjection,
+  type WorkflowRunStatus,
 } from "@/lib/workflow/backend-runs"
 import { applyRuntimeNodePatches, buildRuntimeNodePatches } from "@/lib/workflow/runtime-bridge"
+import type { WorkflowProject } from "@/lib/workflow/schema"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -49,6 +51,16 @@ type EvidenceBatchState = {
 
 function SectionCaption({ children }: { children: React.ReactNode }) {
   return <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-muted-foreground/70">{children}</p>
+}
+
+const RUN_STATUS_LABELS: Record<WorkflowRunStatus, string> = {
+  queued: "排队中",
+  running: "运行中",
+  partial: "处理中",
+  partial_success: "部分成功",
+  blocked: "已阻止",
+  completed: "成功",
+  failed: "失败",
 }
 
 export function RunTracePanel() {
@@ -158,7 +170,9 @@ export function RunTracePanel() {
       const token = getApiAuthToken()
       const authorization = token ? `Bearer ${token}` : null
       const compile = await compileWorkflowProject(workflowProject, { authorization })
-      const trace = compile.valid ? await traceOpenCLIHDAWorkflow(workflowProject, { authorization }) : null
+      const trace = compile.valid && hasOpenCLIHdaPackage(workflowProject.nodes)
+        ? await traceOpenCLIHDAWorkflow(workflowProject, { authorization })
+        : null
       const patches = buildRuntimeNodePatches({ compile, trace })
       setNodes((nodes) => applyRuntimeNodePatches(nodes, patches))
       setBackendState({
@@ -208,7 +222,7 @@ export function RunTracePanel() {
             </p>
           </div>
           <Badge variant={runState.status === "error" ? "destructive" : "outline"} className="font-mono uppercase">
-            {projection?.status ?? runState.status}
+            {projection ? RUN_STATUS_LABELS[projection.status] : runState.status}
           </Badge>
         </div>
         <div className="mt-3 grid grid-cols-[1fr_1fr_auto] gap-2">
@@ -300,6 +314,17 @@ export function RunTracePanel() {
       </ScrollArea>
     </aside>
   )
+}
+
+function hasOpenCLIHdaPackage(nodes: WorkflowProject["nodes"]): boolean {
+  return nodes.some((node) => containsOpenCLIHdaReference(node))
+}
+
+function containsOpenCLIHdaReference(value: unknown): boolean {
+  if (value === "package.opencli.multi-source-hda" || value === "opencli-multi-source") return true
+  if (Array.isArray(value)) return value.some((item) => containsOpenCLIHdaReference(item))
+  if (!value || typeof value !== "object") return false
+  return Object.values(value).some((item) => containsOpenCLIHdaReference(item))
 }
 
 function EvidenceBatchWorkbench({

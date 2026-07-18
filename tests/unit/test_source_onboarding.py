@@ -100,6 +100,8 @@ def test_parse_opml_nested_folders_and_dedup():
     urls = [e["url"] for e in entries]
     assert urls == ["https://a.example.com/rss", "https://b.example.com/rss"]  # dup within file collapsed
     assert entries[0]["title"] == "Feed A"
+    assert entries[0]["group"] == "Tech"
+    assert entries[1]["group"] == "Tech"
 
 
 def test_parse_opml_invalid_xml_raises_value_error():
@@ -118,6 +120,30 @@ async def test_bulk_import_rss_creates_disabled_sources(db_session):
     assert created[0].enabled is False
     assert created[0].channel_config == {"feed_url": "https://a.example.com/rss"}
     assert skipped == []
+
+
+@pytest.mark.asyncio
+async def test_bulk_import_rss_preserves_group_and_catalog_provenance(db_session):
+    entries = [
+        {
+            "url": "https://markets.example.com/rss",
+            "title": "Markets",
+            "group": "Business & Economy",
+        }
+    ]
+    created, skipped = await source_service.bulk_import_rss(
+        db_session,
+        entries,
+        catalog_url="https://raw.githubusercontent.com/example/catalog/main/business.opml",
+    )
+
+    assert skipped == []
+    assert created[0].channel_config == {
+        "feed_url": "https://markets.example.com/rss",
+        "source_group": "business-economy",
+        "catalog_url": "https://raw.githubusercontent.com/example/catalog/main/business.opml",
+    }
+    assert created[0].tags == ["rss", "source-group:business-economy", "catalog:opml"]
 
 
 @pytest.mark.asyncio

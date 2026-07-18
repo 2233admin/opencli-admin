@@ -7,7 +7,21 @@ type ApiResponse<T> = {
   message?: string
 }
 
-export type WorkflowRunStatus = "queued" | "running" | "partial" | "blocked" | "completed" | "failed"
+export type WorkflowRunStatus =
+  | "queued"
+  | "running"
+  | "partial"
+  | "partial_success"
+  | "blocked"
+  | "completed"
+  | "failed"
+
+export type WorkflowRunTrigger = {
+  kind: "manual" | "ai" | "schedule" | "webhook"
+  triggerNodeId?: string
+  requestId?: string
+  idempotencyKey?: string
+}
 
 export type WorkflowNodeRunEventType =
   | "queued"
@@ -196,6 +210,15 @@ export type WorkflowRunStreamReplay = {
   projection: WorkflowRunProjection | null
 }
 
+export function inferWorkflowRunTrigger(project: WorkflowProject): WorkflowRunTrigger {
+  const scheduleNode = project.nodes.find(
+    (node) => node.kind === "schedule" && node.capability === "trigger",
+  )
+  return scheduleNode
+    ? { kind: "schedule", triggerNodeId: scheduleNode.id }
+    : { kind: "manual" }
+}
+
 export async function startWorkflowRun(
   project: WorkflowProject,
   options: {
@@ -204,6 +227,7 @@ export async function startWorkflowRun(
     traceId?: string
     packageNodeId?: string
     sourceOutputs?: Record<string, Array<Record<string, unknown>>>
+    trigger?: WorkflowRunTrigger
   } = {},
 ): Promise<WorkflowRunProjection> {
   const response = await fetch("/api/workflow/run", {
@@ -218,6 +242,7 @@ export async function startWorkflowRun(
       ...(options.traceId ? { traceId: options.traceId } : {}),
       ...(options.packageNodeId ? { packageNodeId: options.packageNodeId } : {}),
       ...(options.sourceOutputs ? { sourceOutputs: options.sourceOutputs } : {}),
+      trigger: options.trigger ?? inferWorkflowRunTrigger(project),
     }),
   })
   return readApiResponse(response, "Workflow run failed")

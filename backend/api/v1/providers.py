@@ -4,23 +4,172 @@ API: test-connection, model-catalog sync, and model catalog CRUD (decision
 ``backend.services.provider_model_service`` (thin-endpoint convention); this
 module only does HTTP concerns (404 lookups, response shaping)."""
 
+from types import SimpleNamespace
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database import get_db
 from backend.llm.base import LlmAdapterError
+from backend.llm.factory import get_adapter
+from backend.models.feed_provider import FeedProvider
 from backend.models.provider import ModelProvider
 from backend.schemas.common import ApiResponse
-from backend.schemas.provider import ModelProviderCreate, ModelProviderRead, ModelProviderUpdate
+from backend.schemas.feed_provider import (
+    FeedProviderConnectionTest,
+    FeedProviderCreate,
+    FeedProviderRead,
+    FeedProviderUpdate,
+    FeedProviderWorkflowNodeRequest,
+)
+from backend.schemas.provider import (
+    ModelProviderCreate,
+    ModelProviderRead,
+    ModelProviderUpdate,
+    ProviderModelDiscoveryRequest,
+)
 from backend.schemas.provider_model import (
     ProviderModelManualCreate,
     ProviderModelRead,
     ProviderModelUpdate,
 )
-from backend.services import provider_model_service
+from backend.services import feed_provider_service, provider_model_service
 
 router = APIRouter(prefix="/providers", tags=["providers"])
+
+
+@router.get("/feed-generators", response_model=ApiResponse[list[FeedProviderRead]])
+async def list_feed_generators(db: AsyncSession = Depends(get_db)) -> ApiResponse:
+    rows = await feed_provider_service.list_feed_providers(db)
+    return ApiResponse.ok([FeedProviderRead.from_model(row) for row in rows])
+
+
+@router.post(
+    "/feed-generators",
+    response_model=ApiResponse[FeedProviderRead],
+    status_code=201,
+)
+async def create_feed_generator(
+    body: FeedProviderCreate, db: AsyncSession = Depends(get_db)
+) -> ApiResponse:
+    payload = body.model_dump(exclude={"access_token", "config"})
+    row = FeedProvider(
+        **payload,
+        access_token=body.access_token,
+        config=body.config.model_dump(),
+    )
+    db.add(row)
+    await db.commit()
+    await db.refresh(row)
+    return ApiResponse.ok(FeedProviderRead.from_model(row))
+
+
+@router.patch(
+    "/feed-generators/{feed_provider_id}",
+    response_model=ApiResponse[FeedProviderRead],
+)
+async def update_feed_generator(
+    feed_provider_id: str,
+    body: FeedProviderUpdate,
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse:
+    row = await feed_provider_service.get_feed_provider(db, feed_provider_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Feed provider not found")
+    for field, value in body.model_dump(exclude_unset=True).items():
+        if field == "config" and value is not None:
+            row.config = value
+        else:
+            setattr(row, field, value)
+    await db.commit()
+    await db.refresh(row)
+    return ApiResponse.ok(FeedProviderRead.from_model(row))
+
+
+@router.delete("/feed-generators/{feed_provider_id}", response_model=ApiResponse[None])
+async def delete_feed_generator(
+    feed_provider_id: str, db: AsyncSession = Depends(get_db)
+) -> ApiResponse:
+    row = await feed_provider_service.get_feed_provider(db, feed_provider_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Feed provider not found")
+    await db.delete(row)
+    await db.commit()
+    return ApiResponse.ok(None)
+
+
+@router.post(
+    "/feed-generators/{feed_provider_id}/test",
+    response_model=ApiResponse[FeedProviderConnectionTest],
+)
+async def test_feed_generator(
+    feed_provider_id: str, db: AsyncSession = Depends(get_db)
+) -> ApiResponse:
+    row = await feed_provider_service.get_feed_provider(db, feed_provider_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Feed provider not found")
+    return ApiResponse.ok(await feed_provider_service.probe_feed_provider(row))
+
+
+@router.get("/feed-generators/{feed_provider_id}/catalog", response_model=ApiResponse[dict])
+async def get_feed_generator_catalog(
+    feed_provider_id: str, db: AsyncSession = Depends(get_db)
+) -> ApiResponse:
+    row = await feed_provider_service.get_feed_provider(db, feed_provider_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Feed provider not found")
+    try:
+        catalog = await feed_provider_service.discover_feed_provider_catalog(row)
+    except feed_provider_service.FeedProviderError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail={"message": str(exc), "error_kind": exc.kind},
+        ) from exc
+    return ApiResponse.ok(catalog)
+
+
+@router.post(
+    "/feed-generators/{feed_provider_id}/workflow-node",
+    response_model=ApiResponse[dict],
+)
+async def build_feed_generator_workflow_node(
+    feed_provider_id: str,
+    body: FeedProviderWorkflowNodeRequest,
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse:
+    row = await feed_provider_service.get_feed_provider(db, feed_provider_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Feed provider not found")
+    try:
+        node = feed_provider_service.build_workflow_node(row, body)
+    except feed_provider_service.FeedProviderError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"message": str(exc), "error_kind": exc.kind},
+        ) from exc
+    return ApiResponse.ok(node)
+
+
+@router.post("/discover-models", response_model=ApiResponse[list[str]])
+async def discover_provider_models(body: ProviderModelDiscoveryRequest) -> ApiResponse:
+    """Discover model IDs from provider settings before the provider is saved.
+
+    This is the progressive-setup counterpart to provider-scoped catalog
+    sync. It deliberately uses the same adapter and URL guard as saved
+    providers, while keeping the supplied credential request-local.
+    """
+    provider = SimpleNamespace(
+        provider_type=body.provider_type,
+        base_url=body.base_url,
+        api_key=body.api_key or "",
+        default_model=None,
+    )
+    try:
+        models = await get_adapter(provider).list_models()
+    except LlmAdapterError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return ApiResponse.ok(models)
 
 
 @router.get("", response_model=ApiResponse[list[ModelProviderRead]])
@@ -35,7 +184,9 @@ async def list_providers(db: AsyncSession = Depends(get_db)) -> ApiResponse:
 
 
 @router.post("", response_model=ApiResponse[ModelProviderRead], status_code=201)
-async def create_provider(body: ModelProviderCreate, db: AsyncSession = Depends(get_db)) -> ApiResponse:
+async def create_provider(
+    body: ModelProviderCreate, db: AsyncSession = Depends(get_db)
+) -> ApiResponse:
     provider = ModelProvider(**body.model_dump())
     db.add(provider)
     await db.commit()

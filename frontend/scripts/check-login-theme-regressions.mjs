@@ -22,3 +22,15 @@ test('login preserves the current auth paths and reduced-motion fallback', async
   assert.match(login, /enterDevelopmentMode/)
   assert.match(login, /prefers-reduced-motion: reduce/)
 })
+
+test('auth defaults return to the project list instead of a contextless workflow', async () => {
+  const [provider, oidc] = await Promise.all([
+    read('components/auth/auth-provider.tsx'),
+    read('lib/auth/oidc.ts'),
+  ])
+
+  assert.match(provider, /returnTo = ['"]\/studio['"]/)
+  assert.doesNotMatch(provider, /returnTo = ['"]\/studio\/workflow['"]/)
+  assert.match(oidc, /return ['"]\/studio['"]/)
+  assert.doesNotMatch(oidc, /return ['"]\/studio\/workflow['"]/)
+})

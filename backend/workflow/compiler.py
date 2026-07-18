@@ -52,6 +52,10 @@ _PORT_CONTRACTS: dict[str, tuple[list[_PortContract], list[_PortContract]]] = {
         [_PortContract("in", "input", "trigger", required=False)],
         [_PortContract("out", "output", "items[]")],
     ),
+    "intelligence.source.rss": (
+        [_PortContract("in", "input", "trigger", required=False)],
+        [_PortContract("out", "output", "items[]")],
+    ),
     "intelligence.source.pool": (
         [_PortContract("in", "input", "trigger", required=False)],
         [_PortContract("out", "output", "trigger")],
@@ -312,7 +316,16 @@ def _validate_project(project: WorkflowProject) -> list[WorkflowCompileError]:
             )
 
         errors.extend(_validate_node_origin(node, ["nodes", node.id]))
+        errors.extend(_validate_node_capability_gaps(node, ["nodes", node.id]))
 
+    errors.extend(_validate_edge_mappings(project.edges, path_prefix=["edges"]))
+    errors.extend(
+        _validate_visible_merge_nodes(
+            project.nodes,
+            project.edges,
+            path_prefix=["edges"],
+        )
+    )
     errors.extend(_validate_typed_edges(project.nodes, project.edges, path_prefix=["edges"]))
     errors.extend(_cycle_errors(project))
     return errors
@@ -357,6 +370,46 @@ def _validate_node_origin(
                 ),
                 node_id=node.id,
                 path=[*path_prefix, "ui"],
+            )
+        )
+    return errors
+
+
+def _validate_node_capability_gaps(
+    node: WorkflowProjectNode,
+    path_prefix: list[str],
+) -> list[WorkflowCompileError]:
+    ui = node.ui or {}
+    builder = ui.get("builder")
+    if not isinstance(builder, dict):
+        return []
+    gaps = builder.get("capabilityGaps")
+    if not isinstance(gaps, list):
+        return []
+
+    errors: list[WorkflowCompileError] = []
+    for index, gap in enumerate(gaps):
+        if not isinstance(gap, dict):
+            continue
+        blocking_actions = gap.get("blockingActions")
+        blocking_action_names = (
+            {value for value in blocking_actions if isinstance(value, str)}
+            if isinstance(blocking_actions, list)
+            else set()
+        )
+        if blocking_actions is not None and not {"publish", "run"}.intersection(
+            blocking_action_names
+        ):
+            continue
+        gap_id = _read_string(gap.get("id")) or f"gap-{index + 1}"
+        title = _read_string(gap.get("title")) or "Capability Gap"
+        detail = _read_string(gap.get("detail")) or "Required runtime capability is incomplete"
+        errors.append(
+            WorkflowCompileError(
+                code="capability_gap",
+                message=f'Workflow node "{node.id}" is blocked by {title}: {detail}',
+                node_id=node.id,
+                path=[*path_prefix, "ui", "builder", "capabilityGaps", gap_id],
             )
         )
     return errors
@@ -422,6 +475,65 @@ def _validate_typed_edges(
                     path=[*path_prefix, edge.id],
                 )
             )
+    return errors
+
+
+def _validate_edge_mappings(
+    edges: list[WorkflowProjectEdge],
+    *,
+    path_prefix: list[str],
+) -> list[WorkflowCompileError]:
+    errors: list[WorkflowCompileError] = []
+    for edge in edges:
+        ui = edge.ui or {}
+        mapping = ui.get("mapping")
+        if not isinstance(mapping, dict) or mapping.get("compatible") is not False:
+            continue
+        conflicts = mapping.get("conflicts")
+        conflict_messages = (
+            [value.strip() for value in conflicts if isinstance(value, str) and value.strip()]
+            if isinstance(conflicts, list)
+            else []
+        )
+        detail = "; ".join(conflict_messages) or "field mapping is incompatible"
+        errors.append(
+            WorkflowCompileError(
+                code="incompatible_edge_mapping",
+                message=f'Workflow edge "{edge.id}" cannot compile: {detail}',
+                edge_id=edge.id,
+                path=[*path_prefix, edge.id, "ui", "mapping"],
+            )
+        )
+    return errors
+
+
+def _validate_visible_merge_nodes(
+    nodes: list[WorkflowProjectNode],
+    edges: list[WorkflowProjectEdge],
+    *,
+    path_prefix: list[str],
+) -> list[WorkflowCompileError]:
+    incoming = Counter(edge.target for edge in edges)
+    errors: list[WorkflowCompileError] = []
+    for node in nodes:
+        builder = (node.ui or {}).get("builder")
+        if (
+            incoming[node.id] <= 1
+            or not isinstance(builder, dict)
+            or (node.kind == "flow" and node.capability == "merge")
+        ):
+            continue
+        errors.append(
+            WorkflowCompileError(
+                code="multiple_inputs_require_merge",
+                message=(
+                    f'Workflow node "{node.id}" has {incoming[node.id]} inputs. '
+                    "Agent Builder requires a visible Merge node before any multi-input node."
+                ),
+                node_id=node.id,
+                path=[*path_prefix, node.id],
+            )
+        )
     return errors
 
 
@@ -1000,6 +1112,12 @@ def _validate_package_internals(
                 internal_path_prefix,
             )
         )
+        errors.extend(
+            _validate_node_capability_gaps(
+                internal_node,
+                internal_path_prefix,
+            )
+        )
         if _is_structural_container(internal_node):
             errors.extend(
                 _validate_package_internals(
@@ -1032,11 +1150,25 @@ def _validate_package_internals(
                     )
                 )
 
+    internal_edge_path = [*path_prefix, "internals", "edges"]
+    errors.extend(
+        _validate_edge_mappings(
+            node.internals.edges,
+            path_prefix=internal_edge_path,
+        )
+    )
+    errors.extend(
+        _validate_visible_merge_nodes(
+            node.internals.nodes,
+            node.internals.edges,
+            path_prefix=internal_edge_path,
+        )
+    )
     errors.extend(
         _validate_typed_edges(
             node.internals.nodes,
             node.internals.edges,
-            path_prefix=[*path_prefix, "internals", "edges"],
+            path_prefix=internal_edge_path,
         )
     )
     errors.extend(

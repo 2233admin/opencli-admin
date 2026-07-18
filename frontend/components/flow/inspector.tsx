@@ -4,7 +4,12 @@ import { useState } from "react"
 import Link from "next/link"
 import { AlertTriangle, PlugZap } from "lucide-react"
 import { useFlowStore } from "@/lib/flow/store"
-import type { WorkflowNodeData, FieldConfig } from "@/lib/flow/types"
+import type {
+  FieldConfig,
+  GeneratedWorkflowEdgeMapping,
+  WorkflowNodeData,
+} from "@/lib/flow/types"
+import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
@@ -124,6 +129,46 @@ export function Inspector() {
   if (selected.length === 0 && selectedEdges.length === 1) {
     const edge = selectedEdges[0]
     const edgeType = edge.type ?? "workflow"
+    const mapping: GeneratedWorkflowEdgeMapping = edge.data?.mapping ?? {
+      mode: "auto",
+      fields: [],
+      preserveRaw: true,
+      compatible: true,
+      conflicts: [],
+    }
+    const updateMapping = (patch: Partial<GeneratedWorkflowEdgeMapping>) => {
+      const nextFields = patch.fields ?? mapping.fields
+      const structuralConflicts = nextFields.flatMap((field, index) => {
+        if (!field.source.trim() || !field.target.trim()) {
+          return [`映射 ${index + 1} 必须同时填写来源与目标字段。`]
+        }
+        return []
+      })
+      updateEdgeData(edge.id, {
+        mapping: {
+          ...mapping,
+          ...patch,
+          ...(patch.fields
+            ? {
+                compatible: structuralConflicts.length === 0,
+                conflicts: structuralConflicts,
+              }
+            : {}),
+          preserveRaw: true,
+        },
+      })
+    }
+    const updateMappingField = (
+      index: number,
+      patch: Partial<GeneratedWorkflowEdgeMapping["fields"][number]>,
+    ) => {
+      updateMapping({
+        mode: "override",
+        fields: mapping.fields.map((field, fieldIndex) =>
+          fieldIndex === index ? { ...field, ...patch } : field,
+        ),
+      })
+    }
     return (
       <PanelShell
         title="Connection"
@@ -142,6 +187,95 @@ export function Inspector() {
               onChange={(e) => updateEdgeData(edge.id, { label: e.target.value })}
               placeholder="例如：成功 / 失败"
             />
+          </div>
+
+          <div className="space-y-3 rounded-md border bg-card p-3">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <SectionCaption>Field Mapping</SectionCaption>
+                <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+                  自动映射可改为人工覆盖；原始结构始终保留在 data.raw。
+                </p>
+              </div>
+              <Select
+                value={mapping.mode}
+                onValueChange={(value) =>
+                  value && updateMapping({ mode: value as GeneratedWorkflowEdgeMapping["mode"] })
+                }
+              >
+                <SelectTrigger className="w-24">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="auto">自动</SelectItem>
+                  <SelectItem value="override">覆盖</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {mapping.fields.map((field, index) => (
+              <div key={index} className="space-y-2 rounded-md border bg-background p-2">
+                <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+                  <Input
+                    aria-label={`映射 ${index + 1} 来源字段`}
+                    value={field.source}
+                    onFocus={takeSnapshot}
+                    onChange={(event) => updateMappingField(index, { source: event.target.value })}
+                    placeholder="data.source"
+                  />
+                  <span className="font-mono text-xs text-muted-foreground">→</span>
+                  <Input
+                    aria-label={`映射 ${index + 1} 目标字段`}
+                    value={field.target}
+                    onFocus={takeSnapshot}
+                    onChange={(event) => updateMappingField(index, { target: event.target.value })}
+                    placeholder="data.target"
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <Input
+                    aria-label={`映射 ${index + 1} 转换`}
+                    value={field.transform ?? ""}
+                    onFocus={takeSnapshot}
+                    onChange={(event) => updateMappingField(index, { transform: event.target.value || undefined })}
+                    placeholder="可选转换表达式"
+                  />
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => updateMapping({ mode: "override", fields: mapping.fields.filter((_, fieldIndex) => fieldIndex !== index) })}
+                  >
+                    移除
+                  </Button>
+                </div>
+              </div>
+            ))}
+
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="w-full"
+              onClick={() => updateMapping({
+                mode: "override",
+                fields: [...mapping.fields, { source: "data.", target: "data." }],
+              })}
+            >
+              添加字段映射
+            </Button>
+
+            <div className="flex items-center justify-between gap-2 font-mono text-[10px]">
+              <span className="text-muted-foreground">兼容性</span>
+              <span className={mapping.compatible ? "text-success" : "text-destructive"}>
+                {mapping.compatible ? "可编译" : "阻止发布 / 运行"}
+              </span>
+            </div>
+            {mapping.conflicts.map((conflict) => (
+              <p key={conflict} className="text-[11px] leading-relaxed text-destructive">
+                {conflict}
+              </p>
+            ))}
           </div>
 
           <div className="space-y-1.5">

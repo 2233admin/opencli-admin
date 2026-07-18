@@ -5,7 +5,7 @@ import { Bot } from 'lucide-react'
 import { useAgents } from '@/lib/api/hooks'
 import { BACKEND_HINT, EmptyState, ErrorState, LoadingState } from '@/components/shell/data-states'
 import { PageContainer } from '@/components/shell/page-container'
-import { RouteTabs, CAPABILITY_TABS } from '@/components/shell/route-tabs'
+import { AUTOMATION_TABS, RouteTabs } from '@/components/shell/route-tabs'
 import { StatusBadge } from '@/components/shell/status-badge'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -22,9 +22,10 @@ export default function AgentsPage() {
 
   return (
     <PageContainer
-      title="智能体与技能"
-      description="处理与富化采集数据的 AI 智能体"
-      tabs={<RouteTabs tabs={CAPABILITY_TABS} />}
+      eyebrow="Automation"
+      title="自动化与 Agent"
+      description="管理负责分析、判断和富化采集数据的 Agent。"
+      tabs={<RouteTabs tabs={AUTOMATION_TABS} />}
     >
       {isLoading ? (
         <LoadingState />

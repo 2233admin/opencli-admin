@@ -1,8 +1,10 @@
 """Tests for source connectivity health check."""
 
-import pytest
 from unittest.mock import AsyncMock, patch
 
+import pytest
+
+from backend.channels.base import ChannelResult
 from backend.models.source import DataSource
 
 
@@ -67,3 +69,21 @@ async def test_test_source_connectivity_health_check_exception():
 
     assert ok is False
     assert "connection refused" in errors[0]
+
+
+@pytest.mark.asyncio
+async def test_rss_channel_health_check_performs_real_feed_probe(monkeypatch):
+    from backend.channels.rss_channel import RSSChannel
+
+    collect = AsyncMock(return_value=ChannelResult.ok([{"id": "one"}]))
+    monkeypatch.setattr(RSSChannel, "collect", collect)
+
+    connected = await RSSChannel().health_check(
+        {"feed_url": "https://example.com/feed.xml", "max_entries": 50}
+    )
+
+    assert connected is True
+    assert collect.await_args.args == (
+        {"feed_url": "https://example.com/feed.xml", "max_entries": 1},
+        {},
+    )

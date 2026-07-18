@@ -1,11 +1,15 @@
 """Workspace, Project, and transactional bootstrap routes for Studio."""
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.api.v1.studio_helpers import LOCAL_USER_ID, get_workspace
+from backend.api.v1.studio_helpers import (
+    LOCAL_USER_ID,
+    canonicalize_studio_graph,
+    get_workspace,
+)
 from backend.api.v1.studio_schemas import (
     DraftRead,
     ProjectBootstrapCreate,
@@ -19,8 +23,11 @@ from backend.models.studio import (
     StudioProject,
     StudioWorkflow,
     StudioWorkflowDraft,
+    StudioWorkflowValidationRun,
+    StudioWorkflowVersion,
     StudioWorkspace,
 )
+from backend.models.workflow_run import WorkflowRun
 from backend.schemas.common import ApiResponse
 
 router = APIRouter()
@@ -104,7 +111,10 @@ async def bootstrap_project(
             db.add(workflow)
             await db.flush()
 
-            graph = {**body.workflow.graph.model_dump(mode="json"), "id": workflow.id}
+            graph = canonicalize_studio_graph(
+                body.workflow.graph.model_dump(mode="json"),
+                workflow_id=workflow.id,
+            )
             draft = StudioWorkflowDraft(
                 workflow_id=workflow.id,
                 graph=graph,
@@ -126,3 +136,66 @@ async def bootstrap_project(
             draft=DraftRead.model_validate(draft, from_attributes=True),
         )
     )
+
+
+@router.delete(
+    "/workspaces/{workspace_id}/projects/{project_id}",
+    response_model=ApiResponse[None],
+)
+async def delete_project(
+    workspace_id: str,
+    project_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse:
+    """Delete a project and every Studio/runtime artifact owned by its workflows."""
+
+    await get_workspace(db, workspace_id)
+    project = await db.scalar(
+        select(StudioProject).where(
+            StudioProject.id == project_id,
+            StudioProject.workspace_id == workspace_id,
+        )
+    )
+    if project is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Project not found")
+
+    workflow_ids = list(
+        (
+            await db.execute(
+                select(StudioWorkflow.id).where(StudioWorkflow.project_id == project_id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if workflow_ids:
+        # Break the project → primary workflow cycle before removing children.
+        await db.execute(
+            update(StudioProject)
+            .where(StudioProject.id == project_id)
+            .values(primary_workflow_id=None)
+        )
+        # Versions RESTRICT their validation run, so remove them in dependency order.
+        await db.execute(
+            delete(StudioWorkflowVersion).where(
+                StudioWorkflowVersion.workflow_id.in_(workflow_ids)
+            )
+        )
+        await db.execute(
+            delete(StudioWorkflowValidationRun).where(
+                StudioWorkflowValidationRun.workflow_id.in_(workflow_ids)
+            )
+        )
+        await db.execute(
+            delete(StudioWorkflowDraft).where(
+                StudioWorkflowDraft.workflow_id.in_(workflow_ids)
+            )
+        )
+        await db.execute(
+            delete(WorkflowRun).where(WorkflowRun.workflow_id.in_(workflow_ids))
+        )
+        await db.execute(
+            delete(StudioWorkflow).where(StudioWorkflow.id.in_(workflow_ids))
+        )
+    await db.execute(delete(StudioProject).where(StudioProject.id == project_id))
+    return ApiResponse.ok(None)

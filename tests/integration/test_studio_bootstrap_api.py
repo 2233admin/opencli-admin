@@ -21,6 +21,16 @@ def _bootstrap_payload(*, slug: str = "bootstrapped-project") -> dict:
     }
 
 
+def _assert_no_null_object_fields(value: object, *, path: str = "graph") -> None:
+    if isinstance(value, dict):
+        for key, item in value.items():
+            assert item is not None, f"{path}.{key} should be omitted instead of null"
+            _assert_no_null_object_fields(item, path=f"{path}.{key}")
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            _assert_no_null_object_fields(item, path=f"{path}[{index}]")
+
+
 @pytest.mark.asyncio
 async def test_studio_project_bootstrap_creates_primary_workflow_and_draft(client):
     workspace_id = (await client.get("/api/v1/workspaces")).json()["data"][0]["id"]
@@ -35,6 +45,14 @@ async def test_studio_project_bootstrap_creates_primary_workflow_and_draft(clien
     assert data["primary_workflow"]["project_id"] == data["project"]["id"]
     assert data["draft"]["revision"] == 1
     assert data["draft"]["graph"]["id"] == data["primary_workflow"]["id"]
+    _assert_no_null_object_fields(data["draft"]["graph"])
+
+    persisted = await client.get(
+        f"/api/v1/workspaces/{workspace_id}/projects/{data['project']['id']}"
+        f"/workflows/{data['primary_workflow']['id']}/draft"
+    )
+    assert persisted.status_code == 200, persisted.text
+    _assert_no_null_object_fields(persisted.json()["data"]["graph"])
 
     projects = (await client.get(f"/api/v1/workspaces/{workspace_id}/projects")).json()[
         "data"
@@ -120,3 +138,47 @@ async def test_studio_project_app_type_is_validated_and_listed(client):
     assert listed_types == {
         project["slug"]: project["app_type"] for project in created
     }
+
+
+@pytest.mark.asyncio
+async def test_studio_project_delete_removes_project_and_workflow_assets(client):
+    workspace_id = (await client.get("/api/v1/workspaces")).json()["data"][0]["id"]
+    created = (
+        await client.post(
+            f"/api/v1/workspaces/{workspace_id}/projects/bootstrap",
+            json=_bootstrap_payload(slug="delete-me"),
+        )
+    ).json()["data"]
+
+    response = await client.delete(
+        f"/api/v1/workspaces/{workspace_id}/projects/{created['project']['id']}"
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["success"] is True
+    projects = (
+        await client.get(f"/api/v1/workspaces/{workspace_id}/projects")
+    ).json()["data"]
+    assert projects == []
+    workflows = await client.get(
+        f"/api/v1/workspaces/{workspace_id}/projects/"
+        f"{created['project']['id']}/workflows"
+    )
+    assert workflows.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_studio_project_delete_is_scoped_to_workspace(client):
+    workspace_id = (await client.get("/api/v1/workspaces")).json()["data"][0]["id"]
+    created = (
+        await client.post(
+            f"/api/v1/workspaces/{workspace_id}/projects/bootstrap",
+            json=_bootstrap_payload(slug="keep-me"),
+        )
+    ).json()["data"]["project"]
+
+    response = await client.delete(
+        f"/api/v1/workspaces/not-the-workspace/projects/{created['id']}"
+    )
+
+    assert response.status_code == 404

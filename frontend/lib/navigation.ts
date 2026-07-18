@@ -1,12 +1,9 @@
 import {
   Activity,
-  Bot,
   Database,
-  Inbox,
   LayoutDashboard,
   PanelsTopLeft,
   ShieldCheck,
-  SquareCheckBig,
   Workflow,
   type LucideIcon,
 } from 'lucide-react'
@@ -33,28 +30,36 @@ export const NAV_GROUPS: NavGroup[] = [
     label: '工作台',
     items: [
       { href: '/dashboard', label: '概览', icon: LayoutDashboard },
-      { href: '/inbox', label: '待我处理', icon: Inbox, match: ['/inbox', '/notifications'] },
+      {
+        href: '/inbox',
+        label: '任务与通知',
+        icon: Activity,
+        match: ['/inbox', '/tasks', '/notifications'],
+      },
     ],
   },
   {
     label: '构建',
     items: [
-      { href: '/studio', label: '工作区', icon: PanelsTopLeft, match: ['/studio', '/canvas'] },
-      { href: '/sources', label: '自动化', icon: Workflow, match: ['/sources', '/schedules'] },
-      { href: '/agents', label: 'Agent 团队', icon: Bot, match: ['/agents', '/skills'] },
+      { href: '/studio', label: '项目', icon: PanelsTopLeft, match: ['/studio', '/canvas'] },
+      {
+        href: '/sources',
+        label: '自动化与 Agent',
+        icon: Workflow,
+        match: ['/sources', '/schedules', '/agents', '/skills'],
+      },
     ],
   },
   {
-    label: '运行',
+    label: '运行与数据',
     items: [
-      { href: '/tasks', label: '工作项', icon: SquareCheckBig },
+      { href: '/records', label: '成果与数据', icon: Database },
       {
         href: '/nodes',
         label: '执行资源',
         icon: Activity,
         match: ['/nodes', '/workers'],
       },
-      { href: '/records', label: '成果与数据', icon: Database },
     ],
   },
   {
@@ -62,7 +67,7 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       {
         href: '/providers',
-        label: '治理与设置',
+        label: '模型与连接',
         icon: ShieldCheck,
         match: ['/providers', '/control/actions'],
       },
@@ -73,11 +78,11 @@ export const NAV_GROUPS: NavGroup[] = [
 /** Labels for every route (incl. tab siblings) used by breadcrumbs. */
 export const ROUTE_LABELS: Record<string, string> = {
   '/dashboard': '概览',
-  '/inbox': '待我处理',
-  '/studio': '工作区',
-  '/studio/workflow': '节点工作流',
+  '/inbox': '任务与通知',
+  '/studio': '项目',
+  '/studio/workflow': '工作流编排',
   '/canvas': '节点工作流（兼容入口）',
-  '/sources': '采集来源',
+  '/sources': '自动化与 Agent',
   '/schedules': '触发与调度',
   '/tasks': '工作项',
   '/records': '成果与数据',

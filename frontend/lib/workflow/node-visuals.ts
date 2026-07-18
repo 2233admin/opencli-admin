@@ -14,6 +14,7 @@ const VISUALS: Record<string, NodeVisualSignature> = {
   "intelligence.input.collection-need": sig("NEED", "?", "var(--chart-1)", "pulse"),
   "intelligence.schedule.cron": sig("CLK", "T", "var(--chart-1)", "pulse"),
   "intelligence.source.jin10": sig("J10", "S", "var(--chart-4)", "dots"),
+  "intelligence.source.rss": sig("RSS", "S", "var(--chart-4)", "pulse"),
   "intelligence.source.opencli-slot": sig("OCS", "S", "var(--chart-4)", "dots"),
   "intelligence.source.pool": sig("POOL", "P", "var(--chart-4)", "split"),
   "intelligence.processing.normalize": sig("NRM", "N", "var(--chart-2)", "split"),

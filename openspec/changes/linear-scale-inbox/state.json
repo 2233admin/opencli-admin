@@ -1,0 +1,62 @@
+{
+  "schema": "design-pipeline.state.v1",
+  "changeId": "linear-scale-inbox",
+  "status": "complete",
+  "phase": "stage-6-handoff",
+  "updatedAt": "2026-07-18T18:54:50+08:00",
+  "artifactRoot": "openspec/changes/linear-scale-inbox",
+  "projectRoot": "D:/projects/opencli-admin",
+  "surfaces": [
+    "frontend/app/(app)/inbox/page.tsx",
+    "frontend/lib/api/hooks.ts",
+    "frontend/lib/api/endpoints.ts",
+    "frontend/scripts/check-inbox-regressions.mjs"
+  ],
+  "capabilities": {
+    "missing": [],
+    "fallbacks": [
+      "GBrain is not enabled; OpenSpec remains the source of truth."
+    ]
+  },
+  "openSpec": {
+    "detected": true,
+    "changeId": "linear-scale-inbox",
+    "paths": [
+      "openspec/changes/linear-scale-inbox"
+    ]
+  },
+  "gbrain": {
+    "detected": false,
+    "syncPlanned": false,
+    "paths": []
+  },
+  "motion": {
+    "required": false,
+    "motionSpec": "",
+    "implementationLibrary": "none",
+    "reducedMotion": "existing app behavior retained"
+  },
+  "qa": {
+    "status": "passed",
+    "evidenceRoot": "openspec/changes/linear-scale-inbox/qa",
+    "scores": {
+      "visualTaste": 9,
+      "uxClarity": 9,
+      "accessibility": 8,
+      "responsiveness": 9,
+      "motionQuality": 10,
+      "engineeringFit": 9,
+      "performanceRisk": 8
+    }
+  },
+  "decisions": [
+    "Use a full-height two-pane workbench.",
+    "Use infinite pagination and CSS content visibility for hundreds-scale queues.",
+    "Do not add read, snooze, dismiss, or delete state without backend APIs."
+  ],
+  "blockers": [],
+  "nextActions": [
+    "Revisit true row virtualization only when expanded unique themes materially exceed the hundreds-scale target.",
+    "Add backend attention filters if exact queue-wide notification totals become necessary."
+  ]
+}

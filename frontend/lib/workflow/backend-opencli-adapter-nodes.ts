@@ -72,3 +72,57 @@ export async function fetchWorkflowOpenCLIAdapterNodes(
   }
   return payload.data
 }
+
+export function workflowCatalogItemForOpenCLIAdapterNode(
+  node: WorkflowOpenCLIAdapterNode,
+  requiredValues: Record<string, string> = {},
+): WorkflowNodeCatalogItem {
+  const args = { ...((node.params.args as Record<string, unknown> | undefined) ?? {}) }
+  const positionalArgs = Array.isArray(node.params.positional_args)
+    ? [...node.params.positional_args]
+    : []
+  for (const arg of node.args) {
+    const value = requiredValues[arg.name]
+    if (!value) continue
+    if (arg.positional) positionalArgs.push(value)
+    else args[arg.name] = value
+  }
+  const adapter = node.adapter as AdapterBinding
+  return {
+    id: node.catalogId,
+    idPrefix: `source-opencli-${safeIdPart(node.site)}-${safeIdPart(node.command)}`,
+    label: node.label,
+    description: node.description || `实时执行 opencli ${node.site} ${node.command}`,
+    category: "source",
+    profile: "intelligence",
+    kind: "source",
+    capability: "fetch",
+    icon: "Globe",
+    color: "var(--chart-4)",
+    adapter: adapter.id,
+    requiredAdapters: [adapter],
+    params: {
+      ...node.params,
+      args,
+      ...(positionalArgs.length ? { positional_args: positionalArgs } : {}),
+      opencliAdapterNodeId: node.id,
+      sourceGroup: node.site,
+    },
+    keywords: [
+      "opencli",
+      "realtime",
+      "实时",
+      "采集",
+      node.site,
+      node.command,
+      node.label,
+      node.description,
+    ].filter(Boolean),
+  }
+}
+
+function safeIdPart(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "source"
+}
+import type { AdapterBinding } from "./schema"
+import type { WorkflowNodeCatalogItem } from "./node-catalog"

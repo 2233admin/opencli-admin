@@ -6,6 +6,8 @@ import pytest
 from sqlalchemy import select
 
 from backend import browser_pool
+from backend.channels.base import ChannelResult
+from backend.channels.opencli_channel import OpenCLIChannel
 from backend.models.browser import BrowserBinding, BrowserInstance
 from backend.models.edge_node import EdgeNode
 from backend.models.record import CollectedRecord
@@ -155,6 +157,97 @@ def _multi_source_opencli_hda_project() -> dict:
             "allowedDomains": ["bilibili.com", "xiaohongshu.com"],
         },
     }
+
+
+def _standalone_opencli_pipeline_project() -> dict:
+    return {
+        "id": "wf-opencli-standalone",
+        "name": "Standalone OpenCLI pipeline",
+        "profile": "intelligence",
+        "version": 1,
+        "nodes": [
+            {
+                "id": "source-bbc",
+                "kind": "source",
+                "capability": "fetch",
+                "adapter": "opencli-bbc",
+                "params": {
+                    "site": "bbc",
+                    "command": "news",
+                    "format": "json",
+                    "args": {},
+                    "opencliAdapterNodeId": "opencli.adapter.bbc.news",
+                },
+                "ui": {"catalogId": "intelligence.source.opencli-slot"},
+            },
+            {
+                "id": "normalize",
+                "kind": "agent",
+                "capability": "normalize",
+                "params": {"language": "zh-CN"},
+            },
+        ],
+        "edges": [{"id": "source-normalize", "source": "source-bbc", "target": "normalize"}],
+        "adapters": [
+            {
+                "id": "opencli-bbc",
+                "type": "source",
+                "provider": "opencli",
+                "mode": "live",
+                "config": {"channel": "opencli"},
+            }
+        ],
+        "agentPermissions": {
+            "canFetchNetwork": True,
+            "canSendNotifications": False,
+            "canWriteInbox": True,
+            "allowedDomains": [],
+        },
+    }
+
+
+@pytest.mark.asyncio
+async def test_standalone_opencli_source_executes_live_channel(client, monkeypatch):
+    calls: list[tuple[dict, dict]] = []
+
+    async def collect(_self, config, parameters):
+        calls.append((config, parameters))
+        return ChannelResult.ok(
+            [{"title": "OpenCLI live item", "url": "https://www.bbc.com/news/1"}],
+            site="bbc",
+            command="news",
+        )
+
+    monkeypatch.setattr(OpenCLIChannel, "collect", collect)
+    response = await client.post(
+        "/api/v1/workflows/runs",
+        json={"project": _standalone_opencli_pipeline_project()},
+    )
+
+    assert response.status_code == 202, response.text
+    data = response.json()["data"]
+    assert data["status"] == "completed"
+    assert calls == [
+        (
+            {
+                "site": "bbc",
+                "command": "news",
+                "format": "json",
+                "args": {},
+            },
+            {},
+        )
+    ]
+    events = (
+        await client.get(f"/api/v1/workflows/runs/{data['runId']}/events")
+    ).json()["data"]
+    source_partial = next(
+        event
+        for event in events
+        if event["nodeId"] == "source-bbc" and event["eventType"] == "partial"
+    )
+    assert source_partial["details"]["itemCount"] == 1
+    assert source_partial["details"]["agentDispatch"]["protocol"] == "local"
 
 
 def _native_first_loop_project() -> dict:
@@ -1260,6 +1353,243 @@ async def test_workflow_run_uses_runtime_source_outputs_as_items(client, db_sess
         "Runtime Bilibili AI video",
         "Runtime XHS AI note",
     }
+
+
+@pytest.mark.asyncio
+async def test_workflow_run_executes_live_http_sources(
+    client,
+    db_session,
+    monkeypatch,
+):
+    project = _native_first_loop_project()
+    live_payloads = {
+        "https://feeds.example.test/bilibili": [
+            {
+                "title": "Live Bilibili AI video",
+                "url": "https://www.bilibili.com/video/live-ai",
+                "content": "Live AI video update",
+            }
+        ],
+        "https://feeds.example.test/xhs": [
+            {
+                "title": "Live XHS AI note",
+                "url": "https://www.xiaohongshu.com/explore/live-ai",
+                "content": "Live AI note update",
+            }
+        ],
+    }
+    for node in project["nodes"]:
+        if node["id"] in {"source-bilibili", "source-xhs"}:
+            node["params"].pop("fixtureItems")
+    project["adapters"] = [
+        {
+            "id": "opencli-bilibili",
+            "type": "source",
+            "provider": "http",
+            "mode": "live",
+            "config": {"url": "https://feeds.example.test/bilibili"},
+        },
+        {
+            "id": "opencli-xhs",
+            "type": "source",
+            "provider": "http",
+            "mode": "live",
+            "config": {"url": "https://feeds.example.test/xhs"},
+        },
+    ]
+    project["agentPermissions"]["allowedDomains"] = ["feeds.example.test"]
+
+    class FakeResponse:
+        def __init__(self, payload):
+            self._payload = payload
+            self.status_code = 200
+            self.headers = {}
+            self.content = b"{}"
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return self._payload
+
+    class FakeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        async def request(self, method, url, **kwargs):
+            assert method == "GET"
+            return FakeResponse(live_payloads[url])
+
+    async def fake_guarded_async_client(url, **kwargs):
+        assert kwargs["follow_redirects"] is False
+        return FakeClient(), url
+
+    monkeypatch.setattr(
+        "backend.workflow.http_source_executor.guarded_async_client",
+        fake_guarded_async_client,
+    )
+
+    response = await client.post(
+        "/api/v1/workflows/runs",
+        json={
+            "project": project,
+            "runId": "run-live-http-sources",
+            "traceId": "trace-live-http-sources",
+        },
+    )
+
+    assert response.status_code == 202
+    assert response.json()["data"]["status"] == "completed"
+    events = (
+        await client.get("/api/v1/workflows/runs/run-live-http-sources/events")
+    ).json()["data"]
+    source_partials = [
+        event
+        for event in events
+        if event["message"] == "Live HTTP source loaded as workflow items"
+    ]
+    assert len(source_partials) == 2
+    assert all(event["details"]["statusCode"] == 200 for event in source_partials)
+    assert not any(
+        (event.get("blockReason") or {}).get("code") == "live_source_executor_pending"
+        for event in events
+    )
+
+    records = (
+        (
+            await db_session.execute(
+                select(CollectedRecord).order_by(CollectedRecord.created_at, CollectedRecord.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert {record.normalized_data["title"] for record in records} == {
+        "Live Bilibili AI video",
+        "Live XHS AI note",
+    }
+    assert {
+        record.raw_data["_workflowLineage"][0]["artifact"] for record in records
+    } == {"live_http_source"}
+
+
+@pytest.mark.asyncio
+async def test_workflow_run_executes_grouped_live_rss_sources(
+    client,
+    db_session,
+    monkeypatch,
+):
+    project = _native_first_loop_project()
+    rss_sources = {
+        "source-bilibili": {
+            "adapter": "rss-fed-policy",
+            "site": "federal-reserve",
+            "sourceGroup": "macro-policy",
+            "feedUrl": "https://feeds.example.test/fed.xml",
+        },
+        "source-xhs": {
+            "adapter": "rss-sec-regulation",
+            "site": "sec",
+            "sourceGroup": "market-regulation",
+            "feedUrl": "https://feeds.example.test/sec.xml",
+        },
+    }
+    for node in project["nodes"]:
+        source = rss_sources.get(node["id"])
+        if source is None:
+            continue
+        node["adapter"] = source["adapter"]
+        node["params"] = {
+            "site": source["site"],
+            "sourceGroup": source["sourceGroup"],
+            "feedUrl": source["feedUrl"],
+            "maxEntries": 10,
+        }
+        node["ui"]["catalogId"] = "intelligence.source.rss"
+
+    project["adapters"] = [
+        {
+            "id": source["adapter"],
+            "type": "source",
+            "provider": "rss",
+            "mode": "live",
+            "config": {"channel": "rss"},
+        }
+        for source in rss_sources.values()
+    ]
+    project["agentPermissions"]["allowedDomains"] = ["example.test"]
+
+    async def fake_collect(self, config, parameters):
+        feed_key = "fed" if config["feed_url"].endswith("fed.xml") else "sec"
+        return ChannelResult.ok(
+            [
+                {
+                    "id": f"{feed_key}-1",
+                    "title": f"{feed_key.upper()} live update",
+                    "link": f"https://feeds.example.test/{feed_key}/1",
+                    "summary": f"{feed_key.upper()} financial intelligence",
+                    "published": "2026-07-18T08:00:00Z",
+                }
+            ],
+            feed_title=f"{feed_key.upper()} feed",
+            total_entries=1,
+        )
+
+    monkeypatch.setattr(
+        "backend.workflow.rss_source_executor.RSSChannel.collect",
+        fake_collect,
+    )
+
+    response = await client.post(
+        "/api/v1/workflows/runs",
+        json={
+            "project": project,
+            "runId": "run-live-rss-sources",
+            "traceId": "trace-live-rss-sources",
+        },
+    )
+
+    assert response.status_code == 202
+    assert response.json()["data"]["status"] == "completed"
+    events = (
+        await client.get("/api/v1/workflows/runs/run-live-rss-sources/events")
+    ).json()["data"]
+    source_partials = [
+        event
+        for event in events
+        if event["message"] == "Live RSS source loaded as workflow items"
+    ]
+    assert len(source_partials) == 2
+    assert {event["details"]["feedTitle"] for event in source_partials} == {
+        "FED feed",
+        "SEC feed",
+    }
+
+    records = (
+        (
+            await db_session.execute(
+                select(CollectedRecord).order_by(CollectedRecord.created_at, CollectedRecord.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert {record.normalized_data["title"] for record in records} == {
+        "FED live update",
+        "SEC live update",
+    }
+    assert {
+        record.raw_data["_workflowLineage"][0]["artifact"] for record in records
+    } == {"live_rss_source"}
+    assert {
+        record.raw_data["_workflowLineage"][0]["sourceGroup"] for record in records
+    } == {"macro-policy", "market-regulation"}
+
+    sources = (await db_session.execute(select(DataSource))).scalars().all()
+    assert {source.channel_type for source in sources} == {"rss"}
 
 
 @pytest.mark.asyncio

@@ -138,6 +138,44 @@ const CONTRACTS: Record<string, NodeContract> = {
     ],
     ["source adapter must be registered", "items[] output must include stable item ids"],
   ),
+  "intelligence.source.rss": contract(
+    "intelligence.source.rss",
+    "RSS / Atom Source",
+    "trigger -> items[]",
+    [port("in", "input", "trigger", false, "Consumes a schedule trigger.")],
+    [port("out", "output", "items[]", true, "Emits parsed RSS or Atom entries.")],
+    [
+      param("feedUrl", "params", "string", true, "https://www.federalreserve.gov/feeds/press_all.xml", {
+        description: "Public RSS or Atom URL. Its host must be listed in agentPermissions.allowedDomains.",
+      }),
+      param("maxEntries", "params", "number", true, 20, {
+        min: 1,
+        max: 500,
+        description: "Maximum feed entries read per run, also capped by project settings.",
+      }),
+      param("sourceGroup", "params", "string", true, "macro-policy", {
+        description: "Business grouping key preserved in lineage and Records.",
+      }),
+      param("site", "params", "string", false, "federal-reserve", {
+        description: "Human-readable source key used by Records and source ownership.",
+      }),
+      param("providerId", "params", "string", false, "", {
+        description: "Optional self-hosted RSS generator Provider resolved by the backend at run time.",
+      }),
+      param("generatorType", "params", "string", false, "rsshub", {
+        enum: ["rsshub", "rss_bridge"],
+        description: "Generator kind for a provider-backed feed URL.",
+      }),
+      param("generatorSelection", "params", "object", false, {}, {
+        description: "Selected RSSHub route or RSS-Bridge bridge and its non-secret parameters.",
+      }),
+    ],
+    [
+      "feed host must be allowed",
+      "provider token must remain backend-only",
+      "items[] must retain sourceGroup lineage",
+    ],
+  ),
   "intelligence.source.opencli-slot": contract(
     "intelligence.source.opencli-slot",
     "OpenCLI Source Slot",

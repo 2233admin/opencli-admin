@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.v1.studio_helpers import (
     LOCAL_USER_ID,
+    canonicalize_studio_graph,
     get_project,
     get_workflow,
     validation_projection,
@@ -161,7 +162,10 @@ async def publish_version(
                 workflow_id=workflow_id,
                 version=(workflow.current_published_version or 0) + 1,
                 draft_revision=draft.revision,
-                graph=draft.graph,
+                graph=canonicalize_studio_graph(
+                    draft.graph,
+                    workflow_id=workflow_id,
+                ),
                 compile_version=validation.compile_version,
                 validation_run_id=validation.id,
                 published_by_user_id=LOCAL_USER_ID,

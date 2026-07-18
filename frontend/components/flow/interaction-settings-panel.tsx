@@ -59,7 +59,6 @@ const BOOLS: { key: keyof CanvasSettings; label: string; hint?: string }[] = [
 ]
 
 const VALIDATION_BOOLS: { key: keyof CanvasSettings; label: string; hint?: string }[] = [
-  { key: "preventCycles", label: "preventCycles", hint: "禁止形成环" },
   { key: "confirmDelete", label: "confirmDelete", hint: "删除前弹确认" },
   { key: "typedHandles", label: "typedHandles", hint: "端口类型校验" },
 ]
@@ -119,6 +118,11 @@ export function InteractionSettingsPanel() {
 
           <div className="space-y-3">
             <SectionCaption>Validation</SectionCaption>
+            <Row k="DAG only" hint="P0 工作流禁止形成环；重试通过节点配置完成。">
+              <span className="rounded-full bg-success/10 px-2 py-1 text-[10px] font-medium text-success">
+                始终启用
+              </span>
+            </Row>
             {VALIDATION_BOOLS.map((b) => (
               <Row key={b.key} k={b.label} hint={b.hint}>
                 <Switch

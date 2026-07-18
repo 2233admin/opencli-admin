@@ -55,6 +55,12 @@ export interface ModelProviderInput {
   enabled?: boolean
 }
 
+export interface ProviderModelDiscoveryInput {
+  provider_type: ModelProvider['provider_type']
+  base_url?: string
+  api_key?: string
+}
+
 // One row of a provider's model catalog — mirrors backend.schemas.provider.
 // ProviderModelRead. `source` distinguishes rows discovered via
 // POST /providers/{id}/models/sync from ones added manually through
@@ -91,6 +97,68 @@ export interface ConnectionTestResult {
   latency_ms?: number | null
   error?: string | null
   models_sample?: string[] | null
+}
+
+export interface FeedProviderConfig {
+  timeout_seconds: number
+  allowed_domains: string[]
+  allow_private_network: boolean
+  browser_routes: boolean
+  authenticated_routes: boolean
+}
+
+export interface FeedProvider {
+  id: string
+  name: string
+  provider_type: 'rsshub' | 'rss_bridge'
+  base_url: string
+  has_access_token: boolean
+  access_token_preview: string | null
+  config: FeedProviderConfig
+  enabled: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface FeedProviderInput {
+  name?: string
+  provider_type?: FeedProvider['provider_type']
+  base_url?: string
+  access_token?: string
+  config?: Partial<FeedProviderConfig>
+  enabled?: boolean
+}
+
+export interface FeedProviderConnectionTest {
+  ok: boolean
+  latency_ms: number | null
+  error: string | null
+  error_kind: string | null
+  capabilities: Record<string, boolean>
+}
+
+export interface FeedProviderWorkflowNodeInput {
+  route?: string
+  bridge?: string
+  parameters?: Record<string, string>
+  source_group: string
+  site: string
+  max_entries?: number
+}
+
+export interface FeedProviderWorkflowNode {
+  nodeType: 'intelligence.source.rss'
+  label: string
+  params: {
+    feedUrl: string
+    sourceGroup: string
+    site: string
+    maxEntries: number
+    providerId: string
+    generatorType: FeedProvider['provider_type']
+    generatorSelection: Record<string, unknown>
+  }
+  allowedDomains: string[]
 }
 
 // Role a model-defaults candidate list resolves for (backend.llm role
@@ -168,6 +236,11 @@ export interface DataSource {
   updated_at: string
 }
 
+export interface RssCatalogImportResult {
+  created: DataSource[]
+  skipped_existing: string[]
+}
+
 // A distilled browser skill (record→distill→execute→correct loop, ADR-0003).
 // `list` only ever returns the brief projection (no skill_md/elements/evidence
 // body); `detail` (GET /skills/{id}) returns every field.
@@ -239,6 +312,8 @@ export interface CollectedRecord {
   id: string
   task_id: string
   source_id: string
+  workflow_id?: string | null
+  workflow_run_id?: string | null
   raw_data: Record<string, unknown>
   normalized_data: Record<string, unknown>
   ai_enrichment?: Record<string, unknown>
@@ -881,6 +956,64 @@ export interface ProjectSummary {
   archived: boolean
   created_at: string
   updated_at: string
+}
+
+export type RecordGraphNodeKind = 'project' | 'workflow' | 'run' | 'source' | 'record' | 'entity'
+export type RecordGraphEdgeKind =
+  | 'contains'
+  | 'produced'
+  | 'origin'
+  | 'semantic'
+  | 'reference'
+  | 'batch'
+  | 'duplicate'
+
+export interface RecordGraphNode {
+  id: string
+  kind: RecordGraphNodeKind
+  label: string
+  subtitle: string | null
+  count: number
+  record_id: string | null
+  source_id: string | null
+  workflow_id: string | null
+  workflow_run_id: string | null
+  url: string | null
+  preview: string | null
+  status: string | null
+  created_at: string | null
+}
+
+export interface RecordGraphEdge {
+  id: string
+  source: string
+  target: string
+  kind: RecordGraphEdgeKind
+  label: string
+  weight: number
+  bidirectional: boolean
+}
+
+export interface ProjectRecordGraphPreview {
+  workspace_id: string
+  project_id: string
+  project_name: string
+  strategy: 'server-aggregated-sample'
+  truncated: boolean
+  max_nodes: number
+  nodes: RecordGraphNode[]
+  edges: RecordGraphEdge[]
+  stats: {
+    total_records: number
+    sampled_records: number
+    hidden_records: number
+    total_sources: number
+    total_workflows: number
+    total_runs: number
+    visible_nodes: number
+    visible_edges: number
+  }
+  generated_at: string
 }
 
 export interface WorkflowAssetSummary {

@@ -4,7 +4,7 @@ import { useSkills } from '@/lib/api/hooks'
 import { formatNumber } from '@/lib/format'
 import { BACKEND_HINT, EmptyState, ErrorState, LoadingState } from '@/components/shell/data-states'
 import { PageContainer } from '@/components/shell/page-container'
-import { RouteTabs, CAPABILITY_TABS } from '@/components/shell/route-tabs'
+import { AUTOMATION_TABS, RouteTabs } from '@/components/shell/route-tabs'
 import { StatusBadge } from '@/components/shell/status-badge'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
@@ -23,9 +23,10 @@ export default function SkillsPage() {
 
   return (
     <PageContainer
-      title="智能体与技能"
-      description="录制→蒸馏→执行→纠错 循环产出的浏览器技能"
-      tabs={<RouteTabs tabs={CAPABILITY_TABS} />}
+      eyebrow="Automation"
+      title="自动化与 Agent"
+      description="管理录制、蒸馏和纠错循环产出的浏览器技能。"
+      tabs={<RouteTabs tabs={AUTOMATION_TABS} />}
     >
       {isLoading ? (
         <LoadingState />

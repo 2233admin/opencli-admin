@@ -46,10 +46,18 @@ from backend.workflow.block_reasons import (
 from backend.workflow.compiler import INTERNAL_ID_SEPARATOR, compile_workflow_project
 from backend.workflow.event_mirror import publish_workflow_run_event_mirror
 from backend.workflow.fleet_inventory import match_workflow_fleet_capability
+from backend.workflow.http_source_executor import (
+    WorkflowHTTPSourceExecutionError,
+    execute_workflow_http_source,
+)
 from backend.workflow.realtime_market_executor import (
     OKX_MARKET_TICKER_SNAPSHOT_EXECUTOR,
     RealtimeMarketExecutionError,
     execute_okx_market_ticker_snapshot,
+)
+from backend.workflow.rss_source_executor import (
+    WorkflowRSSSourceExecutionError,
+    execute_workflow_rss_source,
 )
 from backend.workflow.runtime_registry import (
     EXTERNAL_TOOL_BINDING_ID,
@@ -57,11 +65,13 @@ from backend.workflow.runtime_registry import (
     MERGE_BINDING_ID,
     NORMALIZE_BINDING_ID,
     NOTIFY_SEND_BINDING_ID,
+    OPENCLI_BINDING_ID,
     OPENCLI_FUNCTION_ID,
     OPENCLI_WORKER,
     RECORD_ACCEPTANCE_BINDING_ID,
     RECORD_SINK_BINDING_ID,
     ROUTER_ROUTE_BINDING_ID,
+    SCHEDULE_TRIGGER_BINDING_ID,
     SOURCE_FETCH_BINDING_ID,
     WEBHOOK_NOTIFY_BINDING_ID,
     WEBHOOK_TRIGGER_BINDING_ID,
@@ -242,7 +252,40 @@ async def start_workflow_run(
         ),
         initial_sequence=len(prior_events),
     )
-    runtime_nodes = compile_result.plan.runtime.nodes
+    runtime_nodes, trigger_selection_error = _select_runtime_nodes_for_trigger(
+        compile_result.plan.runtime.nodes,
+        trigger_kind=body.trigger.kind,
+        trigger_node_id=body.trigger.triggerNodeId,
+    )
+    if trigger_selection_error is not None:
+        errors = [trigger_selection_error]
+        events = _compile_failure_events(
+            workflow_id=body.project.id,
+            run_id=run_id,
+            trace_id=trace_id,
+            errors=errors,
+        )
+        stored_events = [*prior_events, *events]
+        projection = _build_projection(
+            workflow_id=body.project.id,
+            run_id=run_id,
+            trace_id=trace_id,
+            package_node_id=body.packageNodeId,
+            started_at=started_at,
+            valid=False,
+            errors=errors,
+            runtime_nodes=[],
+            events=stored_events,
+        )
+        await _store_workflow_run(
+            run_id,
+            request=body,
+            projection=projection,
+            events=stored_events,
+            session=session,
+        )
+        return projection
+
     runtime_nodes_by_id = {node.id: node for node in runtime_nodes}
     should_trace_opencli = (
         body.packageNodeId is not None or _select_package_id(runtime_nodes, None) is not None
@@ -262,6 +305,20 @@ async def start_workflow_run(
     dispatches_by_node = {
         dispatch.nodeId: dispatch for dispatch in (trace.dispatches if trace else [])
     }
+    for node in runtime_nodes:
+        if (
+            _binding_id(node) != OPENCLI_BINDING_ID
+            or node.id in dispatches_by_node
+            or not _read_string(node.params.get("opencliAdapterNodeId"))
+        ):
+            continue
+        dispatches_by_node[node.id] = _to_dispatch(
+            body.project,
+            node,
+            package_node_id=None,
+            run_id=run_id,
+            trace_id=trace_id,
+        )
     blocked_by_package: dict[str, list[WorkflowRunBlockReason]] = {}
     outputs_by_node: dict[str, list[dict[str, Any]]] = {}
     materialized_source_tasks: dict[str, tuple[str, str]] = {}
@@ -402,8 +459,111 @@ async def start_workflow_run(
             continue
 
         if _is_workflow_source_fetch_node(node):
-            reason = _source_fetch_block_reason(node, body.project.agentPermissions)
             emitter.emit(node, "started", message="Workflow source fetch binding started")
+            binding = _read_dict(node.runtime.get("binding"))
+            binding_input = _read_dict(binding.get("input"))
+            try:
+                rss_result = await execute_workflow_rss_source(
+                    binding_input,
+                    allowed_domains=body.project.agentPermissions.allowedDomains,
+                    max_items=body.project.settings.maxItemsPerRun,
+                    session=session,
+                )
+            except WorkflowRSSSourceExecutionError as exc:
+                reason = WorkflowRunBlockReason(
+                    code=exc.code,
+                    message=exc.message,
+                    source="workflow_rss_source",
+                    details={"nodeId": node.id, **exc.details},
+                )
+                emitter.emit(
+                    node,
+                    "blocked" if exc.status == "blocked" else "failed",
+                    message=reason.message,
+                    block_reason=reason,
+                )
+                continue
+
+            if rss_result is not None:
+                live_items = _live_source_items(
+                    node,
+                    rss_result.items,
+                    artifact="live_rss_source",
+                )
+                outputs_by_node[node.id] = live_items
+                emitter.emit(
+                    node,
+                    "partial",
+                    message="Live RSS source loaded as workflow items",
+                    batch=_node_batch_reference(
+                        body.project.id,
+                        run_id,
+                        node,
+                        item_count=len(live_items),
+                    ),
+                    details={
+                        "bindingId": SOURCE_FETCH_BINDING_ID,
+                        "itemCount": len(live_items),
+                        "outputPort": "items[]",
+                        "channelType": "rss",
+                        "url": rss_result.url,
+                        "feedTitle": rss_result.feed_title,
+                        "totalEntries": rss_result.total_entries,
+                        "lineage": _lineage_pointer(node),
+                    },
+                )
+                emitter.emit(node, "completed", message="Live RSS source completed")
+                continue
+
+            try:
+                live_result = await execute_workflow_http_source(
+                    binding_input,
+                    allowed_domains=body.project.agentPermissions.allowedDomains,
+                    max_items=body.project.settings.maxItemsPerRun,
+                )
+            except WorkflowHTTPSourceExecutionError as exc:
+                reason = WorkflowRunBlockReason(
+                    code=exc.code,
+                    message=exc.message,
+                    source="workflow_http_source",
+                    details={"nodeId": node.id, **exc.details},
+                )
+                emitter.emit(
+                    node,
+                    "blocked" if exc.status == "blocked" else "failed",
+                    message=reason.message,
+                    block_reason=reason,
+                )
+                continue
+
+            if live_result is not None:
+                live_items = _live_source_items(node, live_result.items)
+                outputs_by_node[node.id] = live_items
+                emitter.emit(
+                    node,
+                    "partial",
+                    message="Live HTTP source loaded as workflow items",
+                    batch=_node_batch_reference(
+                        body.project.id,
+                        run_id,
+                        node,
+                        item_count=len(live_items),
+                    ),
+                    details={
+                        "bindingId": SOURCE_FETCH_BINDING_ID,
+                        "itemCount": len(live_items),
+                        "outputPort": "items[]",
+                        "method": live_result.method,
+                        "statusCode": live_result.status_code,
+                        "url": live_result.url,
+                        "resultPath": live_result.result_path,
+                        "lineage": _lineage_pointer(node),
+                    },
+                )
+                emitter.emit(node, "completed", message="Live HTTP source completed")
+                continue
+
+            reason = _source_fetch_block_reason(node, body.project.agentPermissions)
             emitter.emit(
                 node,
                 "blocked",
@@ -1057,7 +1217,7 @@ def _build_projection(
                 state.batches.append(event.batch)
 
     node_states = [states[node_id] for node_id in ordered_ids]
-    status = _run_status(node_states, valid)
+    status = _run_status(node_states, valid, runtime_nodes)
     updated_at = events[-1].createdAt if events else started_at
     return WorkflowRunProjection(
         workflowId=workflow_id,
@@ -1172,6 +1332,14 @@ async def _match_dispatch_fleet_target(
         return None
 
     adapter_node_id = _read_string(node.params.get("opencliAdapterNodeId"))
+    if adapter_node_id:
+        from backend.workflow.opencli_adapter_nodes import resolve_opencli_adapter_node
+
+        adapter_node = resolve_opencli_adapter_node(adapter_node_id)
+        if adapter_node is not None and not adapter_node.browser:
+            # Public/non-browser commands are safest and fastest on the local OpenCLI
+            # runtime. Browser-backed commands continue through fleet/profile matching.
+            return None
     request = WorkflowFleetCapabilityMatchRequest(
         adapterNodeId=adapter_node_id,
         site=None if adapter_node_id else dispatch.site,
@@ -1194,7 +1362,40 @@ async def _dispatch_opencli_source_to_fleet(
 ) -> tuple[list[dict[str, Any]], dict[str, object] | None]:
     target = _fleet_agent_dispatch_target(dispatch, match)
     if target is None:
-        return [], None
+        if dispatch.packageNodeId is not None:
+            # Packaged HDA fanout retains its asynchronous worker-envelope
+            # contract when no concrete fleet target was selected.
+            return [], None
+        from backend.channels.opencli_channel import OpenCLIChannel
+
+        payload = _read_dict(dispatch.iii.get("payload"))
+        config: dict[str, Any] = {
+            "site": dispatch.site,
+            "command": dispatch.command,
+            "format": _read_string(payload.get("format")) or "json",
+            "args": dispatch.args,
+        }
+        positional_args = payload.get("positional_args", payload.get("positionalArgs"))
+        if isinstance(positional_args, list):
+            config["positional_args"] = positional_args
+        result = await OpenCLIChannel().collect(config, {})
+        details: dict[str, object] = {
+            "attempted": True,
+            "protocol": "local",
+            "mode": "direct",
+            "site": dispatch.site,
+            "command": dispatch.command,
+            "format": config["format"],
+            "success": result.success,
+            "itemCount": len(result.items) if result.success else 0,
+        }
+        if result.error:
+            details["error"] = result.error
+        if result.error_type:
+            details["errorType"] = result.error_type
+        if result.metadata:
+            details["metadata"] = result.metadata
+        return (result.items if result.success else []), details
 
     from backend.channels.opencli_channel import _collect_via_agent, _collect_via_ws_agent
 
@@ -1312,10 +1513,27 @@ def _status_after_event(event_type: WorkflowNodeRunEventType) -> WorkflowRunStat
     return "partial"
 
 
-def _run_status(node_states: list[WorkflowRunNodeState], valid: bool) -> WorkflowRunStatus:
+def _run_status(
+    node_states: list[WorkflowRunNodeState],
+    valid: bool,
+    runtime_nodes: list[CompiledWorkflowNode] | None = None,
+) -> WorkflowRunStatus:
     if not valid:
         return "failed"
     statuses = {state.status for state in node_states}
+    if runtime_nodes:
+        terminal_ids = {node.id for node in runtime_nodes if _is_builder_output(node)}
+        terminal_statuses = {
+            state.status for state in node_states if state.nodeId in terminal_ids
+        }
+        if (
+            len(terminal_ids) > 1
+            and len(terminal_statuses) == len(terminal_ids)
+            and terminal_statuses <= {"completed", "failed", "blocked"}
+            and "completed" in terminal_statuses
+            and terminal_statuses.intersection({"failed", "blocked"})
+        ):
+            return "partial_success"
     if "failed" in statuses:
         return "failed"
     if "blocked" in statuses:
@@ -1325,6 +1543,122 @@ def _run_status(node_states: list[WorkflowRunNodeState], valid: bool) -> Workflo
     if statuses and statuses <= {"completed"}:
         return "completed"
     return "queued"
+
+
+def _is_builder_output(node: CompiledWorkflowNode) -> bool:
+    builder = _read_dict(node.params.get("builder"))
+    return _read_string(builder.get("nodeType")) in {
+        "records-output",
+        "email-output",
+        "webhook-output",
+    }
+
+
+def _select_runtime_nodes_for_trigger(
+    nodes: list[CompiledWorkflowNode],
+    *,
+    trigger_kind: str,
+    trigger_node_id: str | None,
+) -> tuple[list[CompiledWorkflowNode], WorkflowCompileError | None]:
+    """Select one trigger entry and its reachable subgraph for an independent Run."""
+
+    trigger_nodes = [node for node in nodes if _runtime_trigger_kind(node) is not None]
+    if not trigger_nodes:
+        return nodes, None
+
+    selected: CompiledWorkflowNode | None = None
+    if trigger_node_id:
+        selected = next((node for node in nodes if node.id == trigger_node_id), None)
+        if selected is None:
+            return [], WorkflowCompileError(
+                code="workflow_trigger_not_found",
+                message=f'Workflow trigger node "{trigger_node_id}" was not found.',
+                node_id=trigger_node_id,
+                path=["trigger", "triggerNodeId"],
+            )
+        selected_kind = _runtime_trigger_kind(selected)
+        if selected_kind is None:
+            return [], WorkflowCompileError(
+                code="unsupported_workflow_trigger",
+                message=f'Node "{trigger_node_id}" is not a workflow trigger entry.',
+                node_id=trigger_node_id,
+                path=["trigger", "triggerNodeId"],
+            )
+        requested_kind = "manual" if trigger_kind == "ai" else trigger_kind
+        if selected_kind != requested_kind:
+            return [], WorkflowCompileError(
+                code="workflow_trigger_kind_mismatch",
+                message=(
+                    f'Workflow trigger node "{trigger_node_id}" is "{selected_kind}", '
+                    f'not "{trigger_kind}".'
+                ),
+                node_id=trigger_node_id,
+                path=["trigger", "kind"],
+            )
+    else:
+        requested_kind = "manual" if trigger_kind == "ai" else trigger_kind
+        candidates = [
+            node for node in trigger_nodes if _runtime_trigger_kind(node) == requested_kind
+        ]
+        if len(candidates) == 1:
+            selected = candidates[0]
+        elif len(candidates) > 1:
+            return [], WorkflowCompileError(
+                code="workflow_trigger_ambiguous",
+                message=(
+                    f'Workflow has multiple "{trigger_kind}" trigger entries; '
+                    "triggerNodeId is required."
+                ),
+                path=["trigger", "triggerNodeId"],
+            )
+        else:
+            return [], WorkflowCompileError(
+                code="workflow_trigger_kind_mismatch",
+                message=f'Workflow has no "{trigger_kind}" trigger entry.',
+                path=["trigger", "kind"],
+            )
+
+    adjacency: dict[str, list[str]] = {node.id: [] for node in nodes}
+    for node in nodes:
+        for dependency_id in node.depends_on:
+            adjacency.setdefault(dependency_id, []).append(node.id)
+
+    active_ids = {selected.id}
+    pending = [selected.id]
+    while pending:
+        current_id = pending.pop()
+        for downstream_id in adjacency.get(current_id, []):
+            if downstream_id not in active_ids:
+                active_ids.add(downstream_id)
+                pending.append(downstream_id)
+
+    selected_nodes = [
+        node.model_copy(
+            update={
+                "depends_on": [
+                    dependency_id
+                    for dependency_id in node.depends_on
+                    if dependency_id in active_ids
+                ]
+            }
+        )
+        for node in nodes
+        if node.id in active_ids
+    ]
+    return selected_nodes, None
+
+
+def _runtime_trigger_kind(node: CompiledWorkflowNode) -> str | None:
+    binding_id = _binding_id(node)
+    if binding_id == WEBHOOK_TRIGGER_BINDING_ID:
+        return "webhook"
+    if binding_id != SCHEDULE_TRIGGER_BINDING_ID:
+        return None
+
+    builder = _read_dict(node.params.get("builder"))
+    node_type = _read_string(builder.get("nodeType"))
+    mode = _read_string(node.params.get("mode"))
+    return "manual" if node_type == "manual-trigger" or mode == "manual" else "schedule"
 
 
 def _select_package_id(
@@ -1428,6 +1762,29 @@ def _request_source_items(
                     "nodeId": node.id,
                     "sourceGroup": source_group,
                     "artifact": "sourceOutputs",
+                    "index": index,
+                }
+            ],
+        }
+        for index, item in enumerate(raw_items)
+    ]
+
+
+def _live_source_items(
+    node: CompiledWorkflowNode,
+    raw_items: list[dict[str, Any]],
+    *,
+    artifact: str = "live_http_source",
+) -> list[dict[str, Any]]:
+    source_group = _source_group(node, node.id)
+    return [
+        {
+            "raw": item,
+            "lineage": [
+                {
+                    "nodeId": node.id,
+                    "sourceGroup": source_group,
+                    "artifact": artifact,
                     "index": index,
                 }
             ],
@@ -1837,9 +2194,10 @@ async def _store_record_sink_outputs(
                 (raw, normalized, content_hash)
                 for raw, normalized, content_hash, _lineage in triples_with_lineage
             ],
-            channel_type=_read_string(runtime_nodes_by_id[source_node_id].params.get("site"))
-            or "workflow",
+            channel_type=_workflow_source_channel_type(runtime_nodes_by_id[source_node_id]),
             forward_to_odp=False,
+            workflow_id=workflow_id,
+            workflow_run_id=run_id,
         )
         skipped_total += skipped
         for record, (_raw, _normalized, _content_hash, lineage) in zip(
@@ -1937,8 +2295,12 @@ def _origin_source_node_id(
 def _workflow_source_channel_type(node: CompiledWorkflowNode) -> str:
     adapter = _read_string(node.adapter)
     binding = _read_dict(node.runtime.get("binding"))
+    binding_input = _read_dict(binding.get("input"))
+    channel_type = _read_string(binding_input.get("channelType"))
+    if channel_type:
+        return channel_type
     channel = _read_string(binding.get("channel"))
-    if channel:
+    if channel and channel != "source":
         return channel
     if adapter and adapter.startswith("opencli"):
         return "opencli"
@@ -2439,7 +2801,7 @@ def _to_dispatch(
     project: WorkflowProject,
     node: CompiledWorkflowNode,
     *,
-    package_node_id: str,
+    package_node_id: str | None,
     run_id: str,
     trace_id: str,
 ) -> WorkflowOpenCLIHDATraceDispatch:
@@ -2453,17 +2815,17 @@ def _to_dispatch(
         site = _read_string(node.params.get("site")) or ""
         command = _read_string(node.params.get("command")) or ""
 
-    internal_node_id = _internal_node_id(node.id, package_node_id)
-    source_group = _source_group(node, internal_node_id)
+    internal_node_id = (
+        _internal_node_id(node.id, package_node_id) if package_node_id else None
+    )
+    source_group = _source_group(node, internal_node_id or node.id)
     args = _read_dict(node.params.get("args"))
     task_id = _task_id(project.id, run_id, node.id, source_group)
     payload: dict[str, object] = {
         "workflow_id": project.id,
         "workflow_run_id": run_id,
-        "package_node_id": package_node_id,
         "node_id": node.id,
         "node_path": _compiled_node_path(node),
-        "internal_node_id": internal_node_id,
         "source_group": source_group,
         "site": site,
         "command": command,
@@ -2472,6 +2834,10 @@ def _to_dispatch(
         "task_id": task_id,
         "trace_id": trace_id,
     }
+    if package_node_id:
+        payload["package_node_id"] = package_node_id
+    if internal_node_id:
+        payload["internal_node_id"] = internal_node_id
     positional_args = node.params.get("positional_args", node.params.get("positionalArgs"))
     if isinstance(positional_args, list) and positional_args:
         payload["positional_args"] = positional_args

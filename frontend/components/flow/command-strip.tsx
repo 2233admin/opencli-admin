@@ -84,7 +84,7 @@ function IconAction({
             variant="ghost"
             size="icon"
             className={cn(
-              "size-7 text-muted-foreground hover:text-foreground",
+              "size-11 text-muted-foreground hover:text-foreground",
               active && "bg-accent text-foreground",
             )}
             onClick={onClick}
@@ -333,7 +333,7 @@ export function CommandStrip({
           <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
             <span>{nodeCount} 个节点</span>
             <span>·</span>
-            <span className={cn(isDirty && "text-[#ff7a17]")}>{isDirty ? "未保存" : "已保存"}</span>
+            <span className={cn(isDirty && "text-warning")}>{isDirty ? "未保存" : "已保存"}</span>
           </div>
         </div>
       </nav>
@@ -346,7 +346,7 @@ export function CommandStrip({
       </div>
 
       <div className="flex shrink-0 items-center gap-1.5">
-        <Button variant="outline" size="sm" className="h-8 gap-1.5 rounded-lg" onClick={onOpenPalette}>
+        <Button variant="outline" size="sm" className="min-h-11 gap-1.5 rounded-lg" onClick={onOpenPalette}>
           <span className="text-base leading-none">＋</span>
           <span className="hidden sm:inline">添加节点</span>
         </Button>
@@ -363,7 +363,7 @@ export function CommandStrip({
         <Button
           variant="outline"
           size="sm"
-          className="hidden h-8 gap-1.5 rounded-lg md:flex"
+          className="hidden min-h-11 gap-1.5 rounded-lg md:flex"
           onClick={() => {
             save()
             onExported?.("工作流已保存到本地")
@@ -373,7 +373,7 @@ export function CommandStrip({
           保存
         </Button>
 
-        <Button size="sm" className="h-8 gap-1.5 rounded-lg" onClick={onToggleRunTrace}>
+        <Button size="sm" className="min-h-11 gap-1.5 rounded-lg" onClick={onToggleRunTrace}>
           <Play className="size-3.5" />
           试运行
         </Button>
@@ -384,7 +384,7 @@ export function CommandStrip({
               render={
                 <DropdownMenuTrigger
                   render={
-                    <Button variant="ghost" size="icon" className="size-8 rounded-lg" aria-label="更多工具" />
+                    <Button variant="ghost" size="icon" className="size-11 rounded-lg" aria-label="更多工具" />
                   }
                 />
               }

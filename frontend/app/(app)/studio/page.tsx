@@ -1,6 +1,6 @@
 'use client'
 
-import { Bot, Building2, ChevronDown, FileText, FileUp, FolderKanban, MessageCircle, MessagesSquare, Plus, Search, Sparkles, Workflow } from 'lucide-react'
+import { Bot, Building2, ChevronDown, FileText, FileUp, FolderKanban, MessageCircle, Plus, Search, Sparkles, Trash2, Workflow } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -14,19 +14,18 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { useBootstrapWorkspaceProject, useCreateProjectWorkflow, useMyWorkspaces, useWorkspaceProjects } from '@/lib/api/hooks'
+import { useBootstrapWorkspaceProject, useCreateProjectWorkflow, useDeleteWorkspaceProject, useMyWorkspaces, useWorkspaceProjects } from '@/lib/api/hooks'
 import { formatRelative } from '@/lib/format'
-import { PROJECT_APP_TYPE_LABELS, projectAppTypeForDifyMode, projectMatchesAppType, type ProjectAppTypeFilter } from '@/lib/studio/app-types'
+import { PROJECT_APP_CATEGORY_LABELS, projectAppCategoryLabel, projectAppTypeForDifyMode, projectAppTypeLabel, projectMatchesAppType, type ProjectAppTypeFilter } from '@/lib/studio/app-types'
+import type { ProjectSummary } from '@/lib/api/types'
 import { translateWorkflowDsl, type WorkflowImportResult } from '@/lib/workflow/codec'
 import { studioAppTypeForTemplate, studioGraphForTemplate, studioSlug, type StudioTemplateId } from '@/lib/workflow/studio-templates'
 
 const PROJECT_TYPE_FILTERS = [
   { value: 'all', label: '全部', icon: FolderKanban },
-  { value: 'chatbot', label: PROJECT_APP_TYPE_LABELS.chatbot, icon: MessageCircle },
-  { value: 'agent', label: PROJECT_APP_TYPE_LABELS.agent, icon: Bot },
-  { value: 'chatflow', label: PROJECT_APP_TYPE_LABELS.chatflow, icon: MessagesSquare },
-  { value: 'workflow', label: PROJECT_APP_TYPE_LABELS.workflow, icon: Workflow },
-  { value: 'text-generator', label: PROJECT_APP_TYPE_LABELS['text-generator'], icon: FileText },
+  { value: 'conversation', label: PROJECT_APP_CATEGORY_LABELS.conversation, icon: MessageCircle },
+  { value: 'orchestration', label: PROJECT_APP_CATEGORY_LABELS.orchestration, icon: Workflow },
+  { value: 'generation', label: PROJECT_APP_CATEGORY_LABELS.generation, icon: FileText },
 ] as const satisfies ReadonlyArray<{ value: ProjectAppTypeFilter; label: string; icon: typeof FolderKanban }>
 
 export default function StudioPage() {
@@ -35,18 +34,20 @@ export default function StudioPage() {
   const [workspaceId, setWorkspaceId] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [type, setType] = useState<ProjectAppTypeFilter>('all')
-  const [creator, setCreator] = useState('all')
   const [sort, setSort] = useState('updated-desc')
   const [createTemplate, setCreateTemplate] = useState<StudioTemplateId | null>(null)
   const [projectName, setProjectName] = useState('')
   const [pendingImport, setPendingImport] = useState<Extract<WorkflowImportResult, { ok: true }> | null>(null)
   const [importProjectId, setImportProjectId] = useState('')
   const [importProjectName, setImportProjectName] = useState('')
+  const [contextMenu, setContextMenu] = useState<{ project: ProjectSummary; x: number; y: number } | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<ProjectSummary | null>(null)
   const importInputRef = useRef<HTMLInputElement>(null)
   const createIntentHandled = useRef(false)
   const projects = useWorkspaceProjects(workspaceId)
   const bootstrapProject = useBootstrapWorkspaceProject()
   const createWorkflow = useCreateProjectWorkflow()
+  const deleteProject = useDeleteWorkspaceProject()
 
   useEffect(() => {
     if (workspaceId || !workspaces.data?.length) return
@@ -59,8 +60,8 @@ export default function StudioPage() {
     if (!workspaceId || createIntentHandled.current) return
     if (new URLSearchParams(window.location.search).get('create') === 'workflow') {
       createIntentHandled.current = true
-      setCreateTemplate('collection-to-consumption')
-      setProjectName('采集到消费完整链路')
+      setCreateTemplate('opencli-live-pipeline')
+      setProjectName('OpenCLI 实时采集清洗发送')
       const url = new URL(window.location.href)
       url.searchParams.delete('create')
       window.history.replaceState(window.history.state, '', url)
@@ -71,7 +72,7 @@ export default function StudioPage() {
     const query = search.trim().toLowerCase()
     const result = (projects.data ?? []).filter((project) => {
       const haystack = `${project.name} ${project.description ?? ''} ${project.slug}`.toLowerCase()
-      return (!query || haystack.includes(query)) && projectMatchesAppType(project, type) && (creator === 'all' || project.created_by_user_id === creator)
+      return (!query || haystack.includes(query)) && projectMatchesAppType(project, type)
     })
     return result.sort((left, right) => {
       if (sort === 'name') return left.name.localeCompare(right.name, 'zh-CN')
@@ -79,9 +80,7 @@ export default function StudioPage() {
       const direction = sort === 'created-asc' ? 1 : -1
       return left[field].localeCompare(right[field]) * direction
     })
-  }, [creator, projects.data, search, sort, type])
-
-  const creators = useMemo(() => Array.from(new Set((projects.data ?? []).map((project) => project.created_by_user_id))), [projects.data])
+  }, [projects.data, search, sort, type])
   const selectedWorkspace = workspaces.data?.find((workspace) => workspace.id === workspaceId)
 
   async function submitCreate() {
@@ -153,6 +152,17 @@ export default function StudioPage() {
     }
   }
 
+  async function confirmDeleteProject() {
+    if (!workspaceId || !deleteTarget) return
+    try {
+      await deleteProject.mutateAsync({ workspaceId, projectId: deleteTarget.id })
+      toast.success(`已删除项目“${deleteTarget.name}”`)
+      setDeleteTarget(null)
+    } catch (reason) {
+      toast.error(reason instanceof Error ? reason.message : '删除失败')
+    }
+  }
+
   return (
     <PageContainer
       title="项目"
@@ -161,7 +171,7 @@ export default function StudioPage() {
       className="max-w-none"
       actions={
         <DropdownMenu>
-          <DropdownMenuTrigger render={<Button disabled={!workspaceId} />}><Plus className="size-4" />创建<ChevronDown className="size-3.5" /></DropdownMenuTrigger>
+          <DropdownMenuTrigger render={<Button className="min-h-11" disabled={!workspaceId} />}><Plus className="size-4" />创建<ChevronDown className="size-3.5" /></DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-48">
             <DropdownMenuItem onClick={() => router.push(`/studio/new?workspace=${workspaceId}`)}><Bot className="size-4" />与 Agent 创建</DropdownMenuItem>
             <DropdownMenuItem onClick={() => router.push(`/studio/templates?workspace=${workspaceId}`)}>从模板创建</DropdownMenuItem>
@@ -175,37 +185,32 @@ export default function StudioPage() {
         <div className="flex flex-wrap items-center gap-2">
           {(workspaces.data?.length ?? 0) > 1 ? (
             <Select value={workspaceId ?? ''} onValueChange={(value) => setWorkspaceId(value || null)}>
-              <SelectTrigger className="min-w-48 rounded-lg border-0 bg-muted/60 shadow-none" aria-label="切换工作区">
+              <SelectTrigger className="min-h-11 min-w-48 rounded-lg border-0 bg-muted/60 shadow-none" aria-label="切换工作区">
                 <Building2 className="size-3.5 text-muted-foreground" aria-hidden />
                 <SelectValue>{selectedWorkspace?.name ?? '选择工作区'}</SelectValue>
               </SelectTrigger>
               <SelectContent>{(workspaces.data ?? []).map((workspace) => <SelectItem key={workspace.id} value={workspace.id}>{workspace.name}</SelectItem>)}</SelectContent>
             </Select>
           ) : selectedWorkspace ? (
-            <div className="flex h-8 items-center gap-2 px-1 text-xs" aria-label="当前工作区">
+            <div className="flex min-h-11 items-center gap-2 px-1 text-xs" aria-label="当前工作区">
               <Building2 className="size-3.5 text-muted-foreground" aria-hidden />
               <span className="font-medium">{selectedWorkspace.name}</span>
             </div>
           ) : null}
           <div className="relative ml-auto min-w-52 flex-1 sm:max-w-80">
-            <Search className="pointer-events-none absolute left-3 top-2.5 size-4 text-muted-foreground" aria-hidden />
-            <Input value={search} onChange={(event) => setSearch(event.target.value)} className="rounded-lg pl-9" placeholder="搜索名称、描述或标识" />
+            <Search className="pointer-events-none absolute left-3 top-3.5 size-4 text-muted-foreground" aria-hidden />
+            <Input value={search} onChange={(event) => setSearch(event.target.value)} className="min-h-11 rounded-lg pl-9" placeholder="搜索名称、描述或标识" />
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-1.5" aria-label="Dify 应用类型筛选">
-          <span className="px-1 text-2xs text-muted-foreground">应用类型</span>
+        <div className="flex flex-wrap items-center gap-1.5" aria-label="项目分类筛选">
+          <span className="px-1 text-2xs text-muted-foreground">项目分类</span>
           {PROJECT_TYPE_FILTERS.map(({ value, label, icon: Icon }) => (
-            <Button key={value} type="button" size="sm" variant={type === value ? 'secondary' : 'ghost'} className="h-8 rounded-lg px-2.5 text-xs" onClick={() => setType(value)}>
+            <Button key={value} type="button" size="sm" variant={type === value ? 'secondary' : 'ghost'} aria-pressed={type === value} className="min-h-11 rounded-lg px-3 text-xs" onClick={() => setType(value)}>
               <Icon className="size-3.5" aria-hidden />{label}
             </Button>
           ))}
-          <span className="mx-1 hidden h-4 w-px bg-border sm:block" aria-hidden />
-          <Select value={creator} onValueChange={(value) => setCreator(value ?? 'all')}>
-            <SelectTrigger className="h-8 rounded-lg border-0 bg-transparent text-xs shadow-none"><SelectValue>{creator === 'all' ? '创建者' : creator.slice(0, 8)}</SelectValue></SelectTrigger>
-            <SelectContent><SelectItem value="all">全部创建者</SelectItem>{creators.map((id) => <SelectItem key={id} value={id}>{id.slice(0, 8)}</SelectItem>)}</SelectContent>
-          </Select>
           <Select value={sort} onValueChange={(value) => setSort(value ?? 'updated-desc')}>
-            <SelectTrigger className="h-8 rounded-lg border-0 bg-transparent text-xs shadow-none sm:ml-auto"><SelectValue>{SORT_LABELS[sort]}</SelectValue></SelectTrigger>
+            <SelectTrigger className="min-h-11 rounded-lg border-0 bg-transparent text-xs shadow-none sm:ml-auto"><SelectValue>{SORT_LABELS[sort]}</SelectValue></SelectTrigger>
             <SelectContent><SelectItem value="updated-desc">最近修改</SelectItem><SelectItem value="created-asc">最早创建</SelectItem><SelectItem value="name">名称</SelectItem></SelectContent>
           </Select>
         </div>
@@ -226,12 +231,20 @@ export default function StudioPage() {
           <div className="mb-3 flex items-center justify-between gap-3 text-xs"><span className="font-medium">{visibleProjects.length} 个项目</span><span className="text-muted-foreground">{SORT_LABELS[sort]}</span></div>
           <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
           {visibleProjects.map((project) => (
-            <Link key={project.id} href={`/studio/workflow?workspace=${workspaceId}&project=${project.id}`} className="group min-w-0 rounded-xl border border-border/80 bg-card/30 p-3.5 transition-[border-color,background-color,transform] hover:-translate-y-0.5 hover:border-foreground/25 hover:bg-card/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
+            <Link
+              key={project.id}
+              href={`/studio/projects/${project.id}?workspace=${workspaceId}`}
+              onContextMenu={(event) => {
+                event.preventDefault()
+                setContextMenu({ project, x: event.clientX, y: event.clientY })
+              }}
+              className="group min-w-0 rounded-xl border border-border/80 bg-card/30 p-3.5 transition-[border-color,background-color,transform] hover:-translate-y-0.5 hover:border-foreground/25 hover:bg-card/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+            >
               <div className="flex items-start justify-between gap-3"><div className="grid size-9 place-items-center rounded-lg bg-muted text-muted-foreground transition-colors group-hover:text-foreground"><FolderKanban className="size-4" aria-hidden /></div><Badge variant={project.archived ? 'secondary' : 'outline'}>{project.archived ? '已归档' : project.slug}</Badge></div>
-              <div className="mt-4 flex items-center gap-2"><span className="eyebrow-mono">{PROJECT_APP_TYPE_LABELS[project.app_type]}</span><span className="truncate font-mono text-[10px] text-muted-foreground">{project.slug}</span></div>
+              <div className="mt-4 flex items-center gap-2"><span className="eyebrow-mono">{projectAppCategoryLabel(project.app_type)} · {projectAppTypeLabel(project.app_type)}</span><span className="truncate font-mono text-3xs text-muted-foreground">{project.slug}</span></div>
               <h2 className="mt-1 truncate text-sm font-semibold">{project.name}</h2>
               <p className="mt-1 line-clamp-2 min-h-10 text-xs leading-5 text-muted-foreground">{project.description || '数据节点项目'}</p>
-              <div className="mt-3 flex items-center justify-between border-t border-border/70 pt-2.5 text-[10px] text-muted-foreground"><span>创建者 {project.created_by_user_id.slice(0, 8)}</span><span>{formatRelative(project.updated_at)}</span></div>
+              <div className="mt-3 flex items-center justify-between border-t border-border/70 pt-2.5 text-3xs text-muted-foreground"><span>创建者 我</span><span>{formatRelative(project.updated_at)}</span></div>
             </Link>
           ))}
           </div>
@@ -245,12 +258,30 @@ export default function StudioPage() {
             <div className="mt-5 grid gap-2 text-left">
               <CreateChoice title="与 Agent 创建项目" description="描述目标，由 Agent 生成第一版节点工作流。" href={workspaceId ? `/studio/new?workspace=${workspaceId}` : undefined} icon={Bot} />
               <CreateChoice title="从应用模板创建" description="选择预设的数据链路，最快体验 OpenCLI。" href={workspaceId ? `/studio/templates?workspace=${workspaceId}` : undefined} icon={Sparkles} />
-              <div className="my-0.5 flex items-center gap-3 text-[10px] text-muted-foreground before:h-px before:flex-1 before:bg-border after:h-px after:flex-1 after:bg-border">或</div>
+              <div className="my-0.5 flex items-center gap-3 text-3xs text-muted-foreground before:h-px before:flex-1 before:bg-border after:h-px after:flex-1 after:bg-border">或</div>
               <CreateChoice title="导入 DSL 文件" description="兼容迁移 Dify、n8n 和 OpenCLI 工作流。" onClick={workspaceId ? () => importInputRef.current?.click() : undefined} icon={FileUp} />
             </div>
           </div>
         </div>
       )}
+
+      {contextMenu ? (
+        <>
+          <button type="button" aria-label="关闭项目右键菜单" className="fixed inset-0 z-40 cursor-default" onClick={() => setContextMenu(null)} onContextMenu={(event) => { event.preventDefault(); setContextMenu(null) }} />
+          <div role="menu" aria-label={`${contextMenu.project.name} 项目操作`} className="fixed z-50 min-w-44 rounded-lg border bg-popover p-1 shadow-xl" style={{ left: Math.min(contextMenu.x, window.innerWidth - 190), top: Math.min(contextMenu.y, window.innerHeight - 70) }}>
+            <button type="button" role="menuitem" className="flex min-h-10 w-full items-center gap-2 rounded-md px-3 text-left text-xs text-destructive hover:bg-destructive/10" onClick={() => { setDeleteTarget(contextMenu.project); setContextMenu(null) }}>
+              <Trash2 className="size-3.5" aria-hidden />删除项目
+            </button>
+          </div>
+        </>
+      ) : null}
+
+      <Dialog open={deleteTarget !== null} onOpenChange={(open) => !open && !deleteProject.isPending && setDeleteTarget(null)}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>删除项目“{deleteTarget?.name}”？</DialogTitle><DialogDescription>项目下的工作流、草稿、版本和运行记录都会一并删除，此操作无法撤销。</DialogDescription></DialogHeader>
+          <DialogFooter><Button variant="outline" onClick={() => setDeleteTarget(null)} disabled={deleteProject.isPending}>取消</Button><Button variant="destructive" onClick={() => void confirmDeleteProject()} disabled={deleteProject.isPending}>{deleteProject.isPending ? '正在删除…' : '确认删除'}</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={createTemplate !== null} onOpenChange={(open) => !open && setCreateTemplate(null)}>
         <DialogContent>
@@ -298,7 +329,7 @@ function ImportCompatibilitySummary({ imported }: { imported: Extract<WorkflowIm
       <p className="mt-2 text-muted-foreground">
         {report ? `${report.nodeCount} 个节点 · ${report.edgeCount} 条连线 · ${report.adapterCount} 个适配器` : 'Canonical WorkflowProject，无需翻译。'}
       </p>
-      {unsupported ? <p className="mt-2 text-amber-600">有 {unsupported} 条连接无法映射，已保留其余可兼容内容。</p> : <p className="mt-2 text-emerald-600">未发现缺失连接。</p>}
+          {unsupported ? <p className="mt-2 text-warning">有 {unsupported} 条连接无法映射，已保留其余可兼容内容。</p> : <p className="mt-2 text-success">未发现缺失连接。</p>}
     </div>
   )
 }

@@ -6,9 +6,12 @@ export async function proxyWorkflowEvidenceBatchRequest(
   suffix = "",
 ): Promise<Response> {
   try {
-    const root = `${BACKEND_URL}/api/v1/workflows/runs/${encodeURIComponent(runId)}/evidence-batches`
+    const runRoot = `${BACKEND_URL}/api/v1/workflows/runs/${encodeURIComponent(runId)}`
+    const target = suffix === "/projection"
+      ? `${runRoot}/projection`
+      : `${runRoot}/evidence-batches${suffix}`
     const search = new URL(req.url).searchParams.toString()
-    const response = await fetch(`${root}${suffix}${search ? `?${search}` : ""}`, {
+    const response = await fetch(`${target}${search ? `?${search}` : ""}`, {
       headers: {
         ...(req.headers.get("authorization")
           ? { Authorization: req.headers.get("authorization") as string }

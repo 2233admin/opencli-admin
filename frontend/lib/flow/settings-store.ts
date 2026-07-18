@@ -59,7 +59,9 @@ export const DEFAULT_SETTINGS: CanvasSettings = {
   panOnDrag: true,
   selectionOnDrag: true,
   touchMode: false,
-  preventCycles: false,
+  // Workflow Drafts are compiled as DAGs. Keep the canvas aligned with the
+  // compiler contract instead of letting users create graphs that cannot run.
+  preventCycles: true,
   confirmDelete: false,
   maxSourceConnections: undefined,
   maxTargetConnections: undefined,

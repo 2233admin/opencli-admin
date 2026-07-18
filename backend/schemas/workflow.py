@@ -557,7 +557,15 @@ class WorkflowOpenCLIHDATraceResponse(BaseModel):
     dispatches: list[WorkflowOpenCLIHDATraceDispatch] = Field(default_factory=list)
 
 
-WorkflowRunStatus = Literal["queued", "running", "partial", "blocked", "completed", "failed"]
+WorkflowRunStatus = Literal[
+    "queued",
+    "running",
+    "partial",
+    "partial_success",
+    "blocked",
+    "completed",
+    "failed",
+]
 WorkflowRunTriggerKind = Literal["manual", "ai", "schedule", "webhook"]
 WorkflowRunInputSource = Literal["operator", "agent", "external"]
 WorkflowRunResponseMode = Literal["async", "sync-short-wait", "callback"]

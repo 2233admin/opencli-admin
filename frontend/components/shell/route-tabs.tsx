@@ -7,7 +7,7 @@ import { motion } from 'motion/react'
 import { Ripple } from '@/components/motion/ripple'
 import { cn } from '@/lib/utils'
 
-export type RouteTab = { href: string; label: string }
+export type RouteTab = { href: string; label: string; exact?: boolean }
 
 /**
  * M3-style segmented route tabs linking sibling views (e.g. 任务/记录/通知).
@@ -25,7 +25,9 @@ export function RouteTabs({ tabs, className }: { tabs: RouteTab[]; className?: s
       )}
     >
       {tabs.map((tab) => {
-        const active = pathname === tab.href || pathname.startsWith(`${tab.href}/`)
+        const active = tab.exact
+          ? pathname === tab.href
+          : pathname === tab.href || pathname.startsWith(`${tab.href}/`)
         return (
           <Link
             key={tab.href}
@@ -53,18 +55,30 @@ export function RouteTabs({ tabs, className }: { tabs: RouteTab[]; className?: s
 }
 
 /** Shared tab sets for related views. */
-export const RUN_CENTER_TABS: RouteTab[] = [
-  { href: '/tasks', label: '任务' },
-  { href: '/records', label: '记录' },
-  { href: '/notifications', label: '通知' },
+export const ACTION_CENTER_TABS: RouteTab[] = [
+  { href: '/inbox', label: '待处理' },
+  { href: '/tasks', label: '工作项' },
+  { href: '/notifications', label: '通知规则' },
 ]
 
-export const CAPABILITY_TABS: RouteTab[] = [
-  { href: '/agents', label: '智能体' },
+export const AUTOMATION_TABS: RouteTab[] = [
+  { href: '/sources', label: '数据源' },
+  { href: '/schedules', label: '调度' },
+  { href: '/agents', label: 'Agent' },
   { href: '/skills', label: '技能' },
+]
+
+export const DATA_EXPLORER_TABS: RouteTab[] = [
+  { href: '/records', label: '数据表', exact: true },
+  { href: '/records/graph', label: '关系图谱' },
 ]
 
 export const COMPUTE_TABS: RouteTab[] = [
   { href: '/nodes', label: '浏览器节点' },
   { href: '/workers', label: 'Worker' },
+]
+
+export const MODEL_SETTINGS_TABS: RouteTab[] = [
+  { href: '/providers', label: '快速设置', exact: true },
+  { href: '/providers/catalog', label: 'Provider 目录' },
 ]

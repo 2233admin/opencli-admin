@@ -1,7 +1,7 @@
 "use client"
 
 import { memo, useEffect, useState, type MouseEvent as ReactMouseEvent } from "react"
-import { Handle, Position, useStore, type NodeProps } from "@xyflow/react"
+import { Handle, Position, useStore, useUpdateNodeInternals, type NodeProps } from "@xyflow/react"
 import { Loader2, Wand2 } from "lucide-react"
 import type { WorkflowNode as WorkflowNodeType } from "@/lib/flow/types"
 import { getApiAuthToken } from "@/lib/api/auth-token"
@@ -20,6 +20,7 @@ const statusLabels: Record<string, string> = {
   idle: "Idle",
   running: "Running",
   success: "Done",
+  partial_success: "Partial success",
   error: "Error",
 }
 
@@ -27,6 +28,7 @@ const statusDotStyles: Record<string, string> = {
   idle: "border-muted-foreground/50 bg-transparent",
   running: "border-[#ff7a17] bg-[#ff7a17]",
   success: "border-[#4ade80] bg-[#4ade80]",
+  partial_success: "border-warning bg-warning",
   error: "border-destructive bg-destructive",
 }
 
@@ -288,6 +290,7 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<WorkflowNodeTyp
   const contextualZoom = useSettingsStore((s) => s.contextualZoom)
   const language = useSettingsStore((s) => s.language)
   const zoom = useStore((s) => s.transform[2])
+  const updateNodeInternals = useUpdateNodeInternals()
   const canonical = readCanonical(data)
   const projectNode = workflowProject.nodes.find((candidate) => candidate.id === id)
   const nodeViewContract = buildCanonicalNodeViewContract(projectNode, data, id)
@@ -325,9 +328,32 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<WorkflowNodeTyp
       accent: port.type === "assertion" || port.type.toLowerCase() === "evidencebatch" ? "#4ade80" : undefined,
     }))
   const primitiveInputs = primitivePorts.filter((port) => port.direction === "input")
-  const outputs: { id?: string; label: string; accent?: string }[] = primitiveOutputs.length > 0
-    ? primitiveOutputs
-    : []
+  const connectedInputPorts = workflowProject.edges
+    .filter((edge) => edge.target === id)
+    .map((edge) => edge.targetPort)
+  const connectedOutputPorts = workflowProject.edges
+    .filter((edge) => edge.source === id)
+    .map((edge) => edge.sourcePort)
+  const semanticPorts = semanticFallbackPorts(canonical?.kind)
+  const inputs = mergeNodePorts(
+    [
+      ...primitiveInputs.map((port) => ({ id: port.id, label: port.id })),
+      ...semanticPorts.inputs,
+    ],
+    connectedInputPorts,
+  )
+  const outputs = mergeNodePorts(
+    [...primitiveOutputs, ...semanticPorts.outputs],
+    connectedOutputPorts,
+  )
+  const portSignature = [
+    ...inputs.map((port) => `in:${port.id ?? "__default__"}`),
+    ...outputs.map((port) => `out:${port.id ?? "__default__"}`),
+  ].join("|")
+
+  useEffect(() => {
+    updateNodeInternals(id)
+  }, [id, portSignature, updateNodeInternals])
 
   const summary = paramSummary(data)
   const nodeShape = nodeDisplayShape(data)
@@ -350,6 +376,10 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<WorkflowNodeTyp
     outputs.length === 1
       ? { left: "50%" }
       : { left: `${((i + 1) / (outputs.length + 1)) * 100}%` }
+  const targetHandleStyle = (i: number) =>
+    inputs.length === 1
+      ? { left: "50%" }
+      : { left: `${((i + 1) / (inputs.length + 1)) * 100}%` }
 
   const assembleCollectionNeed = async (event: ReactMouseEvent<HTMLButtonElement>) => {
     event.preventDefault()
@@ -401,13 +431,22 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<WorkflowNodeTyp
           proposalFocused && "ring-2 ring-[#ff7a17]/45",
         )}
         style={nodeStyle}
-        title={`${nodeViewContract.identity.label} · ${nodeViewContract.identity.kind} · ${runtimeStatusLabel(nodeViewContract.status.capability)} · ${primitiveInputs.length} in / ${outputs.length} out`}
+        title={`${nodeViewContract.identity.label} · ${nodeViewContract.identity.kind} · ${runtimeStatusLabel(nodeViewContract.status.capability)} · ${inputs.length} in / ${outputs.length} out`}
       >
         <span className="workflow-node-mini-code">{visual.code}</span>
-        <Handle type="target" id={primitiveInputs[0]?.id} position={Position.Top} className={handleCls} />
+        {inputs.map((input, index) => (
+          <Handle
+            key={portKey(input.id, "in")}
+            type="target"
+            id={input.id}
+            position={Position.Top}
+            className={handleCls}
+            style={targetHandleStyle(index)}
+          />
+        ))}
         {outputs.map((out) => (
           <Handle
-            key={out.id ?? "out"}
+            key={portKey(out.id, "out")}
             id={out.id}
             type="source"
             position={Position.Bottom}
@@ -514,11 +553,11 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<WorkflowNodeTyp
         <div className="border-t border-border/80 py-0.5">
           {outputs.map((out, i) => (
             <div
-              key={out.id ?? "out"}
+              key={portKey(out.id, "row")}
               className={cn("flex items-center justify-between font-mono text-[10px] text-muted-foreground", shapePadding(nodeShape))}
               style={{ height: ROW_H }}
             >
-              <span>{i === 0 ? (primitiveInputs[0]?.id ?? "in") : ""}</span>
+              <span>{i === 0 ? (inputs[0]?.label ?? "in") : ""}</span>
               <span className="flex items-center gap-1.5">
                 {out.label === "EvidenceBatch" && evidenceBatchItemCount > 0
                   ? `${out.label} · ${evidenceBatchItemCount}`
@@ -538,16 +577,19 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<WorkflowNodeTyp
 
 
       {/* handles aligned to port rows */}
-      <Handle
-        type="target"
-        id={primitiveInputs[0]?.id}
-        position={Position.Top}
-        className={handleCls}
-        style={{ left: "50%" }}
-      />
+      {inputs.map((input, index) => (
+        <Handle
+          key={portKey(input.id, "in")}
+          type="target"
+          id={input.id}
+          position={Position.Top}
+          className={handleCls}
+          style={targetHandleStyle(index)}
+        />
+      ))}
       {outputs.map((out, i) => (
         <Handle
-          key={out.id ?? "out"}
+          key={portKey(out.id, "out")}
           id={out.id}
           type="source"
           position={Position.Bottom}
@@ -557,6 +599,54 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<WorkflowNodeTyp
       ))}
     </div>
   )
+}
+
+type VisibleNodePort = { id?: string; label: string; accent?: string }
+
+function mergeNodePorts(
+  declared: VisibleNodePort[],
+  connectedIds: Array<string | undefined>,
+): VisibleNodePort[] {
+  const ports = new Map<string, VisibleNodePort>()
+  for (const port of declared) {
+    ports.set(portKey(port.id), port)
+  }
+  for (const id of connectedIds) {
+    const key = portKey(id)
+    if (!ports.has(key)) {
+      ports.set(key, { id, label: id ?? "out" })
+    }
+  }
+  return Array.from(ports.values())
+}
+
+function semanticFallbackPorts(kind: string | undefined): {
+  inputs: VisibleNodePort[]
+  outputs: VisibleNodePort[]
+} {
+  switch (kind) {
+    case "schedule":
+      return {
+        inputs: [],
+        outputs: [{ id: undefined, label: "out" }, { id: "out", label: "out" }],
+      }
+    case "source":
+      return {
+        inputs: [{ id: undefined, label: "in" }, { id: "in", label: "in" }],
+        outputs: [{ id: "out", label: "out" }, { id: "records", label: "records" }],
+      }
+    case "sink":
+      return {
+        inputs: [{ id: "records", label: "records" }],
+        outputs: [{ id: "stored", label: "stored" }],
+      }
+    default:
+      return { inputs: [], outputs: [] }
+  }
+}
+
+function portKey(id: string | undefined, prefix = "port") {
+  return `${prefix}:${id ?? "__default__"}`
 }
 
 export default memo(WorkflowNodeComponent)
