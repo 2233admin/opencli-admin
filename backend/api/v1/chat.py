@@ -434,9 +434,25 @@ async def confirm(body: ConfirmRequest, db: AsyncSession = Depends(get_db)) -> A
         await db.commit()
         from backend.executor import get_executor
 
-        result = await get_executor().dispatch_collection(task.id, {})
+        try:
+            dispatch = await get_executor().dispatch_collection(task.id, {})
+        except Exception as exc:
+            # Task row is already committed; surface the dispatch failure instead
+            # of reporting applied=True with a silently dead task.
+            logger.exception("chat confirm | trigger_task dispatch failed source=%s task=%s", source.id, task.id)
+            raise HTTPException(
+                status_code=502, detail=f"任务已创建但派发失败 (task_id={task.id}), 请到工作项里重试"
+            ) from exc
         logger.info("chat confirm | trigger_task source=%s task=%s", source.id, task.id)
-        return ApiResponse.ok({"applied": True, "tool": proposal.tool, "task_id": task.id, "summary": proposal.summary})
+        return ApiResponse.ok(
+            {
+                "applied": True,
+                "tool": proposal.tool,
+                "task_id": task.id,
+                "summary": proposal.summary,
+                "dispatch": dispatch,
+            }
+        )
 
     if proposal.tool == "update_schedule":
         schedule = await schedule_service.get_schedule(db, args.get("schedule_id", ""))
