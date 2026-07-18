@@ -369,10 +369,38 @@ async def run_pipeline(
     if pending_cursor is not None and cursor_source_id is not None:
         from backend.pipeline.cursor_store import DBCursorStore
 
-        commit_result = await DBCursorStore().save(cursor_source_id, pending_cursor)
-        cursor_advanced = commit_result.advanced
-        logger.info("[task:%s] cursor committed post-write | source=%s advanced=%s",
-                    task_id, cursor_source_id, cursor_advanced)
+        # AUDIT C11: this used to be the only post-sink-write step without
+        # error handling — the sink already durably committed this batch's
+        # records above, so a cursor-save failure here must not fail the run
+        # (that would false-fail a run whose data landed, and Celery would
+        # re-collect the same window on retry, re-storing already-stored
+        # records). Log loud enough to find the stuck cursor, surface a
+        # warning event when there's a run to attach it to, and keep going
+        # with cursor_advanced=False — the measurement below then honestly
+        # reflects "didn't advance" rather than guessing.
+        try:
+            commit_result = await DBCursorStore().save(cursor_source_id, pending_cursor)
+        except Exception as exc:
+            logger.error(
+                "[task:%s] cursor save failed (non-fatal, run stays successful) | "
+                "source=%s cursor=%r | %s",
+                task_id, cursor_source_id, pending_cursor, exc,
+            )
+            if run_id:
+                await events.emit(
+                    run_id, "store",
+                    f"游标保存失败（不影响本次任务结果）: {exc}",
+                    level="warning",
+                    detail={
+                        "source_id": cursor_source_id,
+                        "cursor": pending_cursor,
+                        "error": str(exc),
+                    },
+                )
+        else:
+            cursor_advanced = commit_result.advanced
+            logger.info("[task:%s] cursor committed post-write | source=%s advanced=%s",
+                        task_id, cursor_source_id, cursor_advanced)
 
     # Step 4: AI processing
     effective_ai_config = agent_config or source.ai_config

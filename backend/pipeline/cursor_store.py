@@ -84,8 +84,9 @@ class DBCursorStore:
             return dict(row.cursor) if row and row.cursor else None
 
     async def save(self, source_id: str, cursor: dict[str, Any]) -> CommitResult:
-        """Upsert the cursor row, serialized per-source so two concurrent runs of
-        the same source cannot lose an update.
+        """Upsert the cursor row using optimistic concurrency (a ``version``
+        column), serialized per-source so two concurrent runs of the same
+        source cannot lose an update.
 
         Returns a ``CommitResult`` reflecting the REAL commit: ``advanced`` is
         True when the stored value actually changed (including the
@@ -93,29 +94,49 @@ class DBCursorStore:
         identical value onto an existing row (a true no-op write) — see
         ``CommitResult``'s docstring.
 
-        Plain SELECT-then-INSERT/UPDATE (the prior implementation) has a race: two
-        concurrent ``save()`` calls for the same ``source_id`` can both SELECT
-        before either commits, so whichever COMMITs last silently overwrites the
-        other's cursor — a lost update that manifests as skipped data on the next
-        incremental fetch (the loser's cursor value is gone as if it never
-        advanced). Locking the existing row with ``SELECT ... FOR UPDATE`` inside
-        this transaction closes that window: the second concurrent caller blocks
-        on the lock until the first commits, then reads the first's committed
-        value before applying its own write — no schema change needed (the row
-        already exists once the first save lands).
+        Plain SELECT-then-INSERT/UPDATE (the original implementation) has a race:
+        two concurrent ``save()`` calls for the same ``source_id`` can both
+        SELECT before either commits, so whichever COMMITs last silently
+        overwrites the other's cursor — a lost update that manifests as skipped
+        data on the next incremental fetch (the loser's cursor value is gone as
+        if it never advanced).
+
+        AUDIT C10: an earlier version of this method tried to close that window
+        with ``SELECT ... FOR UPDATE``. That is a silent no-op on SQLite — the
+        dialect accepts the clause but never actually takes a row lock — so on
+        this project's default (SQLite) deployment it protected nothing; only a
+        Postgres deployment ever got real locking from it. Optimistic
+        concurrency via ``SourceCursor.version`` instead works identically on
+        both backends, because it depends only on ordinary SQL semantics
+        (``UPDATE ... WHERE version = ?`` either matches the row — nobody else
+        committed since we read it — and advances the version, or matches zero
+        rows because someone else already advanced it) rather than a
+        backend-specific locking primitive: read the row's current ``version``,
+        then update conditioned on that same version. A losing writer's UPDATE
+        affects 0 rows; it detects that and retries against the fresh row
+        instead of silently overwriting (or being silently overwritten by) the
+        winner.
 
         The remaining race is the very first save for a source (no row yet): two
-        concurrent callers can both miss the row under ``FOR UPDATE`` (nothing to
-        lock) and both attempt an INSERT. ``source_cursors`` already has
+        concurrent callers can both miss the row (nothing to read a version
+        from) and both attempt an INSERT. ``source_cursors`` already has
         ``UniqueConstraint(source_id)``, so the loser's INSERT raises
-        ``IntegrityError``; that is caught and retried (bounded) as a locked
+        ``IntegrityError``; that is caught and retried (bounded) as a versioned
         UPDATE against the row the winner just created, rather than losing the
-        retry's cursor value. The retry loop (not just a single re-SELECT) also
-        covers same-connection dirty-read artifacts some SQLite pooling setups
-        can exhibit, where the row briefly appears absent to the loser even
-        after its own INSERT already conflicted.
+        retry's cursor value.
+
+        Both races share one bounded retry loop: a losing UPDATE (0 rows) or a
+        losing INSERT (IntegrityError) retries against a fresh read, up to
+        ``attempts`` times, raising rather than silently dropping the write if
+        contention outlives the budget — in practice there are at most two
+        concurrent savers for a given source_id (the scheduler and a manual
+        re-run), so exhausting this budget means genuine, unexpected contention
+        worth surfacing, not routine noise. The retry loop (not just a single
+        re-SELECT) also covers same-connection dirty-read artifacts some SQLite
+        pooling setups can exhibit, where the row briefly appears absent to the
+        loser even after its own INSERT already conflicted.
         """
-        from sqlalchemy import select
+        from sqlalchemy import select, update
         from sqlalchemy.exc import IntegrityError
 
         from backend.database import AsyncSessionLocal
@@ -126,15 +147,33 @@ class DBCursorStore:
             async with AsyncSessionLocal() as session:
                 row = (
                     await session.execute(
-                        select(SourceCursor)
-                        .where(SourceCursor.source_id == source_id)
-                        .with_for_update()
+                        select(SourceCursor).where(SourceCursor.source_id == source_id)
                     )
                 ).scalar_one_or_none()
                 if row is not None:
                     old_cursor = dict(row.cursor) if row.cursor else None
                     new_cursor = dict(cursor)
-                    row.cursor = new_cursor
+                    result = await session.execute(
+                        update(SourceCursor)
+                        .where(
+                            SourceCursor.id == row.id,
+                            SourceCursor.version == row.version,
+                        )
+                        .values(cursor=new_cursor, version=row.version + 1)
+                    )
+                    if result.rowcount == 0:
+                        # Lost the optimistic-lock race: another save() advanced
+                        # the version between our SELECT and this UPDATE. Retry
+                        # against the fresh row instead of silently dropping (or
+                        # clobbering) this call's cursor value.
+                        await session.rollback()
+                        if attempt == attempts - 1:
+                            raise RuntimeError(
+                                f"DBCursorStore.save() lost the optimistic-lock "
+                                f"race for source_id={source_id!r} after "
+                                f"{attempts} attempts"
+                            )
+                        continue
                     await session.commit()
                     return CommitResult(
                         advanced=(old_cursor != new_cursor),
@@ -145,7 +184,9 @@ class DBCursorStore:
                 try:
                     new_cursor = dict(cursor)
                     async with session.begin_nested():
-                        session.add(SourceCursor(source_id=source_id, cursor=new_cursor))
+                        session.add(
+                            SourceCursor(source_id=source_id, cursor=new_cursor, version=0)
+                        )
                     await session.commit()
                     # First-ever row for this source: there is now a persisted
                     # value where there wasn't one — that counts as advanced.

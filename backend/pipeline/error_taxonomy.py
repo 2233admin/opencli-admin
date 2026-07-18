@@ -79,11 +79,16 @@ def effective_error_type(exc: BaseException) -> str:
 
 
 def is_retryable_http_status(status_code: int) -> bool:
-    """429/5xx are handled by RateLimitedClient's own backoff before ever
+    """408/429/5xx are handled by RateLimitedClient's own backoff before ever
     reaching the pipeline layer; if one leaks through anyway, treat it as
-    retryable (transient server-side condition). Other 4xx are permanent —
-    retrying the same malformed/unauthorized request won't change the
-    outcome."""
-    if status_code == 429 or status_code >= 500:
+    retryable (transient — a slow upstream or a rate limit, not a durably
+    broken request). Other 4xx are permanent — retrying the same
+    malformed/unauthorized request won't change the outcome.
+
+    AUDIT C13: 408 (Request Timeout) was previously left out of this set —
+    the same request against the same upstream can easily succeed on a later
+    attempt, same as a 429 or a 5xx, so it belongs with them rather than
+    defaulting to permanent."""
+    if status_code in (408, 429) or status_code >= 500:
         return True
     return False

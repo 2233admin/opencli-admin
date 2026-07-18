@@ -151,7 +151,22 @@ class RSSChannel(AbstractChannel):
         if response.status_code == 304:
             # Not Modified — no new entries; preserve the cursor as-is.
             return FetchResult(items=[], next_cursor=(cursor or None), has_more=False)
-        response.raise_for_status()
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            # AUDIT C13: classify by status so a gateway blip (502/503/504,
+            # Cloudflare's 520/522/524, ...) reaches the celery retry boundary
+            # instead of defaulting to permanent alongside a genuine 4xx —
+            # this call used to be bare, so ANY status error (not just
+            # gateway ones) propagated as a raw HTTPStatusError with no
+            # retry-classification hint at all.
+            from backend.pipeline.error_taxonomy import is_retryable_http_status
+
+            status = exc.response.status_code
+            error_type = (
+                "RetryableHTTPStatus" if is_retryable_http_status(status) else "PermanentHTTPStatus"
+            )
+            raise ChannelFetchError(f"HTTP {status} fetching feed", error_type=error_type) from exc
 
         parsed = feedparser.parse(response.text)
         if parsed.bozo and not parsed.entries:

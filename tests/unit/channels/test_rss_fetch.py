@@ -2,11 +2,11 @@
 runner driving it end to end (the thin-channel / thick-runner vertical slice)."""
 
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from backend.channels.base import FetchContext
+from backend.channels.base import ChannelFetchError, FetchContext
 from backend.channels.rss_channel import RSSChannel
 
 
@@ -85,6 +85,57 @@ async def test_fetch_304_no_new_items_keeps_cursor_and_sends_conditional():
     assert result.next_cursor == cursor
     # The conditional request carried the cursor's etag.
     assert http.calls[0][1]["headers"]["If-None-Match"] == 'W/"v1"'
+
+
+# ── AUDIT C13: gateway statuses classify retryable, other 4xx stay permanent ──
+
+class _StatusErrorResp:
+    """A response whose raise_for_status() raises a REAL httpx.HTTPStatusError
+    (unlike this file's own _Resp fake, whose raise_for_status raises a bare
+    RuntimeError) — needed to exercise fetch()'s httpx.HTTPStatusError
+    classification branch, which _Resp never triggers."""
+
+    def __init__(self, status_code):
+        import httpx
+
+        self.status_code = status_code
+        self.headers = {}
+        self._exc = httpx.HTTPStatusError(
+            message=f"HTTP {status_code}",
+            request=MagicMock(),
+            response=MagicMock(status_code=status_code, text=f"error {status_code}"),
+        )
+
+    def raise_for_status(self):
+        raise self._exc
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", [502, 503, 504, 520, 522, 524])
+async def test_fetch_gateway_status_classified_retryable(status):
+    """fetch()'s response.raise_for_status() used to be bare (no try/except
+    at all) — any status error, gateway or not, propagated as a raw
+    httpx.HTTPStatusError with no retry-classification hint. Now a gateway
+    status must raise ChannelFetchError(error_type="RetryableHTTPStatus")."""
+    http = _Http(_StatusErrorResp(status))
+    ctx = FetchContext(config={"feed_url": "https://x/feed"}, params={}, cursor=None, http=http)
+
+    with pytest.raises(ChannelFetchError) as exc_info:
+        await RSSChannel().fetch(ctx)
+
+    assert exc_info.value.error_type == "RetryableHTTPStatus"
+
+
+@pytest.mark.asyncio
+async def test_fetch_client_404_classified_permanent():
+    """A genuine 4xx (not 408/429) stays permanent."""
+    http = _Http(_StatusErrorResp(404))
+    ctx = FetchContext(config={"feed_url": "https://x/feed"}, params={}, cursor=None, http=http)
+
+    with pytest.raises(ChannelFetchError) as exc_info:
+        await RSSChannel().fetch(ctx)
+
+    assert exc_info.value.error_type == "PermanentHTTPStatus"
 
 
 @pytest.mark.asyncio
