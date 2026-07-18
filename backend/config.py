@@ -24,6 +24,15 @@ class Settings(BaseSettings):
     # Task execution mode: "local" (in-process asyncio) or "celery" (distributed)
     task_executor: Literal["local", "celery"] = "local"
 
+    # AUDIT C6: process-wide cap on concurrently-RUNNING pipeline executions in
+    # the local (in-process asyncio) executor — independent of the per-domain
+    # cap in pipeline/domain_limiter.py. Bounds how many schedules firing on
+    # the same tick plus manual/webhook triggers can drive Chrome/opencli
+    # subprocesses at once on the one event loop. Only meaningful when
+    # task_executor="local" (celery fans out across worker processes
+    # instead). Env: LOCAL_MAX_CONCURRENT_PIPELINES.
+    local_max_concurrent_pipelines: int = 8
+
     # Collection orchestrator:
     # admin — API内置 scheduler.py / Celery Beat 驱动定时采集（默认）
     # iii   — III engine + schedule-bootstrap 驱动 cron；API 仅保留 UI/手动任务
