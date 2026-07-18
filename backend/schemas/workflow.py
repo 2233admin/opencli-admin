@@ -390,7 +390,7 @@ class WorkflowToolCapabilityPort(BaseModel):
 
 
 class WorkflowToolCapabilityExecutor(BaseModel):
-    mode: Literal["fixture", "okx_market_ticker_snapshot"]
+    mode: Literal["fixture", "okx_market_ticker_snapshot", "joyai_vl_interaction"]
     description: Optional[str] = None
     params: dict[str, Any] = Field(default_factory=dict)
 
