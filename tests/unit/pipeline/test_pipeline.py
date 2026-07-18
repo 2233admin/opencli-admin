@@ -132,7 +132,7 @@ async def test_run_pipeline_with_ai(db_session):
     with (
         patch("backend.pipeline.collector.collect", return_value=channel_result),
         patch("backend.pipeline.storer.store_records", new=AsyncMock(return_value=([mock_record], 0))),
-        patch("backend.pipeline.ai_processor.process_with_ai", new=AsyncMock()),
+        patch("backend.pipeline.ai_processor.process_with_ai", new=AsyncMock(return_value=1)),
         patch("backend.database.AsyncSessionLocal", return_value=inner_cm),
     ):
         result = await run_pipeline(
@@ -148,6 +148,67 @@ async def test_run_pipeline_with_ai(db_session):
 
 
 @pytest.mark.asyncio
+async def test_run_pipeline_ai_zero_enriched_warns_not_done(db_session):
+    """AUDIT C3: process_with_ai returning 0 (unknown/misconfigured
+    processor_type, no exception raised) must surface as a failed/skipped
+    warning event, never the "AI 处理完成" success message — that used to be
+    emitted unconditionally regardless of what process_with_ai actually did."""
+    source, task = await _setup_source_task(db_session)
+
+    mock_items = [{"title": "AI Item", "url": "https://ex.com/ai"}]
+    channel_result = ChannelResult.ok(mock_items)
+    mock_record = MagicMock()
+    mock_record.ai_enrichment = None
+
+    agent_config = {"processor_type": "bogus_processor", "model": "n/a"}
+
+    mock_inner_session = AsyncMock()
+    mock_inner_session.get = AsyncMock(return_value=MagicMock())
+    mock_inner_session.commit = AsyncMock()
+    # .add() is sync on a real Session (only .commit/.flush/.get etc. are
+    # awaited) — pin it to a plain MagicMock so record_run_measurement's
+    # (triggered below by run_id being set) internal session.add(row) doesn't
+    # return an unawaited coroutine.
+    mock_inner_session.add = MagicMock()
+    inner_cm = AsyncMock()
+    inner_cm.__aenter__ = AsyncMock(return_value=mock_inner_session)
+    inner_cm.__aexit__ = AsyncMock(return_value=False)
+
+    emitted: list[dict] = []
+
+    async def fake_emit(run_id, step, message, level="info", detail=None, elapsed_ms=None):
+        emitted.append({"step": step, "level": level, "message": message, "detail": detail})
+
+    with (
+        patch("backend.pipeline.collector.collect", return_value=channel_result),
+        patch(
+            "backend.pipeline.storer.store_records",
+            new=AsyncMock(return_value=([mock_record], 0)),
+        ),
+        patch("backend.pipeline.ai_processor.process_with_ai", new=AsyncMock(return_value=0)),
+        patch("backend.database.AsyncSessionLocal", return_value=inner_cm),
+        patch("backend.pipeline.events.emit", new=fake_emit),
+    ):
+        result = await run_pipeline(
+            task.id,
+            source,
+            agent_config=agent_config,
+            enable_ai=True,
+            enable_notifications=False,
+            run_id="run-ai-zero",
+        )
+
+    assert result.success is True
+    assert result.ai_processed == 0
+
+    ai_events = [e for e in emitted if e["step"] == "ai_process"]
+    assert len(ai_events) == 1
+    assert ai_events[0]["level"] == "warning"
+    assert "完成" not in ai_events[0]["message"]
+    assert "失败" in ai_events[0]["message"] or "跳过" in ai_events[0]["message"]
+
+
+@pytest.mark.asyncio
 async def test_run_pipeline_with_notifications(db_session):
     """Pipeline with new records dispatches notifications."""
     source, task = await _setup_source_task(db_session)
@@ -159,7 +220,10 @@ async def test_run_pipeline_with_notifications(db_session):
     with (
         patch("backend.pipeline.collector.collect", return_value=channel_result),
         patch("backend.pipeline.storer.store_records", new=AsyncMock(return_value=([mock_record], 0))),
-        patch("backend.pipeline.notifier_dispatch.dispatch_notifications", new=AsyncMock()),
+        patch(
+            "backend.pipeline.notifier_dispatch.dispatch_notifications",
+            new=AsyncMock(return_value={"sent": 1, "failed": 0}),
+        ),
     ):
         result = await run_pipeline(
             task.id,
@@ -169,6 +233,85 @@ async def test_run_pipeline_with_notifications(db_session):
         )
 
     assert result.success is True
+    assert result.notifications_sent == 1
+
+
+@pytest.mark.asyncio
+async def test_run_pipeline_notifications_partial_failure_reported(db_session):
+    """AUDIT C12: notifications_sent/failed must reflect the real aggregate,
+    including the partial-failure case, not an unconditional success."""
+    source, task = await _setup_source_task(db_session)
+
+    mock_items = [{"title": "Notify Item", "url": "https://ex.com/n"}]
+    channel_result = ChannelResult.ok(mock_items)
+    mock_record = MagicMock()
+
+    with (
+        patch("backend.pipeline.collector.collect", return_value=channel_result),
+        patch(
+            "backend.pipeline.storer.store_records",
+            new=AsyncMock(return_value=([mock_record], 0)),
+        ),
+        patch(
+            "backend.pipeline.notifier_dispatch.dispatch_notifications",
+            new=AsyncMock(return_value={"sent": 1, "failed": 1}),
+        ),
+    ):
+        result = await run_pipeline(
+            task.id,
+            source,
+            enable_ai=False,
+            enable_notifications=True,
+        )
+
+    assert result.success is True
+    assert result.notifications_sent == 1
+
+
+@pytest.mark.asyncio
+async def test_run_pipeline_notifications_all_failed_warns(db_session):
+    """AUDIT C12: when every attempted send failed (sent=0, failed>0), the
+    emitted event and PipelineResult must say so at warning level, not the
+    unconditional "通知发送完成" info-level message this replaces."""
+    source, task = await _setup_source_task(db_session)
+
+    mock_items = [{"title": "Notify Item", "url": "https://ex.com/n"}]
+    channel_result = ChannelResult.ok(mock_items)
+    mock_record = MagicMock()
+
+    emitted: list[dict] = []
+
+    async def fake_emit(run_id, step, message, level="info", detail=None, elapsed_ms=None):
+        emitted.append({"step": step, "level": level, "message": message, "detail": detail})
+
+    with (
+        patch("backend.pipeline.collector.collect", return_value=channel_result),
+        patch(
+            "backend.pipeline.storer.store_records",
+            new=AsyncMock(return_value=([mock_record], 0)),
+        ),
+        patch(
+            "backend.pipeline.notifier_dispatch.dispatch_notifications",
+            new=AsyncMock(return_value={"sent": 0, "failed": 2}),
+        ),
+        patch("backend.pipeline.events.emit", new=fake_emit),
+    ):
+        result = await run_pipeline(
+            task.id,
+            source,
+            enable_ai=False,
+            enable_notifications=True,
+            run_id="run-notify-all-failed",
+        )
+
+    assert result.success is True
+    assert result.notifications_sent == 0
+
+    notify_events = [e for e in emitted if e["step"] == "notify"]
+    assert len(notify_events) == 1
+    assert notify_events[0]["level"] == "warning"
+    assert "成功 0" in notify_events[0]["message"]
+    assert "失败 2" in notify_events[0]["message"]
 
 
 @pytest.mark.asyncio

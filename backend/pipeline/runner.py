@@ -8,6 +8,7 @@ from sqlalchemy import select
 from backend.database import AsyncSessionLocal
 from backend.models.task import CollectionTask, TaskRun
 from backend.pipeline import events
+from backend.pipeline.error_taxonomy import effective_error_type
 from backend.pipeline.pipeline import run_pipeline
 
 logger = logging.getLogger(__name__)
@@ -170,15 +171,24 @@ async def run_collection_pipeline(
             # off and retries. Each retry is a fresh run_collection_pipeline
             # call, so it gets its own new TaskRun row (see TaskRun docstring:
             # "a single execution attempt").
+            #
+            # AUDIT C19: persist the same retry-classification pipeline.py
+            # already computed (effective_error_type is a pure function of
+            # the exception, so recomputing it here reproduces that exact
+            # classification) instead of discarding it into a bare str(exc) —
+            # ops otherwise has no way to tell retryable from permanent from
+            # the stored error_message alone.
+            error_type = effective_error_type(exc)
+            error_message = f"[{error_type}] {exc}"
             async with AsyncSessionLocal() as session:
                 err_task = await session.get(CollectionTask, task_id)
                 err_run = await session.get(TaskRun, run_id)
                 if err_task:
                     err_task.status = "failed"
-                    err_task.error_message = str(exc)
+                    err_task.error_message = error_message
                 if err_run:
                     err_run.status = "failed"
-                    err_run.error_message = str(exc)
+                    err_run.error_message = error_message
                     err_run.finished_at = datetime.now(UTC)
                 await session.commit()
             raise
