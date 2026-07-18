@@ -51,3 +51,11 @@
 cd D:\projects\opencli-admin
 $env:API_AUTH_TOKEN=''; $env:AGENT_API_TOKEN=''; uv run --extra dev pytest tests/unit tests/integration -q --no-cov
 ```
+
+## P3 补录 (2026-07-18 晚)
+
+### 6. 全套跑测试顺序污染 flake (main 存量)
+- `pytest tests/integration tests/unit tests/skills` 全套跑稳定挂 6 个, 单跑全过; clean main 与 feature 分支同样 6 个 → 存量顺序依赖, 非新代码
+- 名单: test_workflow_opencli_hda_trace_api (projection/stream ×2), test_workflow_turbopush_publish_api (capabilities ×1), test_nodes_install_script (netbird/ssh ×2), +1
+- 疑似共享进程级状态 (capability registry / settings snapshot / os.environ 写入未回滚)
+- 修向: 定位先污染后断言的 test 对 (pytest -p no:randomly 二分), 或对相关 fixture 加隔离

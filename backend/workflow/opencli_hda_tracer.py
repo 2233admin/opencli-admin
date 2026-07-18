@@ -46,6 +46,12 @@ from backend.workflow.block_reasons import (
 from backend.workflow.compiler import INTERNAL_ID_SEPARATOR, compile_workflow_project
 from backend.workflow.event_mirror import publish_workflow_run_event_mirror
 from backend.workflow.fleet_inventory import match_workflow_fleet_capability
+from backend.workflow.joyai_vl_executor import (
+    JOYAI_VL_INTERACTION_EXECUTOR,
+    JOYAI_VL_TOOL_CAPABILITY_ID,
+    JoyAIVLExecutionError,
+    execute_joyai_vl_interaction,
+)
 from backend.workflow.realtime_market_executor import (
     OKX_MARKET_TICKER_SNAPSHOT_EXECUTOR,
     RealtimeMarketExecutionError,
@@ -1677,6 +1683,13 @@ def _execute_external_tool_capability(
         output = _execute_okx_market_tool(binding_input)
         return [_external_tool_output(node, output, input_items, run_id, 0, binding_input)]
 
+    if (
+        binding_input.get("executorMode") == JOYAI_VL_INTERACTION_EXECUTOR
+        and binding_input.get("toolCapabilityId") == JOYAI_VL_TOOL_CAPABILITY_ID
+    ):
+        output = _execute_joyai_vl_tool(binding_input)
+        return [_external_tool_output(node, output, input_items, run_id, 0, binding_input)]
+
     fixture_outputs = _read_dict_list(binding_input.get("fixtureOutputs"))
     fixture_output = _read_dict(binding_input.get("fixtureOutput"))
     if not fixture_outputs and fixture_output:
@@ -1702,6 +1715,23 @@ def _execute_okx_market_tool(binding_input: dict[str, Any]) -> dict[str, Any]:
             "schema": "event.market.ticker.error.v1",
             "source": "okx",
             "eventType": "market.ticker.error",
+            "status": "error",
+            "message": str(exc),
+        }
+
+
+def _execute_joyai_vl_tool(binding_input: dict[str, Any]) -> dict[str, Any]:
+    params = {
+        **_read_dict(binding_input.get("executorParams")),
+        **_read_dict(binding_input.get("toolParams")),
+    }
+    try:
+        return execute_joyai_vl_interaction(params)
+    except JoyAIVLExecutionError as exc:
+        return {
+            "schema": "event.vl.interaction.error.v1",
+            "source": "joyai-vl",
+            "eventType": "vl.interaction.error",
             "status": "error",
             "message": str(exc),
         }
