@@ -12,21 +12,28 @@ from backend.processors.base import ProcessingResult
 @pytest.mark.asyncio
 async def test_process_with_ai_no_config():
     records = [MagicMock()]
-    await process_with_ai(records, None)
+    result = await process_with_ai(records, None)
     # Should do nothing
+    assert result == 0
 
 
 @pytest.mark.asyncio
 async def test_process_with_ai_no_records():
-    await process_with_ai([], {"processor_type": "claude"})
+    result = await process_with_ai([], {"processor_type": "claude"})
     # Should do nothing
+    assert result == 0
 
 
 @pytest.mark.asyncio
-async def test_process_with_ai_unknown_processor():
+async def test_process_with_ai_unknown_processor(caplog):
     records = [MagicMock()]
-    # Should silently skip unknown processor
-    await process_with_ai(records, {"processor_type": "unknown_processor_xyz"})
+    # Should silently skip unknown processor (AUDIT C3: "silently" only in
+    # the sense of not raising — it must now warn and report 0 enriched).
+    with caplog.at_level(logging.WARNING):
+        result = await process_with_ai(records, {"processor_type": "unknown_processor_xyz"})
+
+    assert result == 0
+    assert _logged(caplog, "unknown_processor_xyz")
 
 
 @pytest.mark.asyncio
@@ -42,11 +49,14 @@ async def test_process_with_ai_enriches_records():
     mock_processor.process = AsyncMock(return_value=mock_result)
 
     with patch("backend.pipeline.ai_processor.get_processor", return_value=mock_processor):
-        await process_with_ai(records, {"processor_type": "claude", "prompt_template": "Summarize: {{content}}"})
+        result = await process_with_ai(
+            records, {"processor_type": "claude", "prompt_template": "Summarize: {{content}}"}
+        )
 
     assert records[0].ai_enrichment == {"summary": "Summary 1"}
     assert records[1].ai_enrichment == {"summary": "Summary 2"}
     assert records[0].status == "ai_processed"
+    assert result == 2
 
 
 # ─── GOAL-6 PR-F (decision #9): DataSource.ai_config <-> ModelProvider ─────

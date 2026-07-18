@@ -78,8 +78,9 @@ async def process_with_ai(
     *,
     source_id: Any = None,
     resolve_provider: bool = True,
-) -> None:
-    """Enrich records with AI processing in-place.
+) -> int:
+    """Enrich records with AI processing in-place. Returns the number of
+    records actually enriched.
 
     ai_config keys:
         processor_type: claude | openai | local
@@ -106,9 +107,15 @@ async def process_with_ai(
     misfire on every agent-driven run, not just legacy inline
     ``DataSource.ai_config`` — so agent-sourced configs skip resolution
     entirely and are used exactly as before.
+
+    AUDIT C3: an unknown/misconfigured ``processor_type`` used to no-op with
+    no signal at all, while the caller (``pipeline.py``) unconditionally
+    reported ``len(new_records)`` as "processed" regardless of what actually
+    happened here. This now returns 0 and logs a warning so the caller can
+    tell the difference between "enriched" and "silently skipped".
     """
     if not ai_config or not records:
-        return
+        return 0
 
     resolved_config = (
         await _resolve_llm_config(ai_config, source_id) if resolve_provider else ai_config
@@ -118,7 +125,12 @@ async def process_with_ai(
     try:
         processor = get_processor(processor_type)
     except ValueError:
-        return
+        logger.warning(
+            "DataSource %s ai_config.processor_type=%r is not a registered "
+            "processor; AI enrichment skipped for %d record(s)",
+            source_id, processor_type, len(records),
+        )
+        return 0
 
     result = await processor.process(
         records=records,
@@ -126,6 +138,10 @@ async def process_with_ai(
         config=resolved_config,
     )
 
+    enriched = 0
     for record, enrichment in zip(records, result.enrichments):
         record.ai_enrichment = enrichment
         record.status = "ai_processed"
+        enriched += 1
+
+    return enriched

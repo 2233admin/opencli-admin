@@ -390,7 +390,7 @@ async def run_pipeline(
                 task_row.status = "ai_processing"
                 await session.commit()
         try:
-            await ai_processor.process_with_ai(
+            ai_count = await ai_processor.process_with_ai(
                 new_records,
                 effective_ai_config,
                 source_id=source.id,
@@ -410,14 +410,24 @@ async def run_pipeline(
                             db_rec.ai_enrichment = rec.ai_enrichment
                             db_rec.status = "ai_processed"
                 await session.commit()
-            ai_count = len(new_records)
             logger.info("[task:%s] step4/ai done | processed=%d", task_id, ai_count)
             if run_id:
-                await events.emit(
-                    run_id, "ai_process",
-                    f"AI 处理完成 | {ai_count} 条",
-                    detail={"processed": ai_count},
-                )
+                # AUDIT C3: ai_count is now the real enrichment count (0 when
+                # processor_type is unknown/misconfigured) — a config error
+                # must read as "failed/skipped", never "完成".
+                if ai_count > 0:
+                    await events.emit(
+                        run_id, "ai_process",
+                        f"AI 处理完成 | {ai_count} 条",
+                        detail={"processed": ai_count},
+                    )
+                else:
+                    await events.emit(
+                        run_id, "ai_process",
+                        f"AI 处理失败/跳过 | processor_type={processor_type!r} 未产生任何富化记录",
+                        level="warning",
+                        detail={"processed": 0, "processor_type": processor_type},
+                    )
         except Exception as exc:
             logger.warning("[task:%s] step4/ai failed | %s", task_id, exc)
             if run_id:
@@ -432,15 +442,37 @@ async def run_pipeline(
             await events.emit(run_id, "ai_process", "跳过 AI 处理（未配置）")
 
     # Step 5: Notify
+    notifications_sent = 0
     if enable_notifications and new_records:
         logger.info("[task:%s] step5/notify start | records=%d", task_id, len(new_records))
         try:
+            # dispatch_notifications manages its own write-lock-free phasing
+            # internally (AUDIT C1/C23): it commits phase A's pending rows on
+            # this session, performs the sends with no session open, then
+            # persists outcomes via its own short-lived session — so no
+            # explicit commit is needed here.
             async with AsyncSessionLocal() as session:
-                await notifier_dispatch.dispatch_notifications(session, source.id, new_records)
-                await session.commit()
-            logger.info("[task:%s] step5/notify done", task_id)
+                notify_summary = await notifier_dispatch.dispatch_notifications(
+                    session, source.id, new_records
+                )
+            notifications_sent = notify_summary.get("sent", 0)
+            notifications_failed = notify_summary.get("failed", 0)
+            # AUDIT C12: report the real aggregate, not an unconditional
+            # "done" — and if every attempted send failed, that's a warning,
+            # not routine info.
+            all_failed = notifications_failed > 0 and notifications_sent == 0
+            log_fn = logger.warning if all_failed else logger.info
+            log_fn(
+                "[task:%s] step5/notify done | sent=%d failed=%d",
+                task_id, notifications_sent, notifications_failed,
+            )
             if run_id:
-                await events.emit(run_id, "notify", "通知发送完成")
+                await events.emit(
+                    run_id, "notify",
+                    f"通知发送完成 | 成功 {notifications_sent} 失败 {notifications_failed}",
+                    level="warning" if all_failed else "info",
+                    detail={"sent": notifications_sent, "failed": notifications_failed},
+                )
         except Exception as exc:
             logger.warning("[task:%s] step5/notify failed | %s", task_id, exc)
             if run_id:
@@ -501,6 +533,7 @@ async def run_pipeline(
         stored=len(new_records),
         skipped=skipped,
         ai_processed=ai_count,
+        notifications_sent=notifications_sent,
         duration_ms=duration_ms,
         metadata=channel_result.metadata,
     )
