@@ -1,6 +1,7 @@
 """RSS thick-contract fetch(): conditional GET (etag/304), identity(), and the
 runner driving it end to end (the thin-channel / thick-runner vertical slice)."""
 
+import threading
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -71,6 +72,31 @@ async def test_fetch_200_returns_items_and_advances_cursor():
     assert [i["id"] for i in result.items] == ["id-a", "id-b"]
     assert result.next_cursor == {"etag": 'W/"v2"', "last_modified": "Wed, 01 Jul 2026 00:00:00 GMT"}
     assert result.has_more is False
+
+
+@pytest.mark.asyncio
+async def test_fetch_parses_feed_off_event_loop_thread():
+    """AUDIT C22: feedparser.parse() must run via asyncio.to_thread on the
+    fetch() path too — a multi-MB feed would otherwise freeze every other
+    request/task on this process for the duration of the parse."""
+    import feedparser
+
+    http = _Http(_Resp(200, text=_RSS, headers={}))
+    ctx = FetchContext(config={"feed_url": "https://x/feed"}, params={}, cursor=None, http=http)
+
+    seen_threads: list[int] = []
+    real_parse = feedparser.parse
+
+    def spy_parse(content):
+        seen_threads.append(threading.get_ident())
+        return real_parse(content)
+
+    with patch("feedparser.parse", side_effect=spy_parse):
+        result = await RSSChannel().fetch(ctx)
+
+    assert [i["id"] for i in result.items] == ["id-a", "id-b"]
+    assert len(seen_threads) == 1
+    assert seen_threads[0] != threading.get_ident()
 
 
 @pytest.mark.asyncio

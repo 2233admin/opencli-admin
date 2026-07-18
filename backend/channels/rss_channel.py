@@ -1,5 +1,6 @@
 """RSS channel using feedparser."""
 
+import asyncio
 from typing import Any
 
 import feedparser
@@ -75,7 +76,12 @@ class RSSChannel(AbstractChannel):
                 f"Failed to fetch RSS feed: {exc}", error_type=type(exc).__name__
             )
 
-        parsed = feedparser.parse(content)
+        # AUDIT C22: feedparser.parse() is a synchronous, potentially
+        # multi-second call for a large feed — running it inline would freeze
+        # the whole event loop (every other request/task on this process)
+        # for the duration. asyncio.to_thread runs it in the default executor
+        # instead; the parsed result is used identically either way.
+        parsed = await asyncio.to_thread(feedparser.parse, content)
         if parsed.bozo and not parsed.entries:
             return ChannelResult.fail(
                 f"Failed to parse feed: {getattr(parsed, 'bozo_exception', 'unknown error')}"
@@ -153,7 +159,9 @@ class RSSChannel(AbstractChannel):
             return FetchResult(items=[], next_cursor=(cursor or None), has_more=False)
         response.raise_for_status()
 
-        parsed = feedparser.parse(response.text)
+        # AUDIT C22: see collect()'s twin comment — off-load the synchronous
+        # parse instead of blocking the event loop.
+        parsed = await asyncio.to_thread(feedparser.parse, response.text)
         if parsed.bozo and not parsed.entries:
             raise ChannelFetchError(
                 f"Failed to parse feed: {getattr(parsed, 'bozo_exception', 'unknown error')}"

@@ -1,5 +1,6 @@
 """Unit tests for the web scraper channel."""
 
+import threading
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -165,6 +166,40 @@ async def test_collect_metadata_includes_url_and_status(channel):
     assert result.success is True
     assert result.metadata.get("url") == "https://example.com"
     assert result.metadata.get("status_code") == 200
+
+
+# ── AUDIT C22: BeautifulSoup parse off-loaded via asyncio.to_thread ────────────
+
+@pytest.mark.asyncio
+async def test_collect_parses_html_off_event_loop_thread(channel):
+    """BeautifulSoup(...) must run via asyncio.to_thread, not inline on the
+    event loop — a large scraped page would otherwise freeze every other
+    request/task on this process for the duration of the parse."""
+    response = _make_mock_response()
+    mock_client_ctx = _make_mock_client(response)
+
+    seen_threads: list[int] = []
+    real_soup = BeautifulSoup
+
+    def spy_soup(markup, parser):
+        seen_threads.append(threading.get_ident())
+        return real_soup(markup, parser)
+
+    with patch("httpx.AsyncClient", return_value=mock_client_ctx), patch(
+        "backend.channels.web_scraper_channel.BeautifulSoup", side_effect=spy_soup
+    ):
+        result = await channel.collect(
+            {
+                "url": "https://example.com",
+                "selectors": {"page_title": "h1.page-title"},
+            },
+            {},
+        )
+
+    assert result.success is True
+    assert result.items[0]["page_title"] == "Products"
+    assert len(seen_threads) == 1
+    assert seen_threads[0] != threading.get_ident()
 
 
 # ── collect: error cases ───────────────────────────────────────────────────────
