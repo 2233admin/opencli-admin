@@ -130,3 +130,42 @@ async def test_confirm_update_provider_not_found(client):
         },
     )
     assert response.status_code == 404
+
+
+# ── confirm: trigger_task dispatch failure ───────────────────────────────────
+@pytest.mark.asyncio
+async def test_confirm_trigger_task_reports_dispatch_failure(client, db_session, monkeypatch):
+    """Dispatch blowing up after the task row is committed must surface as 502,
+    not applied=True with a silently dead task."""
+    from backend.models.source import DataSource
+
+    source = DataSource(
+        name="Chat Trigger Source",
+        channel_type="rss",
+        channel_config={"feed_url": "https://example.com/feed.xml"},
+        enabled=True,
+    )
+    db_session.add(source)
+    await db_session.commit()
+    await db_session.refresh(source)
+
+    class _BoomExecutor:
+        async def dispatch_collection(self, task_id: str, parameters: dict) -> dict:
+            raise RuntimeError("broker down")
+
+    monkeypatch.setattr("backend.executor.get_executor", lambda: _BoomExecutor())
+
+    response = await client.post(
+        "/api/v1/chat/confirm",
+        json={
+            "proposal": {
+                "tool": "trigger_task",
+                "args": {"source_id": source.id},
+                "summary": "触发采集",
+                "diff": "",
+            }
+        },
+    )
+
+    assert response.status_code == 502
+    assert "派发失败" in response.json()["detail"]
