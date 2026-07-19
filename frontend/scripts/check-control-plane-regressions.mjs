@@ -21,14 +21,17 @@ test('work item detail keeps runs, events, results, and audit in one context', a
   assert.match(detail, /查看控制与审计/)
 })
 
-test('sources can import reviewed GitHub OPML catalogs instead of hand-entering feeds', async () => {
+test('plugin hub imports reviewed OPML catalogs while sources manages installed instances', async () => {
   const sources = await read('app/(app)/sources/page.tsx')
+  const plugins = await read('app/(app)/plugins/page.tsx')
+  const importDialog = await read('components/plugins/rss-catalog-import-dialog.tsx')
   const endpoints = await read('lib/api/endpoints.ts')
 
-  assert.match(sources, /导入 RSS 源库/)
-  assert.match(sources, /plenaryapp\/awesome-rss-feeds/)
-  assert.match(sources, /所有源默认停用/)
-  assert.match(sources, /source_group|分类和源库出处/)
+  assert.match(plugins, /RssCatalogImportDialog/)
+  assert.match(importDialog, /导入开源 RSS 源库/)
+  assert.match(importDialog, /plenaryapp\/awesome-rss-feeds/)
+  assert.match(importDialog, /所有源默认停用/)
+  assert.match(importDialog, /分类和源库出处/)
   assert.match(sources, /limit: 50/)
   assert.match(sources, /pagination\.pages/)
   assert.match(endpoints, /\/sources\/import-opml-url/)
