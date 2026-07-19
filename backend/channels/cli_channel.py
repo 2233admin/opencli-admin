@@ -5,8 +5,6 @@ import json
 import logging
 import os
 import re
-import shlex
-import shutil
 from typing import Any
 
 from backend.channels.base import AbstractChannel, ChannelResult
@@ -80,7 +78,7 @@ class CLIChannel(AbstractChannel):
                 **_process_group_kwargs(),
             )
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
-        except asyncio.TimeoutError as exc:
+        except TimeoutError as exc:
             # Don't orphan the child: wait_for only cancels communicate();
             # the subprocess itself keeps running until explicitly killed. A
             # bare proc.kill() only reaches the direct child — shell-wrapped
@@ -116,7 +114,12 @@ class CLIChannel(AbstractChannel):
                 data = json.loads(output)
                 items = data if isinstance(data, list) else [data]
             except json.JSONDecodeError as exc:
-                return ChannelResult.fail(f"Failed to parse CLI JSON output: {exc}")
+                # WIRING_GAP_LEDGER W1: error_type must be set so the SCHEMA_DRIFT
+                # chain (error_kinds -> control.recorder) actually fires instead of
+                # being dropped by recorder's `elif error_type is not None` guard.
+                return ChannelResult.fail(
+                    f"Failed to parse CLI JSON output: {exc}", error_type=type(exc).__name__
+                )
         else:
             # Plain text: each line is a record
             items = [{"line": line} for line in output.splitlines() if line.strip()]

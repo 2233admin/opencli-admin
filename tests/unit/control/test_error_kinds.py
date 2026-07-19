@@ -35,7 +35,12 @@ class TestMapErrorType:
             assert map_error_type(t) is ErrorKind.VALIDATION
 
     def test_schema_drift(self):
-        assert map_error_type("JSONDecodeError") is ErrorKind.SCHEMA_DRIFT
+        # WIRING_GAP_LEDGER W1: SAXParseException is feedparser's real
+        # bozo_exception class for a malformed RSS/Atom feed (rss_channel.py's
+        # bozo branch) -- verified empirically across markup corruption,
+        # truncated declarations, and encoding mismatches.
+        for t in ("JSONDecodeError", "SchemaDriftError", "ParseError", "SAXParseException"):
+            assert map_error_type(t) is ErrorKind.SCHEMA_DRIFT
 
     def test_store_failed(self):
         assert map_error_type("IntegrityError") is ErrorKind.STORE_FAILED

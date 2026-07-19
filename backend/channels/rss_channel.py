@@ -22,6 +22,26 @@ from backend.security.url_guard import (
 )
 
 
+def _bozo_error_type(parsed: Any) -> str:
+    """error_type for a bozo (unparseable) feed — WIRING_GAP_LEDGER W1.
+
+    feedparser sets ``bozo_exception`` to the underlying parse failure (e.g.
+    ``xml.sax._exceptions.SAXParseException`` for malformed markup, truncated
+    declarations, or an encoding mismatch — verified empirically across all
+    of those shapes; see backend/control/error_kinds.py's SCHEMA_DRIFT set).
+    Its class name is a real structured ``error_type`` like every other
+    channel already produces, so it flows through ChannelResult.fail() /
+    ChannelFetchError into control.recorder instead of being dropped by the
+    ``elif error_type is not None`` guard there. Falls back to a generic
+    "ParseError" (also mapped to SCHEMA_DRIFT) on the defensive case where
+    feedparser didn't attach one.
+    """
+    bozo_exception = getattr(parsed, "bozo_exception", None)
+    if bozo_exception is not None:
+        return type(bozo_exception).__name__
+    return "ParseError"
+
+
 @register_channel
 class RSSChannel(AbstractChannel):
     """Collect entries from RSS/Atom feeds."""
@@ -84,7 +104,8 @@ class RSSChannel(AbstractChannel):
         parsed = await asyncio.to_thread(feedparser.parse, content)
         if parsed.bozo and not parsed.entries:
             return ChannelResult.fail(
-                f"Failed to parse feed: {getattr(parsed, 'bozo_exception', 'unknown error')}"
+                f"Failed to parse feed: {getattr(parsed, 'bozo_exception', 'unknown error')}",
+                error_type=_bozo_error_type(parsed),
             )
 
         entries = parsed.entries[:max_entries]
@@ -179,7 +200,8 @@ class RSSChannel(AbstractChannel):
         parsed = await asyncio.to_thread(feedparser.parse, response.text)
         if parsed.bozo and not parsed.entries:
             raise ChannelFetchError(
-                f"Failed to parse feed: {getattr(parsed, 'bozo_exception', 'unknown error')}"
+                f"Failed to parse feed: {getattr(parsed, 'bozo_exception', 'unknown error')}",
+                error_type=_bozo_error_type(parsed),
             )
         items = [self._entry_to_dict(entry) for entry in parsed.entries[:max_entries]]
 
