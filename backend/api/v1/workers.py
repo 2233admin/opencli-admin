@@ -1,3 +1,4 @@
+import asyncio
 import re
 from typing import Literal
 from urllib.parse import urlparse
@@ -17,28 +18,48 @@ router = APIRouter(prefix="/workers", tags=["workers"])
 
 def _inspect_workers() -> tuple[dict, dict]:
     from backend.worker.celery_app import celery_app
+
     inspect = celery_app.control.inspect(timeout=3)
     return inspect.stats() or {}, inspect.active() or {}
 
 
 @router.get("", response_model=ApiResponse[list[dict]])
 async def list_workers(db: AsyncSession = Depends(get_db)) -> ApiResponse:
-    """Return live Celery worker nodes derived from broker inspect."""
+    """Return execution resources for the configured task executor."""
+    settings = get_settings()
+    if settings.task_executor == "local":
+        return ApiResponse.ok(
+            [
+                {
+                    "id": "local",
+                    "worker_id": "local",
+                    "hostname": "local",
+                    "status": "online",
+                    "active_tasks": 0,
+                    "last_heartbeat": None,
+                    "concurrency": settings.local_max_concurrent_pipelines,
+                    "celery_version": None,
+                }
+            ]
+        )
+
     try:
-        stats, active = _inspect_workers()
+        stats, active = await asyncio.to_thread(_inspect_workers)
         workers = []
         for worker_id, info in stats.items():
             active_tasks = len(active.get(worker_id, []))
-            workers.append({
-                "id": worker_id,
-                "worker_id": worker_id,
-                "hostname": info.get("hostname", worker_id),
-                "status": "online",
-                "active_tasks": active_tasks,
-                "last_heartbeat": None,
-                "concurrency": info.get("pool", {}).get("max-concurrency"),
-                "celery_version": info.get("versions", {}).get("celery"),
-            })
+            workers.append(
+                {
+                    "id": worker_id,
+                    "worker_id": worker_id,
+                    "hostname": info.get("hostname", worker_id),
+                    "status": "online",
+                    "active_tasks": active_tasks,
+                    "last_heartbeat": None,
+                    "concurrency": info.get("pool", {}).get("max-concurrency"),
+                    "celery_version": info.get("versions", {}).get("celery"),
+                }
+            )
         return ApiResponse.ok(workers)
     except Exception:
         return ApiResponse.ok([])
@@ -60,6 +81,7 @@ def _container_status(hostname: str) -> str:
     """Return Docker container status string, or 'unknown' if unavailable."""
     try:
         import docker  # type: ignore[import]
+
         client = docker.from_env()
         return client.containers.get(hostname).status
     except Exception:
@@ -72,6 +94,7 @@ async def chrome_pool_status() -> ApiResponse:
     pool = get_pool()
     base_port = get_settings().novnc_base_port
     from backend.browser_pool import LocalBrowserPool
+
     endpoints = [
         {
             "url": ep,
@@ -80,16 +103,20 @@ async def chrome_pool_status() -> ApiResponse:
             "container_status": _container_status(urlparse(ep).hostname or ""),
             "mode": pool.get_mode(ep),
             "agent_url": pool.get_agent_url(ep) if isinstance(pool, LocalBrowserPool) else None,
-            "agent_protocol": pool.get_agent_protocol(ep) if isinstance(pool, LocalBrowserPool) else None,
+            "agent_protocol": (
+                pool.get_agent_protocol(ep) if isinstance(pool, LocalBrowserPool) else None
+            ),
             "profile_kind": pool.get_profile_kind(ep),
         }
         for ep in pool.endpoints
     ]
-    return ApiResponse.ok({
-        "endpoints": endpoints,
-        "total": pool.total,
-        "available": pool.available,
-    })
+    return ApiResponse.ok(
+        {
+            "endpoints": endpoints,
+            "total": pool.total,
+            "available": pool.available,
+        }
+    )
 
 
 class EndpointModeUpdate(BaseModel):
@@ -137,7 +164,7 @@ async def update_endpoint_mode(
 async def celery_stats() -> ApiResponse:
     """Query live Celery worker stats via inspect."""
     try:
-        stats, active = _inspect_workers()
+        stats, active = await asyncio.to_thread(_inspect_workers)
         return ApiResponse.ok({"stats": stats, "active": active})
     except Exception as exc:
         return ApiResponse.ok({"error": str(exc), "stats": {}, "active": {}})
