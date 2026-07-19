@@ -43,18 +43,13 @@ export function OperationalAnalytics({
           value: percent(opinion.summary.ai_processed, windowRecords),
           tone: opinion.summary.ai_processed > 0 ? 'success' : 'warning',
         },
-        {
-          key: 'delivery',
-          label: '飞书已送达',
-          detail: `${opinion.summary.feishu_sent} / ${windowRecords} 条记录`,
-          value: percent(opinion.summary.feishu_sent, windowRecords),
-          tone: opinion.summary.feishu_sent > 0 ? 'success' : 'warning',
-        },
       ]
     : []
 
-  const opinionDistribution: DistributionDatum[] = (opinion?.sentiment.length
-    ? opinion.sentiment
+  const meaningfulSentiment =
+    opinion?.sentiment.filter((item) => !['unknown', '未知'].includes(item.label.toLowerCase())) ?? []
+  const opinionDistribution: DistributionDatum[] = (meaningfulSentiment.length
+    ? meaningfulSentiment
     : opinion?.tags ?? []
   )
     .slice(0, 6)
@@ -78,18 +73,18 @@ export function OperationalAnalytics({
       <VisualizationCard
         eyebrow="Processing funnel"
         title="处理链路转化"
-        description={`同一${opinion?.window.range ?? '统计'}窗口内，从入库到 AI 处理和飞书送达。`}
+        description={`同一${opinion?.window.range ?? '统计'}窗口内，从入库到 AI 处理。发送日志是事件数，不冒充记录转化率。`}
         loading={opinionLoading}
         error={opinionError}
         empty={!opinionLoading && !opinionError && windowRecords === 0}
         emptyMessage="当前窗口尚无可处理记录"
       >
-        <ConversionFunnel stages={coverage} ariaLabel="记录、AI 处理和飞书送达转化率" />
+        <ConversionFunnel stages={coverage} ariaLabel="记录入库与 AI 处理覆盖率" />
       </VisualizationCard>
       <VisualizationCard
         eyebrow="Opinion distribution"
         title="情绪与标签分布"
-        description="优先展示真实情绪分布，没有情绪数据时回退到标签。"
+        description="优先展示明确情绪，只有 unknown 时回退到已有标签。"
         loading={opinionLoading}
         error={opinionError}
         empty={!opinionLoading && !opinionError && opinionDistribution.length === 0}

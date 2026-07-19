@@ -419,21 +419,24 @@ export default function DashboardPage() {
     dispatched: d.new_records,
     failed: d.failed_runs,
   }))
-  const workers: WorkerView[] = (workersQuery.data?.data ?? []).map((w: WorkerNode) => ({
-    id: w.id,
-    name: w.hostname,
-    lane: 'collect' as const,
-    region: w.worker_id.slice(0, 8),
-    online: w.status === 'online',
-    load:
-      typeof w.concurrency === 'number' && w.concurrency > 0
-        ? Math.min(100, Math.round((w.active_tasks / w.concurrency) * 100))
-        : null,
-    queue: w.active_tasks,
-    current: w.active_tasks > 0 ? `${w.active_tasks} 个任务执行中` : null,
-    doneToday: null,
-    failedToday: null,
-  }))
+  const workers: WorkerView[] = (workersQuery.data?.data ?? []).map((w: WorkerNode) => {
+    const concurrency = typeof w.concurrency === 'number' && w.concurrency > 0 ? w.concurrency : null
+    return {
+      id: w.id,
+      name: w.hostname,
+      lane: 'collect' as const,
+      region: w.worker_id.slice(0, 8),
+      online: w.status === 'online',
+      load: concurrency === null ? null : Math.min(100, Math.round((w.active_tasks / concurrency) * 100)),
+      queue: concurrency === null ? 0 : Math.max(0, w.active_tasks - concurrency),
+      current:
+        w.active_tasks > 0
+          ? `${concurrency === null ? w.active_tasks : Math.min(w.active_tasks, concurrency)} 个任务运行中`
+          : null,
+      doneToday: null,
+      failedToday: null,
+    }
+  })
   const stream = runsToStream(s.recent_runs ?? [])
   const failures: FailureItem[] = stream
     .filter((task) => task.phase === 'failed')

@@ -23,6 +23,14 @@ def _inspect_workers() -> tuple[dict, dict]:
     return inspect.stats() or {}, inspect.active() or {}
 
 
+def _local_active_pipeline_tasks() -> int:
+    from backend.executor import get_executor
+    from backend.executor.local import LocalExecutor
+
+    executor = get_executor()
+    return executor.active_pipeline_tasks if isinstance(executor, LocalExecutor) else 0
+
+
 @router.get("", response_model=ApiResponse[list[dict]])
 async def list_workers(db: AsyncSession = Depends(get_db)) -> ApiResponse:
     """Return execution resources for the configured task executor."""
@@ -35,7 +43,7 @@ async def list_workers(db: AsyncSession = Depends(get_db)) -> ApiResponse:
                     "worker_id": "local",
                     "hostname": "local",
                     "status": "online",
-                    "active_tasks": 0,
+                    "active_tasks": _local_active_pipeline_tasks(),
                     "last_heartbeat": None,
                     "concurrency": settings.local_max_concurrent_pipelines,
                     "celery_version": None,

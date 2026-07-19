@@ -24,6 +24,7 @@ async def test_list_workers_reports_local_executor_without_inspecting_celery(cli
         raise AssertionError("local executor must not inspect Celery")
 
     monkeypatch.setattr(workers, "_inspect_workers", fail_if_celery_is_inspected)
+    monkeypatch.setattr(workers, "_local_active_pipeline_tasks", lambda: 3)
 
     response = await client.get("/api/v1/workers")
 
@@ -34,7 +35,7 @@ async def test_list_workers_reports_local_executor_without_inspecting_celery(cli
             "worker_id": "local",
             "hostname": "local",
             "status": "online",
-            "active_tasks": 0,
+            "active_tasks": 3,
             "last_heartbeat": None,
             "concurrency": 8,
             "celery_version": None,

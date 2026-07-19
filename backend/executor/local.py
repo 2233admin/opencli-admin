@@ -47,6 +47,12 @@ class LocalExecutor(AbstractExecutor):
         self._collection_tasks: dict[str, asyncio.Task[dict]] = {}
         self._scheduled_collection_tasks: dict[str, asyncio.Task[dict]] = {}
 
+    @property
+    def active_pipeline_tasks(self) -> int:
+        """Return all local collection pipelines still running or queued."""
+        tasks = (*self._collection_tasks.values(), *self._scheduled_collection_tasks.values())
+        return sum(not task.done() for task in tasks)
+
     async def dispatch_acquisition(self, execution_id: str) -> None:
         from backend.acquisition.runner import run_acquisition_execution
 
@@ -57,9 +63,11 @@ class LocalExecutor(AbstractExecutor):
         task.add_done_callback(_log_task_exception)
         self._acquisition_tasks[execution_id] = task
         task.add_done_callback(
-            lambda completed: self._acquisition_tasks.pop(execution_id, None)
-            if self._acquisition_tasks.get(execution_id) is completed
-            else None
+            lambda completed: (
+                self._acquisition_tasks.pop(execution_id, None)
+                if self._acquisition_tasks.get(execution_id) is completed
+                else None
+            )
         )
 
     async def cancel_acquisition(self, execution_id: str) -> None:
@@ -81,9 +89,7 @@ class LocalExecutor(AbstractExecutor):
         async with _pipeline_semaphore():
             return await run_collection_pipeline(task_id, parameters)
 
-    async def _run_scheduled(
-        self, schedule_id: str, source_id: str, parameters: dict
-    ) -> dict:
+    async def _run_scheduled(self, schedule_id: str, source_id: str, parameters: dict) -> dict:
         from backend.pipeline.runner import run_scheduled_pipeline
 
         async with _pipeline_semaphore():
@@ -101,9 +107,11 @@ class LocalExecutor(AbstractExecutor):
         task.add_done_callback(_log_task_exception)
         self._collection_tasks[task_id] = task
         task.add_done_callback(
-            lambda completed: self._collection_tasks.pop(task_id, None)
-            if self._collection_tasks.get(task_id) is completed
-            else None
+            lambda completed: (
+                self._collection_tasks.pop(task_id, None)
+                if self._collection_tasks.get(task_id) is completed
+                else None
+            )
         )
         return {"task_id": task_id}
 
@@ -118,13 +126,13 @@ class LocalExecutor(AbstractExecutor):
         current = self._scheduled_collection_tasks.get(schedule_id)
         if current is not None and not current.done():
             return
-        task = asyncio.create_task(
-            self._run_scheduled(schedule_id, source_id, parameters)
-        )
+        task = asyncio.create_task(self._run_scheduled(schedule_id, source_id, parameters))
         task.add_done_callback(_log_task_exception)
         self._scheduled_collection_tasks[schedule_id] = task
         task.add_done_callback(
-            lambda completed: self._scheduled_collection_tasks.pop(schedule_id, None)
-            if self._scheduled_collection_tasks.get(schedule_id) is completed
-            else None
+            lambda completed: (
+                self._scheduled_collection_tasks.pop(schedule_id, None)
+                if self._scheduled_collection_tasks.get(schedule_id) is completed
+                else None
+            )
         )
