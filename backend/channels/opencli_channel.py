@@ -8,6 +8,7 @@ import logging
 import os
 import re
 import subprocess
+import time
 from typing import Any
 from urllib.parse import urlparse
 
@@ -23,9 +24,37 @@ _DAEMON_PORT = 19825
 # Binary to invoke. Override with OPENCLI_BIN env var if needed.
 _OPENCLI_BIN = configured_opencli_bin()
 
-# Cache: (bin, site, command) → frozenset of accepted --option names (excluding builtins)
-_help_cache: dict[tuple[str, str, str], frozenset[str]] = {}
-_browser_requirement_cache: dict[tuple[str, str, str], bool] = {}
+# Cache: (bin, site, command) → (cached_at, value). TTL'd (C17): without
+# expiry these live for the process lifetime, so an opencli binary upgrade
+# that adds/renames options keeps getting routed with the old flag set until
+# the admin process restarts.
+_CACHE_TTL_SECONDS = 3600  # 1 hour
+
+_help_cache: dict[tuple[str, str, str], tuple[float, frozenset[str]]] = {}
+_browser_requirement_cache: dict[tuple[str, str, str], tuple[float, bool]] = {}
+
+
+def _cache_get(
+    cache: dict[tuple[str, str, str], tuple[float, Any]],
+    key: tuple[str, str, str],
+) -> Any | None:
+    """Return the cached value for key if present and not past its TTL, else None."""
+    entry = cache.get(key)
+    if entry is None:
+        return None
+    cached_at, value = entry
+    if time.monotonic() - cached_at > _CACHE_TTL_SECONDS:
+        del cache[key]
+        return None
+    return value
+
+
+def _cache_set(
+    cache: dict[tuple[str, str, str], tuple[float, Any]],
+    key: tuple[str, str, str],
+    value: Any,
+) -> None:
+    cache[key] = (time.monotonic(), value)
 
 
 def _split_routing_parameters(
@@ -119,16 +148,31 @@ def _process_group_kwargs() -> dict:
     return {"start_new_session": True}
 
 
+def _peek_named_options(bin_path: str, site: str, command: str) -> frozenset[str] | None:
+    """Cache-only lookup for the --option names accepted by a command.
+
+    Returns None on a cache miss/expiry WITHOUT spawning a subprocess (C17).
+    For callers that only want a nicer display string when the answer is
+    already known for free — e.g. the collection-run event-log detail in
+    pipeline.py, which must not pay a `--help` subprocess on the hot path
+    just to format a log line. Real dispatch still calls
+    ``_get_named_options`` (below), which fetches-and-caches for real.
+    """
+    return _cache_get(_help_cache, (bin_path, site, command))
+
+
 async def _get_named_options(bin_path: str, site: str, command: str) -> frozenset[str]:
     """Return the set of --option names accepted by `opencli <site> <command>`.
 
-    Runs `--help` once per (bin, site, command) triple and caches the result.
-    Falls back to an empty set on any error so the caller can still try running.
+    Runs `--help` once per (bin, site, command) triple and caches the result
+    for _CACHE_TTL_SECONDS. Falls back to an empty set on any error so the
+    caller can still try running.
     """
     import re
     key = (bin_path, site, command)
-    if key in _help_cache:
-        return _help_cache[key]
+    cached = _cache_get(_help_cache, key)
+    if cached is not None:
+        return cached
     proc = None
     try:
         proc = await asyncio.create_subprocess_exec(
@@ -150,7 +194,7 @@ async def _get_named_options(bin_path: str, site: str, command: str) -> frozense
         await _kill_subprocess(proc)
         logger.debug("could not fetch --help for %s %s: %s", site, command, exc)
         names = frozenset()
-    _help_cache[key] = names
+    _cache_set(_help_cache, key, names)
     return names
 
 
@@ -161,8 +205,9 @@ async def _command_requires_browser(bin_path: str, site: str, command: str) -> b
     browser=True so authenticated/dynamic sites keep the safer routed behavior.
     """
     key = (bin_path, site, command)
-    if key in _browser_requirement_cache:
-        return _browser_requirement_cache[key]
+    cached = _cache_get(_browser_requirement_cache, key)
+    if cached is not None:
+        return cached
     proc = None
     try:
         proc = await asyncio.create_subprocess_exec(
@@ -194,7 +239,7 @@ async def _command_requires_browser(bin_path: str, site: str, command: str) -> b
         await _kill_subprocess(proc)
         logger.debug("could not inspect browser requirement for %s %s: %s", site, command, exc)
         requires_browser = True
-    _browser_requirement_cache[key] = requires_browser
+    _cache_set(_browser_requirement_cache, key, requires_browser)
     return requires_browser
 
 
@@ -413,15 +458,24 @@ async def _check_bridge_ready(daemon_host: str, daemon_port: int) -> str | None:
     return None
 
 
-async def _snapshot_tab_ids(cdp_endpoint: str) -> set[str]:
-    """Return the set of tab IDs currently open in Chrome."""
+async def _snapshot_tab_ids(cdp_endpoint: str) -> set[str] | None:
+    """Return the set of tab IDs currently open in Chrome.
+
+    Returns ``None`` (not an empty set) when the snapshot itself fails (C20):
+    an empty set means "genuinely no tabs are open right now", which is a
+    valid baseline to diff against; ``None`` means "we don't know what
+    existed before", and a caller that can't tell the two apart would treat
+    every currently-open tab as newly-opened and close tabs the user opened
+    themselves.
+    """
     import httpx
     try:
         async with httpx.AsyncClient(timeout=5) as client:
             resp = await client.get(f"{cdp_endpoint}/json/list")
             return {t["id"] for t in resp.json() if "id" in t}
-    except Exception:
-        return set()
+    except Exception as exc:
+        logger.warning("cdp tab snapshot failed at %s: %s", cdp_endpoint, exc)
+        return None
 
 
 async def _cleanup_cdp_tabs(cdp_endpoint: str, pre_existing_ids: set[str]) -> None:
@@ -704,7 +758,7 @@ class OpenCLIChannel(AbstractChannel):
                 env["OPENCLI_CDP_ENDPOINT"] = cdp_endpoint
                 logger.info("opencli cdp | cmd=%s cdp=%s", " ".join(cmd), cdp_endpoint)
 
-            pre_tab_ids: set[str] = set()
+            pre_tab_ids: set[str] | None = set()
             if mode == "cdp":
                 pre_tab_ids = await _snapshot_tab_ids(cdp_endpoint)
 
@@ -719,7 +773,17 @@ class OpenCLIChannel(AbstractChannel):
             )
 
             if mode == "cdp":
-                await _cleanup_cdp_tabs(cdp_endpoint, pre_tab_ids)
+                if pre_tab_ids is None:
+                    # C20: no trustworthy baseline, so we can't tell newly-opened
+                    # tabs from ones the user already had open — skip cleanup
+                    # this run rather than risk closing the user's own tabs.
+                    logger.warning(
+                        "cdp cleanup skipped for %s: pre-collection tab snapshot "
+                        "failed, can't distinguish new tabs from pre-existing ones",
+                        cdp_endpoint,
+                    )
+                else:
+                    await _cleanup_cdp_tabs(cdp_endpoint, pre_tab_ids)
 
             return result
 
