@@ -180,15 +180,21 @@ async def run_pipeline(
                 "auto_confirm": bool(source.channel_config.get("auto_confirm", False)),
             }
         if source.channel_type == "opencli":
-            from backend.channels.opencli_channel import _get_named_options, _OPENCLI_BIN
+            from backend.channels.opencli_channel import _OPENCLI_BIN, _peek_named_options
             cfg = source.channel_config
             _site = cfg.get("site", "")
             _cmd = cfg.get("command", "")
             _raw_args = {**cfg.get("args", {}), **{k: v for k, v in params.items() if k != "chrome_endpoint"}}
             _pos = [str(v) for v in cfg.get("positional_args", [])]
             _fmt = cfg.get("format", "json")
-            # Apply same positional-resolution logic as the channel
-            _named_opts = await _get_named_options(_OPENCLI_BIN, _site, _cmd)
+            # Apply same positional-resolution logic as the channel, but this
+            # detail string is display-only (the channel's own collect() call
+            # re-derives named options for real dispatch) — so peek the cache
+            # instead of spawning an opencli --help subprocess on the
+            # collection hot path just to format a log line (C17). A cache
+            # miss here behaves exactly like a failed --help fetch always
+            # did: fall through and treat every raw arg as a named option.
+            _named_opts = _peek_named_options(_OPENCLI_BIN, _site, _cmd) or frozenset()
             _named_args, _extra_pos = {}, []
             for k, v in _raw_args.items():
                 if _named_opts and k not in _named_opts:

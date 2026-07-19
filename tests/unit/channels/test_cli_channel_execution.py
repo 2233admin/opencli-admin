@@ -2,7 +2,7 @@
 
 import json
 import sys
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -21,6 +21,13 @@ def _allow(*binaries: str):
         "backend.config.get_settings",
         return_value=Settings(cli_channel_allowed_binaries=",".join(binaries)),
     )
+
+
+async def _raise_timeout(awaitable, *, timeout):
+    """Close the mocked communicate coroutine before simulating timeout."""
+    del timeout
+    awaitable.close()
+    raise TimeoutError
 
 
 @pytest.mark.asyncio
@@ -69,19 +76,17 @@ async def test_collect_text_output(channel):
 
 @pytest.mark.asyncio
 async def test_collect_timeout(channel):
-    """Timeout kills the child so a subprocess is never orphaned."""
+    """Timeout kills the whole process tree so no descendant is orphaned."""
     mock_proc = AsyncMock()
-    mock_proc.kill = Mock()
-
-    async def timeout(awaitable, *, timeout):
-        del timeout
-        awaitable.close()
-        raise TimeoutError
 
     with (
         _allow(sys.executable),
         patch("asyncio.create_subprocess_exec", return_value=mock_proc),
-        patch("asyncio.wait_for", side_effect=timeout),
+        patch("asyncio.wait_for", side_effect=_raise_timeout),
+        patch(
+            "backend.channels.cli_channel._kill_subprocess",
+            new=AsyncMock(),
+        ) as kill_tree,
     ):
         result = await channel.collect(
             {
@@ -94,7 +99,35 @@ async def test_collect_timeout(channel):
 
     assert result.success is False
     assert "timed out" in result.error.lower()
-    mock_proc.kill.assert_called_once()
+    kill_tree.assert_awaited_once_with(mock_proc)
+
+
+@pytest.mark.asyncio
+async def test_collect_timeout_logs_reap_failure(channel):
+    """A process-tree reap failure is logged while timeout stays visible."""
+    mock_proc = AsyncMock()
+    with (
+        _allow(sys.executable),
+        patch("asyncio.create_subprocess_exec", return_value=mock_proc),
+        patch("asyncio.wait_for", side_effect=_raise_timeout),
+        patch(
+            "backend.channels.cli_channel._kill_subprocess",
+            new=AsyncMock(side_effect=RuntimeError("reap failed")),
+        ),
+        patch("backend.channels.cli_channel.logger") as mock_logger,
+    ):
+        result = await channel.collect(
+            {
+                "binary": sys.executable,
+                "command": ["-c", "import time; time.sleep(10)"],
+                "timeout": 1,
+            },
+            {},
+        )
+
+    assert result.success is False
+    assert "timed out" in result.error.lower()
+    mock_logger.warning.assert_called_once()
 
 
 @pytest.mark.asyncio

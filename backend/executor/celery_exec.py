@@ -1,5 +1,6 @@
 """Celery-based distributed executor."""
 
+import asyncio
 import logging
 
 from backend.executor.base import AbstractExecutor
@@ -29,8 +30,14 @@ class CeleryExecutor(AbstractExecutor):
 
     async def dispatch_collection(self, task_id: str, parameters: dict) -> dict:
         from backend.worker.tasks import run_collection
-        result = run_collection.apply_async(
-            kwargs={"task_id": task_id, "parameters": parameters}
+
+        # AUDIT C9: apply_async is a synchronous broker round-trip (network
+        # I/O to Redis/RabbitMQ). Called directly here it would block this
+        # event loop for every dispatch; to_thread moves the round-trip off
+        # the loop.
+        result = await asyncio.to_thread(
+            run_collection.apply_async,
+            kwargs={"task_id": task_id, "parameters": parameters},
         )
         return {"task_id": task_id, "celery_task_id": result.id}
 
@@ -38,6 +45,8 @@ class CeleryExecutor(AbstractExecutor):
         self, schedule_id: str, source_id: str, parameters: dict
     ) -> None:
         from backend.worker.tasks import run_scheduled_collection
-        run_scheduled_collection.apply_async(
-            kwargs={"schedule_id": schedule_id, "source_id": source_id, "parameters": parameters}
+
+        await asyncio.to_thread(
+            run_scheduled_collection.apply_async,
+            kwargs={"schedule_id": schedule_id, "source_id": source_id, "parameters": parameters},
         )

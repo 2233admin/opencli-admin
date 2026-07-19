@@ -19,9 +19,12 @@ Two things stay where they were on purpose, to keep this slice behavior-only:
 
 from __future__ import annotations
 
+import logging
 from typing import Sequence
 
 from backend.pipeline.sinks.base import RunContext, SinkResult
+
+logger = logging.getLogger(__name__)
 
 
 class LegacyDbSink:
@@ -48,10 +51,32 @@ class LegacyDbSink:
         # rebound per call so tests can patch ``backend.database.AsyncSessionLocal``,
         # and ``storer``/``normalizer`` are reached as module attributes so
         # ``patch("backend.pipeline.storer.store_records")`` takes effect.
+        from backend.channels.registry import get_channel
         from backend.database import AsyncSessionLocal
         from backend.pipeline import normalizer, storer
 
         triples = normalizer.normalize_items(list(items), ctx.source_id)
+
+        # C7: ask the channel for each item's stable native id (RSS entry id,
+        # etc.) so store_records can update an edited item in place instead
+        # of inserting a duplicate. A channel without identity() returns None
+        # for every item — identical to the pre-C7 behavior (falls through to
+        # unchanged content_hash-only dedup). Best-effort: any failure here
+        # (unregistered channel_type, a channel's identity() raising on odd
+        # input, ...) also degrades to that unchanged behavior rather than
+        # breaking storage over a dedup nicety.
+        try:
+            channel = get_channel(ctx.provider)
+            identities: list[str | None] | None = [
+                channel.identity(raw) for raw, _, _ in triples
+            ]
+        except Exception as exc:
+            logger.debug(
+                "could not resolve identity() for provider=%s (falling back "
+                "to content_hash-only dedup this batch): %s",
+                ctx.provider, exc,
+            )
+            identities = None
 
         # The ODP shadow-forward still fires inside storer.store_records; the
         # forward_to_odp gate lets DualSink(LegacyDbSink + OdpSink) turn it off on
@@ -60,6 +85,7 @@ class LegacyDbSink:
             new_records, skipped = await storer.store_records(
                 session, ctx.task_id, ctx.source_id, triples,
                 channel_type=ctx.provider, forward_to_odp=self.forward_to_odp,
+                identities=identities,
             )
             await session.commit()
 
