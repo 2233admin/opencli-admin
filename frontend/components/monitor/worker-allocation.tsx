@@ -8,7 +8,8 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
 
-function loadTone(load: number): string {
+function loadTone(load: number | null): string {
+  if (load === null) return 'text-muted-foreground'
   if (load >= 85) return 'text-destructive'
   if (load >= 65) return 'text-warning'
   return 'text-muted-foreground'
@@ -34,15 +35,18 @@ function WorkerRow({ worker }: { worker: WorkerView }) {
           </Badge>
         </div>
         <span className={cn('font-mono text-xs tabular-nums', loadTone(worker.load))}>
-          {worker.online ? `${worker.load}%` : '离线'}
+          {worker.online ? (worker.load === null ? '容量未知' : `${worker.load}%`) : '离线'}
         </span>
       </div>
-      <Progress value={worker.online ? worker.load : 0} className="h-1" />
+      {worker.load === null ? null : <Progress value={worker.online ? worker.load : 0} className="h-1" />}
       <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
         <span className="truncate">{worker.current ?? (worker.online ? '空闲' : '—')}</span>
         <span className="shrink-0 tabular-nums">
-          队列 {worker.queue} · 今日 {worker.doneToday}
-          {worker.failedToday > 0 ? <span className="text-destructive"> · 失败 {worker.failedToday}</span> : null}
+          队列 {worker.queue}
+          {worker.doneToday === null ? null : ` · 今日 ${worker.doneToday}`}
+          {worker.failedToday !== null && worker.failedToday > 0 ? (
+            <span className="text-destructive"> · 失败 {worker.failedToday}</span>
+          ) : null}
         </span>
       </div>
     </div>

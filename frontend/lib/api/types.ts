@@ -391,9 +391,11 @@ export interface WorkerNode {
   hostname: string
   status: string
   active_tasks: number
-  last_heartbeat?: string
-  created_at: string
-  updated_at: string
+  last_heartbeat?: string | null
+  concurrency?: number | null
+  celery_version?: string | null
+  created_at?: string
+  updated_at?: string
 }
 
 export interface EdgeNode {

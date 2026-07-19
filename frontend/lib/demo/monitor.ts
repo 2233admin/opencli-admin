@@ -18,14 +18,14 @@ export interface WorkerView {
   lane: LaneKind
   region: string
   online: boolean
-  /** 0-100 current utilization. */
-  load: number
+  /** 0-100 current utilization, or null when capacity is not reported. */
+  load: number | null
   /** Tasks waiting in this worker's local queue. */
   queue: number
   /** Currently executing task label, if any. */
   current: string | null
-  doneToday: number
-  failedToday: number
+  doneToday: number | null
+  failedToday: number | null
 }
 
 export interface StreamTask {
@@ -191,8 +191,10 @@ export function createSnapshot(): MonitorSnapshot {
       queueDepth: workers.reduce((s, w) => s + w.queue, 0),
       onlineWorkers: online.length,
       totalWorkers: workers.length,
-      recordsToday: workers.reduce((s, w) => s + w.doneToday, 0),
-      dispatchedToday: workers.filter((w) => w.lane === 'dispatch').reduce((s, w) => s + w.doneToday * 3, 0),
+      recordsToday: workers.reduce((s, w) => s + (w.doneToday ?? 0), 0),
+      dispatchedToday: workers
+        .filter((w) => w.lane === 'dispatch')
+        .reduce((s, w) => s + (w.doneToday ?? 0) * 3, 0),
     },
     throughput,
     workers,
@@ -205,9 +207,9 @@ export function createSnapshot(): MonitorSnapshot {
 export function tick(prev: MonitorSnapshot): MonitorSnapshot {
   const workers = prev.workers.map((w) => ({
     ...w,
-    load: w.online ? Math.min(98, Math.max(8, w.load + rand(-9, 9))) : 0,
+    load: w.online ? Math.min(98, Math.max(8, (w.load ?? 0) + rand(-9, 9))) : 0,
     queue: w.online ? Math.max(0, w.queue + rand(-2, 2)) : w.queue,
-    doneToday: w.online ? w.doneToday + rand(0, 6) : w.doneToday,
+    doneToday: w.online ? (w.doneToday ?? 0) + rand(0, 6) : w.doneToday,
   }))
 
   // Advance stream: running tasks may complete; occasionally inject new ones.

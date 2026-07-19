@@ -97,6 +97,10 @@
   --chart-3: #a0c3ec;
   --chart-4: #c4b5fd;
   --chart-5: #7d8187;
+  --viz-positive: var(--success);
+  --viz-negative: var(--destructive);
+  --viz-warning: var(--warning);
+  --viz-neutral: var(--chart-5);
   --radius: 0.5rem;
   --sidebar: #fafaf7;
   --sidebar-foreground: #0a0a0a;

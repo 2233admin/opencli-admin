@@ -27,6 +27,7 @@ import { formatNumber, formatRelative } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { FailureFeed, TaskStream } from '@/components/monitor/task-stream'
 import { ThroughputChart } from '@/components/monitor/throughput-chart'
+import { OperationalAnalytics } from '@/components/monitor/operational-analytics'
 import { WorkerAllocation } from '@/components/monitor/worker-allocation'
 import { BACKEND_HINT, ErrorState, LoadingState } from '@/components/shell/data-states'
 import { PageContainer } from '@/components/shell/page-container'
@@ -401,7 +402,7 @@ export default function DashboardPage() {
     },
     {
       title: '运行成功率',
-      value: `${Math.round((s.runs.success_rate ?? 0) * 100)}%`,
+      value: `${Math.round(s.runs.success_rate ?? 0)}%`,
       sub: `成功 ${s.runs.success} · 失败 ${s.runs.failed}`,
       icon: CheckCircle2,
     },
@@ -424,11 +425,14 @@ export default function DashboardPage() {
     lane: 'collect' as const,
     region: w.worker_id.slice(0, 8),
     online: w.status === 'online',
-    load: Math.min(96, w.active_tasks * 18),
+    load:
+      typeof w.concurrency === 'number' && w.concurrency > 0
+        ? Math.min(100, Math.round((w.active_tasks / w.concurrency) * 100))
+        : null,
     queue: w.active_tasks,
     current: w.active_tasks > 0 ? `${w.active_tasks} 个任务执行中` : null,
-    doneToday: 0,
-    failedToday: 0,
+    doneToday: null,
+    failedToday: null,
   }))
   const stream = runsToStream(s.recent_runs ?? [])
   const failures: FailureItem[] = stream
@@ -592,6 +596,13 @@ export default function DashboardPage() {
           ))}
         </div>
       </section>
+
+      <OperationalAnalytics
+        stats={s}
+        opinion={opinion.data}
+        opinionLoading={opinion.isLoading}
+        opinionError={opinion.isError}
+      />
 
       <AgentDeliveryPanel agents={agents} notificationLogs={notificationLogs} agentsLoading={agentsQuery.isLoading} logsLoading={notificationLogsQuery.isLoading} />
 
