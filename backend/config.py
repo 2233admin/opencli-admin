@@ -24,6 +24,15 @@ class Settings(BaseSettings):
     # Task execution mode: "local" (in-process asyncio) or "celery" (distributed)
     task_executor: Literal["local", "celery"] = "local"
 
+    # AUDIT C6: process-wide cap on concurrently-RUNNING pipeline executions in
+    # the local (in-process asyncio) executor — independent of the per-domain
+    # cap in pipeline/domain_limiter.py. Bounds how many schedules firing on
+    # the same tick plus manual/webhook triggers can drive Chrome/opencli
+    # subprocesses at once on the one event loop. Only meaningful when
+    # task_executor="local" (celery fans out across worker processes
+    # instead). Env: LOCAL_MAX_CONCURRENT_PIPELINES.
+    local_max_concurrent_pipelines: int = 8
+
     # Collection orchestrator:
     # admin — API内置 scheduler.py / Celery Beat 驱动定时采集（默认）
     # iii   — III engine + schedule-bootstrap 驱动 cron；API 仅保留 UI/手动任务
@@ -124,6 +133,18 @@ class Settings(BaseSettings):
     agent_http_timeout: int = 130
     # WS dispatch timeout when center sends a task over a reverse WS channel
     agent_ws_timeout: int = 130
+
+    # AI enrichment processors (processors/openai_processor.py, claude_processor.py,
+    # local_processor.py): explicit per-request timeout on the LLM API call itself
+    # (AUDIT C8) — the SDKs' own default is a 600s x 2-retry black hole that can
+    # otherwise pin a whole batch in ai_processing for hours behind a dead/slow
+    # gateway. A source's ai_config can still override this per call via
+    # config["timeout"]; this is only the fallback default.
+    llm_request_timeout_seconds: int = 120
+    # Bound how many per-record LLM calls run concurrently within one enrichment
+    # batch (AUDIT C25) — replaces a plain await-in-a-for-loop, where wall-clock
+    # cost was record_count x per-call latency.
+    llm_max_concurrency: int = 4
 
     # Webhooks
     webhook_secret: str = "change-me-webhook-secret"

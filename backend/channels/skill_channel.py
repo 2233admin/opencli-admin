@@ -259,57 +259,62 @@ async def _build_model_call(provider: dict[str, Any]) -> Any:
     return model_call
 
 
-def _emit_loop_events(run_id: str, result: LoopResult) -> list[Any]:
-    """Build the per-step ``events.emit`` coroutines for a finished loop.
+def _emit_loop_events(result: LoopResult) -> list[dict[str, Any]]:
+    """Build the per-step ``TaskRunEvent`` payloads for a finished loop.
 
     The loop is *pure of the spine* (it only self-emits ``awaiting_confirm`` on a
     gate block); spine event emission is this channel's job. We walk the ordered
-    ``result.steps`` and emit one event each — ``skill_extract`` for ``extract``
-    verbs, ``skill_step`` for everything else — bracketed by a leading
-    ``skill_perceive`` and a trailing ``skill_done`` carrying the outcome. Every
-    ``emit`` is best-effort and never raises (see ``events.emit``).
+    ``result.steps`` and build one event payload each — ``skill_extract`` for
+    ``extract`` verbs, ``skill_step`` for everything else — bracketed by a
+    leading ``skill_perceive`` and a trailing ``skill_done`` carrying the
+    outcome.
+
+    AUDIT C24: this used to return a list of already-built ``events.emit(...)``
+    coroutines, awaited one at a time by the caller (one session + INSERT +
+    commit/fsync per step). It now returns plain dicts so the caller can hand
+    the whole trace to ``events.emit_many`` — one session, one bulk insert, one
+    commit for the entire run's step trace.
     """
-    coros: list[Any] = []
-    coros.append(
-        events.emit(
-            run_id, STEP_PERCEIVE,
-            f"开始执行技能 | 步数={len(result.steps)}",
-            detail={"step_count": len(result.steps)},
-        )
-    )
+    payloads: list[dict[str, Any]] = [
+        {
+            "step": STEP_PERCEIVE,
+            "message": f"开始执行技能 | 步数={len(result.steps)}",
+            "detail": {"step_count": len(result.steps)},
+        }
+    ]
     for step in result.steps:
         verb = step.verb or "?"
         is_extract = verb == "extract"
-        coros.append(
-            events.emit(
-                run_id,
-                STEP_EXTRACT if is_extract else STEP_STEP,
-                f"步骤 {step.index} | {verb}" + (f" | 错误: {step.error}" if step.error else ""),
-                level="warning" if step.error else "info",
-                detail={
+        payloads.append(
+            {
+                "step": STEP_EXTRACT if is_extract else STEP_STEP,
+                "message": f"步骤 {step.index} | {verb}"
+                + (f" | 错误: {step.error}" if step.error else ""),
+                "level": "warning" if step.error else "info",
+                "detail": {
                     "index": step.index,
                     "verb": step.verb,
                     "target": step.target,
                     "error": step.error,
                     "result": step.result,
                 },
-                elapsed_ms=step.elapsed_ms,
-            )
+                "elapsed_ms": step.elapsed_ms,
+            }
         )
-    coros.append(
-        events.emit(
-            run_id, STEP_DONE,
-            f"技能执行结束 | 结果={result.outcome} 提取={len(result.extracts)}",
-            level="warning" if result.outcome in ("error", "done_failed") else "info",
-            detail={
+    payloads.append(
+        {
+            "step": STEP_DONE,
+            "message": f"技能执行结束 | 结果={result.outcome} 提取={len(result.extracts)}",
+            "level": "warning" if result.outcome in ("error", "done_failed") else "info",
+            "detail": {
                 "outcome": result.outcome,
                 "extract_count": len(result.extracts),
                 "awaiting_confirm": result.awaiting_confirm,
                 "summary": result.summary,
             },
-        )
+        }
     )
-    return coros
+    return payloads
 
 
 def _extracts_to_items(result: LoopResult) -> list[dict[str, Any]]:
@@ -616,9 +621,10 @@ class SkillChannel(AbstractChannel):
                     await skill_page.aclose()
 
                 # Emit per-step events (best-effort; no-op when no run_id).
+                # AUDIT C24: one session + bulk insert + one commit for the
+                # whole step trace, instead of one commit (fsync) per step.
                 if run_id:
-                    for coro in _emit_loop_events(run_id, result):
-                        await coro
+                    await events.emit_many(run_id, _emit_loop_events(result))
 
                 items = _extracts_to_items(result)
 

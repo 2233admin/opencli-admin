@@ -1,12 +1,13 @@
 """RSS thick-contract fetch(): conditional GET (etag/304), identity(), and the
 runner driving it end to end (the thin-channel / thick-runner vertical slice)."""
 
+import threading
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from backend.channels.base import FetchContext
+from backend.channels.base import ChannelFetchError, FetchContext
 from backend.channels.rss_channel import RSSChannel
 
 
@@ -63,14 +64,46 @@ def test_rss_identity_uses_entry_id():
 
 @pytest.mark.asyncio
 async def test_fetch_200_returns_items_and_advances_cursor():
-    http = _Http(_Resp(200, text=_RSS, headers={"ETag": 'W/"v2"', "Last-Modified": "Wed, 01 Jul 2026 00:00:00 GMT"}))
+    headers = {
+        "ETag": 'W/"v2"',
+        "Last-Modified": "Wed, 01 Jul 2026 00:00:00 GMT",
+    }
+    http = _Http(_Resp(200, text=_RSS, headers=headers))
     ctx = FetchContext(config={"feed_url": "https://x/feed"}, params={}, cursor=None, http=http)
 
     result = await RSSChannel().fetch(ctx)
 
     assert [i["id"] for i in result.items] == ["id-a", "id-b"]
-    assert result.next_cursor == {"etag": 'W/"v2"', "last_modified": "Wed, 01 Jul 2026 00:00:00 GMT"}
+    assert result.next_cursor == {
+        "etag": 'W/"v2"',
+        "last_modified": "Wed, 01 Jul 2026 00:00:00 GMT",
+    }
     assert result.has_more is False
+
+
+@pytest.mark.asyncio
+async def test_fetch_parses_feed_off_event_loop_thread():
+    """AUDIT C22: feedparser.parse() must run via asyncio.to_thread on the
+    fetch() path too — a multi-MB feed would otherwise freeze every other
+    request/task on this process for the duration of the parse."""
+    import feedparser
+
+    http = _Http(_Resp(200, text=_RSS, headers={}))
+    ctx = FetchContext(config={"feed_url": "https://x/feed"}, params={}, cursor=None, http=http)
+
+    seen_threads: list[int] = []
+    real_parse = feedparser.parse
+
+    def spy_parse(content):
+        seen_threads.append(threading.get_ident())
+        return real_parse(content)
+
+    with patch("feedparser.parse", side_effect=spy_parse):
+        result = await RSSChannel().fetch(ctx)
+
+    assert [i["id"] for i in result.items] == ["id-a", "id-b"]
+    assert len(seen_threads) == 1
+    assert seen_threads[0] != threading.get_ident()
 
 
 @pytest.mark.asyncio
@@ -88,6 +121,33 @@ async def test_fetch_304_no_new_items_keeps_cursor_and_sends_conditional():
 
 
 @pytest.mark.asyncio
+async def test_fetch_bozo_feed_raises_error_type_mapped_to_schema_drift():
+    """WIRING_GAP_LEDGER W1: fetch()'s bozo branch must carry error_type (from
+    feedparser's real bozo_exception class) so error_kinds.map_error_type
+    resolves it to SCHEMA_DRIFT -- previously this raise passed no error_type,
+    so control.recorder's `elif error_type is not None` guard silently
+    dropped it and the SCHEMA_DRIFT chain never fired."""
+    from xml.sax import SAXParseException
+
+    from backend.control.error_kinds import ErrorKind, map_error_type
+
+    http = _Http(_Resp(200, text="NOT VALID XML AT ALL !!!", headers={}))
+    ctx = FetchContext(config={"feed_url": "https://x/feed"}, params={}, cursor=None, http=http)
+
+    fake_parsed = MagicMock()
+    fake_parsed.bozo = True
+    fake_parsed.entries = []
+    fake_parsed.bozo_exception = SAXParseException("syntax error", None, MagicMock())
+
+    with patch("feedparser.parse", return_value=fake_parsed):
+        with pytest.raises(ChannelFetchError) as exc_info:
+            await RSSChannel().fetch(ctx)
+
+    assert exc_info.value.error_type == "SAXParseException"
+    assert map_error_type(exc_info.value.error_type) is ErrorKind.SCHEMA_DRIFT
+
+
+@pytest.mark.asyncio
 async def test_run_channel_drives_rss_and_persists_cursor():
     from backend.pipeline.channel_runner import run_channel
     from backend.pipeline.cursor_store import InMemoryCursorStore
@@ -98,7 +158,14 @@ async def test_run_channel_drives_rss_and_persists_cursor():
     http = _Http(_Resp(200, text=_RSS, headers={"ETag": 'W/"v2"'}))
     store = InMemoryCursorStore()
 
-    items = (await run_channel(source, {}, cursor_store=store, channel=RSSChannel(), http=http)).items
+    result = await run_channel(
+        source,
+        {},
+        cursor_store=store,
+        channel=RSSChannel(),
+        http=http,
+    )
+    items = result.items
 
     assert [i["id"] for i in items] == ["id-a", "id-b"]
     # Incremental channel: the runner persisted the advanced cursor.

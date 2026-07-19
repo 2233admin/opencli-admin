@@ -9,22 +9,31 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from backend.pipeline.cursor_store import CommitResult, DBCursorStore
 
-# The concurrency tests below run on the default `db_engine` fixture (SQLite in
-# CI/local), which does NOT actually enforce `SELECT ... FOR UPDATE` row locks —
-# so on SQLite they prove the code PATH (insert-race fallback, no unhandled
-# error, no lost value) but NOT that the lock genuinely serializes contending
-# writers. The `test_concurrent_saves_postgres_*` variant re-runs the same
-# scenario against a real Postgres (where FOR UPDATE is enforced), and is the
-# one that actually closes AUDIT follow-up (c). It is skipped unless a Postgres
-# URL is provided (env TEST_DATABASE_URL_PG, or DATABASE_URL if it's postgres),
-# so it's inert locally/on SQLite and active in a Postgres-backed CI run.
+# AUDIT C10: save() used to guard the lost-update race with
+# `SELECT ... FOR UPDATE`, which is a silent no-op on SQLite (the dialect
+# accepts the clause but never actually takes a row lock) — so on the default
+# `db_engine` fixture (SQLite) the concurrency tests below could only prove
+# the code PATH (insert-race fallback, no unhandled error, no lost value),
+# never that a lock genuinely serialized contending writers; only the
+# Postgres-gated variant further down proved that.
+#
+# save() now uses optimistic concurrency instead (a `version` column +
+# `UPDATE ... WHERE version = ?`), which depends only on ordinary SQL
+# semantics — an UPDATE's WHERE-match-then-write is atomic on every backend —
+# rather than a backend-specific locking primitive. So the SQLite tests below
+# now genuinely prove no lost update, not just the code path. The
+# Postgres-gated variant is kept as a second-backend confidence check (same
+# mechanism, a different driver/connection), not because it's uniquely
+# load-bearing anymore; it's skipped unless a Postgres URL is provided (env
+# TEST_DATABASE_URL_PG, or DATABASE_URL if it's postgres).
 _PG_URL = os.environ.get("TEST_DATABASE_URL_PG") or (
     os.environ.get("DATABASE_URL", "")
     if os.environ.get("DATABASE_URL", "").startswith(("postgresql", "postgres"))
     else ""
 )
 _requires_postgres = pytest.mark.skipif(
-    not _PG_URL, reason="no Postgres URL (TEST_DATABASE_URL_PG / postgres DATABASE_URL) — FOR UPDATE locking can only be verified on Postgres"
+    not _PG_URL,
+    reason="no Postgres URL (TEST_DATABASE_URL_PG / DATABASE_URL) — extra cross-backend check",
 )
 
 
@@ -105,11 +114,12 @@ async def test_concurrent_saves_no_lost_update_existing_row(db_engine):
         )
 
         # Neither concurrent save should raise, and each returns a real
-        # CommitResult (not None) reflecting what it actually committed. (On
-        # SQLite, which doesn't enforce FOR UPDATE, exactly which of the two
-        # calls observes which "old" value isn't guaranteed — only that both
-        # return a real CommitResult with no exception, same as before this
-        # change's return-type upgrade.)
+        # CommitResult (not None) reflecting what it actually committed.
+        # Whichever call's SELECT reads the fresher version wins its UPDATE
+        # outright; the other's UPDATE ... WHERE version = ? affects 0 rows
+        # (its read was already stale) and the optimistic-lock retry loop
+        # re-reads and re-applies it on top — so exactly which call observes
+        # which "old" value isn't guaranteed, only that both land cleanly.
         assert all(isinstance(r, CommitResult) for r in results)
 
         final = await store.load("src-1")
@@ -146,17 +156,48 @@ async def test_concurrent_saves_no_lost_update_first_insert_race(db_engine):
         assert final in ({"etag": "from-A"}, {"etag": "from-B"})
 
 
+# ── AUDIT C10: the optimistic-lock version column in isolation ─────────────
+
+@pytest.mark.asyncio
+async def test_save_version_increments_on_each_successful_save(db_engine):
+    """The version column is the whole mechanism behind the optimistic lock:
+    it must actually advance by one on every successful save, or
+    `UPDATE ... WHERE version = ?` would never detect a stale read."""
+    from sqlalchemy import select
+
+    from backend.models.source_cursor import SourceCursor
+
+    sessionmaker = _sessionmaker(db_engine)
+    with patch("backend.database.AsyncSessionLocal", sessionmaker):
+        store = DBCursorStore()
+        await store.save("src-ver", {"etag": "v0"})
+        await store.save("src-ver", {"etag": "v1"})
+        await store.save("src-ver", {"etag": "v2"})
+
+    async with sessionmaker() as session:
+        row = (
+            await session.execute(
+                select(SourceCursor).where(SourceCursor.source_id == "src-ver")
+            )
+        ).scalar_one()
+
+    assert row.version == 2
+    assert row.cursor == {"etag": "v2"}
+
+
 # ── AUDIT follow-up (c): FOR UPDATE locking verified on real Postgres ───────
 
 @_requires_postgres
 @pytest.mark.asyncio
 async def test_concurrent_saves_postgres_for_update_serializes():
     """Same no-lost-update scenario as the SQLite tests above, but against a
-    real Postgres where `SELECT ... FOR UPDATE` is actually enforced — this is
-    the run that genuinely proves the row lock serializes contending writers
-    (SQLite silently ignores FOR UPDATE, so the tests above can't). Skipped
-    unless a Postgres URL is configured; intended for the Postgres-backed CI
-    job (which already stands up Postgres + runs `alembic upgrade head`)."""
+    real Postgres connection — a second-backend confidence check that the
+    same optimistic-concurrency mechanism (version column + UPDATE ... WHERE
+    version = ?) behaves the same way through a different driver, not a
+    uniquely load-bearing proof anymore (the SQLite tests above already
+    genuinely exercise the same UPDATE...WHERE semantics). Skipped unless a
+    Postgres URL is configured; intended for the Postgres-backed CI job
+    (which already stands up Postgres + runs `alembic upgrade head`)."""
     from sqlalchemy.ext.asyncio import create_async_engine
 
     from backend.database import Base

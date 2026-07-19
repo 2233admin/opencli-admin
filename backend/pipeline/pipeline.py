@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from typing import Any
 
+from sqlalchemy import select
+
 from backend.channels.base import ChannelFetchError
 from backend.control.error_kinds import map_error_type, map_exception
 from backend.control.recorder import FreshnessInfo, record_run_measurement
@@ -178,15 +180,21 @@ async def run_pipeline(
                 "auto_confirm": bool(source.channel_config.get("auto_confirm", False)),
             }
         if source.channel_type == "opencli":
-            from backend.channels.opencli_channel import _get_named_options, _OPENCLI_BIN
+            from backend.channels.opencli_channel import _OPENCLI_BIN, _peek_named_options
             cfg = source.channel_config
             _site = cfg.get("site", "")
             _cmd = cfg.get("command", "")
             _raw_args = {**cfg.get("args", {}), **{k: v for k, v in params.items() if k != "chrome_endpoint"}}
             _pos = [str(v) for v in cfg.get("positional_args", [])]
             _fmt = cfg.get("format", "json")
-            # Apply same positional-resolution logic as the channel
-            _named_opts = await _get_named_options(_OPENCLI_BIN, _site, _cmd)
+            # Apply same positional-resolution logic as the channel, but this
+            # detail string is display-only (the channel's own collect() call
+            # re-derives named options for real dispatch) — so peek the cache
+            # instead of spawning an opencli --help subprocess on the
+            # collection hot path just to format a log line (C17). A cache
+            # miss here behaves exactly like a failed --help fetch always
+            # did: fall through and treat every raw arg as a named option.
+            _named_opts = _peek_named_options(_OPENCLI_BIN, _site, _cmd) or frozenset()
             _named_args, _extra_pos = {}, []
             for k, v in _raw_args.items():
                 if _named_opts and k not in _named_opts:
@@ -369,10 +377,38 @@ async def run_pipeline(
     if pending_cursor is not None and cursor_source_id is not None:
         from backend.pipeline.cursor_store import DBCursorStore
 
-        commit_result = await DBCursorStore().save(cursor_source_id, pending_cursor)
-        cursor_advanced = commit_result.advanced
-        logger.info("[task:%s] cursor committed post-write | source=%s advanced=%s",
-                    task_id, cursor_source_id, cursor_advanced)
+        # AUDIT C11: this used to be the only post-sink-write step without
+        # error handling — the sink already durably committed this batch's
+        # records above, so a cursor-save failure here must not fail the run
+        # (that would false-fail a run whose data landed, and Celery would
+        # re-collect the same window on retry, re-storing already-stored
+        # records). Log loud enough to find the stuck cursor, surface a
+        # warning event when there's a run to attach it to, and keep going
+        # with cursor_advanced=False — the measurement below then honestly
+        # reflects "didn't advance" rather than guessing.
+        try:
+            commit_result = await DBCursorStore().save(cursor_source_id, pending_cursor)
+        except Exception as exc:
+            logger.error(
+                "[task:%s] cursor save failed (non-fatal, run stays successful) | "
+                "source=%s cursor=%r | %s",
+                task_id, cursor_source_id, pending_cursor, exc,
+            )
+            if run_id:
+                await events.emit(
+                    run_id, "store",
+                    f"游标保存失败（不影响本次任务结果）: {exc}",
+                    level="warning",
+                    detail={
+                        "source_id": cursor_source_id,
+                        "cursor": pending_cursor,
+                        "error": str(exc),
+                    },
+                )
+        else:
+            cursor_advanced = commit_result.advanced
+            logger.info("[task:%s] cursor committed post-write | source=%s advanced=%s",
+                        task_id, cursor_source_id, cursor_advanced)
 
     # Step 4: AI processing
     effective_ai_config = agent_config or source.ai_config
@@ -390,7 +426,7 @@ async def run_pipeline(
                 task_row.status = "ai_processing"
                 await session.commit()
         try:
-            await ai_processor.process_with_ai(
+            ai_count = await ai_processor.process_with_ai(
                 new_records,
                 effective_ai_config,
                 source_id=source.id,
@@ -400,24 +436,46 @@ async def run_pipeline(
                 # in backend.pipeline.runner phase 2, so it's used as-is.
                 resolve_provider=agent_config is None,
             )
-            # Persist enrichments — new_records are detached after step3 session closed
+            # Persist enrichments — new_records are detached after step3 session
+            # closed. AUDIT C21: one bulk SELECT ... WHERE id IN (...) + an
+            # in-memory id->row map, instead of one `session.get` per record
+            # (N+1) — same field writes (ai_enrichment, status="ai_processed").
             from backend.models.record import CollectedRecord
-            async with AsyncSessionLocal() as session:
-                for rec in new_records:
-                    if rec.ai_enrichment is not None:
-                        db_rec = await session.get(CollectedRecord, rec.id)
+            enriched_ids = [rec.id for rec in new_records if rec.ai_enrichment is not None]
+            if enriched_ids:
+                async with AsyncSessionLocal() as session:
+                    db_recs = (
+                        await session.execute(
+                            select(CollectedRecord).where(CollectedRecord.id.in_(enriched_ids))
+                        )
+                    ).scalars().all()
+                    db_recs_by_id = {db_rec.id: db_rec for db_rec in db_recs}
+                    for rec in new_records:
+                        if rec.ai_enrichment is None:
+                            continue
+                        db_rec = db_recs_by_id.get(rec.id)
                         if db_rec:
                             db_rec.ai_enrichment = rec.ai_enrichment
                             db_rec.status = "ai_processed"
-                await session.commit()
-            ai_count = len(new_records)
+                    await session.commit()
             logger.info("[task:%s] step4/ai done | processed=%d", task_id, ai_count)
             if run_id:
-                await events.emit(
-                    run_id, "ai_process",
-                    f"AI 处理完成 | {ai_count} 条",
-                    detail={"processed": ai_count},
-                )
+                # AUDIT C3: ai_count is now the real enrichment count (0 when
+                # processor_type is unknown/misconfigured) — a config error
+                # must read as "failed/skipped", never "完成".
+                if ai_count > 0:
+                    await events.emit(
+                        run_id, "ai_process",
+                        f"AI 处理完成 | {ai_count} 条",
+                        detail={"processed": ai_count},
+                    )
+                else:
+                    await events.emit(
+                        run_id, "ai_process",
+                        f"AI 处理失败/跳过 | processor_type={processor_type!r} 未产生任何富化记录",
+                        level="warning",
+                        detail={"processed": 0, "processor_type": processor_type},
+                    )
         except Exception as exc:
             logger.warning("[task:%s] step4/ai failed | %s", task_id, exc)
             if run_id:
@@ -432,15 +490,37 @@ async def run_pipeline(
             await events.emit(run_id, "ai_process", "跳过 AI 处理（未配置）")
 
     # Step 5: Notify
+    notifications_sent = 0
     if enable_notifications and new_records:
         logger.info("[task:%s] step5/notify start | records=%d", task_id, len(new_records))
         try:
+            # dispatch_notifications manages its own write-lock-free phasing
+            # internally (AUDIT C1/C23): it commits phase A's pending rows on
+            # this session, performs the sends with no session open, then
+            # persists outcomes via its own short-lived session — so no
+            # explicit commit is needed here.
             async with AsyncSessionLocal() as session:
-                await notifier_dispatch.dispatch_notifications(session, source.id, new_records)
-                await session.commit()
-            logger.info("[task:%s] step5/notify done", task_id)
+                notify_summary = await notifier_dispatch.dispatch_notifications(
+                    session, source.id, new_records
+                )
+            notifications_sent = notify_summary.get("sent", 0)
+            notifications_failed = notify_summary.get("failed", 0)
+            # AUDIT C12: report the real aggregate, not an unconditional
+            # "done" — and if every attempted send failed, that's a warning,
+            # not routine info.
+            all_failed = notifications_failed > 0 and notifications_sent == 0
+            log_fn = logger.warning if all_failed else logger.info
+            log_fn(
+                "[task:%s] step5/notify done | sent=%d failed=%d",
+                task_id, notifications_sent, notifications_failed,
+            )
             if run_id:
-                await events.emit(run_id, "notify", "通知发送完成")
+                await events.emit(
+                    run_id, "notify",
+                    f"通知发送完成 | 成功 {notifications_sent} 失败 {notifications_failed}",
+                    level="warning" if all_failed else "info",
+                    detail={"sent": notifications_sent, "failed": notifications_failed},
+                )
         except Exception as exc:
             logger.warning("[task:%s] step5/notify failed | %s", task_id, exc)
             if run_id:
@@ -501,6 +581,7 @@ async def run_pipeline(
         stored=len(new_records),
         skipped=skipped,
         ai_processed=ai_count,
+        notifications_sent=notifications_sent,
         duration_ms=duration_ms,
         metadata=channel_result.metadata,
     )

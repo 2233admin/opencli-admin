@@ -1,6 +1,6 @@
 from typing import TYPE_CHECKING
 
-from sqlalchemy import JSON, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import JSON, ForeignKey, Index, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.models.base import TimestampMixin
@@ -13,7 +13,13 @@ class CollectedRecord(TimestampMixin):
     """A single data record collected from a source."""
 
     __tablename__ = "collected_records"
-    __table_args__ = (UniqueConstraint("source_id", "content_hash", name="uq_source_content"),)
+    __table_args__ = (
+        UniqueConstraint("source_id", "content_hash", name="uq_source_content"),
+        # Non-unique: identity_key is a supplementary dedup key (C7), not a
+        # replacement for content_hash. Several rows sharing NULL is normal
+        # for channels that don't implement identity().
+        Index("ix_collected_records_source_identity", "source_id", "identity_key"),
+    )
 
     task_id: Mapped[str] = mapped_column(
         String(36),
@@ -40,6 +46,14 @@ class CollectedRecord(TimestampMixin):
 
     # SHA-256 hash of normalized content for deduplication
     content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+
+    # Stable source-native id (RSS entry id, tweet id, ...) from the channel's
+    # identity() (C7). NULL for channels that don't implement it — those keep
+    # deduplicating on content_hash alone, unchanged. When present, it's a
+    # supplementary key: an item whose identity matches an existing row gets
+    # updated in place instead of inserted as a new row when its content
+    # changes (e.g. a feed fixing a typo in a title no longer duplicates).
+    identity_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
 
     # Processing status
     # raw | normalized | ai_processed | notified | error

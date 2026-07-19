@@ -10,6 +10,13 @@ from cryptography.fernet import Fernet
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+# Deployment config in the repo-root .env must not leak into tests: with
+# API_AUTH_TOKEN set, every unauthenticated test request would 401 (fleet
+# auth, ADR-0005). Clear before backend.main import snapshots settings —
+# an empty env var wins over the .env file value in pydantic-settings.
+os.environ["API_AUTH_TOKEN"] = ""
+os.environ["AGENT_API_TOKEN"] = ""
+
 from backend.auth import crypto
 from backend.database import Base, get_db
 from backend.main import app

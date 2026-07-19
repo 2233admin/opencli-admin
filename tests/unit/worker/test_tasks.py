@@ -4,7 +4,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from backend.worker.tasks import _AlertOnRetriesExhaustedTask, run_collection
+from backend.worker.tasks import (
+    _AlertOnRetriesExhaustedTask,
+    run_collection,
+    run_scheduled_collection,
+)
 
 
 def test_run_collection_autoretries_on_any_exception():
@@ -15,7 +19,31 @@ def test_run_collection_autoretries_on_any_exception():
     boundary to autoretry on any Exception that reaches it."""
     assert run_collection.autoretry_for == (Exception,)
     assert run_collection.max_retries == 3
-    assert run_collection.default_retry_delay == 60
+
+
+# ── AUDIT C14: exponential backoff + jitter on retry (was a fixed 60s) ──────
+
+def test_run_collection_retries_use_exponential_backoff_and_jitter():
+    """A fixed 60s retry delay means every failed run on a source retries in
+    lockstep; retry_backoff+retry_jitter makes celery compute an increasing,
+    randomized countdown instead (see celery.app.autoretry.add_autoretry_
+    behaviour: countdown = min(retry_backoff_max, 1 * 2**retries), then
+    full-jittered)."""
+    assert run_collection.retry_backoff is True
+    assert run_collection.retry_backoff_max == 600
+    assert run_collection.retry_jitter is True
+
+
+def test_run_scheduled_collection_autoretries_with_backoff():
+    """run_scheduled_pipeline() funnels into the same run_pipeline() as
+    run_collection, which only re-raises errors already classified retryable
+    — so this task needs the identical autoretry_for + backoff contract, not
+    just a bare task with zero retries (the pre-fix state)."""
+    assert run_scheduled_collection.autoretry_for == (Exception,)
+    assert run_scheduled_collection.max_retries == 3
+    assert run_scheduled_collection.retry_backoff is True
+    assert run_scheduled_collection.retry_backoff_max == 600
+    assert run_scheduled_collection.retry_jitter is True
 
 
 # ── P1 (test/ops audit): retry-exhausted alert ─────────────────────────────

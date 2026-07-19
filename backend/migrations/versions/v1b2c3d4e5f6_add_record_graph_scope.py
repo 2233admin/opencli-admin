@@ -1,7 +1,7 @@
 """add indexed workflow ownership for project record graphs
 
-Revision ID: t9y0z1a2b3c4
-Revises: s8x9y0z1a2b3
+Revision ID: v1b2c3d4e5f6
+Revises: u0a1b2c3d4e5
 Create Date: 2026-07-18
 
 Project record previews must remain bounded when collected_records reaches
@@ -17,8 +17,8 @@ import json
 import sqlalchemy as sa
 from alembic import op
 
-revision = "t9y0z1a2b3c4"
-down_revision = "s8x9y0z1a2b3"
+revision = "v1b2c3d4e5f6"
+down_revision = "u0a1b2c3d4e5"
 branch_labels = None
 depends_on = None
 

@@ -2,14 +2,16 @@
 
 import asyncio
 import json
+import logging
 import os
 import re
-import shlex
-import shutil
 from typing import Any
 
 from backend.channels.base import AbstractChannel, ChannelResult
+from backend.channels.opencli_channel import _kill_subprocess, _process_group_kwargs
 from backend.channels.registry import register_channel
+
+logger = logging.getLogger(__name__)
 
 _TEMPLATE_RE = re.compile(r"\{\{(\w+)\}\}")
 
@@ -73,16 +75,24 @@ class CLIChannel(AbstractChannel):
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 env=env,
+                **_process_group_kwargs(),
             )
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
-        except asyncio.TimeoutError as exc:
+        except TimeoutError as exc:
             # Don't orphan the child: wait_for only cancels communicate();
-            # the subprocess itself keeps running until explicitly killed.
-            proc.kill()
+            # the subprocess itself keeps running until explicitly killed. A
+            # bare proc.kill() only reaches the direct child — shell-wrapped
+            # or forked grandchildren survive it — so kill the whole process
+            # tree instead (same helper opencli_channel uses: taskkill /T /F
+            # on Windows, killpg on POSIX; the process group is set up above).
             try:
-                await proc.wait()
+                await _kill_subprocess(proc)
             except Exception:
-                pass
+                logger.warning(
+                    "failed to reap CLI subprocess (pid=%s) after timeout kill",
+                    getattr(proc, "pid", "?"),
+                    exc_info=True,
+                )
             return ChannelResult.fail(
                 f"CLI command timed out after {timeout}s", error_type=type(exc).__name__
             )
@@ -104,7 +114,12 @@ class CLIChannel(AbstractChannel):
                 data = json.loads(output)
                 items = data if isinstance(data, list) else [data]
             except json.JSONDecodeError as exc:
-                return ChannelResult.fail(f"Failed to parse CLI JSON output: {exc}")
+                # WIRING_GAP_LEDGER W1: error_type must be set so the SCHEMA_DRIFT
+                # chain (error_kinds -> control.recorder) actually fires instead of
+                # being dropped by recorder's `elif error_type is not None` guard.
+                return ChannelResult.fail(
+                    f"Failed to parse CLI JSON output: {exc}", error_type=type(exc).__name__
+                )
         else:
             # Plain text: each line is a record
             items = [{"line": line} for line in output.splitlines() if line.strip()]

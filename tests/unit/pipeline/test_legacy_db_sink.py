@@ -56,6 +56,67 @@ async def test_legacy_sink_normalizes_then_stores():
 
 
 @pytest.mark.asyncio
+async def test_legacy_sink_resolves_channel_identity_for_c7():
+    """C7: the sink asks the channel for each item's identity() and passes
+    it through to store_records — this is what lets an RSS entry with a
+    stable id be matched across re-fetches even after its title changes."""
+    items = [
+        {"title": "A", "url": "https://x/a", "id": "guid-a"},
+        {"title": "B", "url": "https://x/b"},  # no "id" key: identity() is None for this one
+    ]
+    store_mock = AsyncMock(return_value=([], 0))
+
+    with (
+        patch("backend.pipeline.storer.store_records", new=store_mock),
+        patch("backend.database.AsyncSessionLocal", return_value=_session_cm()),
+    ):
+        await LegacyDbSink().write_batch(_ctx(), items)
+
+    _, kwargs = store_mock.call_args
+    # RSS's identity() reads item["id"] (real feed fetches populate it via
+    # _entry_to_dict's fallback-to-link — out of scope here, this test is
+    # at the sink layer with hand-built raw dicts): present for item 1,
+    # absent for item 2.
+    assert kwargs["identities"] == ["guid-a", None]
+
+
+@pytest.mark.asyncio
+async def test_legacy_sink_falls_back_when_channel_has_no_identity():
+    """A channel_type with no identity() override (or unresolvable) passes
+    identities=None through — store_records' documented content_hash-only
+    fallback, unchanged from before C7."""
+    items = [{"title": "A", "url": "https://x/a"}]
+    store_mock = AsyncMock(return_value=([], 0))
+
+    with (
+        patch("backend.pipeline.storer.store_records", new=store_mock),
+        patch("backend.database.AsyncSessionLocal", return_value=_session_cm()),
+    ):
+        await LegacyDbSink().write_batch(_ctx(provider="cli"), items)
+
+    _, kwargs = store_mock.call_args
+    assert kwargs["identities"] == [None]
+
+
+@pytest.mark.asyncio
+async def test_legacy_sink_unknown_provider_degrades_to_no_identities():
+    """An unregistered channel_type (get_channel raises) must not break
+    storage — it degrades to identities=None, the unchanged pre-C7 path."""
+    items = [{"title": "A", "url": "https://x/a"}]
+    store_mock = AsyncMock(return_value=([], 0))
+
+    with (
+        patch("backend.pipeline.storer.store_records", new=store_mock),
+        patch("backend.database.AsyncSessionLocal", return_value=_session_cm()),
+    ):
+        result = await LegacyDbSink().write_batch(_ctx(provider="no-such-channel"), items)
+
+    assert result.accepted == 0  # ran to completion, no exception raised
+    _, kwargs = store_mock.call_args
+    assert kwargs["identities"] is None
+
+
+@pytest.mark.asyncio
 async def test_legacy_sink_empty_items():
     store_mock = AsyncMock(return_value=([], 0))
     with (

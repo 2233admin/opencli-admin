@@ -1,5 +1,6 @@
 """Web scraper channel using httpx + BeautifulSoup."""
 
+import asyncio
 import logging
 from typing import Any
 from urllib.parse import urlparse
@@ -117,7 +118,11 @@ class WebScraperChannel(AbstractChannel):
             async with client as opened_client:
                 response = await self._get(opened_client, url, timeout)
 
-        soup = BeautifulSoup(response.text, "lxml")
+        # AUDIT C22: BeautifulSoup's lxml parse is synchronous and can take
+        # seconds on a large page — run it off the event loop so it can't
+        # freeze every other request/task on this process. Same object,
+        # same parser, just executed in the default thread-pool executor.
+        soup = await asyncio.to_thread(BeautifulSoup, response.text, "lxml")
 
         if list_selector:
             containers = soup.select(list_selector)

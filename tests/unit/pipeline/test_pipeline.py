@@ -1,6 +1,7 @@
 """Unit tests for the pipeline orchestrator."""
 
 import pytest
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from backend.channels.base import ChannelResult
@@ -103,6 +104,22 @@ async def test_run_pipeline_collector_exception(db_session):
     assert "collect crash" in result.error
 
 
+class _FakeScalarsResult:
+    """Minimal stand-in for what `session.execute(select(...))` returns —
+    supports the sync `.scalars().all()` chain the AUDIT C21 bulk-fetch uses
+    (unlike a bare AsyncMock, whose auto-created child attributes are also
+    async and break that chain — see the N+1 test below for the same fake)."""
+
+    def __init__(self, rows):
+        self._rows = rows
+
+    def scalars(self):
+        return self
+
+    def all(self):
+        return self._rows
+
+
 @pytest.mark.asyncio
 async def test_run_pipeline_with_ai(db_session):
     """Pipeline with ai_config calls process_with_ai."""
@@ -121,9 +138,16 @@ async def test_run_pipeline_with_ai(db_session):
         "prompt_template": "Summarize: {{content}}",
     }
 
+    # AUDIT C21: the persist step now does one bulk `session.execute(select(...
+    # ).where(id.in_(...)))` instead of one `session.get` per record — the DB
+    # row it should find and update.
+    db_row = MagicMock()
+    db_row.id = "rec-ai-1"
+
     # Mock the inner AsyncSessionLocal calls used for AI status update and enrichment save
     mock_inner_session = AsyncMock()
     mock_inner_session.get = AsyncMock(return_value=MagicMock())
+    mock_inner_session.execute = AsyncMock(return_value=_FakeScalarsResult([db_row]))
     mock_inner_session.commit = AsyncMock()
     inner_cm = AsyncMock()
     inner_cm.__aenter__ = AsyncMock(return_value=mock_inner_session)
@@ -132,7 +156,7 @@ async def test_run_pipeline_with_ai(db_session):
     with (
         patch("backend.pipeline.collector.collect", return_value=channel_result),
         patch("backend.pipeline.storer.store_records", new=AsyncMock(return_value=([mock_record], 0))),
-        patch("backend.pipeline.ai_processor.process_with_ai", new=AsyncMock()),
+        patch("backend.pipeline.ai_processor.process_with_ai", new=AsyncMock(return_value=1)),
         patch("backend.database.AsyncSessionLocal", return_value=inner_cm),
     ):
         result = await run_pipeline(
@@ -145,6 +169,138 @@ async def test_run_pipeline_with_ai(db_session):
 
     assert result.success is True
     assert result.ai_processed == 1
+    # same field writes as before the N+1 fix: enrichment + status landed on
+    # the row the bulk SELECT found.
+    assert db_row.ai_enrichment == {"summary": "AI summary"}
+    assert db_row.status == "ai_processed"
+
+
+@pytest.mark.asyncio
+async def test_run_pipeline_ai_persist_is_bulk_not_n_plus_one(db_session):
+    """AUDIT C21: persisting N enriched records must cost exactly one
+    `session.execute` (bulk SELECT ... WHERE id IN (...)) + one commit, not N
+    `session.get` calls — spies on how many times execute() is invoked."""
+    source, task = await _setup_source_task(db_session)
+
+    n = 5
+    mock_items = [{"title": f"Item {i}", "url": f"https://ex.com/{i}"} for i in range(n)]
+    channel_result = ChannelResult.ok(mock_items)
+
+    mock_records = []
+    for i in range(n):
+        rec = MagicMock()
+        rec.id = f"rec-{i}"
+        rec.ai_enrichment = {"summary": f"s{i}"}
+        mock_records.append(rec)
+
+    db_rows = []
+    for rec in mock_records:
+        row = MagicMock()
+        row.id = rec.id
+        db_rows.append(row)
+
+    agent_config = {"processor_type": "claude", "model": "claude-3-haiku-20240307"}
+
+    execute_calls: list[Any] = []
+
+    def _spy_execute(stmt):
+        execute_calls.append(stmt)
+        return _FakeScalarsResult(db_rows)
+
+    mock_inner_session = AsyncMock()
+    mock_inner_session.get = AsyncMock(return_value=MagicMock())  # ai_processing status row
+    mock_inner_session.execute = AsyncMock(side_effect=_spy_execute)
+    mock_inner_session.commit = AsyncMock()
+    inner_cm = AsyncMock()
+    inner_cm.__aenter__ = AsyncMock(return_value=mock_inner_session)
+    inner_cm.__aexit__ = AsyncMock(return_value=False)
+
+    with (
+        patch("backend.pipeline.collector.collect", return_value=channel_result),
+        patch("backend.pipeline.storer.store_records", new=AsyncMock(return_value=(mock_records, 0))),
+        patch("backend.pipeline.ai_processor.process_with_ai", new=AsyncMock(return_value=n)),
+        patch("backend.database.AsyncSessionLocal", return_value=inner_cm),
+    ):
+        result = await run_pipeline(
+            task.id,
+            source,
+            agent_config=agent_config,
+            enable_ai=True,
+            enable_notifications=False,
+        )
+
+    assert result.success is True
+    assert result.ai_processed == n
+
+    # exactly one execute() call persists all n enrichments — not n (N+1).
+    assert len(execute_calls) == 1
+
+    # same field writes as before: every row got its enrichment + status set.
+    for i, row in enumerate(db_rows):
+        assert row.ai_enrichment == {"summary": f"s{i}"}
+        assert row.status == "ai_processed"
+    assert mock_inner_session.commit.await_count >= 1
+
+
+@pytest.mark.asyncio
+async def test_run_pipeline_ai_zero_enriched_warns_not_done(db_session):
+    """AUDIT C3: process_with_ai returning 0 (unknown/misconfigured
+    processor_type, no exception raised) must surface as a failed/skipped
+    warning event, never the "AI 处理完成" success message — that used to be
+    emitted unconditionally regardless of what process_with_ai actually did."""
+    source, task = await _setup_source_task(db_session)
+
+    mock_items = [{"title": "AI Item", "url": "https://ex.com/ai"}]
+    channel_result = ChannelResult.ok(mock_items)
+    mock_record = MagicMock()
+    mock_record.ai_enrichment = None
+
+    agent_config = {"processor_type": "bogus_processor", "model": "n/a"}
+
+    mock_inner_session = AsyncMock()
+    mock_inner_session.get = AsyncMock(return_value=MagicMock())
+    mock_inner_session.commit = AsyncMock()
+    # .add() is sync on a real Session (only .commit/.flush/.get etc. are
+    # awaited) — pin it to a plain MagicMock so record_run_measurement's
+    # (triggered below by run_id being set) internal session.add(row) doesn't
+    # return an unawaited coroutine.
+    mock_inner_session.add = MagicMock()
+    inner_cm = AsyncMock()
+    inner_cm.__aenter__ = AsyncMock(return_value=mock_inner_session)
+    inner_cm.__aexit__ = AsyncMock(return_value=False)
+
+    emitted: list[dict] = []
+
+    async def fake_emit(run_id, step, message, level="info", detail=None, elapsed_ms=None):
+        emitted.append({"step": step, "level": level, "message": message, "detail": detail})
+
+    with (
+        patch("backend.pipeline.collector.collect", return_value=channel_result),
+        patch(
+            "backend.pipeline.storer.store_records",
+            new=AsyncMock(return_value=([mock_record], 0)),
+        ),
+        patch("backend.pipeline.ai_processor.process_with_ai", new=AsyncMock(return_value=0)),
+        patch("backend.database.AsyncSessionLocal", return_value=inner_cm),
+        patch("backend.pipeline.events.emit", new=fake_emit),
+    ):
+        result = await run_pipeline(
+            task.id,
+            source,
+            agent_config=agent_config,
+            enable_ai=True,
+            enable_notifications=False,
+            run_id="run-ai-zero",
+        )
+
+    assert result.success is True
+    assert result.ai_processed == 0
+
+    ai_events = [e for e in emitted if e["step"] == "ai_process"]
+    assert len(ai_events) == 1
+    assert ai_events[0]["level"] == "warning"
+    assert "完成" not in ai_events[0]["message"]
+    assert "失败" in ai_events[0]["message"] or "跳过" in ai_events[0]["message"]
 
 
 @pytest.mark.asyncio
@@ -159,7 +315,10 @@ async def test_run_pipeline_with_notifications(db_session):
     with (
         patch("backend.pipeline.collector.collect", return_value=channel_result),
         patch("backend.pipeline.storer.store_records", new=AsyncMock(return_value=([mock_record], 0))),
-        patch("backend.pipeline.notifier_dispatch.dispatch_notifications", new=AsyncMock()),
+        patch(
+            "backend.pipeline.notifier_dispatch.dispatch_notifications",
+            new=AsyncMock(return_value={"sent": 1, "failed": 0}),
+        ),
     ):
         result = await run_pipeline(
             task.id,
@@ -169,6 +328,85 @@ async def test_run_pipeline_with_notifications(db_session):
         )
 
     assert result.success is True
+    assert result.notifications_sent == 1
+
+
+@pytest.mark.asyncio
+async def test_run_pipeline_notifications_partial_failure_reported(db_session):
+    """AUDIT C12: notifications_sent/failed must reflect the real aggregate,
+    including the partial-failure case, not an unconditional success."""
+    source, task = await _setup_source_task(db_session)
+
+    mock_items = [{"title": "Notify Item", "url": "https://ex.com/n"}]
+    channel_result = ChannelResult.ok(mock_items)
+    mock_record = MagicMock()
+
+    with (
+        patch("backend.pipeline.collector.collect", return_value=channel_result),
+        patch(
+            "backend.pipeline.storer.store_records",
+            new=AsyncMock(return_value=([mock_record], 0)),
+        ),
+        patch(
+            "backend.pipeline.notifier_dispatch.dispatch_notifications",
+            new=AsyncMock(return_value={"sent": 1, "failed": 1}),
+        ),
+    ):
+        result = await run_pipeline(
+            task.id,
+            source,
+            enable_ai=False,
+            enable_notifications=True,
+        )
+
+    assert result.success is True
+    assert result.notifications_sent == 1
+
+
+@pytest.mark.asyncio
+async def test_run_pipeline_notifications_all_failed_warns(db_session):
+    """AUDIT C12: when every attempted send failed (sent=0, failed>0), the
+    emitted event and PipelineResult must say so at warning level, not the
+    unconditional "通知发送完成" info-level message this replaces."""
+    source, task = await _setup_source_task(db_session)
+
+    mock_items = [{"title": "Notify Item", "url": "https://ex.com/n"}]
+    channel_result = ChannelResult.ok(mock_items)
+    mock_record = MagicMock()
+
+    emitted: list[dict] = []
+
+    async def fake_emit(run_id, step, message, level="info", detail=None, elapsed_ms=None):
+        emitted.append({"step": step, "level": level, "message": message, "detail": detail})
+
+    with (
+        patch("backend.pipeline.collector.collect", return_value=channel_result),
+        patch(
+            "backend.pipeline.storer.store_records",
+            new=AsyncMock(return_value=([mock_record], 0)),
+        ),
+        patch(
+            "backend.pipeline.notifier_dispatch.dispatch_notifications",
+            new=AsyncMock(return_value={"sent": 0, "failed": 2}),
+        ),
+        patch("backend.pipeline.events.emit", new=fake_emit),
+    ):
+        result = await run_pipeline(
+            task.id,
+            source,
+            enable_ai=False,
+            enable_notifications=True,
+            run_id="run-notify-all-failed",
+        )
+
+    assert result.success is True
+    assert result.notifications_sent == 0
+
+    notify_events = [e for e in emitted if e["step"] == "notify"]
+    assert len(notify_events) == 1
+    assert notify_events[0]["level"] == "warning"
+    assert "成功 0" in notify_events[0]["message"]
+    assert "失败 2" in notify_events[0]["message"]
 
 
 @pytest.mark.asyncio
@@ -336,6 +574,112 @@ async def test_run_pipeline_opencli_auto_binding(db_session):
             enable_ai=False,
             enable_notifications=False,
         )
+
+
+# ── C17: opencli display-string must not spawn --help on the hot path ──────
+
+@pytest.mark.asyncio
+async def test_run_pipeline_opencli_display_string_cold_cache_no_subprocess(db_session):
+    """The event-log 'command' display string must not spawn an opencli
+    --help subprocess on the collection hot path (C17). A cold cache falls
+    back to exactly the same 'treat every arg as named' behavior a failed
+    --help fetch always produced — just without ever spawning anything."""
+    from backend.models.source import DataSource
+    from backend.models.task import CollectionTask
+
+    source = DataSource(
+        name="OpenCLI Display Source",
+        channel_type="opencli",
+        channel_config={
+            "site": "", "command": "cold-cache-observe-cmd",
+            "args": {"query": "x"},
+        },
+    )
+    db_session.add(source)
+    await db_session.flush()
+    task = CollectionTask(source_id=source.id, trigger_type="manual", parameters={})
+    db_session.add(task)
+    await db_session.flush()
+
+    channel_result = ChannelResult.ok([{"title": "t"}])
+    captured: list[dict] = []
+
+    async def fake_emit(run_id, step, message, level="info", detail=None, elapsed_ms=None):
+        captured.append(detail or {})
+
+    with (
+        patch("backend.pipeline.collector.collect", return_value=channel_result),
+        patch("backend.pipeline.storer.store_records", new=AsyncMock(return_value=([], 0))),
+        patch("backend.pipeline.events.emit", new=fake_emit),
+        patch("asyncio.create_subprocess_exec") as spawn,
+    ):
+        result = await run_pipeline(
+            task.id, source, parameters={}, enable_ai=False,
+            enable_notifications=False, run_id="run-cold",
+        )
+
+    assert result.success is True
+    spawn.assert_not_called()
+    commands = [d["command"] for d in captured if "command" in d]
+    assert len(commands) == 1
+    assert "--query x" in commands[0]
+
+
+@pytest.mark.asyncio
+async def test_run_pipeline_opencli_display_string_uses_warm_cache(db_session):
+    """A warm --help cache (as populated by a real prior collection run
+    through the channel itself) still produces the nicer named/positional
+    split in the display string — C17 only removes the redundant spawn on
+    a cache miss, it doesn't regress the warm-cache case."""
+    import time
+
+    import backend.channels.opencli_channel as oc
+    from backend.channels.opencli_channel import _OPENCLI_BIN
+    from backend.models.source import DataSource
+    from backend.models.task import CollectionTask
+
+    site, command = "", "warm-cache-observe-cmd"
+    oc._help_cache[(_OPENCLI_BIN, site, command)] = (
+        time.monotonic(), frozenset({"query"})
+    )
+
+    source = DataSource(
+        name="OpenCLI Display Source Warm",
+        channel_type="opencli",
+        channel_config={
+            "site": site, "command": command,
+            "args": {"query": "x"}, "positional_args": ["extra"],
+        },
+    )
+    db_session.add(source)
+    await db_session.flush()
+    task = CollectionTask(source_id=source.id, trigger_type="manual", parameters={})
+    db_session.add(task)
+    await db_session.flush()
+
+    channel_result = ChannelResult.ok([{"title": "t"}])
+    captured: list[dict] = []
+
+    async def fake_emit(run_id, step, message, level="info", detail=None, elapsed_ms=None):
+        captured.append(detail or {})
+
+    with (
+        patch("backend.pipeline.collector.collect", return_value=channel_result),
+        patch("backend.pipeline.storer.store_records", new=AsyncMock(return_value=([], 0))),
+        patch("backend.pipeline.events.emit", new=fake_emit),
+        patch("asyncio.create_subprocess_exec") as spawn,
+    ):
+        result = await run_pipeline(
+            task.id, source, parameters={}, enable_ai=False,
+            enable_notifications=False, run_id="run-warm",
+        )
+
+    assert result.success is True
+    spawn.assert_not_called()  # peek-only, never spawns regardless of cache state
+    commands = [d["command"] for d in captured if "command" in d]
+    assert len(commands) == 1
+    assert "--query x" in commands[0]
+    assert "extra" in commands[0]
 
 
 # ── P1-7: DualSink shadow errors must surface, not vanish ──────────────────

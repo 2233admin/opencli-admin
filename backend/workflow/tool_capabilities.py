@@ -8,6 +8,10 @@ from backend.schemas.workflow import (
     WorkflowToolCapabilityExecutor,
     WorkflowToolCapabilityPort,
 )
+from backend.workflow.joyai_vl_executor import (
+    JOYAI_VL_INTERACTION_EXECUTOR,
+    JOYAI_VL_TOOL_CAPABILITY_ID,
+)
 from backend.workflow.realtime_market_executor import OKX_MARKET_TICKER_SNAPSHOT_EXECUTOR
 
 
@@ -140,6 +144,30 @@ def _tool_capabilities() -> list[WorkflowToolCapability]:
             tags=["tool", "realtime", "signal", "alert", "quant"],
             schema="tool-capability.realtime-signal-emit.v1",
             resources=["signal_policy", "run_trace"],
+        ),
+        _realtime_tool(
+            id=JOYAI_VL_TOOL_CAPABILITY_ID,
+            label="JoyAI VL Interaction",
+            description=(
+                "Vision-language interaction over video/image media via a "
+                "self-hosted JoyAI-VL-Interaction deployment (JD open source, "
+                "8B, vLLM-Omni serving). Sends the node prompt plus media "
+                "references, emits the model's interaction reply as event[]."
+            ),
+            input_type="event[]",
+            output_type="event[]",
+            tags=["tool", "realtime", "vision", "vl", "interaction", "joyai"],
+            schema="tool-capability.vl-interaction.v1",
+            resources=["media_reference", "run_trace"],
+            executor=WorkflowToolCapabilityExecutor(
+                mode=JOYAI_VL_INTERACTION_EXECUTOR,
+                description=(
+                    "POSTs one chat-completions interaction turn to the "
+                    "JOYAI_VL_URL vLLM-Omni endpoint; unconfigured endpoint "
+                    "degrades to an error event, never a run crash."
+                ),
+                params={"model": "JoyAI-VL-Interaction-Preview"},
+            ),
         ),
     ]
 

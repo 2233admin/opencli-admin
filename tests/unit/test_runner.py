@@ -590,3 +590,9 @@ async def test_run_pipeline_retryable_failure_marks_failed_then_reraises():
     assert "upstream reset" in task.error_message
     assert run.status == "failed"
     assert "upstream reset" in run.error_message
+
+    # AUDIT C19: the persisted message is prefixed with the taxonomy
+    # classification (same one backend.pipeline.error_taxonomy computes for
+    # the pipeline layer's own retry decision), not a bare str(exc).
+    assert task.error_message == "[ConnectionError] upstream reset"
+    assert run.error_message == "[ConnectionError] upstream reset"

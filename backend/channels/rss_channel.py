@@ -1,5 +1,6 @@
 """RSS channel using feedparser."""
 
+import asyncio
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
@@ -20,6 +21,26 @@ from backend.security.url_guard import (
     avalidate_public_url,
     guarded_async_client,
 )
+
+
+def _bozo_error_type(parsed: Any) -> str:
+    """error_type for a bozo (unparseable) feed — WIRING_GAP_LEDGER W1.
+
+    feedparser sets ``bozo_exception`` to the underlying parse failure (e.g.
+    ``xml.sax._exceptions.SAXParseException`` for malformed markup, truncated
+    declarations, or an encoding mismatch — verified empirically across all
+    of those shapes; see backend/control/error_kinds.py's SCHEMA_DRIFT set).
+    Its class name is a real structured ``error_type`` like every other
+    channel already produces, so it flows through ChannelResult.fail() /
+    ChannelFetchError into control.recorder instead of being dropped by the
+    ``elif error_type is not None`` guard there. Falls back to a generic
+    "ParseError" (also mapped to SCHEMA_DRIFT) on the defensive case where
+    feedparser didn't attach one.
+    """
+    bozo_exception = getattr(parsed, "bozo_exception", None)
+    if bozo_exception is not None:
+        return type(bozo_exception).__name__
+    return "ParseError"
 
 
 @register_channel
@@ -95,10 +116,16 @@ class RSSChannel(AbstractChannel):
                 f"Failed to fetch RSS feed: {detail}", error_type=type(exc).__name__
             )
 
-        parsed = feedparser.parse(content)
+        # AUDIT C22: feedparser.parse() is a synchronous, potentially
+        # multi-second call for a large feed — running it inline would freeze
+        # the whole event loop (every other request/task on this process)
+        # for the duration. asyncio.to_thread runs it in the default executor
+        # instead; the parsed result is used identically either way.
+        parsed = await asyncio.to_thread(feedparser.parse, content)
         if parsed.bozo and not parsed.entries:
             return ChannelResult.fail(
-                f"Failed to parse feed: {getattr(parsed, 'bozo_exception', 'unknown error')}"
+                f"Failed to parse feed: {getattr(parsed, 'bozo_exception', 'unknown error')}",
+                error_type=_bozo_error_type(parsed),
             )
 
         entries = parsed.entries[:max_entries]
@@ -171,12 +198,30 @@ class RSSChannel(AbstractChannel):
         if response.status_code == 304:
             # Not Modified — no new entries; preserve the cursor as-is.
             return FetchResult(items=[], next_cursor=(cursor or None), has_more=False)
-        response.raise_for_status()
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            # AUDIT C13: classify by status so a gateway blip (502/503/504,
+            # Cloudflare's 520/522/524, ...) reaches the celery retry boundary
+            # instead of defaulting to permanent alongside a genuine 4xx —
+            # this call used to be bare, so ANY status error (not just
+            # gateway ones) propagated as a raw HTTPStatusError with no
+            # retry-classification hint at all.
+            from backend.pipeline.error_taxonomy import is_retryable_http_status
 
-        parsed = feedparser.parse(response.text)
+            status = exc.response.status_code
+            error_type = (
+                "RetryableHTTPStatus" if is_retryable_http_status(status) else "PermanentHTTPStatus"
+            )
+            raise ChannelFetchError(f"HTTP {status} fetching feed", error_type=error_type) from exc
+
+        # AUDIT C22: see collect()'s twin comment — off-load the synchronous
+        # parse instead of blocking the event loop.
+        parsed = await asyncio.to_thread(feedparser.parse, response.text)
         if parsed.bozo and not parsed.entries:
             raise ChannelFetchError(
-                f"Failed to parse feed: {getattr(parsed, 'bozo_exception', 'unknown error')}"
+                f"Failed to parse feed: {getattr(parsed, 'bozo_exception', 'unknown error')}",
+                error_type=_bozo_error_type(parsed),
             )
         items = [self._entry_to_dict(entry) for entry in parsed.entries[:max_entries]]
 

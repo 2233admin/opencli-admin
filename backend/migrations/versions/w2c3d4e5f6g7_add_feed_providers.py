@@ -1,7 +1,7 @@
 """add feed providers
 
-Revision ID: u0z1a2b3c4d5
-Revises: t9y0z1a2b3c4
+Revision ID: w2c3d4e5f6g7
+Revises: v1b2c3d4e5f6
 Create Date: 2026-07-18
 """
 
@@ -9,8 +9,8 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision = "u0z1a2b3c4d5"
-down_revision = "t9y0z1a2b3c4"
+revision = "w2c3d4e5f6g7"
+down_revision = "v1b2c3d4e5f6"
 branch_labels = None
 depends_on = None
 

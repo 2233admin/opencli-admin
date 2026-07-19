@@ -109,13 +109,25 @@ async def _mark_retries_exhausted(
     base=_AlertOnRetriesExhaustedTask,
     name="run_collection",
     max_retries=3,
-    default_retry_delay=60,
     # run_pipeline() only re-raises exceptions its error taxonomy classified
     # as retryable (backend.pipeline.error_taxonomy.is_retryable) — anything
     # deterministic is already swallowed into a returned PipelineResult
     # before it gets here. So catching broadly at this boundary is correct:
     # the filtering already happened one layer down, not duplicated here.
     autoretry_for=(Exception,),
+    # AUDIT C14: a fixed 60s delay for every retry means every failed run on
+    # a source retries in lockstep (same delay, same jitter-free instant) —
+    # a source down for minutes hammers it 3x on a synchronous 60s/60s/60s
+    # cadence instead of backing off. retry_backoff=True + retry_jitter=True
+    # is celery's standard autoretry_for pairing: countdown = min(
+    # retry_backoff_max, 1 * 2**retries), then full-jittered — 1st retry
+    # ~0-1s, 2nd ~0-2s, 3rd ~0-4s, capped at 600s. default_retry_delay is
+    # unused once retry_backoff is set (celery computes countdown from the
+    # backoff formula instead), so it's dropped rather than left as
+    # never-consulted dead config.
+    retry_backoff=True,
+    retry_backoff_max=600,
+    retry_jitter=True,
 )
 def run_collection(self: Task, task_id: str, parameters: dict | None = None) -> dict:
     """Execute the full collection pipeline for a task."""
@@ -128,7 +140,25 @@ def run_collection(self: Task, task_id: str, parameters: dict | None = None) -> 
     ))
 
 
-@celery_app.task(name="run_scheduled_collection")
+@celery_app.task(
+    name="run_scheduled_collection",
+    max_retries=3,
+    # AUDIT C14: run_scheduled_pipeline() funnels into the same
+    # run_collection_pipeline() -> run_pipeline() as run_collection above, so
+    # the same contract applies — run_pipeline() only re-raises exceptions
+    # already classified retryable (backend.pipeline.error_taxonomy.
+    # is_retryable), everything else is swallowed into a returned dict before
+    # it gets here. Without autoretry_for here, those retryable exceptions
+    # just failed the celery task outright: a scheduled run had zero retries
+    # where a manually-triggered one (run_collection) got 3 with backoff,
+    # contradicting pipeline.py's own "let this propagate ... so its
+    # autoretry_for policy applies" comment. Same backoff+jitter shape as
+    # run_collection for the same reason (see there).
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_backoff_max=600,
+    retry_jitter=True,
+)
 def run_scheduled_collection(schedule_id: str, source_id: str, parameters: dict | None = None) -> dict:
     """Create a CollectionTask for a scheduled run, execute pipeline, auto-disable if one-time."""
     from backend.pipeline.runner import run_scheduled_pipeline

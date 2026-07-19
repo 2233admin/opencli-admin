@@ -88,6 +88,182 @@ async def test_named_options_cancellation_kills_the_help_process():
     kill_tree.assert_awaited_once_with(process)
 
 
+# ── C17: --help/browser-requirement cache TTL + cache-only peek ─────────────
+
+
+@pytest.mark.asyncio
+async def test_named_options_cache_expires_after_ttl(monkeypatch):
+    """A cached --help result older than the TTL is refetched (C17): without
+    expiry, an opencli binary upgrade that adds/renames flags keeps being
+    routed with the old flag set until the admin process restarts."""
+    import backend.channels.opencli_channel as oc
+
+    process = AsyncMock()
+    process.communicate.return_value = (b"--alpha <value>", b"")
+    with patch("asyncio.create_subprocess_exec", return_value=process) as spawn:
+        first = await _get_named_options("ttl-opencli", "site", "cmd")
+    assert first == frozenset({"alpha"})
+    assert spawn.call_count == 1
+
+    # Age the cache entry past the TTL without a real wait.
+    key = ("ttl-opencli", "site", "cmd")
+    cached_at, value = oc._help_cache[key]
+    oc._help_cache[key] = (cached_at - oc._CACHE_TTL_SECONDS - 1, value)
+
+    process2 = AsyncMock()
+    process2.communicate.return_value = (b"--beta <value>", b"")
+    with patch("asyncio.create_subprocess_exec", return_value=process2) as spawn2:
+        second = await _get_named_options("ttl-opencli", "site", "cmd")
+    assert second == frozenset({"beta"})
+    assert spawn2.call_count == 1  # refetched, not served the stale entry
+
+
+@pytest.mark.asyncio
+async def test_named_options_cache_hit_within_ttl_skips_subprocess():
+    """A cache entry still within its TTL is served without refetching."""
+    process = AsyncMock()
+    process.communicate.return_value = (b"--gamma <value>", b"")
+    with patch("asyncio.create_subprocess_exec", return_value=process):
+        await _get_named_options("ttl-fresh-opencli", "site", "cmd")
+
+    with patch("asyncio.create_subprocess_exec") as spawn:
+        result = await _get_named_options("ttl-fresh-opencli", "site", "cmd")
+
+    assert result == frozenset({"gamma"})
+    spawn.assert_not_called()
+
+
+def test_peek_named_options_cache_hit_no_subprocess():
+    """Cache-only lookup (C17): a warm entry is returned synchronously with
+    no subprocess spawn — used by pipeline.py's event-log display string,
+    which must not pay a --help call on the collection hot path."""
+    import time
+
+    import backend.channels.opencli_channel as oc
+    from backend.channels.opencli_channel import _peek_named_options
+
+    oc._help_cache[("peek-bin", "site", "cmd")] = (time.monotonic(), frozenset({"url"}))
+    assert _peek_named_options("peek-bin", "site", "cmd") == frozenset({"url"})
+
+
+def test_peek_named_options_cache_miss_returns_none_no_subprocess():
+    """A cold (or expired) cache entry returns None without ever spawning a
+    subprocess (C17) — the caller falls back to treating all args as named,
+    exactly like a failed --help fetch always did."""
+    from backend.channels.opencli_channel import _peek_named_options
+
+    with patch("asyncio.create_subprocess_exec") as spawn:
+        result = _peek_named_options("never-cached-bin", "site", "cmd")
+    assert result is None
+    spawn.assert_not_called()
+
+
+# ── C20: CDP tab-snapshot failure must not drive tab cleanup ────────────────
+
+
+@pytest.mark.asyncio
+async def test_snapshot_tab_ids_returns_none_on_failure():
+    """A failed pre-collection tab snapshot returns None, not an empty set
+    (C20): the two are not interchangeable. None means 'no trustworthy
+    baseline' and must skip cleanup entirely; an empty set would be treated
+    as 'genuinely zero tabs existed before', making every currently-open tab
+    look new and get closed."""
+    from backend.channels.opencli_channel import _snapshot_tab_ids
+
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(side_effect=OSError("connection refused"))
+    mock_client_ctx = AsyncMock()
+    mock_client_ctx.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client_ctx.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("httpx.AsyncClient", return_value=mock_client_ctx):
+        result = await _snapshot_tab_ids("http://bad-endpoint:1")
+
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_snapshot_tab_ids_success_returns_set():
+    from backend.channels.opencli_channel import _snapshot_tab_ids
+
+    mock_response = MagicMock()
+    mock_response.json = MagicMock(
+        return_value=[{"id": "tab-1"}, {"id": "tab-2"}, {"no_id": True}]
+    )
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(return_value=mock_response)
+    mock_client_ctx = AsyncMock()
+    mock_client_ctx.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client_ctx.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("httpx.AsyncClient", return_value=mock_client_ctx):
+        result = await _snapshot_tab_ids("http://good-endpoint:1")
+
+    assert result == {"tab-1", "tab-2"}
+
+
+@pytest.mark.asyncio
+async def test_collect_cdp_skips_cleanup_when_snapshot_baseline_failed(channel):
+    """If the pre-collection tab snapshot fails, cleanup must not run at all
+    this pass (C20) — with no trustworthy baseline it can't tell tabs the
+    user already had open from ones opencli just opened, so closing
+    anything risks closing the user's own tabs."""
+    mock_pool = _make_mock_pool(mode="cdp")
+    mock_settings = _make_mock_settings(collection_mode="local")
+
+    with (
+        patch("backend.browser_pool.get_pool", return_value=mock_pool),
+        patch("backend.config.get_settings", return_value=mock_settings),
+        patch(
+            "backend.channels.opencli_channel._run_opencli",
+            new=AsyncMock(return_value=(0, '[{"title": "test"}]', "")),
+        ),
+        patch(
+            "backend.channels.opencli_channel._snapshot_tab_ids",
+            new=AsyncMock(return_value=None),
+        ),
+        patch(
+            "backend.channels.opencli_channel._cleanup_cdp_tabs", new=AsyncMock()
+        ) as mock_cleanup,
+    ):
+        result = await channel.collect(
+            {"site": "example.com", "command": "list", "format": "json"}, {}
+        )
+
+    assert result.success is True
+    mock_cleanup.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_collect_cdp_runs_cleanup_when_snapshot_baseline_ok(channel):
+    """Sanity check for the above: when the snapshot succeeds, cleanup still
+    runs exactly as before — C20 only changes the failure path."""
+    mock_pool = _make_mock_pool(mode="cdp")
+    mock_settings = _make_mock_settings(collection_mode="local")
+
+    with (
+        patch("backend.browser_pool.get_pool", return_value=mock_pool),
+        patch("backend.config.get_settings", return_value=mock_settings),
+        patch(
+            "backend.channels.opencli_channel._run_opencli",
+            new=AsyncMock(return_value=(0, '[{"title": "test"}]', "")),
+        ),
+        patch(
+            "backend.channels.opencli_channel._snapshot_tab_ids",
+            new=AsyncMock(return_value={"pre-existing-tab"}),
+        ),
+        patch(
+            "backend.channels.opencli_channel._cleanup_cdp_tabs", new=AsyncMock()
+        ) as mock_cleanup,
+    ):
+        result = await channel.collect(
+            {"site": "example.com", "command": "list", "format": "json"}, {}
+        )
+
+    assert result.success is True
+    mock_cleanup.assert_awaited_once_with("http://chrome:9222", {"pre-existing-tab"})
+
+
 def test_managed_profile_requirement_is_not_forwarded_as_a_cli_argument():
     from backend.channels.opencli_channel import _split_routing_parameters
 
