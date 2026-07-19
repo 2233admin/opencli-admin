@@ -1638,6 +1638,17 @@ def _select_runtime_nodes_for_trigger(
                 active_ids.add(downstream_id)
                 pending.append(downstream_id)
 
+    # External-runtime imports predate trigger-scoped execution and are
+    # intentionally represented as governed OpenCLI nodes rather than opaque
+    # executors. Their imported subgraph is not yet wired to the host trigger,
+    # so keep explicitly marked externalWorkflow nodes runnable while ordinary
+    # disconnected/orphan nodes remain excluded.
+    active_ids.update(
+        node.id
+        for node in nodes
+        if isinstance(node.params.get("externalWorkflow"), dict)
+    )
+
     selected_nodes = [
         node.model_copy(
             update={
