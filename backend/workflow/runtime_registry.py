@@ -20,7 +20,13 @@ from backend.workflow.block_reasons import (
     MISSING_TURBOPUSH_CONTENT_TYPE,
     MISSING_TURBOPUSH_SERVICE,
 )
-from backend.workflow.dify_graphon_client import DIFY_GRAPHON_BINDING_ID
+from backend.workflow.dify_graphon_client import (
+    DIFY_GRAPHON_BINDING_ID,
+    DIFY_GRAPHON_COMMIT,
+    DIFY_GRAPHON_CONTRACT_VERSION,
+    DIFY_GRAPHON_SOURCE_FORMAT,
+    DIFY_GRAPHON_VERSION,
+)
 from backend.workflow.runtime_contracts import runtime_io_contract_manifest
 from backend.workflow.tool_capabilities import resolve_workflow_tool_capability
 from backend.workflow.turbopush_runtime import (
@@ -907,6 +913,8 @@ def _resolve_dify_graphon_package(
 ) -> dict[str, Any]:
     compat_runtime = _read_dict(node.params.get("compatRuntime"))
     inspection = _read_dict(compat_runtime.get("inspection"))
+    inspection_nodes = inspection.get("nodes")
+    dependencies = inspection.get("dependencies")
     blockers = inspection.get("blockers")
     blocker = (
         next((item for item in blockers if isinstance(item, dict)), None)
@@ -945,12 +953,24 @@ def _resolve_dify_graphon_package(
             "function_id": "dify.graphon.run",
             "channel": "dify-graphon",
             "input": {
-                "contractVersion": _read_string(compat_runtime.get("contractVersion")),
-                "sourceFormat": _read_string(compat_runtime.get("sourceFormat")),
+                "contractVersion": DIFY_GRAPHON_CONTRACT_VERSION,
+                "sourceFormat": DIFY_GRAPHON_SOURCE_FORMAT,
                 "sourceSha256": _read_string(compat_runtime.get("sourceSha256")),
-                "engineVersion": _read_string(compat_runtime.get("engineVersion")),
-                "engineCommit": _read_string(compat_runtime.get("engineCommit")),
+                "engineVersion": DIFY_GRAPHON_VERSION,
+                "engineCommit": DIFY_GRAPHON_COMMIT,
                 "appMode": _read_string(node.params.get("appMode")),
+                "policy": _read_dict(compat_runtime.get("executionPolicy")),
+                "dependencies": (
+                    dependencies if isinstance(dependencies, list) else []
+                ),
+                "sourceNodeIndex": [
+                    source_node_id
+                    for item in (
+                        inspection_nodes if isinstance(inspection_nodes, list) else []
+                    )
+                    if isinstance(item, dict)
+                    and (source_node_id := _read_string(item.get("sourceNodeId")))
+                ],
             },
         },
         "resource_requirement": WorkflowRuntimeResourceRequirement(

@@ -68,8 +68,21 @@ RUNTIME_IO_CONTRACTS: dict[str, RuntimeIOContract] = {
         status="blocked_until_preconditions",
         input_ports=(("in", "any"),),
         output_ports=(("out", "any"),),
-        input_params=("sourceSha256", "appMode", "runtimeInput", "ephemeralGrants"),
-        output_artifacts=("graphonOutput", "nestedNodeEvents", "EvidenceBatch?"),
+        input_params=(
+            "sourceSha256",
+            "appMode",
+            "policy",
+            "dependencies",
+            "sourceNodeIndex",
+            "runtimeInputEnvelope",
+            "ephemeralGrants",
+        ),
+        output_artifacts=(
+            "workflowOutput",
+            "nestedNodeEvents",
+            "items[]?",
+            "EvidenceBatch?",
+        ),
         permission_gate=("canFetchNetwork?", "allowedDomains?"),
         config_gate=("graphon_runtime", "inspection_ready"),
         event_shape=(

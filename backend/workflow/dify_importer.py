@@ -6,6 +6,7 @@ import hashlib
 import re
 from copy import deepcopy
 from typing import Any
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import yaml
 
@@ -27,13 +28,13 @@ from backend.schemas.workflow import (
 )
 from backend.workflow.dify_graphon_client import (
     DIFY_GRAPHON_COMMIT,
+    DIFY_GRAPHON_CONTRACT_VERSION,
     DIFY_GRAPHON_NAME,
     DIFY_GRAPHON_VERSION,
     DifyGraphonClient,
 )
 
 DIFY_SOURCE_MAX_BYTES = 1_048_576
-DIFY_GRAPHON_CONTRACT_VERSION = "opencli.graphon.compat.v1"
 SUPPORTED_APP_MODES = frozenset({"workflow", "advanced-chat"})
 SUPPORTED_NODE_TYPES = frozenset(
     {
@@ -426,6 +427,8 @@ def _sanitize_embedded_secrets(value: Any, *, key: str = "") -> Any:
         return "[REDACTED]"
     if _is_header_container_key(key):
         return _sanitize_header_value(value)
+    if isinstance(value, str) and key.lower().replace("-", "_").endswith("url"):
+        return _sanitize_url_value(value)
     if isinstance(value, dict):
         descriptor = next(
             (
@@ -433,7 +436,7 @@ def _sanitize_embedded_secrets(value: Any, *, key: str = "") -> Any:
                 for item_key, item in value.items()
                 if str(item_key).lower() in {"key", "name"}
                 and isinstance(item, str)
-                and _is_sensitive_header_name(item)
+                and _is_sensitive_descriptor_name(item)
             ),
             None,
         )
@@ -516,6 +519,10 @@ def _is_sensitive_header_name(value: str) -> bool:
     }
 
 
+def _is_sensitive_descriptor_name(value: str) -> bool:
+    return _is_sensitive_header_name(value) or _is_secret_key(value)
+
+
 def _sanitize_header_value(value: Any) -> Any:
     if isinstance(value, str):
         redacted = re.sub(
@@ -534,6 +541,38 @@ def _sanitize_header_value(value: Any) -> Any:
     if isinstance(value, list):
         return [_sanitize_embedded_secrets(item) for item in value]
     return value
+
+
+def _sanitize_url_value(value: str) -> str:
+    try:
+        parsed = urlsplit(value)
+    except ValueError:
+        return value
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return value
+    hostname = parsed.hostname or ""
+    if ":" in hostname and not hostname.startswith("["):
+        hostname = f"[{hostname}]"
+    port = f":{parsed.port}" if parsed.port is not None else ""
+    userinfo = "[REDACTED]@" if parsed.username is not None else ""
+    query = urlencode(
+        [
+            (
+                query_key,
+                "[REDACTED]"
+                if _is_secret_key(query_key)
+                or _is_sensitive_header_name(query_key)
+                else query_value,
+            )
+            for query_key, query_value in parse_qsl(
+                parsed.query,
+                keep_blank_values=True,
+            )
+        ]
+    )
+    return urlunsplit(
+        (parsed.scheme, f"{userinfo}{hostname}{port}", parsed.path, query, parsed.fragment)
+    )
 
 
 def _slugify(value: str) -> str:

@@ -1076,14 +1076,6 @@ def _validate_package_internals(
             )
 
     if _is_managed_runtime_package(node):
-        errors.extend(
-            _cycle_errors_for_nodes(
-                package_node_id,
-                node.internals.nodes,
-                node.internals.edges,
-                path_prefix=path_prefix,
-            )
-        )
         return errors
 
     for internal_node in node.internals.nodes:
@@ -1287,7 +1279,7 @@ def _compile_node(
         id=node_id,
         kind=node.kind,
         capability=node.capability,
-        params=node.params,
+        params=_compiled_node_params(node),
         depends_on=depends_on,
         adapter=(
             CompiledWorkflowAdapterBinding(
@@ -1347,7 +1339,7 @@ def _to_plan_node(
         type=f"workflow.{node.kind}.{node.capability}",
         label=node.id,
         params={
-            **node.params,
+            **_compiled_node_params(node),
             "workflow": {
                 "kind": node.kind,
                 "capability": node.capability,
@@ -1362,6 +1354,19 @@ def _to_plan_node(
         source_id=None,
         draft=kind == "source",
     )
+
+
+def _compiled_node_params(node: WorkflowProjectNode) -> dict[str, object]:
+    params = dict(node.params)
+    if not _is_managed_runtime_package(node):
+        return params
+    compat_runtime = params.get("compatRuntime")
+    if isinstance(compat_runtime, dict):
+        safe_runtime = dict(compat_runtime)
+        safe_runtime.pop("sourceContent", None)
+        safe_runtime.pop("ephemeralGrants", None)
+        params["compatRuntime"] = safe_runtime
+    return params
 
 
 def _plan_ports_for_node(

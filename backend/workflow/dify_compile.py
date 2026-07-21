@@ -90,16 +90,17 @@ async def _refresh_package_inspection(
             )
         ]
 
+    execution_policy = {
+        "allowNetwork": project.agentPermissions.canFetchNetwork,
+        "allowedDomains": project.agentPermissions.allowedDomains,
+        "allowCode": False,
+        "allowTools": False,
+    }
     try:
         inspection_value = await graphon_client.inspect(
             source_content=source_content,
             source_sha256=source_sha256,
-            policy={
-                "allowNetwork": project.agentPermissions.canFetchNetwork,
-                "allowedDomains": project.agentPermissions.allowedDomains,
-                "allowCode": False,
-                "allowTools": False,
-            },
+            policy=execution_policy,
         )
     except DifyGraphonUnavailableError:
         return node, [
@@ -133,7 +134,7 @@ async def _refresh_package_inspection(
             )
         ]
 
-    refreshed = _with_inspection(node, inspection)
+    refreshed = _with_inspection(node, inspection, policy=execution_policy)
     errors = [
         WorkflowCompileError(
             code=blocker.code,
@@ -157,11 +158,14 @@ async def _refresh_package_inspection(
 def _with_inspection(
     node: WorkflowProjectNode,
     inspection: DifyInspection,
+    *,
+    policy: dict[str, Any],
 ) -> WorkflowProjectNode:
     params = deepcopy(node.params)
     params["compatRuntime"] = {
         **_record(params.get("compatRuntime")),
         "inspection": inspection.model_dump(mode="json", by_alias=True),
+        "executionPolicy": policy,
     }
     return node.model_copy(update={"params": params})
 

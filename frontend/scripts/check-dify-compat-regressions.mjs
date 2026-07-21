@@ -155,6 +155,10 @@ workflow:
             name: gpt-test
             api_key: fallback-model-secret
             max_tokens: 512
+          environment_variables:
+            - name: OPENAI_API_KEY
+              value: fallback-environment-secret
+          url: "https://alice:fallback-url-secret@example.com/items?api_key=fallback-query-secret"
     edges: []
 `
   const originalFetch = globalThis.fetch
@@ -166,6 +170,9 @@ workflow:
     assert.equal(imported.ok, true)
     const serialized = JSON.stringify(imported.project)
     assert.doesNotMatch(serialized, /fallback-model-secret/)
+    assert.doesNotMatch(serialized, /fallback-environment-secret/)
+    assert.doesNotMatch(serialized, /fallback-url-secret/)
+    assert.doesNotMatch(serialized, /fallback-query-secret/)
     assert.match(serialized, /\[REDACTED\]/)
     assert.match(serialized, /max_tokens/)
   } finally {

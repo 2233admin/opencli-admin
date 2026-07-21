@@ -182,6 +182,10 @@ workflow:
           max_tokens: 512
           headers: "Authorization: Bearer header-secret-value"
           digest_headers: "Authorization: Digest username=alice, response=digest-secret-value"
+          environment_variables:
+            - name: OPENAI_API_KEY
+              value: environment-secret-value
+          url: "https://alice:url-password@example.com/items?api_key=query-secret-value&limit=20"
           header_parameters:
             - key: Authorization
               value: Bearer list-secret-value
@@ -197,6 +201,9 @@ workflow:
     assert "header-secret-value" not in serialized
     assert "list-secret-value" not in serialized
     assert "digest-secret-value" not in serialized
+    assert "environment-secret-value" not in serialized
+    assert "url-password" not in serialized
+    assert "query-secret-value" not in serialized
     assert '"max_tokens":512' in serialized
 
 

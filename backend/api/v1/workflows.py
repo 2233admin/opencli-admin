@@ -191,10 +191,13 @@ async def import_external_runtime_workflow(
 async def start_run(
     body: workflow_schemas.WorkflowRunStartRequest,
     db: AsyncSession = Depends(get_db),
+    graphon_client: DifyGraphonClient = Depends(get_dify_graphon_client),
 ) -> ApiResponse[workflow_schemas.WorkflowRunProjection]:
     """Start a WorkflowProject run and emit replayable node-level events."""
 
-    return ApiResponse.ok(await start_workflow_run(body, session=db))
+    return ApiResponse.ok(
+        await start_workflow_run(body, session=db, graphon_client=graphon_client)
+    )
 
 
 @router.post(
@@ -314,6 +317,7 @@ async def start_run_from_webhook(
             responseMode=body.responseMode,
         ),
         session=db,
+        graphon_client=get_dify_graphon_client(),
     )
     return ApiResponse.ok(
         _webhook_ingress_response(

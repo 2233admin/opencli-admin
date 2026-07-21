@@ -69,3 +69,39 @@ class DifyImportResponse(DifyContractModel):
     report: DifyTranslationReport
     inspection: DifyInspection
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class DifyRuntimeRunStart(DifyContractModel):
+    contract_version: str = Field(alias="contractVersion")
+    runtime_run_id: str = Field(alias="runtimeRunId", min_length=1)
+    status: Literal["queued", "running"]
+    events_url: str = Field(alias="eventsUrl", min_length=1)
+
+
+class DifyRuntimeEvent(DifyContractModel):
+    sequence: int = Field(ge=1)
+    event_type: str = Field(alias="eventType", min_length=1)
+    node_id: str | None = Field(default=None, alias="nodeId")
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class DifyRuntimeEventPage(DifyContractModel):
+    contract_version: str = Field(alias="contractVersion")
+    runtime_run_id: str = Field(alias="runtimeRunId", min_length=1)
+    status: Literal[
+        "queued",
+        "running",
+        "completed",
+        "failed",
+        "cancelled",
+        "paused",
+    ]
+    next_sequence: int = Field(alias="nextSequence", ge=0)
+    events: list[DifyRuntimeEvent] = Field(default_factory=list)
+
+
+class DifyRuntimeCancelResponse(DifyContractModel):
+    contract_version: str = Field(alias="contractVersion")
+    runtime_run_id: str = Field(alias="runtimeRunId", min_length=1)
+    status: str
+    cancel_requested: bool = Field(alias="cancelRequested")

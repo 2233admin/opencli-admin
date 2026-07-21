@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+import yaml
 
 from backend.api.v1.dify_imports import get_dify_graphon_client
 from backend.main import app
@@ -26,7 +27,16 @@ class PolicyAwareGraphonClient:
         )
         blockers: list[dict] = []
         dependencies: list[dict] = []
-        nodes = []
+        payload = yaml.safe_load(source_content)
+        graph_nodes = payload.get("workflow", {}).get("graph", {}).get("nodes", [])
+        nodes = [
+            {
+                "sourceNodeId": str(node.get("id")),
+                "type": str(node.get("data", {}).get("type", "unknown")),
+                "status": "ready",
+            }
+            for node in graph_nodes
+        ]
         if "type: code" in source_content:
             blockers.append(
                 {
@@ -114,11 +124,17 @@ async def test_compile_emits_one_graphon_binding_without_flattening_internals(
     package = runtime["nodes"][0]
     assert package["runtime"]["binding"]["binding_id"] == "workflow.compat.dify.graphon"
     assert package["runtime"]["binding"]["input"]["sourceSha256"]
+    binding_input = package["runtime"]["binding"]["input"]
+    assert binding_input["contractVersion"] == "opencli.graphon.compat.v1"
+    assert binding_input["engineCommit"] == GRAPHON_COMMIT
+    assert binding_input["policy"]["allowNetwork"] is False
+    assert binding_input["sourceNodeIndex"] == ["source-start-001", "source-end-002"]
     assert package["runtime"]["structural"] is False
     assert package["runtime"]["executable"] is True
     assert package["package"]["locked"] is True
     assert package["package"]["managed"] is True
     assert len(runtime["plan_ir"]["nodes"]) == 1
+    assert "sourceContent" not in response.text
     assert len(graphon_client.calls) == 2
 
 
@@ -173,3 +189,42 @@ async def test_compile_rejects_an_unpinned_graphon_runtime(client, graphon_clien
     compiled = response.json()["data"]
     assert compiled["valid"] is False
     assert compiled["errors"][0]["code"] == "dify_graphon_unavailable"
+
+
+@pytest.mark.asyncio
+async def test_compile_uses_trusted_binding_metadata(client, graphon_client):
+    project = await _import_project(client, "pure_logic.yml")
+    compat = project["nodes"][0]["params"]["compatRuntime"]
+    compat["contractVersion"] = "attacker-contract"
+    compat["engineCommit"] = "attacker-commit"
+
+    response = await client.post("/api/v1/workflows/compile", json={"project": project})
+
+    binding_input = response.json()["data"]["plan"]["runtime"]["nodes"][0]["runtime"][
+        "binding"
+    ]["input"]
+    assert binding_input["contractVersion"] == "opencli.graphon.compat.v1"
+    assert binding_input["engineCommit"] == GRAPHON_COMMIT
+
+
+@pytest.mark.asyncio
+async def test_compile_leaves_managed_dify_loop_topology_to_graphon(client, graphon_client):
+    source = """kind: app
+app: {name: Loop, mode: workflow}
+workflow:
+  graph:
+    nodes:
+      - id: loop
+        data: {type: loop}
+      - id: body
+        data: {type: template-transform}
+    edges:
+      - {id: forward, source: loop, target: body}
+      - {id: back, source: body, target: loop}
+"""
+    imported = await client.post("/api/v1/workflows/import/dify", json={"source": source})
+    project = imported.json()["data"]["project"]
+
+    response = await client.post("/api/v1/workflows/compile", json={"project": project})
+
+    assert response.json()["data"]["valid"] is True

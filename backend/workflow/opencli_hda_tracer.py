@@ -44,6 +44,10 @@ from backend.workflow.block_reasons import (
     SOURCE_OUTPUT_REQUIRED,
 )
 from backend.workflow.compiler import INTERNAL_ID_SEPARATOR, compile_workflow_project
+from backend.workflow.dify_compile import compile_managed_dify_workflow_project
+from backend.workflow.dify_event_adapter import execute_dify_graphon_run
+from backend.workflow.dify_grants import resolve_dify_ephemeral_grants
+from backend.workflow.dify_graphon_client import DifyGraphonClient
 from backend.workflow.event_mirror import publish_workflow_run_event_mirror
 from backend.workflow.fleet_inventory import match_workflow_fleet_capability
 from backend.workflow.http_source_executor import (
@@ -66,6 +70,7 @@ from backend.workflow.rss_source_executor import (
     execute_workflow_rss_source,
 )
 from backend.workflow.runtime_registry import (
+    DIFY_GRAPHON_BINDING_ID,
     EXTERNAL_TOOL_BINDING_ID,
     INBOX_STORE_BINDING_ID,
     MERGE_BINDING_ID,
@@ -199,6 +204,7 @@ async def start_workflow_run(
     *,
     session: AsyncSession | None = None,
     existing_events: list[WorkflowNodeRunEvent] | None = None,
+    graphon_client: DifyGraphonClient | None = None,
 ) -> WorkflowRunProjection:
     """Create a replayable workflow run projection from a compiled WorkflowProject."""
 
@@ -206,7 +212,14 @@ async def start_workflow_run(
     trace_id = body.traceId or str(uuid.uuid4())
     started_at = _utcnow()
     prior_events = list(existing_events or [])
-    compile_result = compile_workflow_project(body.project)
+    compile_result = (
+        await compile_managed_dify_workflow_project(
+            body.project,
+            graphon_client=graphon_client,
+        )
+        if graphon_client is not None
+        else compile_workflow_project(body.project)
+    )
 
     if not compile_result.valid or compile_result.plan is None:
         events = _compile_failure_events(
@@ -293,7 +306,9 @@ async def start_workflow_run(
         return projection
 
     runtime_nodes_by_id = {node.id: node for node in runtime_nodes}
-    should_trace_opencli = (
+    should_trace_opencli = any(
+        _binding_id(node) == OPENCLI_BINDING_ID for node in runtime_nodes
+    ) and (
         body.packageNodeId is not None or _select_package_id(runtime_nodes, None) is not None
     )
     trace = (
@@ -326,6 +341,7 @@ async def start_workflow_run(
             trace_id=trace_id,
         )
     blocked_by_package: dict[str, list[WorkflowRunBlockReason]] = {}
+    managed_package_terminal_ids: set[str] = set()
     outputs_by_node: dict[str, list[dict[str, Any]]] = {}
     materialized_source_tasks: dict[str, tuple[str, str]] = {}
 
@@ -335,6 +351,128 @@ async def start_workflow_run(
     for node in runtime_nodes:
         if node.id in package_ids:
             emitter.emit(node, "started", message="Package node started")
+            if _binding_id(node) == DIFY_GRAPHON_BINDING_ID:
+                package = next(
+                    (
+                        project_node
+                        for project_node in body.project.nodes
+                        if project_node.id == node.id
+                    ),
+                    None,
+                )
+                compat_runtime = (
+                    _read_dict(package.params.get("compatRuntime")) if package else {}
+                )
+                source_content = compat_runtime.get("sourceContent")
+                source_sha256 = _read_string(compat_runtime.get("sourceSha256"))
+                if (
+                    package is None
+                    or graphon_client is None
+                    or not isinstance(source_content, str)
+                    or not source_content
+                    or source_sha256 is None
+                ):
+                    reason = WorkflowRunBlockReason(
+                        code="dify_graphon_unavailable",
+                        message="The managed Dify package has no available Graphon runtime.",
+                        source="dify_graphon_runtime",
+                        details={"nodeId": node.id},
+                    )
+                    emitter.emit(
+                        node,
+                        "failed",
+                        message=reason.message,
+                        block_reason=reason,
+                    )
+                    managed_package_terminal_ids.add(node.id)
+                    continue
+
+                grants = await resolve_dify_ephemeral_grants(package, session=session)
+                run_result = await execute_dify_graphon_run(
+                    graphon_client=graphon_client,
+                    source_content=source_content,
+                    source_sha256=source_sha256,
+                    policy={
+                        "allowNetwork": body.project.agentPermissions.canFetchNetwork,
+                        "allowedDomains": body.project.agentPermissions.allowedDomains,
+                        "allowCode": False,
+                        "allowTools": False,
+                    },
+                    inputs=body.input.payload,
+                    grants=grants,
+                )
+                queued_internal_ids: set[str] = set()
+                for runtime_event in run_result.events:
+                    if runtime_event.source_node_id is None:
+                        continue
+                    if runtime_event.source_node_id not in queued_internal_ids:
+                        queued_internal_ids.add(runtime_event.source_node_id)
+                        emitter.emit_nested(
+                            node,
+                            runtime_event.source_node_id,
+                            "queued",
+                            message=f'Dify node "{runtime_event.source_node_id}" queued',
+                            details={
+                                "runtime": "graphon",
+                                "runtimeRunId": runtime_event.runtime_run_id,
+                                "runtimeSequence": runtime_event.runtime_sequence,
+                                "synthetic": True,
+                            },
+                        )
+                    block_reason = None
+                    if runtime_event.event_type in {"blocked", "failed"}:
+                        block_reason = WorkflowRunBlockReason(
+                            code=(
+                                "dify_runtime_failed"
+                                if runtime_event.event_type == "failed"
+                                else "dify_runtime_blocked"
+                            ),
+                            message=runtime_event.message,
+                            source="dify_graphon_runtime",
+                            details={
+                                "runtimeRunId": runtime_event.runtime_run_id,
+                                "runtimeSequence": runtime_event.runtime_sequence,
+                            },
+                        )
+                    emitter.emit_nested(
+                        node,
+                        runtime_event.source_node_id,
+                        runtime_event.event_type,
+                        message=runtime_event.message,
+                        block_reason=block_reason,
+                        details=runtime_event.details,
+                    )
+
+                terminal_details = {
+                    "runtime": "graphon",
+                    "runtimeRunId": run_result.runtime_run_id,
+                    "outputPreview": run_result.terminal_details,
+                }
+                if run_result.status == "completed":
+                    emitter.emit(
+                        node,
+                        "completed",
+                        message="Managed Dify package completed through Graphon",
+                        details=terminal_details,
+                    )
+                else:
+                    reason = WorkflowRunBlockReason(
+                        code=run_result.code or "dify_runtime_failed",
+                        message=run_result.message or "The managed Dify package did not complete.",
+                        source="dify_graphon_runtime",
+                        details={
+                            "runtimeRunId": run_result.runtime_run_id,
+                            **run_result.terminal_details,
+                        },
+                    )
+                    emitter.emit(
+                        node,
+                        "blocked" if run_result.status == "blocked" else "failed",
+                        message=reason.message,
+                        block_reason=reason,
+                        details=terminal_details,
+                    )
+                managed_package_terminal_ids.add(node.id)
             continue
 
         missing_runtime = _read_dict(node.runtime.get("missing_runtime"))
@@ -835,6 +973,8 @@ async def start_workflow_run(
         outputs_by_node[node.id] = output_items
 
     for package_node in reversed(package_nodes):
+        if package_node.id in managed_package_terminal_ids:
+            continue
         trace_errors = [
             error
             for error in (trace.errors if trace else [])
@@ -1168,6 +1308,38 @@ class _WorkflowRunEventEmitter:
                 message=message,
                 blockReason=block_reason,
                 batch=batch,
+                details=details or {},
+            )
+        )
+
+    def emit_nested(
+        self,
+        package_node: CompiledWorkflowNode,
+        internal_node_id: str,
+        event_type: WorkflowNodeRunEventType,
+        *,
+        message: str | None = None,
+        block_reason: WorkflowRunBlockReason | None = None,
+        details: dict[str, object] | None = None,
+    ) -> None:
+        sequence = self._initial_sequence + len(self.events) + 1
+        node_id = f"{package_node.id}{INTERNAL_ID_SEPARATOR}{internal_node_id}"
+        self.events.append(
+            WorkflowNodeRunEvent(
+                id=f"{self._run_id}:{sequence:04d}:{event_type}:{node_id}",
+                sequence=sequence,
+                workflowId=self._workflow_id,
+                workflowRunId=self._run_id,
+                traceId=self._trace_id,
+                nodeId=node_id,
+                sourceId=self._source_id,
+                eventType=event_type,
+                createdAt=_utcnow(),
+                nodePath=[package_node.id, internal_node_id],
+                packageNodeId=package_node.id,
+                internalNodeId=internal_node_id,
+                message=message,
+                blockReason=block_reason,
                 details=details or {},
             )
         )

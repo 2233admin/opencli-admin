@@ -310,11 +310,41 @@ function sanitizePreviewValue(value: unknown, key = ""): unknown {
   }
   if (Array.isArray(value)) return value.map((item) => sanitizePreviewValue(item))
   if (isRecord(value)) {
+    const descriptor = Object.entries(value).find(
+      ([itemKey, item]) => ["key", "name"].includes(itemKey.toLowerCase())
+        && typeof item === "string"
+        && isSecretPreviewKey(item.toLowerCase().replaceAll("-", "_")),
+    )
     return Object.fromEntries(
-      Object.entries(value).map(([itemKey, item]) => [itemKey, sanitizePreviewValue(item, itemKey)]),
+      Object.entries(value).map(([itemKey, item]) => [
+        itemKey,
+        descriptor && ["value", "content", "default"].includes(itemKey.toLowerCase())
+          ? "[REDACTED]"
+          : sanitizePreviewValue(item, itemKey),
+      ]),
     )
   }
+  if (typeof value === "string" && normalizedKey.endsWith("url")) return sanitizePreviewUrl(value)
   return value
+}
+
+function sanitizePreviewUrl(value: string): string {
+  try {
+    const url = new URL(value)
+    if (!["http:", "https:"].includes(url.protocol)) return value
+    if (url.username || url.password) {
+      url.username = "[REDACTED]"
+      url.password = ""
+    }
+    for (const queryKey of [...url.searchParams.keys()]) {
+      if (isSecretPreviewKey(queryKey.toLowerCase().replaceAll("-", "_"))) {
+        url.searchParams.set(queryKey, "[REDACTED]")
+      }
+    }
+    return url.toString()
+  } catch {
+    return value
+  }
 }
 
 function isSecretPreviewKey(key: string): boolean {
