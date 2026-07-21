@@ -2,7 +2,8 @@
 
 ## 范围与环境
 
-- Git commit: `a9c312e`
+- Backend/runtime acceptance commit: `a9c312e`
+- Studio palette compatibility follow-up: `fbfa881`
 - Backend: `http://127.0.0.1:8031`
 - Graphon sidecar: `http://127.0.0.1:8095`
 - 验收方式：本地独立进程 HTTP E2E（非 Docker Compose）
@@ -52,7 +53,10 @@
 - Backend P0 integration suite: `34 passed`
 - Graphon sidecar contract suite: `19 passed`
 - Frontend `check:dify-p0`: `5 passed`
+- Frontend workflow regressions: `38 passed`
+- Frontend control-plane regressions: `14 passed`
 - Frontend TypeScript: passed (`tsc --noEmit`)
+- Frontend clean production build: passed
 - Ruff targeted validation: passed
 - 干净 worktree `git diff --check`: passed
 
