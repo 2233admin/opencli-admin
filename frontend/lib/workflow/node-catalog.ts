@@ -749,7 +749,7 @@ export function getWorkflowNodeCatalog(
   profile: WorkflowProfile,
   capabilities?: WorkflowCapabilitiesResponse | null,
 ): WorkflowNodeCatalogItem[] {
-  return WORKFLOW_NODE_CATALOG.filter((item) => item.profile === profile).map((item) => {
+  const staticCatalog = WORKFLOW_NODE_CATALOG.filter((item) => item.profile === profile).map((item) => {
     const runtimeCapability = projectedCatalogRuntimeCapability(
       catalogRuntimeCapability(capabilities, item.id),
       item,
@@ -761,6 +761,103 @@ export function getWorkflowNodeCatalog(
       runtimeContract: runtimeContractForCapability(runtimeCapability),
     }
   })
+  if (profile !== "intelligence") return staticCatalog
+  const dynamicPluginCatalog = (capabilities?.catalog ?? []).flatMap((runtimeCapability) => {
+    const item = pluginNodeCatalogItem(runtimeCapability)
+    return item ? [item] : []
+  })
+  return [...staticCatalog, ...dynamicPluginCatalog]
+}
+
+export function workflowCatalogItemLocked(item: WorkflowNodeCatalogItem): boolean {
+  const manifest = readCatalogRecord(item.runtimeCapability?.manifest)
+  const canvas = readCatalogRecord(manifest?.canvas)
+  return canvas?.locked === true
+}
+
+export function workflowCatalogPluginProvenance(
+  item: WorkflowNodeCatalogItem,
+): { providerKey: string; version: string } | null {
+  const manifest = readCatalogRecord(item.runtimeCapability?.manifest)
+  const plugin = readCatalogRecord(manifest?.plugin)
+  const providerKey = typeof plugin?.providerKey === "string" ? plugin.providerKey : null
+  const version = typeof plugin?.version === "string" ? plugin.version : null
+  return providerKey && version ? { providerKey, version } : null
+}
+
+function pluginNodeCatalogItem(
+  runtimeCapability: WorkflowRuntimeCapability,
+): WorkflowNodeCatalogItem | null {
+  if (runtimeCapability.source !== "backend.services.plugin_registry_service") return null
+  const kind = pluginNodeKind(runtimeCapability.kind)
+  const capability = pluginNodeCapability(runtimeCapability.capability)
+  if (!kind || !capability) return null
+  const manifest = readCatalogRecord(runtimeCapability.manifest)
+  const plugin = readCatalogRecord(manifest?.plugin)
+  const providerKey = typeof plugin?.providerKey === "string" ? plugin.providerKey : "plugin"
+  const version = typeof plugin?.version === "string" ? plugin.version : "unknown"
+  const family = typeof plugin?.family === "string" ? plugin.family : "tool"
+  return {
+    id: runtimeCapability.id,
+    idPrefix: safeIdPart(`${providerKey}-${runtimeCapability.label}`),
+    label: runtimeCapability.label,
+    description: `${providerKey} · ${version} · ${runtimeCapability.reason ?? "等待运行适配器"}`,
+    category: pluginCatalogCategory(family),
+    profile: "intelligence",
+    kind,
+    capability,
+    icon: pluginCatalogIcon(family),
+    color: "var(--muted-foreground)",
+    params: {
+      pluginInstallationId: plugin?.installationId,
+      pluginProviderKey: providerKey,
+      pluginVersion: version,
+      pluginCapabilityId: plugin?.capabilityId,
+    },
+    runtimeCapability,
+    keywords: [
+      "plugin",
+      "dify",
+      providerKey,
+      version,
+      family,
+      runtimeCapability.label,
+      ...runtimeCapability.tags,
+    ],
+  }
+}
+
+function pluginNodeKind(value: string | null | undefined): WorkflowNodeKind | null {
+  return ["schedule", "source", "agent", "action"].includes(value ?? "")
+    ? value as WorkflowNodeKind
+    : null
+}
+
+function pluginNodeCapability(
+  value: string | null | undefined,
+): WorkflowCapability | null {
+  return ["trigger", "fetch", "summarize", "store"].includes(value ?? "")
+    ? value as WorkflowCapability
+    : null
+}
+
+function pluginCatalogCategory(family: string): WorkflowNodeCatalogCategory {
+  if (family === "trigger") return "trigger"
+  if (family === "datasource") return "source"
+  if (family === "agent_strategy") return "processing"
+  return "output"
+}
+
+function pluginCatalogIcon(family: string): string {
+  if (family === "trigger") return "Clock"
+  if (family === "datasource") return "Database"
+  if (family === "agent_strategy") return "Bot"
+  return "Puzzle"
+}
+
+function readCatalogRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null
+  return value as Record<string, unknown>
 }
 
 export function createWorkflowNodeFromCatalog(

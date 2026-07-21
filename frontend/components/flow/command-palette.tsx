@@ -5,7 +5,12 @@ import { useReactFlow } from "@xyflow/react"
 import { Loader2, Sparkles, Network, Save, RotateCcw, CornerDownLeft, Globe, ArrowLeft } from "lucide-react"
 import { NODE_PALETTE } from "@/lib/flow/palette"
 import type { PaletteItem } from "@/lib/flow/types"
-import { getWorkflowNodeCatalog, type WorkflowNodeCatalogItem } from "@/lib/workflow/node-catalog"
+import {
+  getWorkflowNodeCatalog,
+  workflowCatalogItemLocked,
+  workflowCatalogPluginProvenance,
+  type WorkflowNodeCatalogItem,
+} from "@/lib/workflow/node-catalog"
 import { getWorkflowPrimitives, type WorkflowPrimitive } from "@/lib/workflow/node-primitives"
 import { workflowNodeDepthFromNetworkStack, workflowNodeLayerAtDepth } from "@/lib/workflow/node-hierarchy"
 import { groupPrimitivesForNodeMenu } from "@/lib/workflow/node-menu"
@@ -132,6 +137,10 @@ export function CommandPalette({
 
   const addCatalogOperator = useCallback(
     (item: WorkflowNodeCatalogItem) => {
+      if (workflowCatalogItemLocked(item)) {
+        onMessage?.(item.runtimeCapability?.reason ?? "该插件能力尚未绑定运行适配器")
+        return
+      }
       const position =
         getAnchor?.() ??
         screenToFlowPosition({
@@ -461,15 +470,26 @@ export function CommandPalette({
                   {filteredCatalogOperators.map((item) => {
                     const Icon = getIcon(item.icon)
                     const text = localizeNodeText(item.id, { label: item.label, description: item.description }, language)
+                    const locked = workflowCatalogItemLocked(item)
+                    const provenance = workflowCatalogPluginProvenance(item)
                     return (
                       <button
                         key={item.id}
                         type="button"
                         onClick={() => addCatalogOperator(item)}
-                        className="flex w-full items-center gap-3 px-4 py-2 text-left transition-colors hover:bg-accent"
+                        disabled={locked}
+                        title={locked ? item.runtimeCapability?.reason ?? "等待运行适配器" : undefined}
+                        className="flex w-full items-center gap-3 px-4 py-2 text-left transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-65 disabled:hover:bg-transparent"
                       >
                         <Icon className="size-3.5 text-[#ff7a17]" />
-                        <span className="min-w-0 flex-1 truncate text-sm">{text.label}</span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm">{text.label}</span>
+                          <span className="block truncate text-[10px] text-muted-foreground">
+                            {provenance
+                              ? `${provenance.providerKey} · ${provenance.version}`
+                              : text.description}
+                          </span>
+                        </span>
                         <span
                           className={cn(
                             "rounded-[3px] border px-1 py-0.5 font-mono text-[8px] uppercase tracking-wider",

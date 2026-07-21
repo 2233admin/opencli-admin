@@ -9,6 +9,7 @@
     "check:workflow-regressions": "node --test scripts/check-workflow-regressions.mjs",
     "check:navigation-transitions": "node --test scripts/check-navigation-transition-regressions.mjs",
     "check:control-plane": "node --test scripts/check-control-plane-regressions.mjs scripts/check-dashboard-regressions.mjs scripts/check-inbox-regressions.mjs scripts/check-visualization-regressions.mjs",
+    "check:dify-p0": "node --test scripts/check-dify-p0-regressions.mjs",
     "check:record-relationships": "node --test scripts/check-record-relationship-regressions.mjs",
     "test:workflow-contracts": "node scripts/assert-workflow-contracts.mjs",
     "start": "next start",

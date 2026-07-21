@@ -32,6 +32,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -399,140 +400,156 @@ export function CommandStrip({
             <TooltipContent>更多工具</TooltipContent>
           </Tooltip>
           <DropdownMenuContent align="end" className="max-h-[76vh] w-64 overflow-y-auto">
-            <DropdownMenuLabel>工作流</DropdownMenuLabel>
-            <DropdownMenuItem
-              onClick={() => {
-                reset()
-                onExported?.("已恢复默认封包网络")
-              }}
-            >
-              <RotateCcw className="size-3.5" />
-              恢复默认封包网络
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={() => {
-                importWorkflowProject(COLLECTION_WORKFLOW_PROJECT)
-                onExported?.("已载入完整采集示例")
-              }}
-            >
-              <ListTree className="size-3.5" />
-              载入完整采集示例
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={() => {
-                const ok = load()
-                onExported?.(ok ? "已恢复上次保存" : "没有找到保存记录")
-              }}
-            >
-              <FolderOpen className="size-3.5" />
-              恢复上次保存
-            </DropdownMenuItem>
+            <DropdownMenuGroup>
+              <DropdownMenuLabel>工作流</DropdownMenuLabel>
+              <DropdownMenuItem
+                onClick={() => {
+                  reset()
+                  onExported?.("已恢复默认封包网络")
+                }}
+              >
+                <RotateCcw className="size-3.5" />
+                恢复默认封包网络
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => {
+                  importWorkflowProject(COLLECTION_WORKFLOW_PROJECT)
+                  onExported?.("已载入完整采集示例")
+                }}
+              >
+                <ListTree className="size-3.5" />
+                载入完整采集示例
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => {
+                  const ok = load()
+                  onExported?.(ok ? "已恢复上次保存" : "没有找到保存记录")
+                }}
+              >
+                <FolderOpen className="size-3.5" />
+                恢复上次保存
+              </DropdownMenuItem>
+            </DropdownMenuGroup>
             <DropdownMenuSeparator />
 
-            <DropdownMenuLabel>编辑与视图</DropdownMenuLabel>
-            <DropdownMenuItem onClick={() => setToolMode("select")}>
-              <Magnet className="size-3.5" />
-              选择工具 {toolMode === "select" ? "· 当前" : ""}
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setToolMode(toolMode === "scissors" ? "select" : "scissors")}>
-              <Scissors className="size-3.5" />
-              剪断连线 {toolMode === "scissors" ? "· 当前" : ""}
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setToolMode(toolMode === "draw" ? "select" : "draw")}>
-              <Eraser className="size-3.5" />
-              画布标注 {toolMode === "draw" ? "· 当前" : ""}
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={clearDrawings}>
-              <Eraser className="size-3.5" />
-              清除画布标注
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => void autoLayout("LR", "elk", true)}>
-              <Network className="size-3.5" />
-              自动整理节点
-            </DropdownMenuItem>
-            <DropdownMenuItem disabled={selectedNodeCount === 0} onClick={selectActiveComponent}>
-              <Network className="size-3.5" />
-              选择当前流程分支
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setCanvasSetting("snapToHelperLines", !snapToHelperLines)}>
-              <Magnet className="size-3.5" />
-              {snapToHelperLines ? "关闭节点吸附" : "开启节点吸附"}
-            </DropdownMenuItem>
+            <DropdownMenuGroup>
+              <DropdownMenuLabel>编辑与视图</DropdownMenuLabel>
+              <DropdownMenuItem onClick={() => setToolMode("select")}>
+                <Magnet className="size-3.5" />
+                选择工具 {toolMode === "select" ? "· 当前" : ""}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setToolMode(toolMode === "scissors" ? "select" : "scissors")}>
+                <Scissors className="size-3.5" />
+                剪断连线 {toolMode === "scissors" ? "· 当前" : ""}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setToolMode(toolMode === "draw" ? "select" : "draw")}>
+                <Eraser className="size-3.5" />
+                画布标注 {toolMode === "draw" ? "· 当前" : ""}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={clearDrawings}>
+                <Eraser className="size-3.5" />
+                清除画布标注
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => void autoLayout("LR", "elk", true)}>
+                <Network className="size-3.5" />
+                自动整理节点
+              </DropdownMenuItem>
+              <DropdownMenuItem disabled={selectedNodeCount === 0} onClick={selectActiveComponent}>
+                <Network className="size-3.5" />
+                选择当前流程分支
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setCanvasSetting("snapToHelperLines", !snapToHelperLines)}>
+                <Magnet className="size-3.5" />
+                {snapToHelperLines ? "关闭节点吸附" : "开启节点吸附"}
+              </DropdownMenuItem>
+            </DropdownMenuGroup>
             <DropdownMenuSeparator />
 
-            <DropdownMenuLabel>运行与设置</DropdownMenuLabel>
-            <DropdownMenuItem onClick={onToggleRunTrace}>
-              <Play className="size-3.5" />
-              {runTraceOpen ? "关闭运行记录" : "运行记录与结果"}
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={onToggleProjectSettings}>
-              <SlidersHorizontal className="size-3.5" />
-              {projectSettingsOpen ? "关闭工作流设置" : "工作流设置"}
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={onToggleAgentDrawer}>
-              <Bot className="size-3.5" />
-              {agentDrawerOpen ? "关闭 AI 修改建议" : "AI 修改建议"}
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={onToggleNodeManagement}>
-              <ListTree className="size-3.5" />
-              {nodeManagementOpen ? "关闭节点状态" : "节点状态"}
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={onToggleCollab}>
-              <Users className="size-3.5" />
-              {collab ? "关闭多人协作" : "开启多人协作"}
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={onToggleSettings}>
-              <Settings className="size-3.5" />
-              {settingsOpen ? "关闭画布设置" : "画布设置"}
-            </DropdownMenuItem>
+            <DropdownMenuGroup>
+              <DropdownMenuLabel>运行与设置</DropdownMenuLabel>
+              <DropdownMenuItem onClick={onToggleRunTrace}>
+                <Play className="size-3.5" />
+                {runTraceOpen ? "关闭运行记录" : "运行记录与结果"}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={onToggleProjectSettings}>
+                <SlidersHorizontal className="size-3.5" />
+                {projectSettingsOpen ? "关闭工作流设置" : "工作流设置"}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={onToggleAgentDrawer}>
+                <Bot className="size-3.5" />
+                {agentDrawerOpen ? "关闭 AI 修改建议" : "AI 修改建议"}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={onToggleNodeManagement}>
+                <ListTree className="size-3.5" />
+                {nodeManagementOpen ? "关闭节点状态" : "节点状态"}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={onToggleCollab}>
+                <Users className="size-3.5" />
+                {collab ? "关闭多人协作" : "开启多人协作"}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={onToggleSettings}>
+                <Settings className="size-3.5" />
+                {settingsOpen ? "关闭画布设置" : "画布设置"}
+              </DropdownMenuItem>
+            </DropdownMenuGroup>
             <DropdownMenuSeparator />
 
-            <DropdownMenuLabel>导入与导出</DropdownMenuLabel>
-            <DropdownMenuItem onClick={() => fileInputRef.current?.click()}>
-              <Upload className="size-3.5" />
-              导入 JSON / Mermaid / n8n
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={exportJson}>
-              <Download className="size-3.5" />
-              导出 JSON
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={exportImage}>
-              <ImageDown className="size-3.5" />
-              导出 PNG
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => void exportServerImage()}>
-              <ServerCog className="size-3.5" />
-              导出 SVG
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={exportMermaid}>
-              <FileCode2 className="size-3.5" />
-              导出 Mermaid
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={exportCanvas}>
-              <FileCode2 className="size-3.5" />
-              导出 Obsidian Canvas
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={exportOpml}>
-              <FileCode2 className="size-3.5" />
-              导出 OPML
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={exportMarkdown}>
-              <FileCode2 className="size-3.5" />
-              导出 Markdown
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => void copyShareUrl()}>
-              <Link2 className="size-3.5" />
-              {shareUrlLoaded ? "重新复制分享链接" : "复制分享链接"}
-            </DropdownMenuItem>
+            <DropdownMenuGroup>
+              <DropdownMenuLabel>导入与导出</DropdownMenuLabel>
+              <DropdownMenuItem onClick={() => fileInputRef.current?.click()}>
+                <Upload className="size-3.5" />
+                导入 Dify / n8n / JSON / Mermaid
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={exportJson}>
+                <Download className="size-3.5" />
+                导出 JSON
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={exportImage}>
+                <ImageDown className="size-3.5" />
+                导出 PNG
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => void exportServerImage()}>
+                <ServerCog className="size-3.5" />
+                导出 SVG
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={exportMermaid}>
+                <FileCode2 className="size-3.5" />
+                导出 Mermaid
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={exportCanvas}>
+                <FileCode2 className="size-3.5" />
+                导出 Obsidian Canvas
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={exportOpml}>
+                <FileCode2 className="size-3.5" />
+                导出 OPML
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={exportMarkdown}>
+                <FileCode2 className="size-3.5" />
+                导出 Markdown
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => void copyShareUrl()}>
+                <Link2 className="size-3.5" />
+                {shareUrlLoaded ? "重新复制分享链接" : "复制分享链接"}
+              </DropdownMenuItem>
+            </DropdownMenuGroup>
             <DropdownMenuSeparator />
-            <DropdownMenuLabel className="text-[10px] font-normal text-muted-foreground">
-              {nodeCount} 个节点 · {edgeCount} 条连线 · {selectedNodeCount + selectedEdgeCount} 个已选
-            </DropdownMenuLabel>
+            <DropdownMenuGroup>
+              <DropdownMenuLabel className="text-[10px] font-normal text-muted-foreground">
+                {nodeCount} 个节点 · {edgeCount} 条连线 · {selectedNodeCount + selectedEdgeCount} 个已选
+              </DropdownMenuLabel>
+            </DropdownMenuGroup>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
 
-      <input ref={fileInputRef} type="file" accept="application/json,.json,.mmd,text/plain" className="hidden" onChange={onImportFile} />
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="application/json,application/yaml,text/yaml,.json,.yaml,.yml,.mmd,text/plain"
+        className="hidden"
+        onChange={onImportFile}
+      />
     </header>
   )
 }

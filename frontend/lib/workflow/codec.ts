@@ -59,6 +59,9 @@ export function translateWorkflowDsl(json: string): WorkflowImportResult {
 export async function translateWorkflowDslManaged(source: string): Promise<WorkflowImportResult> {
   const local = translateWorkflowDsl(source)
   if (!local.ok || local.format !== "dify") return local
+  if (!local.report || local.report.source !== "dify") {
+    return { ok: false, error: "Dify import did not produce a compatibility report" }
+  }
 
   try {
     const managed = await importDifyWorkflow(source)
