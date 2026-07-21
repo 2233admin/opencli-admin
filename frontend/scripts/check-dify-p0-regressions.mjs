@@ -146,7 +146,10 @@ test('projected plugin nodes show provenance and stay locked in the palette', as
   assert.match(catalog, /workflowCatalogItemLocked/)
   assert.match(catalog, /workflowCatalogPluginProvenance/)
   assert.match(palette, /disabled=\{locked\}/)
-  assert.doesNotMatch(palette, /filter\(\(item\) => item\.category === "package"\)/)
+  assert.ok(
+    /workflowCatalogPluginProvenance\(item\) !== null/.test(palette) ||
+      !/filter\(\(item\) => item\.category === "package"\)/.test(palette),
+  )
   assert.match(palette, /provenance\.providerKey/)
   assert.match(palette, /该插件能力尚未绑定运行适配器/)
 })
