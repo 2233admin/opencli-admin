@@ -42,6 +42,7 @@ import {
 import {
   PLUGIN_PROVIDER_CATEGORIES,
   PLUGIN_PROVIDERS,
+  mergeBundledPluginProviders,
   pluginProviderCategoryLabel,
   type PluginProvider,
   type PluginProviderCategory,
@@ -460,11 +461,12 @@ export default function PluginHubPage() {
     router.push(queryString ? `/plugins?${queryString}` : '/plugins', { scroll: false })
   }
 
-  const providers = useMemo(() => {
-    const needle = query.trim().toLowerCase()
+  const availableProviders = useMemo(() => {
     const source: RegistryPluginProvider[] = activeTab === 'installed'
       ? installations
-        ? installations.map(backendProviderFromInstallation)
+        ? mergeBundledPluginProviders(
+            installations.map(backendProviderFromInstallation),
+          ) as RegistryPluginProvider[]
         : pluginError
           ? PLUGIN_PROVIDERS.filter((provider) => provider.bundled).map((provider) => ({
               ...provider,
@@ -472,14 +474,19 @@ export default function PluginHubPage() {
             }))
           : []
       : PLUGIN_PROVIDERS.filter((provider) => provider.marketplace)
-    return source.filter((provider) => {
+    return source
+  }, [activeTab, installations, pluginError])
+
+  const providers = useMemo(() => {
+    const needle = query.trim().toLowerCase()
+    return availableProviders.filter((provider) => {
       if (activeCategory !== 'all' && provider.category !== activeCategory) return false
       if (!needle) return true
       return `${provider.name} ${provider.author} ${provider.description} ${provider.tags.join(' ')}`
         .toLowerCase()
         .includes(needle)
     })
-  }, [activeCategory, activeTab, installations, pluginError, query])
+  }, [activeCategory, availableProviders, query])
 
   const topTabs = (
     <div className="flex w-full flex-wrap items-center justify-between gap-3">

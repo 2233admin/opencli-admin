@@ -162,10 +162,10 @@ export const PLUGIN_PROVIDERS: PluginProvider[] = [
   },
   {
     id: 'workflow-bundles',
-    name: 'Workflow Bundles',
+    name: '预制工作流工具包',
     author: 'OpenCLI',
     category: 'bundle',
-    description: '提供采集、分析、告警、审核等可复用工作流模板包。',
+    description: '把采集、分析、告警、审核等重复流程封装成可复用工具包。',
     icon: 'package',
     nodeIds: [
       'package.collection.pipeline',
@@ -223,4 +223,29 @@ export const PLUGIN_PROVIDER_CATEGORIES: Array<{
 
 export function pluginProviderCategoryLabel(category: PluginProviderCategory): string {
   return PLUGIN_PROVIDER_CATEGORIES.find((item) => item.key === category)?.label ?? category
+}
+
+/**
+ * Bundled providers are part of the application even when the backend registry
+ * only reports packages with persisted installation metadata. Registry entries
+ * win so runtime status, version and manifest details stay authoritative.
+ */
+export function mergeBundledPluginProviders<T extends PluginProvider>(
+  registryProviders: T[],
+): Array<PluginProvider | T> {
+  const providers = new Map<string, PluginProvider | T>(
+    PLUGIN_PROVIDERS
+      .filter((provider) => provider.bundled)
+      .map((provider) => [provider.id, provider]),
+  )
+
+  for (const provider of registryProviders) {
+    const bundledProvider = providers.get(provider.id)
+    providers.set(
+      provider.id,
+      bundledProvider ? { ...bundledProvider, ...provider } : provider,
+    )
+  }
+
+  return [...providers.values()]
 }
