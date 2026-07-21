@@ -66,6 +66,44 @@ services:
       - "${RSS_BRIDGE_PORT:-3001}:80"
     restart: unless-stopped
 
+  # ── Dify workflow compatibility runtime ──────────────────────────────────
+  # Pure-logic workflows run in this pinned Graphon sidecar. Code, tools, and
+  # outbound network remain blocked unless their explicit runtime is configured.
+  dify-graphon-runtime:
+    profiles: ["dify", "nas"]
+    build:
+      context: ./compat/dify_graphon_runtime
+      dockerfile: Dockerfile
+    environment:
+      DIFY_GRAPHON_MAX_REQUEST_BYTES: ${DIFY_GRAPHON_MAX_REQUEST_BYTES:-1048576}
+      DIFY_GRAPHON_MAX_OUTPUT_BYTES: ${DIFY_GRAPHON_MAX_OUTPUT_BYTES:-1048576}
+      DIFY_GRAPHON_EXECUTION_TIMEOUT_SECONDS: ${DIFY_GRAPHON_EXECUTION_TIMEOUT_SECONDS:-120}
+      DIFY_GRAPHON_MAX_CONCURRENT_RUNS: ${DIFY_GRAPHON_MAX_CONCURRENT_RUNS:-2}
+      DIFY_GRAPHON_SLIM_PATH: ${DIFY_GRAPHON_SLIM_PATH:-}
+      DIFY_SANDBOX_ENDPOINT: ${DIFY_SANDBOX_ENDPOINT:-}
+      DIFY_SANDBOX_API_KEY: ${DIFY_SANDBOX_API_KEY:-}
+    ports:
+      - "${DIFY_GRAPHON_PORT:-8095}:8095"
+    read_only: true
+    tmpfs:
+      - /tmp:size=${DIFY_GRAPHON_TMPFS_SIZE:-64m},mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8095/health', timeout=3)"
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    restart: unless-stopped
+
   # ── Backend API ───────────────────────────────────────────────────────────
   api:
     <<: *backend-common
@@ -98,6 +136,7 @@ services:
       COLLECTION_ORCHESTRATOR: ${COLLECTION_ORCHESTRATOR:-admin}
       ODP_INGEST_URL: ${ODP_INGEST_URL:-}
       III_URL: ${III_URL:-}
+      DIFY_GRAPHON_RUNTIME_URL: ${DIFY_GRAPHON_RUNTIME_URL:-http://dify-graphon-runtime:8095}
     volumes:
       - db_data:/data
       - ./backend:/app/backend

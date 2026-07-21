@@ -1,0 +1,27 @@
+[project]
+name = "opencli-dify-graphon-runtime"
+version = "0.1.0"
+description = "Pinned Graphon compatibility sidecar for OpenCLI Admin"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    "fastapi>=0.115,<1",
+    "graphon @ git+https://github.com/langgenius/graphon.git@b187ce7927fea1a7c137b642be3f78e3abb9f7de",
+    "uvicorn>=0.30,<1",
+]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28,<1",
+    "pytest>=8.3,<10",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
