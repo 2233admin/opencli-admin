@@ -44,3 +44,14 @@ test('installed plugin view keeps bundled providers beside registry installation
   assert.ok(merged.some((provider) => provider.id === 'model-runtime'))
   assert.ok(merged.some((provider) => provider.id === 'third-party'))
 })
+
+test('plugin hub exposes category counts and category-specific context', async () => {
+  const plugins = await read('app/(app)/plugins/page.tsx')
+  const providerCatalog = await read('lib/plugins/provider-catalog.ts')
+
+  assert.match(plugins, /mergeBundledPluginProviders/)
+  assert.match(plugins, /categoryCounts\.get\(item\.key\)/)
+  assert.match(plugins, /activeCategory === 'bundle'/)
+  assert.match(plugins, /具体节点在 Studio 中选择/)
+  assert.match(providerCatalog, /name: '预制工作流工具包'/)
+})

@@ -142,7 +142,7 @@ function PluginPageTabs({
               aria-current={selected ? 'page' : undefined}
               onClick={() => onSelect(key)}
               className={cn(
-                'relative min-h-9 overflow-hidden rounded-md px-4 text-sm font-medium transition-colors',
+                'relative min-h-10 overflow-hidden rounded-md px-4 text-sm font-medium transition-colors',
                 selected ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
               )}
             >
@@ -176,7 +176,7 @@ function ProviderCard({
 }) {
   const Icon = PROVIDER_ICONS[provider.icon]
   return (
-    <article className="group rounded-xl border bg-background transition-[border-color,background-color,transform] hover:-translate-y-0.5 hover:border-foreground/20 hover:bg-muted/15">
+    <article className="group rounded-md border bg-background transition-[border-color,background-color,transform] hover:-translate-y-0.5 hover:border-foreground/20 hover:bg-muted/15">
       <button
         type="button"
         onClick={onOpen}
@@ -184,7 +184,7 @@ function ProviderCard({
         aria-label={`查看 ${provider.name} 插件`}
       >
         <div className="flex w-full items-start justify-between gap-3">
-          <div className="grid size-11 place-items-center rounded-xl border bg-muted/35">
+          <div className="grid size-11 place-items-center rounded-md border bg-muted/35">
             <Icon aria-hidden="true" className="size-5 text-foreground" />
           </div>
           <Badge variant="outline" className={cn('h-5 px-1.5 text-3xs', providerStateTone(state))}>
@@ -230,7 +230,7 @@ function ProviderDetails({
     <SheetContent className="w-[94vw] sm:max-w-lg">
       <SheetHeader className="border-b pr-12">
         <div className="flex items-start gap-3">
-          <div className="grid size-11 shrink-0 place-items-center rounded-xl border bg-muted/35">
+          <div className="grid size-11 shrink-0 place-items-center rounded-md border bg-muted/35">
             <Icon aria-hidden="true" className="size-5" />
           </div>
           <div className="min-w-0">
@@ -477,6 +477,14 @@ export default function PluginHubPage() {
     return source
   }, [activeTab, installations, pluginError])
 
+  const categoryCounts = useMemo(() => {
+    const counts = new Map<PluginCategoryFilter, number>([['all', availableProviders.length]])
+    for (const provider of availableProviders) {
+      counts.set(provider.category, (counts.get(provider.category) ?? 0) + 1)
+    }
+    return counts
+  }, [availableProviders])
+
   const providers = useMemo(() => {
     const needle = query.trim().toLowerCase()
     return availableProviders.filter((provider) => {
@@ -488,12 +496,25 @@ export default function PluginHubPage() {
     })
   }, [activeCategory, availableProviders, query])
 
+  const activeCategoryLabel = activeCategory === 'all'
+    ? '全部插件'
+    : pluginProviderCategoryLabel(activeCategory)
+  const sectionTitle = activeTab === 'installed'
+    ? `${activeCategoryLabel} · 已安装`
+    : `${activeCategoryLabel} · 市场`
+  const sectionDescription = activeCategory === 'bundle'
+    ? '预制包封装重复流程；打开后可查看包含的能力，并在 Studio 中直接使用。'
+    : activeTab === 'installed'
+      ? '按 Provider 管理能力、运行状态和配置。具体节点在 Studio 中选择。'
+      : '浏览可安装的 Provider；安装前会校验包信息、权限和运行适配器。'
+
   const topTabs = (
     <div className="flex w-full flex-wrap items-center justify-between gap-3">
       <PluginPageTabs active={activeTab} onSelect={(tab) => updateRoute({ tab })} />
       <Button
         variant="outline"
         size="sm"
+        className="min-h-10"
         onClick={() => setDifyImportOpen(true)}
       >
         <Download aria-hidden="true" className="size-4" />
@@ -505,11 +526,11 @@ export default function PluginHubPage() {
   return (
     <PageContainer
       eyebrow="Plugins"
-      title="插件"
-      description="安装和管理模型、工具、数据源与扩展；节点只在工作流的添加面板中选择。"
+      title="插件中心"
+      description="管理已经接入的能力包，并按需安装新的 Provider。"
       tabs={topTabs}
     >
-      <div className="grid min-w-0 gap-5 lg:grid-cols-[12rem_minmax(0,1fr)]">
+      <div className="grid min-w-0 gap-6 lg:grid-cols-[10rem_minmax(0,1fr)]">
         <aside className="min-w-0">
           <nav aria-label="插件分类" className="flex gap-1 overflow-x-auto lg:sticky lg:top-4 lg:flex-col">
             {PLUGIN_PROVIDER_CATEGORIES.map((item) => {
@@ -521,13 +542,21 @@ export default function PluginHubPage() {
                   aria-current={selected ? 'page' : undefined}
                   onClick={() => updateRoute({ category: item.key })}
                   className={cn(
-                    'min-h-9 shrink-0 rounded-md px-3 text-left text-xs font-medium transition-colors',
+                    'flex min-h-10 shrink-0 items-center justify-between gap-4 rounded-md px-3 text-left text-xs font-medium transition-colors',
                     selected
-                      ? 'bg-foreground text-background'
+                      ? 'bg-muted text-foreground shadow-sm'
                       : 'text-muted-foreground hover:bg-muted hover:text-foreground',
                   )}
                 >
-                  {item.label}
+                  <span>{item.label}</span>
+                  <span
+                    className={cn(
+                      'font-mono text-3xs tabular-nums',
+                      selected ? 'text-foreground/70' : 'text-muted-foreground/70',
+                    )}
+                  >
+                    {categoryCounts.get(item.key) ?? 0}
+                  </span>
                 </button>
               )
             })}
@@ -537,16 +566,8 @@ export default function PluginHubPage() {
         <main className="min-w-0">
           <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h2 className="text-base font-semibold">
-                {activeTab === 'installed'
-                  ? pluginError ? '插件能力目录' : '已安装插件'
-                  : '探索市场'}
-              </h2>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {activeTab === 'installed'
-                  ? '按 Provider 管理能力和配置，不在这里逐个罗列节点。'
-                  : '展示尚未安装的 Provider；安装服务接入后可直接完成下载与注册。'}
-              </p>
+              <h2 className="text-base font-semibold">{pluginError ? '插件能力目录' : sectionTitle}</h2>
+              <p className="mt-1 max-w-2xl text-xs leading-5 text-muted-foreground">{sectionDescription}</p>
             </div>
             <div className="relative w-full sm:w-72">
               <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-3 size-4 text-muted-foreground" />
@@ -581,7 +602,7 @@ export default function PluginHubPage() {
 
           {(pluginLoading || capabilityLoading || opencliLoading) &&
           (installations === null || capabilities === null) ? (
-            <div className="grid min-h-56 place-items-center rounded-xl border border-dashed">
+            <div className="grid min-h-48 place-items-center rounded-md border border-dashed">
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Loader2 aria-hidden="true" className="size-4 animate-spin" />
                 正在读取插件状态
@@ -619,9 +640,13 @@ export default function PluginHubPage() {
           ) : (
             <EmptyState
               title={activeTab === 'installed'
-                ? pluginError ? '插件注册表不可用' : '没有匹配的已安装插件'
-                : '没有匹配的市场插件'}
-              description="切换分类或调整搜索关键词后再试。"
+                ? pluginError
+                  ? '插件注册表不可用'
+                  : `${activeCategoryLabel}中没有匹配项`
+                : `${activeCategoryLabel}暂未上架`}
+              description={query
+                ? '清除搜索词或切换分类后再试。'
+                : '切换到其他分类，或通过“安装插件包”接入本地 Provider。'}
             />
           )}
 
