@@ -42,7 +42,6 @@ import {
 import {
   PLUGIN_PROVIDER_CATEGORIES,
   PLUGIN_PROVIDERS,
-  mergeBundledPluginProviders,
   pluginProviderCategoryLabel,
   type PluginProvider,
   type PluginProviderCategory,
@@ -61,7 +60,7 @@ import { useWorkflowCapabilities } from '@/lib/workflow/use-workflow-capabilitie
 
 type PluginPageTab = 'installed' | 'marketplace'
 type PluginCategoryFilter = 'all' | PluginProviderCategory
-type ProviderState = 'ready' | 'configuration' | 'unavailable' | 'marketplace'
+type ProviderState = 'ready' | 'partial' | 'configuration' | 'unavailable' | 'marketplace'
 type RegistryPluginProvider = PluginProvider & {
   installation?: BackendPluginInstallation
   backendUnavailable?: boolean
@@ -80,6 +79,18 @@ const PROVIDER_ICONS: Record<PluginProviderIcon, typeof Wrench> = {
   webhook: Webhook,
 }
 
+const BUNDLED_PROVIDER_ID_BY_KEY: Record<string, string> = {
+  'opencli-admin/opencli-adapters': 'opencli',
+  'opencli-admin/native-data-sources': 'rss-reader',
+  'opencli-admin/http-api': 'http-api',
+  'opencli-admin/model-runtime': 'model-runtime',
+  'opencli-admin/agent-runtime': 'agent-runtime',
+  'opencli-admin/schedule-trigger': 'schedule-trigger',
+  'opencli-admin/delivery': 'delivery',
+  'opencli-admin/dify-graphon-runtime': 'workflow-core',
+  'opencli-admin/workflow-bundles': 'workflow-bundles',
+}
+
 function isPluginPageTab(value: string | null): value is PluginPageTab {
   return value === 'installed' || value === 'marketplace'
 }
@@ -95,12 +106,17 @@ function providerState(
 ): ProviderState {
   if (provider.marketplace) return 'marketplace'
   if (provider.backendUnavailable) return 'unavailable'
+  const nodes = provider.nodeIds.map((id) => nodesById.get(id)).filter(Boolean) as WorkflowNodeCatalogItem[]
   if (provider.installation) {
-    return provider.installation.runtimeStatus === 'READY' ? 'ready' : 'configuration'
+    if (provider.installation.runtimeStatus !== 'READY') return 'configuration'
+    if (nodes.length > 0 && nodes.every((node) => node.runtimeCapability?.status !== 'runnable')) {
+      return 'configuration'
+    }
+    if (nodes.some((node) => node.runtimeCapability?.status !== 'runnable')) return 'partial'
+    return 'ready'
   }
   if (provider.id === 'opencli' && opencliAdapterCount > 0) return 'ready'
 
-  const nodes = provider.nodeIds.map((id) => nodesById.get(id)).filter(Boolean) as WorkflowNodeCatalogItem[]
   if (nodes.some((node) => node.runtimeCapability?.status === 'runnable')) return 'ready'
   if (nodes.some((node) => node.runtimeCapability?.backendAvailable)) return 'configuration'
   return 'unavailable'
@@ -108,6 +124,7 @@ function providerState(
 
 function providerStateLabel(state: ProviderState): string {
   if (state === 'ready') return '可用'
+  if (state === 'partial') return '部分可用'
   if (state === 'configuration') return '需要配置或适配'
   if (state === 'marketplace') return '可安装'
   return '尚未就绪'
@@ -115,6 +132,7 @@ function providerStateLabel(state: ProviderState): string {
 
 function providerStateTone(state: ProviderState): string {
   if (state === 'ready') return 'border-success/35 bg-success/10 text-success'
+  if (state === 'partial') return 'border-warning/35 bg-warning/10 text-warning'
   if (state === 'configuration') return 'border-warning/35 bg-warning/10 text-warning'
   if (state === 'marketplace') return 'border-foreground/15 bg-muted/45 text-foreground'
   return 'border-border bg-muted/30 text-muted-foreground'
@@ -464,9 +482,7 @@ export default function PluginHubPage() {
   const availableProviders = useMemo(() => {
     const source: RegistryPluginProvider[] = activeTab === 'installed'
       ? installations
-        ? mergeBundledPluginProviders(
-            installations.map(backendProviderFromInstallation),
-          ) as RegistryPluginProvider[]
+        ? installations.map(backendProviderFromInstallation)
         : pluginError
           ? PLUGIN_PROVIDERS.filter((provider) => provider.bundled).map((provider) => ({
               ...provider,
@@ -542,9 +558,9 @@ export default function PluginHubPage() {
                   aria-current={selected ? 'page' : undefined}
                   onClick={() => updateRoute({ category: item.key })}
                   className={cn(
-                    'flex min-h-10 shrink-0 items-center justify-between gap-4 rounded-md px-3 text-left text-xs font-medium transition-colors',
+                    'flex min-h-10 shrink-0 items-center justify-between gap-4 rounded-xs px-3 text-left text-xs font-medium transition-colors',
                     selected
-                      ? 'bg-muted text-foreground shadow-sm'
+                      ? 'bg-primary-500/10 text-primary-400'
                       : 'text-muted-foreground hover:bg-muted hover:text-foreground',
                   )}
                 >
@@ -552,7 +568,7 @@ export default function PluginHubPage() {
                   <span
                     className={cn(
                       'font-mono text-3xs tabular-nums',
-                      selected ? 'text-foreground/70' : 'text-muted-foreground/70',
+                      selected ? 'text-primary-400/80' : 'text-muted-foreground/70',
                     )}
                   >
                     {categoryCounts.get(item.key) ?? 0}
@@ -700,13 +716,7 @@ export default function PluginHubPage() {
 function backendProviderFromInstallation(
   installation: BackendPluginInstallation,
 ): RegistryPluginProvider {
-  const fallbackId = installation.providerKey === 'opencli-admin/opencli-adapters'
-    ? 'opencli'
-    : installation.providerKey === 'opencli-admin/native-data-sources'
-      ? 'rss-reader'
-      : installation.providerKey === 'opencli-admin/dify-graphon-runtime'
-        ? 'workflow-core'
-        : null
+  const fallbackId = BUNDLED_PROVIDER_ID_BY_KEY[installation.providerKey]
   const fallback = fallbackId
     ? PLUGIN_PROVIDERS.find((provider) => provider.id === fallbackId)
     : undefined

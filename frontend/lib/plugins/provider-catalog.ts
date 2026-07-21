@@ -224,28 +224,3 @@ export const PLUGIN_PROVIDER_CATEGORIES: Array<{
 export function pluginProviderCategoryLabel(category: PluginProviderCategory): string {
   return PLUGIN_PROVIDER_CATEGORIES.find((item) => item.key === category)?.label ?? category
 }
-
-/**
- * Bundled providers are part of the application even when the backend registry
- * only reports packages with persisted installation metadata. Registry entries
- * win so runtime status, version and manifest details stay authoritative.
- */
-export function mergeBundledPluginProviders<T extends PluginProvider>(
-  registryProviders: T[],
-): Array<PluginProvider | T> {
-  const providers = new Map<string, PluginProvider | T>(
-    PLUGIN_PROVIDERS
-      .filter((provider) => provider.bundled)
-      .map((provider) => [provider.id, provider]),
-  )
-
-  for (const provider of registryProviders) {
-    const bundledProvider = providers.get(provider.id)
-    providers.set(
-      provider.id,
-      bundledProvider ? { ...bundledProvider, ...provider } : provider,
-    )
-  }
-
-  return [...providers.values()]
-}

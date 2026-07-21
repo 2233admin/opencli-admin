@@ -14,6 +14,28 @@ from backend.workflow.dify_graphon_client import DifyGraphonClient
 FIXTURE = Path(__file__).parents[1] / "fixtures" / "dify_plugins" / "tool_manifest.yaml"
 
 
+async def test_plugin_catalog_returns_every_bundled_provider_group(client):
+    response = await client.get("/api/v1/plugins")
+
+    assert response.status_code == 200
+    bundled = {
+        item["id"]: item for item in response.json()["data"] if item["sourceKind"] == "bundled"
+    }
+    assert set(bundled) == {
+        "bundled:agent-runtime",
+        "bundled:delivery",
+        "bundled:dify-graphon-runtime",
+        "bundled:http-api",
+        "bundled:model-runtime",
+        "bundled:native-data-sources",
+        "bundled:opencli-adapters",
+        "bundled:schedule-trigger",
+        "bundled:workflow-bundles",
+    }
+    assert bundled["bundled:workflow-bundles"]["runtimeStatus"] == "READY"
+    assert bundled["bundled:workflow-bundles"]["capabilities"][0]["key"] == "workflow-bundles"
+
+
 @pytest.mark.parametrize(
     ("healthy", "plugin_status", "catalog_status", "backend_available"),
     [
@@ -39,9 +61,7 @@ async def test_graphon_catalog_status_follows_the_live_runtime_probe(
     assert graphon["runtimeStatus"] == plugin_status
     assert graphon["nodeDefinitions"][0]["locked"] is (not healthy)
 
-    catalog = (await client.get("/api/v1/workflows/capabilities")).json()["data"][
-        "catalog"
-    ]
+    catalog = (await client.get("/api/v1/workflows/capabilities")).json()["data"]["catalog"]
     package = next(item for item in catalog if item["id"] == "package.compat.dify-workflow")
     assert package["status"] == catalog_status
     assert package["backendAvailable"] is backend_available
@@ -93,9 +113,7 @@ async def test_manifest_import_persists_blocked_capabilities_and_lists(client, d
     workflow_capabilities = await client.get("/api/v1/workflows/capabilities")
     assert workflow_capabilities.status_code == 200
     catalog = workflow_capabilities.json()["data"]["catalog"]
-    dify_runtime = next(
-        item for item in catalog if item["id"] == "package.compat.dify-workflow"
-    )
+    dify_runtime = next(item for item in catalog if item["id"] == "package.compat.dify-workflow")
     assert dify_runtime["runtimeBinding"] == "workflow.compat.dify.graphon"
     locked = next(
         item

@@ -349,6 +349,96 @@ def _bundled_installations(*, dify_runtime_ready: bool) -> list[PluginInstallati
             ],
         ),
         (
+            "bundled:http-api",
+            "opencli-admin/http-api",
+            "http-api",
+            "HTTP / API",
+            [
+                _bundled_capability(
+                    "opencli-admin/http-api:datasource:http",
+                    "datasource",
+                    "http",
+                    "HTTP / API",
+                    "workflow.source.fetch",
+                )
+            ],
+        ),
+        (
+            "bundled:model-runtime",
+            "opencli-admin/model-runtime",
+            "model-runtime",
+            "模型运行时",
+            [
+                _bundled_capability(
+                    "opencli-admin/model-runtime:model:analysis",
+                    "model",
+                    "analysis",
+                    "模型分析",
+                    "intelligence.agent.summary",
+                )
+            ],
+        ),
+        (
+            "bundled:agent-runtime",
+            "opencli-admin/agent-runtime",
+            "agent-runtime",
+            "Agent Runtime",
+            [
+                _bundled_capability(
+                    "opencli-admin/agent-runtime:agent_strategy:execution",
+                    "agent_strategy",
+                    "execution",
+                    "Agent 执行",
+                    "package.ai.prompt-experiment",
+                )
+            ],
+        ),
+        (
+            "bundled:schedule-trigger",
+            "opencli-admin/schedule-trigger",
+            "schedule-trigger",
+            "Schedule Trigger",
+            [
+                _bundled_capability(
+                    "opencli-admin/schedule-trigger:trigger:schedule",
+                    "trigger",
+                    "schedule",
+                    "定时计划",
+                    "intelligence.schedule.cron",
+                )
+            ],
+        ),
+        (
+            "bundled:delivery",
+            "opencli-admin/delivery",
+            "delivery",
+            "Delivery",
+            [
+                _bundled_capability(
+                    "opencli-admin/delivery:tool:delivery",
+                    "tool",
+                    "delivery",
+                    "结果交付",
+                    "intelligence.output.webhook",
+                )
+            ],
+        ),
+        (
+            "bundled:workflow-bundles",
+            "opencli-admin/workflow-bundles",
+            "workflow-bundles",
+            "预制工作流工具包",
+            [
+                _bundled_capability(
+                    "opencli-admin/workflow-bundles:tool:workflow-bundles",
+                    "tool",
+                    "workflow-bundles",
+                    "预制工作流工具包",
+                    "package.collection.pipeline",
+                )
+            ],
+        ),
+        (
             "bundled:dify-graphon-runtime",
             "opencli-admin/dify-graphon-runtime",
             "dify-graphon-runtime",
@@ -366,9 +456,7 @@ def _bundled_installations(*, dify_runtime_ready: bool) -> list[PluginInstallati
     ]
     installations: list[PluginInstallationRead] = []
     for installation_id, provider_key, name, label, capabilities in specs:
-        runtime_ready = (
-            installation_id != "bundled:dify-graphon-runtime" or dify_runtime_ready
-        )
+        runtime_ready = installation_id != "bundled:dify-graphon-runtime" or dify_runtime_ready
         blockers = (
             []
             if runtime_ready
@@ -392,33 +480,33 @@ def _bundled_installations(*, dify_runtime_ready: bool) -> list[PluginInstallati
         ]
         installations.append(
             PluginInstallationRead(
-            id=installation_id,
-            providerKey=provider_key,
-            name=name,
-            author="opencli-admin",
-            version="builtin",
-            sourceKind="bundled",
-            sourceDigest="bundled",
-            manifestSpecVersion="opencli.plugin.v1",
-            signatureState="bundled",
-            labels={"zh_Hans": label, "en_US": name.replace("-", " ").title()},
-            descriptions={},
-            pluginTypes=sorted({item["family"] for item in projected_capabilities}),
-            manifest={"source": "opencli-admin", "bundled": True},
-            capabilities=projected_capabilities,
-            permissions={},
-            runtimeStatus="READY" if runtime_ready else "BLOCKED",
-            blockers=blockers,
-            nodeDefinitions=_node_definitions(
-                projected_capabilities,
-                installation_id=installation_id,
-                provider_key=provider_key,
+                id=installation_id,
+                providerKey=provider_key,
+                name=name,
+                author="opencli-admin",
                 version="builtin",
-            ),
-            bundled=True,
-            installedAt=timestamp,
-            updatedAt=timestamp,
-        )
+                sourceKind="bundled",
+                sourceDigest="bundled",
+                manifestSpecVersion="opencli.plugin.v1",
+                signatureState="bundled",
+                labels={"zh_Hans": label, "en_US": name.replace("-", " ").title()},
+                descriptions={},
+                pluginTypes=sorted({item["family"] for item in projected_capabilities}),
+                manifest={"source": "opencli-admin", "bundled": True},
+                capabilities=projected_capabilities,
+                permissions={},
+                runtimeStatus="READY" if runtime_ready else "BLOCKED",
+                blockers=blockers,
+                nodeDefinitions=_node_definitions(
+                    projected_capabilities,
+                    installation_id=installation_id,
+                    provider_key=provider_key,
+                    version="builtin",
+                ),
+                bundled=True,
+                installedAt=timestamp,
+                updatedAt=timestamp,
+            )
         )
     return installations
 
