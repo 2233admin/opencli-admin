@@ -5,6 +5,7 @@ from typing import Any
 from fastapi import FastAPI, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from contracts import (
     CONTRACT_VERSION,
@@ -15,6 +16,74 @@ from contracts import (
 from engine import GraphonRuntime
 
 
+class RequestByteLimitMiddleware:
+    def __init__(self, app: ASGIApp, *, max_bytes: int) -> None:
+        self.app = app
+        self.max_bytes = max_bytes
+
+    async def __call__(
+        self,
+        scope: Scope,
+        receive: Receive,
+        send: Send,
+    ) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        headers = dict(scope.get("headers", []))
+        raw_content_length = headers.get(b"content-length")
+        if raw_content_length is not None:
+            try:
+                content_length = int(raw_content_length)
+            except ValueError:
+                content_length = 0
+            if content_length > self.max_bytes:
+                await _request_too_large_response(self.max_bytes)(scope, receive, send)
+                return
+
+        buffered_messages: list[Message] = []
+        received_bytes = 0
+        while True:
+            message = await receive()
+            buffered_messages.append(message)
+            if message["type"] == "http.disconnect":
+                break
+            if message["type"] != "http.request":
+                continue
+            received_bytes += len(message.get("body", b""))
+            if received_bytes > self.max_bytes:
+                await _request_too_large_response(self.max_bytes)(scope, receive, send)
+                return
+            if not message.get("more_body", False):
+                break
+
+        message_index = 0
+
+        async def replay_receive() -> Message:
+            nonlocal message_index
+            if message_index < len(buffered_messages):
+                message = buffered_messages[message_index]
+                message_index += 1
+                return message
+            return await receive()
+
+        await self.app(scope, replay_receive, send)
+
+
+def _request_too_large_response(max_bytes: int) -> JSONResponse:
+    return JSONResponse(
+        status_code=413,
+        content={
+            "error": {
+                "code": "request.too_large",
+                "message": "The request body exceeds the configured request limit.",
+                "details": {"maxBytes": max_bytes},
+            }
+        },
+    )
+
+
 def create_app(runtime: GraphonRuntime | None = None) -> FastAPI:
     graphon_runtime = runtime or GraphonRuntime()
     application = FastAPI(
@@ -22,6 +91,10 @@ def create_app(runtime: GraphonRuntime | None = None) -> FastAPI:
         version="0.1.0",
         docs_url=None,
         redoc_url=None,
+    )
+    application.add_middleware(
+        RequestByteLimitMiddleware,
+        max_bytes=graphon_runtime.limits.max_request_bytes,
     )
 
     @application.exception_handler(RuntimeContractError)

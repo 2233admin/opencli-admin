@@ -4,17 +4,19 @@ import hashlib
 import json
 import os
 import shutil
+import subprocess
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from dataclasses import dataclass
 from importlib import metadata
 from typing import Any
+from urllib.parse import urlparse
 from uuid import uuid4
 
 import yaml
 
-from contracts import InspectRequest, RunRequest, RuntimeContractError
+from contracts import CONTRACT_VERSION, InspectRequest, RunRequest, RuntimeContractError
 
 GRAPHON_COMMIT = "b187ce7927fea1a7c137b642be3f78e3abb9f7de"
 GRAPHON_EXPECTED_VERSION = "0.7.0"
@@ -55,6 +57,8 @@ class RunRecord:
     events: list[dict[str, Any]] | None = None
     cancel_requested: bool = False
     command_channel: Any = None
+    output_bytes: int = 0
+    output_truncated: bool = False
 
     def __post_init__(self) -> None:
         if self.events is None:
@@ -87,6 +91,9 @@ class GraphonRuntime:
         self._abort_command: Any = None
         self._sandbox_endpoint = os.getenv("DIFY_SANDBOX_ENDPOINT", "").strip()
         self._sandbox_api_key = os.getenv("DIFY_SANDBOX_API_KEY", "").strip()
+        self._slim_path, self._slim_detected_version = _resolve_slim_helper()
+        if self._slim_path:
+            os.environ["SLIM_BINARY_PATH"] = self._slim_path
         self._runs: dict[str, RunRecord] = {}
         self._lock = threading.RLock()
         self._executor = ThreadPoolExecutor(
@@ -124,17 +131,13 @@ class GraphonRuntime:
 
     @property
     def helpers(self) -> dict[str, dict[str, str | bool]]:
-        configured_path = os.getenv("DIFY_GRAPHON_SLIM_PATH", "").strip()
-        available = bool(
-            (configured_path and os.path.isfile(configured_path))
-            or shutil.which("dify-plugin-daemon-slim")
-        )
         return {
             "slim": {
                 "name": "dify-plugin-daemon-slim",
                 "version": SLIM_VERSION,
                 "commit": SLIM_COMMIT,
-                "available": available,
+                "available": self._slim_path is not None,
+                "detectedVersion": self._slim_detected_version or "",
             }
         }
 
@@ -158,6 +161,11 @@ class GraphonRuntime:
             request,
             sandbox_available=bool(self._sandbox_endpoint),
         )
+        blocked_node_ids = {blocker["nodeId"] for blocker in blockers}
+        for node in nodes:
+            node["status"] = (
+                "blocked" if node["sourceNodeId"] in blocked_node_ids else "ready"
+            )
         graphon_status = str(plan.load_status)
         load_status = {
             "loadable": "ready",
@@ -173,10 +181,10 @@ class GraphonRuntime:
             "engine": self.identity.as_dict(),
             "appMode": _app_mode(request.source.content),
             "nodes": nodes,
-            "dependencies": [
-                dependency.model_dump(mode="json", exclude_none=True)
-                for dependency in plan.dependencies
-            ],
+            "dependencies": _normalize_dependencies(
+                graph_config,
+                list(plan.dependencies),
+            ),
             "blockers": blockers,
         }
 
@@ -206,7 +214,7 @@ class GraphonRuntime:
 
         self._executor.submit(self._execute_run, runtime_run_id, request)
         return {
-            "contractVersion": "opencli.graphon.compat.v1",
+            "contractVersion": CONTRACT_VERSION,
             "runtimeRunId": runtime_run_id,
             "status": "queued",
             "eventsUrl": f"/v1/dify/runs/{runtime_run_id}/events",
@@ -230,7 +238,7 @@ class GraphonRuntime:
                 (record.events or [{}])[-1].get("sequence", 0),
             )
             return {
-                "contractVersion": "opencli.graphon.compat.v1",
+                "contractVersion": CONTRACT_VERSION,
                 "runtimeRunId": runtime_run_id,
                 "status": record.status,
                 "nextSequence": latest_sequence,
@@ -257,7 +265,7 @@ class GraphonRuntime:
                     )
                 )
             return {
-                "contractVersion": "opencli.graphon.compat.v1",
+                "contractVersion": CONTRACT_VERSION,
                 "runtimeRunId": runtime_run_id,
                 "status": record.status,
                 "cancelRequested": True,
@@ -294,6 +302,15 @@ class GraphonRuntime:
                 code_settings.setdefault("execution_endpoint", self._sandbox_endpoint)
                 if self._sandbox_api_key:
                     code_settings.setdefault("execution_api_key", self._sandbox_api_key)
+            if self._slim_path:
+                slim_settings = credentials.setdefault("slim", {})
+                slim_settings.setdefault(
+                    "plugin_folder",
+                    os.getenv(
+                        "DIFY_GRAPHON_SLIM_PLUGIN_FOLDER",
+                        "/tmp/dify-graphon/slim/plugins",
+                    ),
+                )
             graph_engine = self._load_dsl(
                 request.source.content,
                 credentials=credentials or None,
@@ -342,14 +359,33 @@ class GraphonRuntime:
     def _append_event(self, runtime_run_id: str, event: dict[str, Any]) -> None:
         with self._lock:
             record = self._get_run(runtime_run_id)
+            if record.output_truncated:
+                return
             sequence = len(record.events or []) + 1
-            bounded_event = _bound_event(
-                {"sequence": sequence, **event},
-                max_bytes=self.limits.max_output_bytes,
-            )
+            bounded_event = {"sequence": sequence, **event}
             if record.events is None:
                 record.events = []
+            candidate_size = _json_size([*record.events, bounded_event])
+            if candidate_size > self.limits.max_output_bytes:
+                record.output_truncated = True
+                marker = {
+                    "sequence": sequence,
+                    "eventType": "output_truncated",
+                    "payload": {"maxBytes": self.limits.max_output_bytes},
+                }
+                while (
+                    record.events
+                    and _json_size([*record.events, marker])
+                    > self.limits.max_output_bytes
+                ):
+                    record.events.pop()
+                marker["sequence"] = len(record.events) + 1
+                if _json_size([*record.events, marker]) <= self.limits.max_output_bytes:
+                    record.events.append(marker)
+                    record.output_bytes = _json_size(record.events)
+                return
             record.events.append(bounded_event)
+            record.output_bytes = candidate_size
 
     def _get_run(self, runtime_run_id: str) -> RunRecord:
         try:
@@ -398,20 +434,19 @@ def _dsl_error_details(error: Exception) -> dict[str, Any]:
     return details
 
 
-def _normalize_node(node: Any) -> dict[str, str | None]:
+def _normalize_node(node: Any) -> dict[str, str]:
     if not isinstance(node, dict):
-        return {"id": "", "type": "unknown", "title": None}
+        return {"sourceNodeId": "", "type": "unknown"}
     raw_data = node.get("data")
     data: dict[str, Any] = raw_data if isinstance(raw_data, dict) else {}
     return {
-        "id": str(node.get("id") or ""),
+        "sourceNodeId": str(node.get("id") or ""),
         "type": str(data.get("type") or "unknown"),
-        "title": str(data["title"]) if data.get("title") is not None else None,
     }
 
 
 def _policy_blockers(
-    nodes: list[dict[str, str | None]],
+    nodes: list[dict[str, str]],
     request: InspectRequest,
     *,
     sandbox_available: bool,
@@ -432,14 +467,18 @@ def _policy_blockers(
                 "network_permission_required",
                 "HTTP request nodes require explicit network permission.",
             )
-        elif node_type == "tool" and not request.policy.allow_tools:
+        elif node_type == "tool":
             blocker = (
                 "tool_adapter_required",
                 "Tool nodes require an installed OpenCLI adapter.",
             )
         if blocker is not None:
             blockers.append(
-                {"code": blocker[0], "message": blocker[1], "nodeId": node["id"] or ""}
+                {
+                    "code": blocker[0],
+                    "message": blocker[1],
+                    "nodeId": node["sourceNodeId"],
+                }
             )
     return blockers
 
@@ -464,6 +503,84 @@ def _positive_int(name: str, default: int) -> int:
     except ValueError:
         return default
     return value if value > 0 else default
+
+
+def _resolve_slim_helper() -> tuple[str | None, str | None]:
+    configured_path = os.getenv("DIFY_GRAPHON_SLIM_PATH", "").strip()
+    binary_path = configured_path or shutil.which("dify-plugin-daemon-slim")
+    if (
+        not binary_path
+        or not os.path.isfile(binary_path)
+        or not os.access(binary_path, os.X_OK)
+    ):
+        return None, None
+    try:
+        completed = subprocess.run(
+            [binary_path, "version"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None, None
+    output_lines = completed.stdout.strip().splitlines()
+    detected_version = output_lines[-1] if output_lines else ""
+    if completed.returncode != 0 or detected_version != SLIM_VERSION:
+        return None, detected_version or None
+    return binary_path, detected_version
+
+
+def _normalize_dependencies(
+    graph_config: Any,
+    graphon_dependencies: list[Any],
+) -> list[dict[str, str]]:
+    dependencies: set[tuple[str, str]] = set()
+    nodes = graph_config.get("nodes", []) if isinstance(graph_config, dict) else []
+    node_types: set[str] = set()
+    for node in nodes:
+        if not isinstance(node, dict) or not isinstance(node.get("data"), dict):
+            continue
+        data = node["data"]
+        node_type = str(data.get("type") or "unknown")
+        node_types.add(node_type)
+        if node_type == "llm":
+            model = data.get("model") if isinstance(data.get("model"), dict) else {}
+            identity = str(model.get("provider") or model.get("name") or "model")
+            dependencies.add(("model", identity))
+        elif node_type == "tool":
+            identity = str(
+                data.get("provider_id")
+                or data.get("provider_name")
+                or data.get("tool_name")
+                or "tool-adapter"
+            )
+            dependencies.add(("tool", identity))
+        elif node_type == "code":
+            dependencies.add(("sandbox", "dify-sandbox"))
+        elif node_type == "http-request":
+            hostname = urlparse(str(data.get("url") or "")).hostname
+            dependencies.add(("network", hostname or "outbound-http"))
+
+    dependency_types = [
+        dependency_type
+        for dependency_type, node_type in (("model", "llm"), ("tool", "tool"))
+        if node_type in node_types
+    ]
+    for dependency in graphon_dependencies:
+        raw_identity = (
+            getattr(dependency, "plugin_unique_identifier", None)
+            or getattr(dependency, "package", None)
+            or getattr(dependency, "repo", None)
+        )
+        if raw_identity:
+            for dependency_type in dependency_types:
+                dependencies.add((dependency_type, str(raw_identity)))
+
+    return [
+        {"type": dependency_type, "id": identity}
+        for dependency_type, identity in sorted(dependencies)
+    ]
 
 
 def _normalize_event(event: Any, *, secrets: set[str]) -> dict[str, Any]:
@@ -551,15 +668,8 @@ def _redact_text(value: str, secrets: set[str]) -> str:
     return redacted
 
 
-def _bound_event(event: dict[str, Any], *, max_bytes: int) -> dict[str, Any]:
-    encoded = json.dumps(event, ensure_ascii=False, separators=(",", ":")).encode()
-    if len(encoded) <= max_bytes:
-        return event
-    return {
-        "sequence": event["sequence"],
-        "eventType": "output_truncated",
-        "payload": {"maxBytes": max_bytes},
-    }
+def _json_size(value: Any) -> int:
+    return len(json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode())
 
 
 def _snake_case(value: str) -> str:
