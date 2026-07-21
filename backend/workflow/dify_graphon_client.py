@@ -38,12 +38,34 @@ class DifyGraphonClient:
         self.base_url = base_url.rstrip("/")
         self.timeout_seconds = timeout_seconds
 
+    async def is_healthy(self) -> bool:
+        try:
+            response = await self._request("GET", "/health")
+        except DifyGraphonUnavailableError:
+            return False
+        if response.status_code != 200:
+            return False
+        try:
+            payload = response.json()
+        except ValueError:
+            return False
+        engine = payload.get("engine") if isinstance(payload, dict) else None
+        return (
+            payload.get("status") == "ok"
+            and payload.get("contractVersion") == DIFY_GRAPHON_CONTRACT_VERSION
+            and isinstance(engine, dict)
+            and engine.get("name") == DIFY_GRAPHON_NAME
+            and engine.get("version") == DIFY_GRAPHON_VERSION
+            and engine.get("commit") == DIFY_GRAPHON_COMMIT
+        )
+
     async def inspect(
         self,
         *,
         source_content: str,
         source_sha256: str,
         policy: dict[str, Any],
+        grants: dict[str, Any] | None = None,
     ) -> DifyInspection:
         try:
             async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
@@ -56,6 +78,7 @@ class DifyGraphonClient:
                             "content": source_content,
                         },
                         "policy": policy,
+                        "grants": grants or {},
                     },
                 )
                 response.raise_for_status()

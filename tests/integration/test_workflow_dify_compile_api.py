@@ -67,6 +67,15 @@ class PolicyAwareGraphonClient:
                     {"type": "runtime", "id": "dify-slim"},
                 ]
             )
+        elif "type: tool" in source_content:
+            blockers.append(
+                {
+                    "code": "tool_adapter_required",
+                    "message": "A matching OpenCLI tool adapter is required.",
+                    "nodeId": "tool",
+                }
+            )
+            dependencies.append({"type": "tool", "id": "sample"})
         elif "type: http-request" in source_content and not policy.get("allowNetwork"):
             blockers.append(
                 {
@@ -148,6 +157,7 @@ async def test_compile_emits_one_graphon_binding_without_flattening_internals(
             ["dify_model_provider_required", "dify_slim_runtime_required"],
         ),
         ("http_request.yml", ["dify_network_permission_required"]),
+        ("tool_blocked.yml", ["tool_adapter_required"]),
     ],
 )
 async def test_compile_projects_graphon_blockers_with_stable_codes(

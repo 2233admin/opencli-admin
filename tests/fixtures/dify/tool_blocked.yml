@@ -1,0 +1,18 @@
+kind: app
+version: 0.3.0
+app:
+  name: Tool fixture
+  mode: workflow
+workflow:
+  graph:
+    nodes:
+      - id: start
+        data: {type: start, title: Start, variables: []}
+      - id: tool
+        data:
+          type: tool
+          title: Lookup
+          provider_name: sample
+          tool_name: lookup
+    edges:
+      - {id: start-tool, source: start, target: tool}

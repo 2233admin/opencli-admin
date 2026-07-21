@@ -193,6 +193,71 @@ def test_code_node_stays_blocked_without_a_configured_sandbox(
     assert response.json()["blockers"][0]["code"] == "dify_sandbox_required"
 
 
+def test_llm_node_reports_model_and_slim_preflight_blockers() -> None:
+    content = dedent(
+        """
+        kind: app
+        app:
+          mode: workflow
+        workflow:
+          graph:
+            nodes:
+              - id: llm
+                data:
+                  type: llm
+                  model: {provider: openai, name: gpt-4.1-mini}
+            edges: []
+        """
+    ).strip()
+
+    response = TestClient(app).post(
+        "/v1/dify/inspect",
+        json={"source": _source(content), "policy": {}},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["loadStatus"] == "blocked"
+    assert [item["code"] for item in response.json()["blockers"]] == [
+        "dify_model_provider_required",
+        "dify_slim_runtime_required",
+    ]
+
+
+def test_llm_model_grant_clears_only_the_provider_blocker() -> None:
+    content = dedent(
+        """
+        kind: app
+        app:
+          mode: workflow
+        workflow:
+          graph:
+            nodes:
+              - id: llm
+                data: {type: llm}
+            edges: []
+        """
+    ).strip()
+
+    response = TestClient(app).post(
+        "/v1/dify/inspect",
+        json={
+            "source": _source(content),
+            "policy": {},
+            "grants": {
+                "model_credentials": [
+                    {"provider": "openai", "values": {"api_key": "secret"}}
+                ]
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    assert [item["code"] for item in response.json()["blockers"]] == [
+        "dify_slim_runtime_required"
+    ]
+    assert "secret" not in response.text
+
+
 def test_tool_node_stays_blocked_without_an_executable_adapter() -> None:
     content = dedent(
         """

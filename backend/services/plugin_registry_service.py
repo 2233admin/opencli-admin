@@ -25,7 +25,11 @@ class PluginRegistryError(RuntimeError):
         self.status_code = status_code
 
 
-async def list_plugin_installations(session: AsyncSession) -> list[PluginInstallationRead]:
+async def list_plugin_installations(
+    session: AsyncSession,
+    *,
+    dify_runtime_ready: bool = False,
+) -> list[PluginInstallationRead]:
     rows = (
         await session.scalars(
             select(PluginInstallation).order_by(
@@ -33,13 +37,26 @@ async def list_plugin_installations(session: AsyncSession) -> list[PluginInstall
             )
         )
     ).all()
-    return [*_bundled_installations(), *[_to_read(row) for row in rows]]
+    return [
+        *_bundled_installations(dify_runtime_ready=dify_runtime_ready),
+        *[_to_read(row) for row in rows],
+    ]
 
 
 async def get_plugin_installation(
-    session: AsyncSession, installation_id: str
+    session: AsyncSession,
+    installation_id: str,
+    *,
+    dify_runtime_ready: bool = False,
 ) -> PluginInstallationRead | None:
-    bundled = next((item for item in _bundled_installations() if item.id == installation_id), None)
+    bundled = next(
+        (
+            item
+            for item in _bundled_installations(dify_runtime_ready=dify_runtime_ready)
+            if item.id == installation_id
+        ),
+        None,
+    )
     if bundled is not None:
         return bundled
     row = await session.get(PluginInstallation, installation_id)
@@ -284,7 +301,7 @@ def _node_definitions(
     return rows
 
 
-def _bundled_installations() -> list[PluginInstallationRead]:
+def _bundled_installations(*, dify_runtime_ready: bool) -> list[PluginInstallationRead]:
     timestamp = datetime(2026, 7, 21, tzinfo=UTC)
     specs = [
         (
@@ -347,8 +364,34 @@ def _bundled_installations() -> list[PluginInstallationRead]:
             ],
         ),
     ]
-    return [
-        PluginInstallationRead(
+    installations: list[PluginInstallationRead] = []
+    for installation_id, provider_key, name, label, capabilities in specs:
+        runtime_ready = (
+            installation_id != "bundled:dify-graphon-runtime" or dify_runtime_ready
+        )
+        blockers = (
+            []
+            if runtime_ready
+            else [
+                {
+                    "code": "dify_graphon_unavailable",
+                    "message": (
+                        "The pinned Graphon compatibility runtime is unavailable or "
+                        "does not match the required identity."
+                    ),
+                }
+            ]
+        )
+        projected_capabilities = [
+            {
+                **capability,
+                "status": "READY" if runtime_ready else "BLOCKED",
+                "blockers": blockers,
+            }
+            for capability in capabilities
+        ]
+        installations.append(
+            PluginInstallationRead(
             id=installation_id,
             providerKey=provider_key,
             name=name,
@@ -360,14 +403,14 @@ def _bundled_installations() -> list[PluginInstallationRead]:
             signatureState="bundled",
             labels={"zh_Hans": label, "en_US": name.replace("-", " ").title()},
             descriptions={},
-            pluginTypes=sorted({item["family"] for item in capabilities}),
+            pluginTypes=sorted({item["family"] for item in projected_capabilities}),
             manifest={"source": "opencli-admin", "bundled": True},
-            capabilities=capabilities,
+            capabilities=projected_capabilities,
             permissions={},
-            runtimeStatus="READY",
-            blockers=[],
+            runtimeStatus="READY" if runtime_ready else "BLOCKED",
+            blockers=blockers,
             nodeDefinitions=_node_definitions(
-                capabilities,
+                projected_capabilities,
                 installation_id=installation_id,
                 provider_key=provider_key,
                 version="builtin",
@@ -376,8 +419,8 @@ def _bundled_installations() -> list[PluginInstallationRead]:
             installedAt=timestamp,
             updatedAt=timestamp,
         )
-        for installation_id, provider_key, name, label, capabilities in specs
-    ]
+        )
+    return installations
 
 
 def _bundled_capability(

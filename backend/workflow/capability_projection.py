@@ -49,7 +49,9 @@ def build_workflow_capabilities(
 
     return WorkflowCapabilitiesResponse(
         catalog=[
-            *_catalog_capabilities(),
+            *_catalog_capabilities(
+                dify_runtime_ready=_dify_runtime_ready(plugin_installations or [])
+            ),
             *_plugin_catalog_capabilities(plugin_installations or []),
         ],
         primitives=_primitive_capabilities(),
@@ -100,14 +102,14 @@ def _capability(
     )
 
 
-def _catalog_capabilities() -> list[WorkflowRuntimeCapability]:
+def _catalog_capabilities(*, dify_runtime_ready: bool) -> list[WorkflowRuntimeCapability]:
     return [
         _capability(
             id="package.compat.dify-workflow",
             label="Dify Workflow Package",
             surface="catalog",
-            status="runnable",
-            backend_available=True,
+            status="runnable" if dify_runtime_ready else "blocked",
+            backend_available=dify_runtime_ready,
             kind="action",
             capability="store",
             provider="opencli-admin/dify-graphon-runtime",
@@ -116,7 +118,11 @@ def _catalog_capabilities() -> list[WorkflowRuntimeCapability]:
                 "Dify DSL is imported as one managed package and executed through the "
                 "pinned Graphon compatibility runtime. Unsupported dependencies remain "
                 "structured compile blockers."
+                if dify_runtime_ready
+                else "The pinned Graphon compatibility runtime is unavailable or has an "
+                "unexpected identity."
             ),
+            missing=[] if dify_runtime_ready else ["dify_graphon_runtime"],
             tags=["dify", "graphon", "managed-package", "compatibility"],
             source="backend.workflow.dify_compile",
             manifest={
@@ -593,6 +599,14 @@ def _catalog_capabilities() -> list[WorkflowRuntimeCapability]:
             missing=["workflow_review_sink_binding"],
         ),
     ]
+
+
+def _dify_runtime_ready(installations: list[PluginInstallationRead]) -> bool:
+    return any(
+        installation.id == "bundled:dify-graphon-runtime"
+        and installation.runtime_status == "READY"
+        for installation in installations
+    )
 
 
 def _plugin_catalog_capabilities(

@@ -100,15 +100,53 @@ test('plugin center is registry-backed and never executes plugin-owned frontend 
 })
 
 test('projected plugin nodes show provenance and stay locked in the palette', async () => {
-  const [catalog, palette] = await Promise.all([
+  const [nodeCatalog, catalog, palette] = await Promise.all([
+    importTypeScript('lib/workflow/node-catalog.ts'),
     readFrontendSource('lib/workflow/node-catalog.ts'),
     readFrontendSource('components/flow/command-palette.tsx'),
   ])
+
+  const item = nodeCatalog.getWorkflowNodeCatalog('intelligence', {
+    catalog: [{
+      id: 'plugin.fixture.tool.lookup',
+      label: 'Fixture Lookup',
+      surface: 'catalog',
+      status: 'blocked',
+      backendAvailable: false,
+      kind: 'action',
+      capability: 'store',
+      provider: 'example/research_tools',
+      runtimeBinding: null,
+      reason: 'Adapter required',
+      missing: ['dify_plugin_runtime_adapter'],
+      tags: ['plugin', 'dify', 'tool'],
+      source: 'backend.services.plugin_registry_service',
+      manifest: {
+        plugin: {
+          installationId: 'fixture-installation',
+          providerKey: 'example/research_tools',
+          version: '1.2.3',
+          capabilityId: 'lookup',
+          family: 'tool',
+        },
+        canvas: { node: true, locked: true, lockReason: 'Adapter required' },
+      },
+    }],
+  }).find((candidate) => candidate.id === 'plugin.fixture.tool.lookup')
+
+  assert.ok(item)
+  assert.equal(nodeCatalog.workflowCatalogItemLocked(item), true)
+  assert.deepEqual(nodeCatalog.workflowCatalogPluginProvenance(item), {
+    providerKey: 'example/research_tools',
+    version: '1.2.3',
+  })
+  assert.equal(item.category, 'output')
 
   assert.match(catalog, /backend\.services\.plugin_registry_service/)
   assert.match(catalog, /workflowCatalogItemLocked/)
   assert.match(catalog, /workflowCatalogPluginProvenance/)
   assert.match(palette, /disabled=\{locked\}/)
+  assert.doesNotMatch(palette, /filter\(\(item\) => item\.category === "package"\)/)
   assert.match(palette, /provenance\.providerKey/)
   assert.match(palette, /该插件能力尚未绑定运行适配器/)
 })

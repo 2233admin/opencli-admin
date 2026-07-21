@@ -166,6 +166,7 @@ class GraphonRuntime:
             nodes,
             request,
             sandbox_available=bool(self._sandbox_endpoint),
+            slim_available=self._slim_path is not None,
         )
         blocked_node_ids = {blocker["nodeId"] for blocker in blockers}
         for node in nodes:

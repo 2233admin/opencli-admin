@@ -4,12 +4,48 @@ import io
 import zipfile
 from pathlib import Path
 
+import pytest
 from sqlalchemy import func, select
 
 from backend.models.plugin_installation import PluginInstallation
 from backend.models.studio import StudioWorkflowDraft
+from backend.workflow.dify_graphon_client import DifyGraphonClient
 
 FIXTURE = Path(__file__).parents[1] / "fixtures" / "dify_plugins" / "tool_manifest.yaml"
+
+
+@pytest.mark.parametrize(
+    ("healthy", "plugin_status", "catalog_status", "backend_available"),
+    [
+        (True, "READY", "runnable", True),
+        (False, "BLOCKED", "blocked", False),
+    ],
+)
+async def test_graphon_catalog_status_follows_the_live_runtime_probe(
+    client,
+    monkeypatch,
+    healthy,
+    plugin_status,
+    catalog_status,
+    backend_available,
+):
+    async def probe(_self):
+        return healthy
+
+    monkeypatch.setattr(DifyGraphonClient, "is_healthy", probe)
+
+    plugins = (await client.get("/api/v1/plugins")).json()["data"]
+    graphon = next(item for item in plugins if item["id"] == "bundled:dify-graphon-runtime")
+    assert graphon["runtimeStatus"] == plugin_status
+    assert graphon["nodeDefinitions"][0]["locked"] is (not healthy)
+
+    catalog = (await client.get("/api/v1/workflows/capabilities")).json()["data"][
+        "catalog"
+    ]
+    package = next(item for item in catalog if item["id"] == "package.compat.dify-workflow")
+    assert package["status"] == catalog_status
+    assert package["backendAvailable"] is backend_available
+    assert package["runtimeBinding"] == "workflow.compat.dify.graphon"
 
 
 def _difypkg(manifest: bytes, *, provider: bytes | None = None) -> bytes:

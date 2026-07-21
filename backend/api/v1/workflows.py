@@ -45,6 +45,7 @@ router = APIRouter(prefix="/workflows", tags=["workflows"])
 @router.post("/compile", response_model=ApiResponse[workflow_schemas.WorkflowCompileResponse])
 async def compile_workflow(
     body: workflow_schemas.WorkflowCompileRequest,
+    db: AsyncSession = Depends(get_db),
     graphon_client: DifyGraphonClient = Depends(get_dify_graphon_client),
 ) -> ApiResponse[workflow_schemas.WorkflowCompileResponse]:
     """Compile a Canvas-authored WorkflowProject into an executable preview.
@@ -57,6 +58,7 @@ async def compile_workflow(
         await compile_managed_dify_workflow_project(
             body.project,
             graphon_client=graphon_client,
+            session=db,
         )
     )
 
@@ -67,10 +69,14 @@ async def compile_workflow(
 )
 async def get_workflow_capabilities(
     db: AsyncSession = Depends(get_db),
+    graphon_client: DifyGraphonClient = Depends(get_dify_graphon_client),
 ) -> ApiResponse[workflow_schemas.WorkflowCapabilitiesResponse]:
     """Return Canvas-visible workflow capabilities and their runtime status."""
 
-    installations = await list_plugin_installations(db)
+    installations = await list_plugin_installations(
+        db,
+        dify_runtime_ready=await graphon_client.is_healthy(),
+    )
     return ApiResponse.ok(build_workflow_capabilities(installations))
 
 

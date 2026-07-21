@@ -27,11 +27,11 @@ class ExecutionPolicy(ContractModel):
 class InspectRequest(ContractModel):
     source: DifySource
     policy: ExecutionPolicy = Field(default_factory=ExecutionPolicy)
+    grants: dict[str, Any] = Field(default_factory=dict)
 
 
 class RunRequest(InspectRequest):
     inputs: dict[str, Any] = Field(default_factory=dict)
-    grants: dict[str, Any] = Field(default_factory=dict)
 
 
 class RuntimeContractError(Exception):

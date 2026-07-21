@@ -216,6 +216,7 @@ async def start_workflow_run(
         await compile_managed_dify_workflow_project(
             body.project,
             graphon_client=graphon_client,
+            session=session,
         )
         if graphon_client is not None
         else compile_workflow_project(body.project)

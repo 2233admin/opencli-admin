@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.api.v1.dify_imports import get_dify_graphon_client
 from backend.database import get_db
 from backend.plugins.dify_package import MAX_COMPRESSED_BYTES, DifyPackageError
 from backend.schemas.common import ApiResponse
@@ -16,6 +17,7 @@ from backend.services.plugin_registry_service import (
     import_dify_plugin,
     list_plugin_installations,
 )
+from backend.workflow.dify_graphon_client import DifyGraphonClient
 
 router = APIRouter(prefix="/plugins", tags=["plugins"])
 
@@ -23,16 +25,27 @@ router = APIRouter(prefix="/plugins", tags=["plugins"])
 @router.get("", response_model=ApiResponse[list[PluginInstallationRead]])
 async def list_plugins(
     db: AsyncSession = Depends(get_db),
+    graphon_client: DifyGraphonClient = Depends(get_dify_graphon_client),
 ) -> ApiResponse[list[PluginInstallationRead]]:
-    return ApiResponse.ok(await list_plugin_installations(db))
+    return ApiResponse.ok(
+        await list_plugin_installations(
+            db,
+            dify_runtime_ready=await graphon_client.is_healthy(),
+        )
+    )
 
 
 @router.get("/{installation_id}", response_model=ApiResponse[PluginInstallationRead])
 async def get_plugin(
     installation_id: str,
     db: AsyncSession = Depends(get_db),
+    graphon_client: DifyGraphonClient = Depends(get_dify_graphon_client),
 ) -> ApiResponse[PluginInstallationRead]:
-    installation = await get_plugin_installation(db, installation_id)
+    installation = await get_plugin_installation(
+        db,
+        installation_id,
+        dify_runtime_ready=await graphon_client.is_healthy(),
+    )
     if installation is None:
         raise _registry_http_error(
             PluginRegistryError(

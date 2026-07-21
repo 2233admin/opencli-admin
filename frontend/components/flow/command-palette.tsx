@@ -280,7 +280,7 @@ export function CommandPalette({
   const q = query.trim().toLowerCase()
   const catalogOperators = inNodeNetwork
     ? []
-    : getWorkflowNodeCatalog(workflowProfile, capabilities).filter((item) => item.category === "package")
+    : getWorkflowNodeCatalog(workflowProfile, capabilities)
   const filteredCatalogOperators = q
     ? catalogOperators.filter(
         (item) => {

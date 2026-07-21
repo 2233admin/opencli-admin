@@ -6,6 +6,8 @@ import hashlib
 from copy import deepcopy
 from typing import Any
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from backend.schemas.dify_compat import DifyInspection
 from backend.schemas.workflow import (
     WorkflowCompileError,
@@ -14,6 +16,7 @@ from backend.schemas.workflow import (
     WorkflowProjectNode,
 )
 from backend.workflow.compiler import compile_workflow_project
+from backend.workflow.dify_grants import resolve_dify_ephemeral_grants
 from backend.workflow.dify_graphon_client import (
     DIFY_GRAPHON_COMMIT,
     DIFY_GRAPHON_NAME,
@@ -27,6 +30,7 @@ async def compile_managed_dify_workflow_project(
     project: WorkflowProject,
     *,
     graphon_client: DifyGraphonClient,
+    session: AsyncSession | None = None,
 ) -> WorkflowCompileResponse:
     """Refresh managed Dify inspections, then invoke the canonical compiler."""
 
@@ -39,6 +43,7 @@ async def compile_managed_dify_workflow_project(
             project,
             node,
             graphon_client=graphon_client,
+            grants=await resolve_dify_ephemeral_grants(node, session=session),
         )
         nodes[index] = refreshed
         errors.extend(node_errors)
@@ -63,6 +68,7 @@ async def _refresh_package_inspection(
     node: WorkflowProjectNode,
     *,
     graphon_client: DifyGraphonClient,
+    grants: dict[str, Any],
 ) -> tuple[WorkflowProjectNode, list[WorkflowCompileError]]:
     compat_runtime = _record(node.params.get("compatRuntime"))
     source_content_value = compat_runtime.get("sourceContent")
@@ -97,11 +103,14 @@ async def _refresh_package_inspection(
         "allowTools": False,
     }
     try:
-        inspection_value = await graphon_client.inspect(
-            source_content=source_content,
-            source_sha256=source_sha256,
-            policy=execution_policy,
-        )
+        inspect_kwargs: dict[str, Any] = {
+            "source_content": source_content,
+            "source_sha256": source_sha256,
+            "policy": execution_policy,
+        }
+        if grants:
+            inspect_kwargs["grants"] = grants
+        inspection_value = await graphon_client.inspect(**inspect_kwargs)
     except DifyGraphonUnavailableError:
         return node, [
             _compile_error(
