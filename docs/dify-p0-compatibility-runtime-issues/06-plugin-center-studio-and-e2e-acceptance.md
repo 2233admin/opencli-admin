@@ -69,3 +69,5 @@ Run:
     uv run pytest tests/integration/test_workflow_dify_import_api.py tests/integration/test_workflow_dify_compile.py tests/integration/test_workflow_dify_run.py tests/integration/test_plugin_dify_import_api.py
 
 Then execute `docs/acceptance/dify-p0-runbook.md` against Docker Compose and record the run id, event count, nested node states, output artifact/reference and installed plugin id.
+
+Local-process evidence: `docs/acceptance/dify-p0-local-e2e-2026-07-21.md`. The record explicitly keeps Docker Compose and screenshot capture open because the local Docker daemon was unavailable during this acceptance run.
