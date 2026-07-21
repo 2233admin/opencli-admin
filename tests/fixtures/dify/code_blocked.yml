@@ -1,0 +1,14 @@
+kind: app
+version: 0.3.0
+app:
+  name: Code fixture
+  mode: workflow
+workflow:
+  graph:
+    nodes:
+      - id: start
+        data: {type: start, title: Start, variables: []}
+      - id: code
+        data: {type: code, title: Code, code_language: python3, code: 'result = 1'}
+    edges:
+      - {id: start-code, source: start, target: code}

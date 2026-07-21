@@ -1,0 +1,25 @@
+kind: app
+version: 0.3.0
+app:
+  name: Pure logic fixture
+  mode: workflow
+workflow:
+  timezone: Asia/Shanghai
+  graph:
+    nodes:
+      - id: source-start-001
+        position: {x: 80, y: 120}
+        data:
+          type: start
+          title: Start
+          variables: []
+      - id: source-end-002
+        position: {x: 440, y: 120}
+        data:
+          type: end
+          title: End
+          outputs: []
+    edges:
+      - id: start-to-end
+        source: source-start-001
+        target: source-end-002

@@ -46,7 +46,7 @@ import {
   exportReactFlowToWorkflowMermaid,
   exportReactFlowToWorkflowMarkdown,
   exportReactFlowToWorkflowOpml,
-  importWorkflowJsonToReactFlow,
+  importWorkflowJsonToReactFlowManaged,
   importWorkflowMermaidToReactFlow,
 } from "@/lib/workflow/io"
 import { cn } from "@/lib/utils"
@@ -286,14 +286,19 @@ export function CommandStrip({
       const file = e.target.files?.[0]
       if (!file) return
       const reader = new FileReader()
-      reader.onload = () => {
+      reader.onload = async () => {
         const raw = reader.result as string
-        const workflow = importWorkflowJsonToReactFlow(raw)
+        const workflow = await importWorkflowJsonToReactFlowManaged(raw)
         if (workflow.ok) {
           importWorkflowProject(workflow.project)
+          const difyReport = workflow.report?.source === "dify" ? workflow.report : undefined
           onExported?.(
             workflow.format === "n8n"
               ? `已翻译 n8n workflow：${workflow.report?.nodeCount ?? workflow.project.nodes.length} 节点 / ${workflow.report?.edgeCount ?? workflow.project.edges.length} 连线`
+              : workflow.format === "dify"
+                ? difyReport?.runtimeSource === "backend"
+                  ? `已导入 Dify workflow：${difyReport.nodeCount} 节点，${difyReport.executable ? "可执行" : `${difyReport.blockers.length} 个阻塞项`}`
+                  : "已导入 Dify 结构预览；Graphon 检查不可用，当前不可执行"
               : "已导入 canonical workflow",
           )
           return

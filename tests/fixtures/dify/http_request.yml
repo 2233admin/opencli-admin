@@ -1,0 +1,22 @@
+kind: app
+version: 0.3.0
+app:
+  name: HTTP fixture
+  mode: workflow
+workflow:
+  graph:
+    nodes:
+      - id: start
+        data: {type: start, title: Start, variables: []}
+      - id: http
+        data:
+          type: http-request
+          title: Fetch
+          method: GET
+          url: https://example.com/api
+          authorization: {type: no-auth}
+          headers: ''
+          params: ''
+          body: {type: none}
+    edges:
+      - {id: start-http, source: start, target: http}

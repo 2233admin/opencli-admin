@@ -1,5 +1,5 @@
 import type { WorkflowEdge, WorkflowNode } from "@/lib/flow/types"
-import { exportWorkflowProjectToJson, importWorkflowProjectFromJson } from "./codec"
+import { exportWorkflowProjectToJson, importWorkflowProjectFromJson, translateWorkflowDslManaged } from "./codec"
 import { reactFlowToWorkflowProject } from "./from-react-flow"
 import { exportWorkflowProjectToMermaid, importWorkflowProjectFromMermaid } from "./mermaid"
 import type { WorkflowProject } from "./schema"
@@ -27,6 +27,21 @@ export function importWorkflowJsonToReactFlow(json: string):
   | { ok: true; project: WorkflowProject; flow: ReactFlowProjection; format: WorkflowDslFormat; report?: WorkflowTranslationReport }
   | { ok: false; error: string } {
   const imported = importWorkflowProjectFromJson(json)
+  if (!imported.ok) return imported
+  return {
+    ok: true,
+    project: imported.project,
+    flow: workflowProjectToReactFlow(imported.project),
+    format: imported.format,
+    report: imported.report,
+  }
+}
+
+export async function importWorkflowJsonToReactFlowManaged(json: string): Promise<
+  | { ok: true; project: WorkflowProject; flow: ReactFlowProjection; format: WorkflowDslFormat; report?: WorkflowTranslationReport }
+  | { ok: false; error: string }
+> {
+  const imported = await translateWorkflowDslManaged(json)
   if (!imported.ok) return imported
   return {
     ok: true,

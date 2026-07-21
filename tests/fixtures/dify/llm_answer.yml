@@ -1,0 +1,18 @@
+kind: app
+version: 0.3.0
+app:
+  name: LLM fixture
+  mode: workflow
+workflow:
+  graph:
+    nodes:
+      - id: start
+        data: {type: start, title: Start, variables: []}
+      - id: llm
+        data:
+          type: llm
+          title: Answer
+          model: {provider: openai, name: gpt-4.1-mini, mode: chat}
+          prompt_template: []
+    edges:
+      - {id: start-llm, source: start, target: llm}

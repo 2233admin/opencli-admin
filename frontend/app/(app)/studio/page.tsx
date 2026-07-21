@@ -18,7 +18,7 @@ import { useBootstrapWorkspaceProject, useCreateProjectWorkflow, useDeleteWorksp
 import { formatRelative } from '@/lib/format'
 import { PROJECT_APP_CATEGORY_LABELS, projectAppCategoryLabel, projectAppTypeForDifyMode, projectAppTypeLabel, projectMatchesAppType, type ProjectAppTypeFilter } from '@/lib/studio/app-types'
 import type { ProjectSummary } from '@/lib/api/types'
-import { translateWorkflowDsl, type WorkflowImportResult } from '@/lib/workflow/codec'
+import { translateWorkflowDslManaged, type WorkflowImportResult } from '@/lib/workflow/codec'
 import { studioAppTypeForTemplate, studioGraphForTemplate, studioSlug, type StudioTemplateId } from '@/lib/workflow/studio-templates'
 
 const PROJECT_TYPE_FILTERS = [
@@ -103,10 +103,13 @@ export default function StudioPage() {
 
   async function importDsl(file: File) {
     if (!workspaceId) return
-    const translated = translateWorkflowDsl(await file.text())
+    const translated = await translateWorkflowDslManaged(await file.text())
     if (!translated.ok) {
       toast.error(translated.error)
       return
+    }
+    if (translated.format === 'dify' && translated.report?.source === 'dify' && translated.report.runtimeSource === 'browser-fallback') {
+      toast.warning('Graphon 检查不可用：已生成不可执行的结构预览')
     }
     const name = translated.project.name || file.name.replace(/\.[^.]+$/, '')
     setPendingImport(translated)
@@ -323,13 +326,33 @@ export default function StudioPage() {
 function ImportCompatibilitySummary({ imported }: { imported: Extract<WorkflowImportResult, { ok: true }> }) {
   const report = imported.report
   const unsupported = report && ('unsupportedConnectionCount' in report ? report.unsupportedConnectionCount : report.unsupportedEdgeCount)
+  const difyReport = report?.source === 'dify' ? report : undefined
   return (
     <div className="rounded-xl border bg-muted/30 p-3 text-xs">
-      <div className="flex items-center justify-between gap-3"><span className="font-medium">兼容报告</span><Badge variant="outline">{imported.format}</Badge></div>
+      <div className="flex items-center justify-between gap-3">
+        <span className="font-medium">兼容报告</span>
+        <div className="flex items-center gap-2">
+          {difyReport ? <Badge variant={difyReport.executable ? 'secondary' : 'outline'}>{difyReport.executable ? '可执行' : '仅预览'}</Badge> : null}
+          <Badge variant="outline">{imported.format}</Badge>
+        </div>
+      </div>
       <p className="mt-2 text-muted-foreground">
         {report ? `${report.nodeCount} 个节点 · ${report.edgeCount} 条连线 · ${report.adapterCount} 个适配器` : 'Canonical WorkflowProject，无需翻译。'}
       </p>
-          {unsupported ? <p className="mt-2 text-warning">有 {unsupported} 条连接无法映射，已保留其余可兼容内容。</p> : <p className="mt-2 text-success">未发现缺失连接。</p>}
+      {difyReport ? (
+        <p className="mt-2 text-muted-foreground">
+          {difyReport.runtimeSource === 'backend'
+            ? `Graphon ${difyReport.inspection?.engine.version ?? ''} 后端检查`
+            : '浏览器降级预览（不参与执行）'}
+        </p>
+      ) : null}
+      {unsupported ? <p className="mt-2 text-warning">有 {unsupported} 条连接无法映射，已保留其余可兼容内容。</p> : <p className="mt-2 text-success">未发现缺失连接。</p>}
+      {difyReport?.blockers.map((blocker) => (
+        <p key={`${blocker.code}-${blocker.nodeId ?? ''}`} className="mt-2 text-warning">
+          {blocker.nodeId ? `${blocker.nodeId}：` : ''}{blocker.message}
+        </p>
+      ))}
+      {difyReport?.backendError ? <p className="mt-2 text-destructive">后端检查失败：{difyReport.backendError}</p> : null}
     </div>
   )
 }

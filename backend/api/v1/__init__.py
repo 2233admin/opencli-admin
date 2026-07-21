@@ -10,6 +10,7 @@ from backend.api.v1 import (
     control,
     cookies,
     dashboard,
+    dify_imports,
     geo_acquisition,
     model_defaults,
     nodes,
@@ -57,6 +58,7 @@ v1_router.include_router(skill_bridge.router)
 v1_router.include_router(skill_record.router)
 v1_router.include_router(webhooks.router)
 v1_router.include_router(workflows.router)
+v1_router.include_router(dify_imports.router)
 v1_router.include_router(notifications.router)
 v1_router.include_router(workers.router)
 v1_router.include_router(dashboard.router)

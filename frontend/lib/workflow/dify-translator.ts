@@ -1,6 +1,5 @@
 import {
   parseWorkflowProject,
-  type AdapterBinding,
   type WorkflowCapability,
   type WorkflowNodeKind,
   type WorkflowProject,
@@ -22,7 +21,6 @@ type NodeMapping = {
   capability: WorkflowCapability
   icon: string
   color: string
-  adapter?: Pick<AdapterBinding, "type" | "mode">
 }
 
 export type DifyTranslationReport = {
@@ -33,6 +31,39 @@ export type DifyTranslationReport = {
   edgeCount: number
   adapterCount: number
   unsupportedEdgeCount: number
+  executable: boolean
+  runtimeSource: "backend" | "browser-fallback"
+  blockers: DifyCompatibilityBlocker[]
+  sourceSha256?: string
+  inspection?: DifyInspectionSummary
+  backendError?: string
+}
+
+export type DifyCompatibilityBlocker = {
+  code: string
+  message: string
+  nodeId?: string | null
+}
+
+export type DifyInspectionSummary = {
+  loadStatus: "ready" | "blocked" | "unsupported" | "failed"
+  loadReason?: string | null
+  engine: {
+    name: string
+    version: string
+    commit: string
+  }
+  appMode?: string | null
+  nodes: Array<{
+    sourceNodeId: string
+    type: string
+    status: string
+  }>
+  dependencies: Array<{
+    type: string
+    id: string
+  }>
+  blockers: DifyCompatibilityBlocker[]
 }
 
 export type DifyTranslationResult =
@@ -56,13 +87,11 @@ export function translateDifyWorkflowToWorkflowProject(input: unknown): DifyTran
   const workflowName = readString(app.name) ?? "Dify Workflow Import"
   const usedNodeIds = new Set<string>()
   const nodeLookup = new Map<string, string>()
-  const adapters: AdapterBinding[] = []
   const nodes = nodeEntries.map((entry, index) => {
     const translated = translateNode(entry, index, usedNodeIds, readString(input.version))
     const sourceId = readString(entry.id)
-    if (sourceId) nodeLookup.set(sourceId, translated.node.id)
-    if (translated.adapter) adapters.push(translated.adapter)
-    return translated.node
+    if (sourceId) nodeLookup.set(sourceId, translated.id)
+    return translated
   })
   const translatedEdges = translateEdges(graph.edges, nodeLookup)
   const packageId = uniqueSlug(`dify-package-${workflowName}`, new Set())
@@ -78,10 +107,16 @@ export function translateDifyWorkflowToWorkflowProject(input: unknown): DifyTran
         capability: "store",
         params: {
           packageFormat: "dify",
+          packageExecution: "blocked",
           appMode: readString(app.mode),
           dslVersion: readString(input.version),
+          compatRuntime: {
+            target: "dify",
+            loadStatus: "blocked",
+            loadReason: "dify_backend_inspection_required",
+          },
         },
-        internals: { locked: false, nodes, edges: translatedEdges.edges },
+        internals: { locked: true, nodes, edges: translatedEdges.edges },
         ui: {
           label: workflowName,
           description: `Dify compatibility package · ${nodes.length} nodes`,
@@ -94,11 +129,21 @@ export function translateDifyWorkflowToWorkflowProject(input: unknown): DifyTran
             nodeCount: nodes.length,
             edgeCount: translatedEdges.edges.length,
           },
+          builder: {
+            capabilityGaps: [
+              {
+                id: "dify-backend-inspection-required",
+                title: "Graphon 后端检查未完成",
+                detail: "浏览器翻译仅用于结构预览，不能发布或运行。",
+                blockingActions: ["publish", "run"],
+              },
+            ],
+          },
         },
       },
     ],
     edges: [],
-    adapters: dedupeAdapters(adapters),
+    adapters: [],
     settings: {
       timezone: readString(input.workflow.timezone) ?? "Asia/Shanghai",
       deterministicSimulation: true,
@@ -123,6 +168,14 @@ export function translateDifyWorkflowToWorkflowProject(input: unknown): DifyTran
       edgeCount: translatedEdges.edges.length,
       adapterCount: project.adapters.length,
       unsupportedEdgeCount: translatedEdges.unsupportedEdgeCount,
+      executable: false,
+      runtimeSource: "browser-fallback",
+      blockers: [
+        {
+          code: "dify_backend_inspection_required",
+          message: "浏览器翻译仅用于结构预览；必须经后端 Graphon 检查后才能执行。",
+        },
+      ],
     },
   }
 }
@@ -132,29 +185,17 @@ function translateNode(
   index: number,
   usedIds: Set<string>,
   dslVersion?: string,
-): { node: WorkflowProjectNode; adapter?: AdapterBinding } {
+): WorkflowProjectNode {
   const data = isRecord(entry.data) ? entry.data : {}
   const nodeType = readString(data.type) ?? readString(entry.type) ?? "unknown"
   const title = readString(data.title) ?? `Dify ${nodeType} ${index + 1}`
   const sourceId = readString(entry.id)
   const mapping = classifyNode(nodeType)
   const id = uniqueSlug(`${prefixFor(mapping)}-${title}`, usedIds)
-  const adapter = mapping.adapter
-    ? {
-        id: `dify-${id}`,
-        type: mapping.adapter.type,
-        provider: providerFor(data, nodeType),
-        mode: mapping.adapter.mode,
-        config: { nodeType, translatedFrom: "dify" },
-      }
-    : undefined
-
   return {
-    node: {
       id,
       kind: mapping.kind,
       capability: mapping.capability,
-      adapter: adapter?.id,
       params: {
         difyType: nodeType,
         title,
@@ -180,8 +221,6 @@ function translateNode(
         position: readPosition(entry.position) ?? { x: 420 + (index % 4) * 300, y: 100 + Math.floor(index / 4) * 180 },
         dify: { source: "dify", originalId: sourceId, type: nodeType },
       },
-    },
-    adapter,
   }
 }
 
@@ -199,7 +238,6 @@ function classifyNode(type: string): NodeMapping {
       capability: "summarize",
       icon: "Sparkles",
       color: "var(--chart-2)",
-      adapter: { type: "agent", mode: "mock" },
     }
   }
   if (["knowledge-retrieval", "http-request", "tool"].includes(value)) {
@@ -208,7 +246,6 @@ function classifyNode(type: string): NodeMapping {
       capability: "fetch",
       icon: "Globe",
       color: "var(--chart-4)",
-      adapter: { type: "source", mode: "fixture" },
     }
   }
   if (["answer", "end"].includes(value)) {
@@ -272,11 +309,6 @@ function compactValue(value: unknown): unknown {
   return serialized.length > 400 ? `${serialized.slice(0, 399)}...` : serialized
 }
 
-function providerFor(data: JsonRecord, fallback: string): string {
-  const model = isRecord(data.model) ? data.model : {}
-  return slugify(readString(model.provider) ?? readString(data.provider) ?? fallback).replace(/-/g, "_")
-}
-
 function prefixFor(mapping: NodeMapping): string {
   if (mapping.kind === "schedule") return "trigger"
   if (mapping.kind === "source") return "source"
@@ -285,10 +317,6 @@ function prefixFor(mapping: NodeMapping): string {
   if (mapping.capability === "normalize") return "transform"
   if (mapping.capability === "summarize") return "agent"
   return "tool"
-}
-
-function dedupeAdapters(adapters: AdapterBinding[]): AdapterBinding[] {
-  return Array.from(new Map(adapters.map((adapter) => [adapter.id, adapter])).values())
 }
 
 function uniqueSlug(input: string, used: Set<string>): string {

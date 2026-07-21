@@ -2,6 +2,7 @@ import { parseWorkflowProject, type WorkflowProject } from "./schema"
 import { parse as parseYaml } from "yaml"
 import { translateDifyWorkflowToWorkflowProject, type DifyTranslationReport } from "./dify-translator"
 import { translateN8nWorkflowToWorkflowProject, type N8nTranslationReport } from "./n8n-translator"
+import { importDifyWorkflow } from "./backend-dify-import"
 
 /**
  * DSL translation boundary.
@@ -48,6 +49,35 @@ export function translateWorkflowDsl(json: string): WorkflowImportResult {
       }
     }
     return { ok: false, error: `Invalid workflow DSL: ${error instanceof Error ? error.message : "Unknown error"}` }
+  }
+}
+
+/**
+ * Managed import boundary used by interactive callers.
+ * Dify execution readiness is authoritative only after backend Graphon inspection.
+ */
+export async function translateWorkflowDslManaged(source: string): Promise<WorkflowImportResult> {
+  const local = translateWorkflowDsl(source)
+  if (!local.ok || local.format !== "dify") return local
+
+  try {
+    const managed = await importDifyWorkflow(source)
+    return {
+      ok: true,
+      project: managed.project,
+      format: "dify",
+      report: managed.report,
+    }
+  } catch (error) {
+    return {
+      ...local,
+      report: {
+        ...local.report,
+        executable: false,
+        runtimeSource: "browser-fallback",
+        backendError: error instanceof Error ? error.message : "Dify backend inspection failed",
+      },
+    }
   }
 }
 
