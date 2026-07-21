@@ -11,6 +11,7 @@ from backend.schemas.dify_compat import DifyInspection
 DIFY_GRAPHON_NAME = "graphon"
 DIFY_GRAPHON_VERSION = "0.7.0"
 DIFY_GRAPHON_COMMIT = "b187ce7927fea1a7c137b642be3f78e3abb9f7de"
+DIFY_GRAPHON_BINDING_ID = "workflow.compat.dify.graphon"
 
 
 class DifyGraphonUnavailableError(RuntimeError):

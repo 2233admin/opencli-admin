@@ -298,9 +298,42 @@ function translateEdges(
 function compactData(data: JsonRecord): JsonRecord {
   const compact: JsonRecord = {}
   for (const key of ["type", "title", "model", "provider", "query_variable_selector", "dataset_ids", "method", "url", "code_language"]) {
-    if (key in data) compact[key] = compactValue(data[key])
+    if (key in data) compact[key] = compactValue(sanitizePreviewValue(data[key], key))
   }
   return compact
+}
+
+function sanitizePreviewValue(value: unknown, key = ""): unknown {
+  const normalizedKey = key.toLowerCase().replaceAll("-", "_")
+  if (isSecretPreviewKey(normalizedKey) || ["header", "headers", "http_headers", "extra_headers"].includes(normalizedKey)) {
+    return "[REDACTED]"
+  }
+  if (Array.isArray(value)) return value.map((item) => sanitizePreviewValue(item))
+  if (isRecord(value)) {
+    return Object.fromEntries(
+      Object.entries(value).map(([itemKey, item]) => [itemKey, sanitizePreviewValue(item, itemKey)]),
+    )
+  }
+  return value
+}
+
+function isSecretPreviewKey(key: string): boolean {
+  if (key.endsWith("_id")) return false
+  return [
+    "api_key",
+    "apikey",
+    "authorization",
+    "proxy_authorization",
+    "password",
+    "secret",
+    "client_secret",
+    "token",
+    "access_token",
+    "refresh_token",
+    "credential",
+    "credentials",
+  ].includes(key)
+    || ["_api_key", "_password", "_secret", "_access_token", "_refresh_token"].some((suffix) => key.endsWith(suffix))
 }
 
 function compactValue(value: unknown): unknown {

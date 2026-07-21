@@ -63,6 +63,27 @@ class RuntimeIOContract:
 
 
 RUNTIME_IO_CONTRACTS: dict[str, RuntimeIOContract] = {
+    "workflow.compat.dify.graphon": RuntimeIOContract(
+        binding_id="workflow.compat.dify.graphon",
+        status="blocked_until_preconditions",
+        input_ports=(("in", "any"),),
+        output_ports=(("out", "any"),),
+        input_params=("sourceSha256", "appMode", "runtimeInput", "ephemeralGrants"),
+        output_artifacts=("graphonOutput", "nestedNodeEvents", "EvidenceBatch?"),
+        permission_gate=("canFetchNetwork?", "allowedDomains?"),
+        config_gate=("graphon_runtime", "inspection_ready"),
+        event_shape=(
+            "queued",
+            "started",
+            "partial",
+            "tool_call_started",
+            "tool_call_completed",
+            "blocked",
+            "completed",
+            "failed",
+        ),
+        fixture_coverage=("dify-pure-logic", "dify-policy-blockers"),
+    ),
     "workflow.demand-draft.patch": RuntimeIOContract(
         binding_id="workflow.demand-draft.patch",
         status="projection_only",

@@ -150,6 +150,7 @@ async def import_dify_workflow(
                 "blockers": [*inspection.blockers, *unknown_blockers],
             }
         )
+    project = _with_inspection_snapshot(project, inspection)
 
     report = DifyTranslationReport(
         workflow_name=workflow_name,
@@ -187,6 +188,27 @@ def _parse_source(source: str) -> dict[str, Any]:
     return parsed
 
 
+def _with_inspection_snapshot(
+    project: WorkflowProject,
+    inspection: DifyInspection,
+) -> WorkflowProject:
+    package = project.nodes[0]
+    params = deepcopy(package.params)
+    compat_runtime = _record(params.get("compatRuntime"))
+    params["compatRuntime"] = {
+        **compat_runtime,
+        "inspection": inspection.model_dump(mode="json", by_alias=True),
+    }
+    return project.model_copy(
+        update={
+            "nodes": [
+                package.model_copy(update={"params": params}),
+                *project.nodes[1:],
+            ]
+        }
+    )
+
+
 def _build_project(
     payload: dict[str, Any],
     *,
@@ -201,6 +223,7 @@ def _build_project(
     raw_edges = graph.get("edges") if isinstance(graph.get("edges"), list) else []
     internal_nodes: list[WorkflowProjectNode] = []
     node_ids: set[str] = set()
+    internal_node_ids: set[str] = set()
     internal_id_by_source_id: dict[str, str] = {}
     blockers: list[DifyBlocker] = []
 
@@ -214,7 +237,8 @@ def _build_project(
                 f'Dify DSL contains duplicate node id "{source_node_id}".',
             )
         node_ids.add(source_node_id)
-        internal_node_id = _internal_node_id(source_node_id)
+        internal_node_id = _internal_node_id(source_node_id, used=internal_node_ids)
+        internal_node_ids.add(internal_node_id)
         internal_id_by_source_id[source_node_id] = internal_node_id
         data = _record(raw_node.get("data"))
         node_type = _non_empty_string(data.get("type")) or "unknown"
@@ -433,11 +457,18 @@ def _sanitize_embedded_secrets(value: Any, *, key: str = "") -> Any:
     return value
 
 
-def _internal_node_id(source_node_id: str) -> str:
+def _internal_node_id(source_node_id: str, *, used: set[str]) -> str:
     if "::" not in source_node_id and "__" not in source_node_id:
-        return source_node_id
-    digest = hashlib.sha256(source_node_id.encode("utf-8")).hexdigest()[:16]
-    return f"dify-source-{digest}"
+        base = source_node_id
+    else:
+        digest = hashlib.sha256(source_node_id.encode("utf-8")).hexdigest()[:16]
+        base = f"dify-source-{digest}"
+    candidate = base
+    suffix = 2
+    while candidate in used:
+        candidate = f"{base}-{suffix}"
+        suffix += 1
+    return candidate
 
 
 def _is_secret_key(key: str) -> bool:
@@ -463,13 +494,14 @@ def _is_secret_key(key: str) -> bool:
 
 
 def _is_header_container_key(key: str) -> bool:
-    return key.lower().replace("-", "_") in {
+    normalized = key.lower().replace("-", "_")
+    return normalized in {
         "header",
         "headers",
         "http_header",
         "http_headers",
         "extra_headers",
-    }
+    } or normalized.endswith(("_header", "_headers"))
 
 
 def _is_sensitive_header_name(value: str) -> bool:
@@ -488,7 +520,7 @@ def _sanitize_header_value(value: Any) -> Any:
     if isinstance(value, str):
         redacted = re.sub(
             r"(?i)(authorization|proxy-authorization|cookie|set-cookie|x-api-key|api-key)"
-            r"\s*[:=]\s*([^\r\n,;]+)",
+            r"\s*[:=]\s*[^\r\n]*",
             lambda match: f"{match.group(1)}: [REDACTED]",
             value,
         )

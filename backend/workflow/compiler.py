@@ -115,6 +115,10 @@ _PORT_CONTRACTS: dict[str, tuple[list[_PortContract], list[_PortContract]]] = {
         [_PortContract("in", "input", "any", required=False)],
         [_PortContract("out", "output", "any", required=False)],
     ),
+    "package.compat.dify-workflow": (
+        [_PortContract("in", "input", "any", required=False)],
+        [_PortContract("out", "output", "any", required=False)],
+    ),
 }
 
 
@@ -309,7 +313,7 @@ def _validate_project(project: WorkflowProject) -> list[WorkflowCompileError]:
                 )
             )
 
-        if _is_structural_container(node):
+        if _has_package_internals(node):
             errors.extend(
                 _validate_package_internals(
                     node,
@@ -340,7 +344,18 @@ def _requires_adapter(node: WorkflowProjectNode) -> bool:
 
 
 def _is_structural_container(node: WorkflowProjectNode) -> bool:
+    return _has_package_internals(node) and not _is_managed_runtime_package(node)
+
+
+def _has_package_internals(node: WorkflowProjectNode) -> bool:
     return bool(node.internals and node.internals.nodes)
+
+
+def _is_managed_runtime_package(node: WorkflowProjectNode) -> bool:
+    return (
+        _has_package_internals(node)
+        and node.params.get("packageExecution") == "managed"
+    )
 
 
 def _validate_node_origin(
@@ -704,7 +719,7 @@ def _boundary_nodes(
     node_path: tuple[str, ...],
     direction: Literal["input", "output"],
 ) -> list[tuple[tuple[str, ...], WorkflowProjectNode]]:
-    if not node.internals or not node.internals.nodes:
+    if _is_managed_runtime_package(node) or not node.internals or not node.internals.nodes:
         return [(node_path, node)]
 
     connected_ids = {
@@ -930,10 +945,16 @@ def _package_metadata(
     *,
     node_path: tuple[str, ...],
 ) -> dict[str, object] | None:
-    if not (node.topicCollapse or node.miniNetwork or _is_structural_container(node)):
+    if not (
+        node.topicCollapse
+        or node.miniNetwork
+        or _is_structural_container(node)
+        or _is_managed_runtime_package(node)
+    ):
         return None
 
     locked = _package_locked(node)
+    managed = _is_managed_runtime_package(node)
     node_id = _node_path_id(node_path)
     internal_node_ids = (
         [_internal_id(node_id, internal_node.id) for internal_node in node.internals.nodes]
@@ -945,8 +966,9 @@ def _package_metadata(
         "topicCollapse": node.topicCollapse.model_dump() if node.topicCollapse else None,
         "locked": locked,
         "editable": not locked,
-        "structural": True,
-        "executable": False,
+        "managed": managed,
+        "structural": not managed,
+        "executable": managed,
         "node_path": list(node_path),
         "internal_node_ids": internal_node_ids,
         "internal_edge_ids": (
@@ -1052,6 +1074,17 @@ def _validate_package_internals(
                     path=[*path_prefix, "internals", "edges", edge.id, "target"],
                 )
             )
+
+    if _is_managed_runtime_package(node):
+        errors.extend(
+            _cycle_errors_for_nodes(
+                package_node_id,
+                node.internals.nodes,
+                node.internals.edges,
+                path_prefix=path_prefix,
+            )
+        )
+        return errors
 
     for internal_node in node.internals.nodes:
         internal_path_prefix = [

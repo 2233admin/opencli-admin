@@ -140,6 +140,39 @@ test('managed Dify translation preserves a non-executable preview when the backe
   }
 })
 
+test('browser fallback removes embedded credentials before a preview can be saved', async () => {
+  const { translateWorkflowDslManaged } = await importTypeScript('lib/workflow/codec.ts')
+  const source = `kind: app
+app: {name: Secret fallback, mode: workflow}
+workflow:
+  graph:
+    nodes:
+      - id: llm
+        data:
+          type: llm
+          model:
+            provider: openai
+            name: gpt-test
+            api_key: fallback-model-secret
+            max_tokens: 512
+    edges: []
+`
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = async () => {
+    throw new Error('backend unavailable')
+  }
+  try {
+    const imported = await translateWorkflowDslManaged(source)
+    assert.equal(imported.ok, true)
+    const serialized = JSON.stringify(imported.project)
+    assert.doesNotMatch(serialized, /fallback-model-secret/)
+    assert.match(serialized, /\[REDACTED\]/)
+    assert.match(serialized, /max_tokens/)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
 test('Dify import proxy returns stable client and upstream failure responses', async () => {
   const { POST } = await importTypeScript('app/api/workflow/import/dify/route.ts')
   const malformed = await POST(new Request('http://localhost/api/workflow/import/dify', {

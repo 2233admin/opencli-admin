@@ -5,12 +5,15 @@ import uuid
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.api.v1.dify_imports import get_dify_graphon_client
 from backend.database import get_db
 from backend.schemas import workflow as workflow_schemas
 from backend.schemas.common import ApiResponse
 from backend.workflow.capability_projection import build_workflow_capabilities
 from backend.workflow.compiler import compile_workflow_project
 from backend.workflow.demand_assembler import draft_workflow_demand
+from backend.workflow.dify_compile import compile_managed_dify_workflow_project
+from backend.workflow.dify_graphon_client import DifyGraphonClient
 from backend.workflow.evidence_projection import (
     build_evidence_projection,
     get_evidence_batch,
@@ -41,6 +44,7 @@ router = APIRouter(prefix="/workflows", tags=["workflows"])
 @router.post("/compile", response_model=ApiResponse[workflow_schemas.WorkflowCompileResponse])
 async def compile_workflow(
     body: workflow_schemas.WorkflowCompileRequest,
+    graphon_client: DifyGraphonClient = Depends(get_dify_graphon_client),
 ) -> ApiResponse[workflow_schemas.WorkflowCompileResponse]:
     """Compile a Canvas-authored WorkflowProject into an executable preview.
 
@@ -48,7 +52,12 @@ async def compile_workflow(
     does not create tasks, persist a plan, or dispatch workers.
     """
 
-    return ApiResponse.ok(compile_workflow_project(body.project))
+    return ApiResponse.ok(
+        await compile_managed_dify_workflow_project(
+            body.project,
+            graphon_client=graphon_client,
+        )
+    )
 
 
 @router.get(

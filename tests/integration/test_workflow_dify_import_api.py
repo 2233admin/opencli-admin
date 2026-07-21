@@ -6,6 +6,7 @@ import pytest
 
 from backend.api.v1.dify_imports import get_dify_graphon_client
 from backend.main import app
+from backend.schemas.workflow import WorkflowProject
 
 FIXTURES = Path(__file__).parents[1] / "fixtures" / "dify"
 
@@ -180,6 +181,7 @@ workflow:
           authorization: Bearer http-secret-value
           max_tokens: 512
           headers: "Authorization: Bearer header-secret-value"
+          digest_headers: "Authorization: Digest username=alice, response=digest-secret-value"
           header_parameters:
             - key: Authorization
               value: Bearer list-secret-value
@@ -194,6 +196,7 @@ workflow:
     assert "http-secret-value" not in serialized
     assert "header-secret-value" not in serialized
     assert "list-secret-value" not in serialized
+    assert "digest-secret-value" not in serialized
     assert '"max_tokens":512' in serialized
 
 
@@ -236,3 +239,41 @@ workflow:
     assert round_tripped["id"].startswith("dify-source-")
     assert round_tripped["ui"]["dify"]["originalId"] == "stage::source__1"
     assert round_tripped["params"]["compatRuntime"]["sourceNodeId"] == "stage::source__1"
+    persisted = WorkflowProject.model_validate(response.json()["data"]["project"])
+    reloaded = WorkflowProject.model_validate_json(persisted.model_dump_json(by_alias=True))
+    reloaded_node = reloaded.nodes[0].internals.nodes[0]
+    assert reloaded_node.ui["dify"]["originalId"] == "stage::source__1"
+    assert reloaded_node.params["compatRuntime"]["sourceNodeId"] == "stage::source__1"
+
+
+@pytest.mark.asyncio
+async def test_import_disambiguates_internal_id_hash_collisions(
+    client,
+    graphon_client_override,
+):
+    reserved_id = "stage::source__1"
+    digest = __import__("hashlib").sha256(reserved_id.encode()).hexdigest()[:16]
+    colliding_id = f"dify-source-{digest}"
+    source = f"""kind: app
+app: {{name: Collision, mode: workflow}}
+workflow:
+  graph:
+    nodes:
+      - id: {colliding_id}
+        data: {{type: start}}
+      - id: {reserved_id}
+        data: {{type: end}}
+    edges:
+      - id: edge
+        source: {colliding_id}
+        target: {reserved_id}
+"""
+
+    response = await client.post("/api/v1/workflows/import/dify", json={"source": source})
+
+    assert response.status_code == 200
+    package = response.json()["data"]["project"]["nodes"][0]
+    internal_ids = [node["id"] for node in package["internals"]["nodes"]]
+    assert internal_ids == [colliding_id, f"{colliding_id}-2"]
+    edge = package["internals"]["edges"][0]
+    assert (edge["source"], edge["target"]) == tuple(internal_ids)

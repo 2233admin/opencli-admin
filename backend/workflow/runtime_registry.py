@@ -20,6 +20,7 @@ from backend.workflow.block_reasons import (
     MISSING_TURBOPUSH_CONTENT_TYPE,
     MISSING_TURBOPUSH_SERVICE,
 )
+from backend.workflow.dify_graphon_client import DIFY_GRAPHON_BINDING_ID
 from backend.workflow.runtime_contracts import runtime_io_contract_manifest
 from backend.workflow.tool_capabilities import resolve_workflow_tool_capability
 from backend.workflow.turbopush_runtime import (
@@ -85,7 +86,9 @@ def resolve_runtime_metadata(
     """Return runtime binding metadata for a compiled WorkflowProject node."""
 
     resolved_node_id = node_id or node.id
-    if _is_collection_need(node):
+    if _is_dify_graphon_managed_package(node):
+        metadata = _resolve_dify_graphon_package(node, node_id=resolved_node_id)
+    elif _is_collection_need(node):
         metadata = _resolve_collection_need(node, node_id=resolved_node_id)
     elif _is_webhook_trigger(node):
         metadata = _resolve_webhook_trigger(node, node_id=resolved_node_id)
@@ -894,6 +897,78 @@ def _is_turbopush_publish(
         adapter.provider == TURBOPUSH_PROVIDER
         or _read_string(config.get("channel")) == TURBOPUSH_CHANNEL
         or _read_string(config.get("mcpServer")) == TURBOPUSH_MCP_SERVER
+    )
+
+
+def _resolve_dify_graphon_package(
+    node: WorkflowProjectNode,
+    *,
+    node_id: str,
+) -> dict[str, Any]:
+    compat_runtime = _read_dict(node.params.get("compatRuntime"))
+    inspection = _read_dict(compat_runtime.get("inspection"))
+    blockers = inspection.get("blockers")
+    blocker = (
+        next((item for item in blockers if isinstance(item, dict)), None)
+        if isinstance(blockers, list)
+        else None
+    )
+    if inspection.get("loadStatus") != "ready":
+        return {
+            "missing_runtime": {
+                "status": "missing",
+                "code": (
+                    _read_string(blocker.get("code"))
+                    if isinstance(blocker, dict)
+                    else None
+                )
+                or _read_string(inspection.get("loadReason"))
+                or "dify_graphon_unavailable",
+                "node_id": node_id,
+                "kind": node.kind,
+                "capability": node.capability,
+                "message": (
+                    _read_string(blocker.get("message"))
+                    if isinstance(blocker, dict)
+                    else None
+                )
+                or "Managed Dify package has not passed Graphon inspection.",
+            }
+        }
+
+    return {
+        "binding": {
+            "status": "bound",
+            "binding_id": DIFY_GRAPHON_BINDING_ID,
+            "runtime": "graphon",
+            "worker": "dify-graphon",
+            "function_id": "dify.graphon.run",
+            "channel": "dify-graphon",
+            "input": {
+                "contractVersion": _read_string(compat_runtime.get("contractVersion")),
+                "sourceFormat": _read_string(compat_runtime.get("sourceFormat")),
+                "sourceSha256": _read_string(compat_runtime.get("sourceSha256")),
+                "engineVersion": _read_string(compat_runtime.get("engineVersion")),
+                "engineCommit": _read_string(compat_runtime.get("engineCommit")),
+                "appMode": _read_string(node.params.get("appMode")),
+            },
+        },
+        "resource_requirement": WorkflowRuntimeResourceRequirement(
+            nodeId=node_id,
+            sourceGroup=node_id,
+            site="graphon",
+            mutationMode="read",
+            requestedCapability=DIFY_GRAPHON_BINDING_ID,
+        ).model_dump(mode="json", exclude_none=True),
+    }
+
+
+def _is_dify_graphon_managed_package(node: WorkflowProjectNode) -> bool:
+    compat_runtime = _read_dict(node.params.get("compatRuntime"))
+    return (
+        node.params.get("packageFormat") == "dify"
+        and node.params.get("packageExecution") == "managed"
+        and compat_runtime.get("engine") == "graphon"
     )
 
 
