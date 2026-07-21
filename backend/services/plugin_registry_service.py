@@ -14,6 +14,7 @@ from backend.models.studio import StudioWorkflowDraft
 from backend.plugins.dify_manifest import parse_dify_manifest
 from backend.plugins.dify_package import DifyPackageError, read_dify_plugin_payload
 from backend.schemas.plugin import PluginInstallationRead
+from backend.workflow.dify_graphon_client import DIFY_GRAPHON_BINDING_ID
 
 
 class PluginRegistryError(RuntimeError):
@@ -341,7 +342,7 @@ def _bundled_installations() -> list[PluginInstallationRead]:
                     "tool",
                     "workflow-package",
                     "Dify 工作流包",
-                    "dify.graphon.workflow",
+                    DIFY_GRAPHON_BINDING_ID,
                 )
             ],
         ),

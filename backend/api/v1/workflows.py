@@ -9,6 +9,7 @@ from backend.api.v1.dify_imports import get_dify_graphon_client
 from backend.database import get_db
 from backend.schemas import workflow as workflow_schemas
 from backend.schemas.common import ApiResponse
+from backend.services.plugin_registry_service import list_plugin_installations
 from backend.workflow.capability_projection import build_workflow_capabilities
 from backend.workflow.compiler import compile_workflow_project
 from backend.workflow.demand_assembler import draft_workflow_demand
@@ -64,12 +65,13 @@ async def compile_workflow(
     "/capabilities",
     response_model=ApiResponse[workflow_schemas.WorkflowCapabilitiesResponse],
 )
-async def get_workflow_capabilities() -> ApiResponse[
-    workflow_schemas.WorkflowCapabilitiesResponse
-]:
+async def get_workflow_capabilities(
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse[workflow_schemas.WorkflowCapabilitiesResponse]:
     """Return Canvas-visible workflow capabilities and their runtime status."""
 
-    return ApiResponse.ok(build_workflow_capabilities())
+    installations = await list_plugin_installations(db)
+    return ApiResponse.ok(build_workflow_capabilities(installations))
 
 
 @router.get(

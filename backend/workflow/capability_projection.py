@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from backend.channels.registry import list_channel_types
 from backend.notifiers.registry import list_notifier_types
+from backend.schemas.plugin import PluginInstallationRead
 from backend.schemas.workflow import (
     WorkflowCapabilitiesResponse,
     WorkflowCapability,
@@ -17,6 +18,7 @@ from backend.schemas.workflow import (
     WorkflowNodeKind,
     WorkflowRuntimeCapability,
 )
+from backend.workflow.dify_graphon_client import DIFY_GRAPHON_BINDING_ID
 from backend.workflow.node_registry import WORKFLOW_PRIMITIVE_IDS
 from backend.workflow.opencli_adapter_nodes import get_opencli_adapter_node_summary
 from backend.workflow.runtime_contracts import runtime_io_contract_manifest
@@ -40,11 +42,16 @@ from backend.workflow.tool_capabilities import list_workflow_tool_capabilities
 from backend.workflow.turbopush_runtime import TURBOPUSH_PROVIDER
 
 
-def build_workflow_capabilities() -> WorkflowCapabilitiesResponse:
+def build_workflow_capabilities(
+    plugin_installations: list[PluginInstallationRead] | None = None,
+) -> WorkflowCapabilitiesResponse:
     """Project real backend capabilities into Canvas runtime status rows."""
 
     return WorkflowCapabilitiesResponse(
-        catalog=_catalog_capabilities(),
+        catalog=[
+            *_catalog_capabilities(),
+            *_plugin_catalog_capabilities(plugin_installations or []),
+        ],
         primitives=_primitive_capabilities(),
         channels=_channel_capabilities(),
         notifiers=_notifier_capabilities(),
@@ -95,6 +102,29 @@ def _capability(
 
 def _catalog_capabilities() -> list[WorkflowRuntimeCapability]:
     return [
+        _capability(
+            id="package.compat.dify-workflow",
+            label="Dify Workflow Package",
+            surface="catalog",
+            status="runnable",
+            backend_available=True,
+            kind="action",
+            capability="store",
+            provider="opencli-admin/dify-graphon-runtime",
+            runtime_binding=DIFY_GRAPHON_BINDING_ID,
+            reason=(
+                "Dify DSL is imported as one managed package and executed through the "
+                "pinned Graphon compatibility runtime. Unsupported dependencies remain "
+                "structured compile blockers."
+            ),
+            tags=["dify", "graphon", "managed-package", "compatibility"],
+            source="backend.workflow.dify_compile",
+            manifest={
+                "schema": "capability.package.dify-graphon.v1",
+                "runtime": {"binding": DIFY_GRAPHON_BINDING_ID},
+                "canvas": {"node": True, "managedInternals": True},
+            },
+        ),
         _capability(
             id="intelligence.input.collection-need",
             label="Collection Need",
@@ -563,6 +593,75 @@ def _catalog_capabilities() -> list[WorkflowRuntimeCapability]:
             missing=["workflow_review_sink_binding"],
         ),
     ]
+
+
+def _plugin_catalog_capabilities(
+    installations: list[PluginInstallationRead],
+) -> list[WorkflowRuntimeCapability]:
+    projected: list[WorkflowRuntimeCapability] = []
+    for installation in installations:
+        if installation.bundled:
+            continue
+        for node in installation.node_definitions:
+            kind, capability = _plugin_node_shape(node.family)
+            projected.append(
+                _capability(
+                    id=node.id,
+                    label=node.label,
+                    surface="catalog",
+                    status="blocked" if node.status == "BLOCKED" else "runnable",
+                    backend_available=node.status == "READY",
+                    kind=kind,
+                    capability=capability,
+                    provider=installation.provider_key,
+                    runtime_binding=None,
+                    reason=(
+                        node.lock_reason
+                        or "This plugin capability has no compatible OpenCLI runtime adapter."
+                    ),
+                    missing=(
+                        ["dify_plugin_runtime_adapter"]
+                        if node.status == "BLOCKED"
+                        else []
+                    ),
+                    tags=[
+                        "plugin",
+                        "dify",
+                        node.family,
+                        installation.provider_key,
+                        installation.version,
+                    ],
+                    source="backend.services.plugin_registry_service",
+                    manifest={
+                        "schema": "capability.plugin-projection.v1",
+                        "plugin": {
+                            "installationId": installation.id,
+                            "providerKey": installation.provider_key,
+                            "version": installation.version,
+                            "capabilityId": node.capability_id,
+                            "family": node.family,
+                        },
+                        "canvas": {
+                            "node": True,
+                            "locked": node.locked,
+                            "lockReason": node.lock_reason,
+                        },
+                    },
+                )
+            )
+    return projected
+
+
+def _plugin_node_shape(
+    family: str,
+) -> tuple[WorkflowNodeKind, WorkflowCapability]:
+    if family == "datasource":
+        return "source", "fetch"
+    if family == "trigger":
+        return "schedule", "trigger"
+    if family == "agent_strategy":
+        return "agent", "summarize"
+    return "action", "store"
 
 
 def _manifest(

@@ -54,6 +54,22 @@ async def test_manifest_import_persists_blocked_capabilities_and_lists(client, d
     assert detail.status_code == 200
     assert detail.json()["data"]["sourceDigest"] == installed["sourceDigest"]
 
+    workflow_capabilities = await client.get("/api/v1/workflows/capabilities")
+    assert workflow_capabilities.status_code == 200
+    catalog = workflow_capabilities.json()["data"]["catalog"]
+    dify_runtime = next(
+        item for item in catalog if item["id"] == "package.compat.dify-workflow"
+    )
+    assert dify_runtime["runtimeBinding"] == "workflow.compat.dify.graphon"
+    locked = next(
+        item
+        for item in catalog
+        if item["manifest"].get("plugin", {}).get("installationId") == installed["id"]
+    )
+    assert locked["status"] == "blocked"
+    assert locked["manifest"]["canvas"]["locked"] is True
+    assert locked["manifest"]["plugin"]["version"] == "1.2.3"
+
 
 async def test_difypkg_import_reads_metadata_and_required_credentials(client):
     provider = b"""identity:
