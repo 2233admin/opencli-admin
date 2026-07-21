@@ -29,7 +29,7 @@ RUN addgroup --system graphon \
 
 WORKDIR /app
 COPY --from=builder /app/.venv /app/.venv
-COPY app.py contracts.py engine.py ./
+COPY app.py contracts.py engine.py policy.py run_registry.py ./
 
 USER graphon
 EXPOSE 8095

@@ -79,12 +79,17 @@ services:
       DIFY_GRAPHON_MAX_OUTPUT_BYTES: ${DIFY_GRAPHON_MAX_OUTPUT_BYTES:-1048576}
       DIFY_GRAPHON_EXECUTION_TIMEOUT_SECONDS: ${DIFY_GRAPHON_EXECUTION_TIMEOUT_SECONDS:-120}
       DIFY_GRAPHON_MAX_CONCURRENT_RUNS: ${DIFY_GRAPHON_MAX_CONCURRENT_RUNS:-2}
+      DIFY_GRAPHON_MAX_STORED_RUNS: ${DIFY_GRAPHON_MAX_STORED_RUNS:-512}
+      DIFY_GRAPHON_RUN_RETENTION_SECONDS: ${DIFY_GRAPHON_RUN_RETENTION_SECONDS:-3600}
       DIFY_GRAPHON_SLIM_PATH: ${DIFY_GRAPHON_SLIM_PATH:-}
       DIFY_GRAPHON_SLIM_PLUGIN_FOLDER: /tmp/dify-graphon/slim/plugins
       DIFY_SANDBOX_ENDPOINT: ${DIFY_SANDBOX_ENDPOINT:-}
       DIFY_SANDBOX_API_KEY: ${DIFY_SANDBOX_API_KEY:-}
     ports:
-      - "${DIFY_GRAPHON_PORT:-8095}:8095"
+      - "127.0.0.1:${DIFY_GRAPHON_PORT:-8095}:8095"
+    networks:
+      - dify_runtime
+      - dify_egress
     read_only: true
     tmpfs:
       - /tmp:size=${DIFY_GRAPHON_TMPFS_SIZE:-64m},mode=1777
@@ -147,6 +152,9 @@ services:
       - ./.env:/app/.env:rw
     ports:
       - "${API_PORT:-8031}:8000"
+    networks:
+      - default
+      - dify_runtime
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 10s
@@ -404,6 +412,13 @@ services:
   #     iii-engine:
   #       condition: service_started
   #   restart: unless-stopped
+
+networks:
+  dify_runtime:
+    internal: true
+  # Dedicated outbound network: the Graphon sidecar can reach server-owned
+  # sandbox/model endpoints without becoming reachable from sibling services.
+  dify_egress:
 
 volumes:
   redis_data:

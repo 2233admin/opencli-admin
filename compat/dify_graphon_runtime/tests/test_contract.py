@@ -3,6 +3,7 @@ from __future__ import annotations
 import builtins
 import hashlib
 import json
+import os
 import subprocess
 import time
 from textwrap import dedent
@@ -12,6 +13,7 @@ from fastapi.testclient import TestClient
 
 from app import app, create_app
 from engine import GraphonRuntime, RuntimeLimits
+from policy import prepare_execution_credentials, redact_value, secret_values
 
 PURE_LOGIC_DSL = dedent(
     """
@@ -220,6 +222,41 @@ def test_tool_node_stays_blocked_without_an_executable_adapter() -> None:
     assert {"type": "tool", "id": "sample"} in response.json()["dependencies"]
 
 
+def test_http_node_stays_blocked_without_a_network_policy_adapter() -> None:
+    content = dedent(
+        """
+        kind: app
+        app:
+          mode: workflow
+        workflow:
+          graph:
+            nodes:
+              - id: start
+                data: {type: start, variables: []}
+              - id: http
+                data:
+                  type: http-request
+                  method: get
+                  url: https://example.com/api
+                  authorization: {type: no-auth}
+                  headers: ''
+                  params: ''
+                  body: {type: none}
+            edges:
+              - {source: start, target: http}
+        """
+    ).strip()
+
+    response = TestClient(app).post(
+        "/v1/dify/inspect",
+        json={"source": _source(content), "policy": {"allowNetwork": True}},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["loadStatus"] == "blocked"
+    assert response.json()["blockers"][0]["code"] == "network_adapter_required"
+
+
 def test_run_events_are_monotonic_replayable_and_cancellation_is_idempotent() -> None:
     client = TestClient(app)
     run_response = client.post(
@@ -256,6 +293,35 @@ def test_run_events_are_monotonic_replayable_and_cancellation_is_idempotent() ->
     assert second_cancel.json()["status"] == "completed"
     assert first_cancel.json()["cancelRequested"] is True
     assert second_cancel.json()["cancelRequested"] is True
+
+
+def test_terminal_run_registry_evicts_the_oldest_record_at_capacity() -> None:
+    runtime = GraphonRuntime(
+        limits=RuntimeLimits(
+            max_request_bytes=1_048_576,
+            max_output_bytes=1_048_576,
+            execution_timeout_seconds=120,
+            max_concurrent_runs=2,
+            max_stored_runs=2,
+            run_retention_seconds=3_600,
+        )
+    )
+    client = TestClient(create_app(runtime))
+    runtime_run_ids: list[str] = []
+
+    for _ in range(3):
+        response = client.post(
+            "/v1/dify/runs",
+            json={"source": _source(), "policy": {}, "inputs": {}},
+        )
+        assert response.status_code == 202
+        runtime_run_id = response.json()["runtimeRunId"]
+        runtime_run_ids.append(runtime_run_id)
+        _wait_for_terminal_replay(client, runtime_run_id)
+
+    assert client.get(f"/v1/dify/runs/{runtime_run_ids[0]}/events").status_code == 404
+    assert client.get(f"/v1/dify/runs/{runtime_run_ids[1]}/events").status_code == 200
+    assert client.get(f"/v1/dify/runs/{runtime_run_ids[2]}/events").status_code == 200
 
 
 def test_health_is_unhealthy_when_the_graphon_engine_is_unavailable(
@@ -302,6 +368,53 @@ def test_grant_secrets_are_never_returned_by_run_or_event_responses(
     replay = _wait_for_terminal_replay(client, runtime_run_id)
     assert leak_sentinel not in json.dumps(replay)
     assert leak_sentinel not in caplog.text
+
+
+def test_all_scalar_grant_values_are_redacted_even_with_provider_defined_keys() -> None:
+    leak_sentinel = "provider-specific-credential"
+    grants = {
+        "provider": "custom-provider",
+        "values": {
+            "credential": leak_sentinel,
+            "access_key": "access-value",
+            "numeric_pin": 123456,
+        },
+    }
+
+    secrets = set(secret_values(grants, secret_context=True))
+    redacted = redact_value(
+        {
+            "message": f"failed with {leak_sentinel} and access-value",
+            "numeric": 123456,
+        },
+        secrets,
+    )
+
+    assert leak_sentinel not in json.dumps(redacted)
+    assert "access-value" not in json.dumps(redacted)
+    assert "123456" not in json.dumps(redacted)
+
+
+def test_sandbox_endpoint_and_api_key_are_owned_by_the_server() -> None:
+    credentials = prepare_execution_credentials(
+        {
+            "code": {
+                "execution_endpoint": "https://attacker.invalid/sandbox",
+                "execution_api_key": "caller-key",
+                "language": "python3",
+            }
+        },
+        sandbox_endpoint="http://dify-sandbox:8194",
+        sandbox_api_key="server-key",
+        slim_path=None,
+        slim_plugin_folder="/tmp/dify-graphon/slim/plugins",
+    )
+
+    assert credentials["code"] == {
+        "execution_endpoint": "http://dify-sandbox:8194",
+        "execution_api_key": "server-key",
+        "language": "python3",
+    }
 
 
 def test_source_size_limit_returns_a_stable_error_without_a_traceback() -> None:
@@ -359,6 +472,7 @@ def test_only_the_pinned_slim_helper_is_marked_available(
     binary_path = tmp_path / "dify-plugin-daemon-slim"
     binary_path.write_text("fixture")
     monkeypatch.setenv("DIFY_GRAPHON_SLIM_PATH", str(binary_path))
+    monkeypatch.setenv("SLIM_BINARY_PATH", "")
     monkeypatch.setattr("engine.os.access", lambda *_args: True)
     monkeypatch.setattr(
         "engine.subprocess.run",
@@ -378,6 +492,7 @@ def test_only_the_pinned_slim_helper_is_marked_available(
         "14877f8f8b6dd63d3cec760411a875cc8e077547"
     )
     assert runtime.helpers["slim"]["version"] == "0.6.5"
+    assert os.environ["SLIM_BINARY_PATH"] == str(binary_path)
 
 
 def test_large_graphon_event_payload_is_replaced_by_a_bounded_marker() -> None:

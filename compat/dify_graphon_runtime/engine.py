@@ -6,8 +6,8 @@ import os
 import shutil
 import subprocess
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
-from copy import deepcopy
 from dataclasses import dataclass
 from importlib import metadata
 from typing import Any
@@ -17,6 +17,14 @@ from uuid import uuid4
 import yaml
 
 from contracts import CONTRACT_VERSION, InspectRequest, RunRequest, RuntimeContractError
+from policy import (
+    policy_blockers,
+    prepare_execution_credentials,
+    redact_text,
+    redact_value,
+    secret_values,
+)
+from run_registry import RunRegistry
 
 GRAPHON_COMMIT = "b187ce7927fea1a7c137b642be3f78e3abb9f7de"
 GRAPHON_EXPECTED_VERSION = "0.7.0"
@@ -30,6 +38,8 @@ class RuntimeLimits:
     max_output_bytes: int = 1_048_576
     execution_timeout_seconds: int = 120
     max_concurrent_runs: int = 2
+    max_stored_runs: int = 512
+    run_retention_seconds: int = 3_600
 
     @classmethod
     def from_environment(cls) -> RuntimeLimits:
@@ -47,22 +57,13 @@ class RuntimeLimits:
             max_concurrent_runs=_positive_int(
                 "DIFY_GRAPHON_MAX_CONCURRENT_RUNS", cls.max_concurrent_runs
             ),
+            max_stored_runs=_positive_int(
+                "DIFY_GRAPHON_MAX_STORED_RUNS", cls.max_stored_runs
+            ),
+            run_retention_seconds=_positive_int(
+                "DIFY_GRAPHON_RUN_RETENTION_SECONDS", cls.run_retention_seconds
+            ),
         )
-
-
-@dataclass
-class RunRecord:
-    runtime_run_id: str
-    status: str = "queued"
-    events: list[dict[str, Any]] | None = None
-    cancel_requested: bool = False
-    command_channel: Any = None
-    output_bytes: int = 0
-    output_truncated: bool = False
-
-    def __post_init__(self) -> None:
-        if self.events is None:
-            self.events = []
 
 
 @dataclass(frozen=True)
@@ -94,8 +95,13 @@ class GraphonRuntime:
         self._slim_path, self._slim_detected_version = _resolve_slim_helper()
         if self._slim_path:
             os.environ["SLIM_BINARY_PATH"] = self._slim_path
-        self._runs: dict[str, RunRecord] = {}
-        self._lock = threading.RLock()
+        else:
+            os.environ.pop("SLIM_BINARY_PATH", None)
+        self._runs = RunRegistry(
+            max_stored_runs=self.limits.max_stored_runs,
+            retention_seconds=self.limits.run_retention_seconds,
+        )
+        self._lock = self._runs.lock
         self._executor = ThreadPoolExecutor(
             max_workers=self.limits.max_concurrent_runs,
             thread_name_prefix="graphon-run",
@@ -156,7 +162,7 @@ class GraphonRuntime:
 
         graph_config = plan.document.graph_config or {}
         nodes = [_normalize_node(node) for node in graph_config.get("nodes", [])]
-        blockers = _policy_blockers(
+        blockers = policy_blockers(
             nodes,
             request,
             sandbox_available=bool(self._sandbox_endpoint),
@@ -200,9 +206,7 @@ class GraphonRuntime:
             )
 
         with self._lock:
-            active_count = sum(
-                record.status in {"queued", "running"} for record in self._runs.values()
-            )
+            active_count = self._runs.active_count()
             if active_count >= self.limits.max_concurrent_runs:
                 raise RuntimeContractError(
                     "run.capacity_exceeded",
@@ -210,7 +214,7 @@ class GraphonRuntime:
                     status_code=429,
                 )
             runtime_run_id = str(uuid4())
-            self._runs[runtime_run_id] = RunRecord(runtime_run_id=runtime_run_id)
+            self._runs.create(runtime_run_id)
 
         self._executor.submit(self._execute_run, runtime_run_id, request)
         return {
@@ -227,7 +231,9 @@ class GraphonRuntime:
         after_sequence: int,
     ) -> dict[str, Any]:
         with self._lock:
-            record = self._get_run(runtime_run_id)
+            self._runs.prune_expired()
+            record = self._runs.get(runtime_run_id)
+            record.updated_at = time.monotonic()
             events = [
                 event
                 for event in record.events or []
@@ -247,9 +253,11 @@ class GraphonRuntime:
 
     def cancel_run(self, runtime_run_id: str) -> dict[str, Any]:
         with self._lock:
-            record = self._get_run(runtime_run_id)
+            self._runs.prune_expired()
+            record = self._runs.get(runtime_run_id)
             already_requested = record.cancel_requested
             record.cancel_requested = True
+            record.updated_at = time.monotonic()
             if (
                 not already_requested
                 and record.command_channel is not None
@@ -272,17 +280,19 @@ class GraphonRuntime:
             }
 
     def _execute_run(self, runtime_run_id: str, request: RunRequest) -> None:
-        secrets = set(_secret_values(request.grants))
+        secrets = set(secret_values(request.grants, secret_context=True))
         if self._sandbox_api_key:
             secrets.add(self._sandbox_api_key)
         timer: threading.Timer | None = None
         try:
             with self._lock:
-                record = self._get_run(runtime_run_id)
+                record = self._runs.get(runtime_run_id)
                 if record.cancel_requested:
                     record.status = "cancelled"
+                    record.updated_at = time.monotonic()
                     return
                 record.status = "running"
+                record.updated_at = time.monotonic()
 
             command_channel = self._in_memory_channel()
             with self._lock:
@@ -296,21 +306,16 @@ class GraphonRuntime:
             )
             timer.daemon = True
             timer.start()
-            credentials = deepcopy(request.grants)
-            if self._sandbox_endpoint:
-                code_settings = credentials.setdefault("code", {})
-                code_settings.setdefault("execution_endpoint", self._sandbox_endpoint)
-                if self._sandbox_api_key:
-                    code_settings.setdefault("execution_api_key", self._sandbox_api_key)
-            if self._slim_path:
-                slim_settings = credentials.setdefault("slim", {})
-                slim_settings.setdefault(
-                    "plugin_folder",
-                    os.getenv(
-                        "DIFY_GRAPHON_SLIM_PLUGIN_FOLDER",
-                        "/tmp/dify-graphon/slim/plugins",
-                    ),
-                )
+            credentials = prepare_execution_credentials(
+                request.grants,
+                sandbox_endpoint=self._sandbox_endpoint,
+                sandbox_api_key=self._sandbox_api_key,
+                slim_path=self._slim_path,
+                slim_plugin_folder=os.getenv(
+                    "DIFY_GRAPHON_SLIM_PLUGIN_FOLDER",
+                    "/tmp/dify-graphon/slim/plugins",
+                ),
+            )
             graph_engine = self._load_dsl(
                 request.source.content,
                 credentials=credentials or None,
@@ -325,13 +330,15 @@ class GraphonRuntime:
                 if terminal_status is not None:
                     with self._lock:
                         record.status = terminal_status
+                        record.updated_at = time.monotonic()
 
             with self._lock:
                 if record.status == "running":
                     record.status = "completed"
+                    record.updated_at = time.monotonic()
         except Exception as error:
             with self._lock:
-                record = self._get_run(runtime_run_id)
+                record = self._runs.get(runtime_run_id)
                 already_failed = bool(
                     record.events
                     and record.events[-1]["eventType"]
@@ -344,21 +351,22 @@ class GraphonRuntime:
                         "eventType": "runtime_failed",
                         "payload": {
                             "code": getattr(error, "code", "runtime.execution_failed"),
-                            "message": _redact_text(str(error), secrets),
+                            "message": redact_text(str(error), secrets),
                         },
                     },
                 )
             with self._lock:
                 record.status = "cancelled" if record.cancel_requested else "failed"
+                record.updated_at = time.monotonic()
         finally:
             if timer is not None:
                 timer.cancel()
             with self._lock:
-                self._get_run(runtime_run_id).command_channel = None
+                self._runs.get(runtime_run_id).command_channel = None
 
     def _append_event(self, runtime_run_id: str, event: dict[str, Any]) -> None:
         with self._lock:
-            record = self._get_run(runtime_run_id)
+            record = self._runs.get(runtime_run_id)
             if record.output_truncated:
                 return
             sequence = len(record.events or []) + 1
@@ -383,19 +391,11 @@ class GraphonRuntime:
                 if _json_size([*record.events, marker]) <= self.limits.max_output_bytes:
                     record.events.append(marker)
                     record.output_bytes = _json_size(record.events)
+                record.updated_at = time.monotonic()
                 return
             record.events.append(bounded_event)
             record.output_bytes = candidate_size
-
-    def _get_run(self, runtime_run_id: str) -> RunRecord:
-        try:
-            return self._runs[runtime_run_id]
-        except KeyError:
-            raise RuntimeContractError(
-                "run.not_found",
-                "The requested runtime run does not exist.",
-                status_code=404,
-            ) from None
+            record.updated_at = time.monotonic()
 
     def _enforce_source_size(self, content: str) -> None:
         if len(content.encode()) > self.limits.max_request_bytes:
@@ -443,44 +443,6 @@ def _normalize_node(node: Any) -> dict[str, str]:
         "sourceNodeId": str(node.get("id") or ""),
         "type": str(data.get("type") or "unknown"),
     }
-
-
-def _policy_blockers(
-    nodes: list[dict[str, str]],
-    request: InspectRequest,
-    *,
-    sandbox_available: bool,
-) -> list[dict[str, str]]:
-    blockers: list[dict[str, str]] = []
-    for node in nodes:
-        node_type = node["type"]
-        blocker: tuple[str, str] | None = None
-        if node_type == "code" and (
-            not request.policy.allow_code or not sandbox_available
-        ):
-            blocker = (
-                "dify_sandbox_required",
-                "Code nodes require an explicitly configured Dify sandbox.",
-            )
-        elif node_type == "http-request" and not request.policy.allow_network:
-            blocker = (
-                "network_permission_required",
-                "HTTP request nodes require explicit network permission.",
-            )
-        elif node_type == "tool":
-            blocker = (
-                "tool_adapter_required",
-                "Tool nodes require an installed OpenCLI adapter.",
-            )
-        if blocker is not None:
-            blockers.append(
-                {
-                    "code": blocker[0],
-                    "message": blocker[1],
-                    "nodeId": node["sourceNodeId"],
-                }
-            )
-    return blockers
 
 
 def _app_mode(content: str) -> str | None:
@@ -601,7 +563,7 @@ def _normalize_event(event: Any, *, secrets: set[str]) -> dict[str, Any]:
         "NodeRunReasoningChunkEvent": "node_reasoning_stream",
     }.get(class_name, _snake_case(class_name.removesuffix("Event")))
     raw_payload = event.model_dump(mode="json")
-    payload = _redact_value(raw_payload, secrets)
+    payload = redact_value(raw_payload, secrets)
     normalized: dict[str, Any] = {
         "eventType": event_type,
         "payload": payload,
@@ -620,52 +582,6 @@ def _terminal_status(event_type: str) -> str | None:
         "graph_aborted": "cancelled",
         "graph_paused": "paused",
     }.get(event_type)
-
-
-def _secret_values(value: Any, *, secret_context: bool = False) -> list[str]:
-    secrets: list[str] = []
-    if isinstance(value, dict):
-        for key, item in value.items():
-            key_is_secret = secret_context or _is_secret_key(str(key))
-            secrets.extend(_secret_values(item, secret_context=key_is_secret))
-    elif isinstance(value, list):
-        for item in value:
-            secrets.extend(_secret_values(item, secret_context=secret_context))
-    elif secret_context and isinstance(value, (str, int, float)):
-        text_value = str(value)
-        if text_value:
-            secrets.append(text_value)
-    return secrets
-
-
-def _is_secret_key(key: str) -> bool:
-    normalized = key.lower().replace("-", "_")
-    return any(
-        token in normalized
-        for token in ("api_key", "authorization", "password", "secret", "token")
-    )
-
-
-def _redact_value(value: Any, secrets: set[str], *, key: str = "") -> Any:
-    if _is_secret_key(key):
-        return "[REDACTED]"
-    if isinstance(value, dict):
-        return {
-            str(item_key): _redact_value(item, secrets, key=str(item_key))
-            for item_key, item in value.items()
-        }
-    if isinstance(value, list):
-        return [_redact_value(item, secrets) for item in value]
-    if isinstance(value, str):
-        return _redact_text(value, secrets)
-    return value
-
-
-def _redact_text(value: str, secrets: set[str]) -> str:
-    redacted = value
-    for secret in sorted(secrets, key=len, reverse=True):
-        redacted = redacted.replace(secret, "[REDACTED]")
-    return redacted
 
 
 def _json_size(value: Any) -> int:

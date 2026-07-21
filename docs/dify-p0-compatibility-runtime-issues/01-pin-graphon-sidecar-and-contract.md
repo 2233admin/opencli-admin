@@ -62,4 +62,4 @@ Run:
     docker compose build dify-graphon-runtime
     docker compose up -d dify-graphon-runtime
     curl http://localhost:${DIFY_GRAPHON_PORT}/health
-    uv run --project compat/dify_graphon_runtime pytest
+    uv run --project compat/dify_graphon_runtime pytest -c compat/dify_graphon_runtime/pyproject.toml compat/dify_graphon_runtime/tests
