@@ -27,11 +27,18 @@
 2. tool capability 注册表改声明式加载 (entry-point / 目录扫描)
 3. chat agent 工具面从插件注册表聚合, 而不是手写 TOOLS 列表
 
-## 未决问题 (拉 5080 一起定)
+## P0 已定边界 (2026-07-21)
 
-- 插件边界: 进程内 Python 包, 还是 Dify 那种独立进程/沙箱?
-- 前端 palette 与插件 manifest 的目录联动 (节点实时查找痛点一并解)
-- 权限模型: 插件声明 permissions, 谁批?
+- 插件边界: 安装阶段只导入 Dify manifest / `.difypkg` 元数据, 不解压到可执行目录,
+  不加载第三方 Python。后续执行接 Dify Plugin Daemon/独立运行时, 不在 API 进程内
+  `import` 插件代码。
+- 前端 palette: 后端注册表投影带安装 ID、版本来源的 locked node definition；只有已注册
+  OpenCLI runtime adapter 的 capability 才能变为 `READY`, 其余能力保留可见并标为
+  `BLOCKED`, 不静默隐藏。
+- 权限模型: 插件声明 `resource.permission` 和 credential schema；注册表只展示声明,
+  工作流运行仍由 OpenCLI 项目权限与资源配置显式批准。导入插件不等于授权执行。
+- 目录与实例继续分离: `/api/v1/plugins` 是已安装/内置能力的统一事实源；Provider 凭证、
+  数据源实例和工作流节点仍是独立领域对象。
 
 ## UI 分组铁律 (2026-07-18 走查补充)
 

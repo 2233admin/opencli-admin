@@ -1,0 +1,28 @@
+version: 1.2.3
+type: plugin
+author: example
+name: research_tools
+label:
+  en_US: Research Tools
+  zh_Hans: 研究工具
+description:
+  en_US: Metadata-only test plugin.
+resource:
+  permission:
+    tool:
+      enabled: true
+    model:
+      enabled: true
+      llm: true
+plugins:
+  tools:
+    - provider/research.yaml
+  models:
+    - provider/models.yaml
+meta:
+  version: 0.0.2
+  minimum_dify_version: 1.10.0
+  runner:
+    language: python
+    version: "3.12"
+    entrypoint: main

@@ -17,6 +17,7 @@ from backend.api.v1 import (
     notifications,
     plan_ir,
     plans,
+    plugins,
     presets,
     providers,
     records,
@@ -46,6 +47,7 @@ v1_router.include_router(model_defaults.router)
 v1_router.include_router(nodes.router)
 v1_router.include_router(plan_ir.router)
 v1_router.include_router(plans.router)
+v1_router.include_router(plugins.router)
 v1_router.include_router(presets.router)
 v1_router.include_router(providers.router)
 v1_router.include_router(sources.router)

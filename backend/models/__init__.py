@@ -12,6 +12,7 @@ from backend.models.odp_system_measurement import OdpSystemMeasurement
 from backend.models.plan import Plan
 from backend.models.plan_health import PlanHealthRecord
 from backend.models.plan_source_index import PlanSourceIndex
+from backend.models.plugin_installation import PluginInstallation
 from backend.models.provider import ModelProvider
 from backend.models.provider_model import ProviderModel
 from backend.models.record import CollectedRecord
@@ -50,6 +51,7 @@ __all__ = [
     "Plan",
     "PlanHealthRecord",
     "PlanSourceIndex",
+    "PluginInstallation",
     "DataSource",
     "SourceCredential",
     "SourceCursor",
