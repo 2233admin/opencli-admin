@@ -210,6 +210,22 @@ def _standalone_opencli_pipeline_project() -> dict:
 async def test_standalone_opencli_source_executes_live_channel(client, monkeypatch):
     calls: list[tuple[dict, dict]] = []
 
+    monkeypatch.setattr(
+        "backend.workflow.opencli_adapter_nodes._load_opencli_catalog",
+        lambda: (
+            {
+                "site": "bbc",
+                "name": "news",
+                "description": "BBC news",
+                "access": "read",
+                "browser": False,
+                "strategy": "public",
+                "args": [],
+                "columns": ["title", "url"],
+            },
+        ),
+    )
+
     async def collect(_self, config, parameters):
         calls.append((config, parameters))
         return ChannelResult.ok(
