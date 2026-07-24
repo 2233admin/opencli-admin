@@ -14,6 +14,7 @@ from backend.api.v1.studio_helpers import (
 from backend.api.v1.studio_schemas import DraftRead, DraftUpdate, WorkflowCreate, WorkflowRead
 from backend.database import get_db
 from backend.models.studio import StudioProject, StudioWorkflow, StudioWorkflowDraft
+from backend.schemas import workflow as workflow_schemas
 from backend.schemas.common import ApiResponse
 
 router = APIRouter()
@@ -106,9 +107,11 @@ async def get_draft(
     return ApiResponse.ok(
         draft.model_copy(
             update={
-                "graph": canonicalize_studio_graph(
-                    draft.graph,
-                    workflow_id=workflow_id,
+                "graph": workflow_schemas.WorkflowProject.model_validate(
+                    canonicalize_studio_graph(
+                        draft.graph,
+                        workflow_id=workflow_id,
+                    )
                 )
             }
         )

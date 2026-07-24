@@ -344,18 +344,27 @@ export async function replayWorkflowRunEventStream(
   runId: string,
   options: { authorization?: string | null } = {},
 ): Promise<WorkflowRunStreamReplay> {
-  const response = await fetch(`${workflowRunEndpoint(runId)}/events/stream`, {
-    headers: {
-      ...(options.authorization ? { Authorization: options.authorization } : {}),
-    },
-    cache: "no-store",
-  })
-  if (!response.ok) {
-    const payload = (await response.json().catch(() => null)) as { message?: string; error?: string } | null
-    throw new Error(payload?.message ?? payload?.error ?? `Workflow event stream failed (${response.status})`)
+  const retryDelays = [0, 75, 200, 500]
+  for (const [index, delay] of retryDelays.entries()) {
+    if (delay > 0) {
+      await new Promise((resolve) => setTimeout(resolve, delay))
+    }
+    const response = await fetch(`${workflowRunEndpoint(runId)}/events/stream`, {
+      headers: {
+        ...(options.authorization ? { Authorization: options.authorization } : {}),
+      },
+      cache: "no-store",
+    })
+    if (response.ok) {
+      const text = await response.text()
+      return parseWorkflowRunEventStream(text)
+    }
+    if (response.status !== 404 || index === retryDelays.length - 1) {
+      const payload = (await response.json().catch(() => null)) as { message?: string; error?: string } | null
+      throw new Error(payload?.message ?? payload?.error ?? `Workflow event stream failed (${response.status})`)
+    }
   }
-  const text = await response.text()
-  return parseWorkflowRunEventStream(text)
+  throw new Error("Workflow event stream replay exhausted")
 }
 
 export async function fetchWorkflowEvidenceBatches(

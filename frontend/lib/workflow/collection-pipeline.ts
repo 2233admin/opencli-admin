@@ -136,13 +136,19 @@ export function buildCollectionWorkflowProject(): WorkflowProject {
  * 每个顶层节点都可以双击进入自己的内部网络；内部节点如果仍是 package，
  * store 会继续按 scoped id 进入下一层，和 Houdini 的嵌套 network 一致。
  */
-export function buildPackagedWorkflowProject(): WorkflowProject {
-  const packageSpecs = [
+export function buildPackagedWorkflowProject(
+  options: { includeUnconfiguredDelivery?: boolean } = {},
+): WorkflowProject {
+  const packageSpecs: Array<readonly [string, string, string, string]> = [
     ["package.opencli.multi-source-hda", "source-operator", "source-package", "多源数据采集"],
     ["package.intelligence.pipeline", "intelligence-operator", "intelligence-package", "情报清洗与研判"],
     ["package.review.human-review", "review-operator", "review-package", "人工复核"],
-    ["package.dispatch.fanout", "dispatch-operator", "dispatch-package", "交付与分发"],
-  ] as const
+  ]
+  if (options.includeUnconfiguredDelivery) {
+    packageSpecs.push(
+      ["package.dispatch.fanout", "dispatch-operator", "dispatch-package", "交付与分发"],
+    )
+  }
 
   const nodes = packageSpecs.map(([catalogId, operatorId, implementationId, label], index) =>
     createOperatorNodeFromCatalog(

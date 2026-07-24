@@ -52,7 +52,9 @@ async def test_studio_project_bootstrap_creates_primary_workflow_and_draft(clien
         f"/workflows/{data['primary_workflow']['id']}/draft"
     )
     assert persisted.status_code == 200, persisted.text
-    _assert_no_null_object_fields(persisted.json()["data"]["graph"])
+    persisted_graph = persisted.json()["data"]["graph"]
+    _assert_no_null_object_fields(persisted_graph)
+    assert persisted_graph == data["draft"]["graph"]
 
     projects = (await client.get(f"/api/v1/workspaces/{workspace_id}/projects")).json()[
         "data"

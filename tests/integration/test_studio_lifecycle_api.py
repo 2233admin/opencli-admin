@@ -30,6 +30,51 @@ async def _create_studio_workflow(client, *, graph: dict | None = None) -> dict:
 
 
 @pytest.mark.asyncio
+async def test_studio_legacy_graph_extensions_and_nested_nulls_round_trip(client):
+    graph = workflow_conformance_project()
+    graph["legacyExtension"] = {
+        "schema": "legacy-extension.v0",
+        "nullableValue": None,
+    }
+    graph["nodes"][0]["legacyNodeExtension"] = {
+        "owner": "legacy-canvas",
+        "nullableValue": None,
+    }
+    graph["nodes"][0]["sourceAnchor"] = None
+
+    created = await _create_studio_workflow(client, graph=graph)
+    draft_url = f"{created['base_url']}/draft"
+    first = await client.get(draft_url)
+
+    assert first.status_code == 200, first.text
+    first_draft = first.json()["data"]
+    first_graph = first_draft["graph"]
+    assert first_graph["legacyExtension"] == graph["legacyExtension"]
+    assert first_graph["nodes"][0]["legacyNodeExtension"] == (
+        graph["nodes"][0]["legacyNodeExtension"]
+    )
+    assert "sourceAnchor" not in first_graph["nodes"][0]
+
+    first_graph["legacyExtension"]["revisionNote"] = "round-trip"
+    first_graph["nodes"][0]["legacyNodeExtension"]["revision"] = 2
+    updated = await client.put(
+        draft_url,
+        json={"graph": first_graph, "revision": first_draft["revision"]},
+    )
+
+    assert updated.status_code == 200, updated.text
+    updated_graph = updated.json()["data"]["graph"]
+    assert updated_graph["legacyExtension"] == first_graph["legacyExtension"]
+    assert updated_graph["nodes"][0]["legacyNodeExtension"] == (
+        first_graph["nodes"][0]["legacyNodeExtension"]
+    )
+
+    reloaded = await client.get(draft_url)
+    assert reloaded.status_code == 200, reloaded.text
+    assert reloaded.json()["data"]["graph"] == updated_graph
+
+
+@pytest.mark.asyncio
 async def test_studio_workflow_draft_validation_run_is_persisted(client):
     created = await _create_studio_workflow(client)
     response = await client.post(

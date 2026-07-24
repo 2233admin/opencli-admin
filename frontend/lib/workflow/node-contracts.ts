@@ -431,9 +431,9 @@ const CONTRACTS: Record<string, NodeContract> = {
   "intelligence.output.collection-result": contract(
     "intelligence.output.collection-result",
     "Collection Output",
-    "recordCandidate[] -> storedItems[]",
+    "recordCandidate[] -> items[]",
     [port("in", "input", "recordCandidate[]", true, "Consumes normalized package candidates.")],
-    [port("out", "output", "storedItems[]", false, "Emits package output artifact references.")],
+    [port("out", "output", "items[]", false, "Exposes normalized package items with lineage.")],
     [
       param("queue", "params", "string", true, "opencli-hda-output", {
         description: "Internal artifact queue for package output.",
@@ -510,7 +510,7 @@ const CONTRACTS: Record<string, NodeContract> = {
   ),
   "package.opencli.multi-source-hda": contract(
     "package.opencli.multi-source-hda",
-    "OpenCLI Multi-source HDA",
+    "多站点采集执行",
     "trigger -> items[]",
     [port("in", "input", "trigger", true, "Consumes a workflow schedule trigger.")],
     [port("out", "output", "items[]", true, "Emits normalized items from locked OpenCLI internal sources.")],

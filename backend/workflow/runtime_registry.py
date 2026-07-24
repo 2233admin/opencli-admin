@@ -60,7 +60,14 @@ INBOX_STORE_BINDING_ID = "workflow.inbox.store"
 WEBHOOK_NOTIFY_BINDING_ID = "workflow.notifier.webhook.send"
 NOTIFY_SEND_BINDING_ID = "workflow.notify.send"
 EXTERNAL_TOOL_BINDING_ID = "workflow.external-tool.capability"
-SUPPORTED_TOOL_EXECUTOR_MODES = {"fixture", "okx_market_ticker_snapshot", "joyai_vl_interaction"}
+SUPPORTED_TOOL_EXECUTOR_MODES = {
+    "fixture",
+    "okx_market_ticker_snapshot",
+    "joyai_vl_interaction",
+    "situation_awareness",
+    "swarm_simulation",
+    "native_intelligence",
+}
 
 
 class WorkflowRuntimeBinding(BaseModel):
@@ -479,6 +486,30 @@ def _resolve_merge_node(node: WorkflowProjectNode, *, node_id: str) -> dict[str,
     }
 
 
+def _resolve_dedupe_node(node: WorkflowProjectNode, *, node_id: str) -> dict[str, Any]:
+    key = _read_string(node.params.get("key")) or "contentHash"
+    window = _read_string(node.params.get("window")) or "24h"
+    return {
+        "binding": {
+            "status": "bound",
+            "binding_id": DEDUPE_BINDING_ID,
+            "runtime": "workflow",
+            "channel": "transform",
+            "input": {
+                "key": key,
+                "window": window,
+                "inputPort": "recordCandidate[]",
+                "outputPort": "recordCandidate[]",
+            },
+        },
+        "dedupe": {
+            "node_id": node_id,
+            "key": key,
+            "window": window,
+        },
+    }
+
+
 def _resolve_router_route_node(node: WorkflowProjectNode, *, node_id: str) -> dict[str, Any]:
     expression = _read_string(node.params.get("expression")) or "true"
     return {
@@ -623,29 +654,85 @@ def _resolve_external_tool_capability(node: WorkflowProjectNode, *, node_id: str
                 )
             ),
         }
+    if tool.status != "runnable":
+        readiness = _read_dict(tool.manifest.get("readiness"))
+        missing_reasons = [
+            value
+            for value in readiness.get("missingReasons", [])
+            if isinstance(value, str)
+        ]
+        return {
+            "external_tool": {
+                "node_id": node_id,
+                "binding_id": EXTERNAL_TOOL_BINDING_ID,
+                "dispatch": "blocked_tool_capability_not_ready",
+                "toolCapabilityId": capability_id,
+            },
+            "missing_runtime": _dump_missing_runtime(
+                WorkflowMissingRuntime(
+                    code="tool_capability_not_ready",
+                    node_id=node_id,
+                    kind=node.kind,
+                    capability=node.capability,
+                    required_params=missing_reasons,
+                    message=f'Tool Capability "{capability_id}" is not machine-certified runnable.',
+                )
+            ),
+        }
+    if executor_mode != tool.executor.mode:
+        return {
+            "external_tool": {
+                "node_id": node_id,
+                "binding_id": EXTERNAL_TOOL_BINDING_ID,
+                "dispatch": "blocked_executor_mismatch",
+                "toolCapabilityId": capability_id,
+            },
+            "missing_runtime": _dump_missing_runtime(
+                WorkflowMissingRuntime(
+                    code="tool_capability_executor_mismatch",
+                    node_id=node_id,
+                    kind=node.kind,
+                    capability=node.capability,
+                    required_params=[f"toolCapability.executor.mode={tool.executor.mode}"],
+                    message=f'Tool Capability "{capability_id}" requires its registered executor.',
+                )
+            ),
+        }
 
+    tool_runtime = _read_dict(tool.manifest.get("runtime"))
+    action_binding_id = _read_string(tool_runtime.get("actionBinding"))
+    resolved_binding_id = action_binding_id or EXTERNAL_TOOL_BINDING_ID
     return {
         "binding": {
             "status": "bound",
-            "binding_id": EXTERNAL_TOOL_BINDING_ID,
+            "binding_id": resolved_binding_id,
             "runtime": "workflow",
             "channel": "tool-capability",
             "input": {
                 "toolCapabilityId": capability_id,
                 "executorMode": executor_mode,
                 "toolLabel": tool.label,
-                "inputPort": "unknown",
-                "outputPort": "unknown",
+                "inputPort": (
+                    tool.inputPorts[0].type if tool.inputPorts else "unknown"
+                ),
+                "outputPort": (
+                    tool.outputPorts[0].type if tool.outputPorts else "unknown"
+                ),
+                "transportBindingId": EXTERNAL_TOOL_BINDING_ID,
+                "actionBindingId": action_binding_id,
                 "fixtureOutput": executor.get("output"),
                 "fixtureOutputs": executor.get("outputs"),
-                "executorParams": _read_dict(executor.get("params")),
+                "executorParams": {
+                    **tool.executor.params,
+                    **_read_dict(executor.get("params")),
+                },
                 "toolParams": _read_dict(node.params.get("toolParams")),
                 "externalWorkflow": _read_dict(node.params.get("externalWorkflow")),
             },
         },
         "external_tool": {
             "node_id": node_id,
-            "binding_id": EXTERNAL_TOOL_BINDING_ID,
+            "binding_id": resolved_binding_id,
             "dispatch": "opencli_admin_tool_capability",
             "toolCapabilityId": capability_id,
         },
@@ -922,7 +1009,11 @@ def _is_normalize_node(node: WorkflowProjectNode) -> bool:
 
 
 def _is_dedupe_node(node: WorkflowProjectNode) -> bool:
-    return _read_string((node.ui or {}).get("catalogId")) == "intelligence.processing.dedupe" or (
+    if (node.internals and node.internals.nodes) or node.topicCollapse or node.miniNetwork:
+        return False
+    return _read_string(
+        (node.ui or {}).get("catalogId")
+    ) == "intelligence.processing.dedupe" or (
         node.kind == "agent" and node.capability == "dedupe"
     )
 

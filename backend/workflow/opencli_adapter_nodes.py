@@ -9,14 +9,13 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
-import shutil
 import subprocess
 from collections import Counter
 from functools import lru_cache
 from typing import Any
 
+from backend.opencli_runtime import resolve_opencli_bin
 from backend.schemas.workflow import (
     WorkflowAdapterBinding,
     WorkflowOpenCLIAdapterNode,
@@ -28,7 +27,6 @@ from backend.workflow.runtime_registry import EXTERNAL_TOOL_BINDING_ID, OPENCLI_
 
 logger = logging.getLogger(__name__)
 
-_OPENCLI_BIN = os.environ.get("OPENCLI_BIN", "opencli")
 _OPENCLI_LIST_TIMEOUT_SECONDS = 15
 _OPENCLI_SOURCE_CATALOG_ID = "intelligence.source.opencli-slot"
 _EXTERNAL_TOOL_CATALOG_ID = "external.tool.capability"
@@ -59,8 +57,9 @@ def list_opencli_adapter_nodes(
     q: str | None = None,
     include_write: bool = True,
     limit: int | None = None,
+    refresh: bool = False,
 ) -> WorkflowOpenCLIAdapterNodesResponse:
-    catalog = _load_opencli_catalog()
+    catalog = get_opencli_adapter_catalog(refresh=refresh)
     nodes = [_build_adapter_node(entry) for entry in catalog]
     if not include_write:
         nodes = [node for node in nodes if node.access != "write"]
@@ -90,8 +89,22 @@ def list_opencli_adapter_nodes(
     )
 
 
+def refresh_opencli_adapter_catalog() -> None:
+    """Invalidate discovery so the next read reflects the selected OpenCLI binary."""
+
+    _load_opencli_catalog.cache_clear()
+
+
+def get_opencli_adapter_catalog(*, refresh: bool = False) -> tuple[dict[str, Any], ...]:
+    """Return the shared adapter catalog used by nodes, presets, and runtime lookup."""
+
+    if refresh:
+        refresh_opencli_adapter_catalog()
+    return _load_opencli_catalog()
+
+
 def get_opencli_adapter_node_summary() -> dict[str, Any]:
-    catalog = _load_opencli_catalog()
+    catalog = get_opencli_adapter_catalog()
     return _summarize_nodes([_build_adapter_node(entry) for entry in catalog])
 
 
@@ -99,7 +112,10 @@ def resolve_opencli_adapter_node(adapter_node_id: str) -> WorkflowOpenCLIAdapter
     return next(
         (
             node
-            for node in (_build_adapter_node(entry) for entry in _load_opencli_catalog())
+            for node in (
+                _build_adapter_node(entry)
+                for entry in get_opencli_adapter_catalog()
+            )
             if node.id == adapter_node_id
         ),
         None,
@@ -182,16 +198,15 @@ def materialize_opencli_adapter_node(
 
 @lru_cache(maxsize=1)
 def _load_opencli_catalog() -> tuple[dict[str, Any], ...]:
-    bin_path = _resolve_opencli_bin()
-    if not bin_path:
-        logger.info("opencli binary not found; adapter-node registry is empty")
-        return ()
+    bin_path = resolve_opencli_bin()
     try:
         result = subprocess.run(
             [bin_path, "list", "-f", "json"],
             capture_output=True,
             check=False,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=_OPENCLI_LIST_TIMEOUT_SECONDS,
         )
     except Exception as exc:
@@ -204,7 +219,7 @@ def _load_opencli_catalog() -> tuple[dict[str, Any], ...]:
             result.stderr[:500],
         )
         return ()
-    raw = result.stdout
+    raw = result.stdout or ""
     json_start = next((idx for idx, char in enumerate(raw) if char in ("[", "{")), None)
     if json_start is None:
         logger.warning("opencli list -f json produced no JSON")
@@ -224,17 +239,6 @@ def _load_opencli_catalog() -> tuple[dict[str, Any], ...]:
             continue
         catalog.append(dict(entry))
     return tuple(catalog)
-
-
-def _resolve_opencli_bin() -> str | None:
-    if os.path.exists(_OPENCLI_BIN):
-        return _OPENCLI_BIN
-    return (
-        shutil.which(_OPENCLI_BIN)
-        or shutil.which("opencli.cmd")
-        or shutil.which("opencli")
-        or shutil.which("opencli.ps1")
-    )
 
 
 def _build_adapter_node(entry: dict[str, Any]) -> WorkflowOpenCLIAdapterNode:

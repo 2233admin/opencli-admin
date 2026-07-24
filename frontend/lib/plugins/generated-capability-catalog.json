@@ -1,0 +1,135 @@
+{
+  "capabilityIds": [
+    "provider.model-runtime",
+    "provider.opencli",
+    "provider.rss-reader",
+    "provider.workflow-components"
+  ],
+  "providers": [
+    {
+      "capabilityId": "provider.model-runtime",
+      "configurationRoute": "/plugins?provider=model-runtime",
+      "distribution": "builtin",
+      "label": "模型运行时",
+      "lifecycle": "active",
+      "operationIds": [],
+      "owner": "opencli-admin",
+      "pluginTypes": [
+        "model"
+      ],
+      "primaryCategory": "model",
+      "projection": "plugin_provider",
+      "providerAliases": [],
+      "providerKey": "opencli-admin/model-runtime",
+      "readinessSources": {
+        "optional": [
+          "backend_plugin_catalog"
+        ],
+        "required": [
+          "workflow_capabilities"
+        ]
+      },
+      "targetRoute": "/studio",
+      "workflowNodeIds": [
+        "intelligence.agent.score",
+        "intelligence.agent.summary",
+        "intelligence.agent.tag"
+      ],
+      "wrapperNames": []
+    },
+    {
+      "capabilityId": "provider.opencli",
+      "configurationRoute": "/plugins?provider=opencli",
+      "distribution": "builtin",
+      "label": "OpenCLI",
+      "lifecycle": "active",
+      "operationIds": [],
+      "owner": "opencli-admin",
+      "pluginTypes": [
+        "datasource"
+      ],
+      "primaryCategory": "datasource",
+      "projection": "plugin_provider",
+      "providerAliases": [],
+      "providerKey": "opencli-admin/opencli-adapters",
+      "readinessSources": {
+        "optional": [
+          "workflow_capabilities"
+        ],
+        "required": [
+          "opencli_registry"
+        ]
+      },
+      "targetRoute": "/studio",
+      "workflowNodeIds": [
+        "intelligence.source.opencli-slot",
+        "package.opencli.multi-source-hda"
+      ],
+      "wrapperNames": []
+    },
+    {
+      "capabilityId": "provider.rss-reader",
+      "configurationRoute": "/plugins?provider=rss-reader",
+      "distribution": "builtin",
+      "label": "RSS / Atom",
+      "lifecycle": "active",
+      "operationIds": [],
+      "owner": "opencli-admin",
+      "pluginTypes": [
+        "datasource"
+      ],
+      "primaryCategory": "datasource",
+      "projection": "plugin_provider",
+      "providerAliases": [],
+      "providerKey": "opencli-admin/native-data-sources",
+      "readinessSources": {
+        "optional": [
+          "backend_plugin_catalog"
+        ],
+        "required": [
+          "workflow_capabilities"
+        ]
+      },
+      "targetRoute": "/studio",
+      "workflowNodeIds": [
+        "channel.rss"
+      ],
+      "wrapperNames": []
+    },
+    {
+      "capabilityId": "provider.workflow-components",
+      "configurationRoute": "/plugins?provider=workflow-core",
+      "distribution": "builtin",
+      "label": "Workflow Components",
+      "lifecycle": "active",
+      "operationIds": [],
+      "owner": "opencli-admin",
+      "pluginTypes": [
+        "extension"
+      ],
+      "primaryCategory": "extension",
+      "projection": "plugin_provider",
+      "providerAliases": [],
+      "providerKey": "opencli-admin/dify-graphon-runtime",
+      "readinessSources": {
+        "optional": [
+          "backend_plugin_catalog"
+        ],
+        "required": [
+          "workflow_capabilities"
+        ]
+      },
+      "targetRoute": "/studio",
+      "workflowNodeIds": [
+        "intelligence.control.record-acceptance",
+        "intelligence.flow.merge",
+        "intelligence.processing.dedupe",
+        "intelligence.processing.normalize",
+        "intelligence.router.importance",
+        "intelligence.sink.records"
+      ],
+      "wrapperNames": []
+    }
+  ],
+  "version": 1
+}

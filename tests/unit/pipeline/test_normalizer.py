@@ -64,6 +64,7 @@ def test_normalize_items_batch():
 
 # ── opencli site-specific field mapping tests ─────────────────────────────────
 
+
 def test_weibo_word_maps_to_title():
     """weibo hot: uses 'word' as the topic name."""
     raw = {
@@ -118,6 +119,16 @@ def test_linkedin_listed_maps_to_published_at():
     }
     normalized, _ = normalize_item(raw, "li-src")
     assert normalized["published_at"] == "2 days ago"
+
+
+def test_douyin_create_time_epoch_maps_to_published_at():
+    normalized, _ = normalize_item(
+        {"title": "Douyin item", "create_time": 1784512800},
+        "douyin",
+    )
+
+    assert normalized["published_at"] == "1784512800"
+    assert "extra_create_time" not in normalized
     assert "extra_listed" not in normalized
 
 
@@ -138,7 +149,13 @@ def test_announcement_display_time_wins_over_date_only_time():
 
 def test_xueqiu_text_maps_to_content():
     """xueqiu feed: uses 'text' as post content (no title)."""
-    raw = {"rank": 1, "author": "某投资者", "text": "今日大盘分析...", "likes": 42, "url": "https://xueqiu.com/..."}
+    raw = {
+        "rank": 1,
+        "author": "某投资者",
+        "text": "今日大盘分析...",
+        "likes": 42,
+        "url": "https://xueqiu.com/...",
+    }
     normalized, _ = normalize_item(raw, "xueqiu-src")
     assert normalized["content"] == "今日大盘分析..."
     assert normalized["author"] == "某投资者"

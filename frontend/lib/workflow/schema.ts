@@ -126,7 +126,7 @@ export const workflowNodeSchema = z.object({
     edges: z.array(z.unknown()).default([]),
   }).optional(),
   ui: jsonRecordSchema.optional(),
-})
+}).passthrough()
 
 export const workflowEdgeSchema = z.object({
   id: z.string().min(1),
@@ -183,7 +183,7 @@ export const workflowProjectSchema = z.object({
     canWriteInbox: true,
     allowedDomains: [],
   }),
-})
+}).passthrough()
 
 export type WorkflowProfile = z.infer<typeof workflowProfileSchema>
 export type WorkflowNodeKind = z.infer<typeof workflowNodeKindSchema>

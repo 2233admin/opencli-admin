@@ -231,7 +231,7 @@ export default function StudioPage() {
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">{Array.from({ length: 4 }).map((_, index) => <div key={index} className="h-40 animate-pulse rounded-xl bg-muted" />)}</div>
       ) : visibleProjects.length ? (
         <section aria-label="项目列表">
-          <div className="mb-3 flex items-center justify-between gap-3 text-xs"><span className="font-medium">{visibleProjects.length} 个项目</span><span className="text-muted-foreground">{SORT_LABELS[sort]}</span></div>
+          <div className="mb-3 text-xs font-medium">{visibleProjects.length} 个项目</div>
           <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
           {visibleProjects.map((project) => (
             <Link
@@ -256,8 +256,8 @@ export default function StudioPage() {
         <div className="flex min-h-[420px] items-center justify-center rounded-xl border border-dashed bg-muted/10 px-4">
           <div className="w-full max-w-xl text-center">
             <div className="mx-auto grid size-11 place-items-center rounded-xl border bg-background"><Bot className="size-5 text-muted-foreground" /></div>
-            <h2 className="mt-4 text-sm font-medium">创建你的第一个数据应用</h2>
-            <p className="mt-1 text-xs text-muted-foreground">从成熟模板开始、创建空白节点图，或者导入 Dify / n8n DSL。</p>
+            <h2 className="mt-4 text-sm font-medium">创建你的第一个项目</h2>
+            <p className="mt-1 text-xs text-muted-foreground">从模板开始、让 Agent 创建，或者导入现有工作流。</p>
             <div className="mt-5 grid gap-2 text-left">
               <CreateChoice title="与 Agent 创建项目" description="描述目标，由 Agent 生成第一版节点工作流。" href={workspaceId ? `/studio/new?workspace=${workspaceId}` : undefined} icon={Bot} />
               <CreateChoice title="从应用模板创建" description="选择预设的数据链路，最快体验 OpenCLI。" href={workspaceId ? `/studio/templates?workspace=${workspaceId}` : undefined} icon={Sparkles} />

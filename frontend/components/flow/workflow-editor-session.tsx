@@ -134,6 +134,7 @@ export function WorkflowEditorSession({ forceStandalone = false }: WorkflowEdito
     setLoadError(null)
     setCreationError(null)
     setDocumentState('loading')
+    setLoadError(null)
     ;(async () => {
       try {
         if (!requestedWorkflowId && workspaceProjects.isError) {
@@ -161,8 +162,15 @@ export function WorkflowEditorSession({ forceStandalone = false }: WorkflowEdito
       } catch (reason) {
         if (!active) return
         const message = reason instanceof Error ? reason.message : '工作流加载失败'
+        console.error('[WorkflowEditorSession] failed to load workflow draft', {
+          workspaceId,
+          projectId,
+          workflowId: resolvedWorkflowId,
+          reason,
+        })
         setLoadError(message)
         setLoadState('error')
+        setDocumentState('error')
         toast.error(message)
       }
     })()
@@ -359,7 +367,7 @@ export function WorkflowEditorSession({ forceStandalone = false }: WorkflowEdito
         </div>
       ) : (
         <ErrorBoundary label="WorkflowEditor">
-          <WorkflowEditor />
+          <WorkflowEditor documentState={documentState} />
         </ErrorBoundary>
       )}
       {workspaceId && projectId && workflowId ? (

@@ -41,6 +41,10 @@ WORKFLOW_CATALOG_IDS = {
     "package.collection.pipeline",
     "package.processing.record-hygiene",
     "package.opencli.multi-source-hda",
+    "package.processing.record-hygiene",
+    "package.intelligence.situation-awareness",
+    "package.simulation.swarm-forecast",
+    "package.intelligence.native-lifecycle",
     "package.dispatch.fanout",
     "package.intelligence.pipeline",
     "package.ops.event",
@@ -247,7 +251,12 @@ def forbidden_node_definition_keys(node: WorkflowProjectNode) -> list[str]:
 
     ui = node.ui or {}
     keys = [f"ui.{key}" for key in sorted(FORBIDDEN_UI_KEYS) if key in ui]
-    keys.extend(_forbidden_param_paths(node.params))
+    keys.extend(
+        _forbidden_param_paths(
+            node.params,
+            allowed_paths=_native_intelligence_ref_allowed_paths(node),
+        )
+    )
     return keys
 
 
@@ -255,18 +264,58 @@ def _forbidden_param_paths(
     value: Any,
     *,
     path: tuple[str, ...] = ("params",),
+    allowed_paths: frozenset[tuple[str, ...]] = frozenset(),
 ) -> list[str]:
     paths: list[str] = []
     if isinstance(value, dict):
         for key, nested in value.items():
             nested_path = (*path, str(key))
-            if key in FORBIDDEN_PARAM_KEYS:
+            if key in FORBIDDEN_PARAM_KEYS and nested_path not in allowed_paths:
                 paths.append(".".join(nested_path))
-            paths.extend(_forbidden_param_paths(nested, path=nested_path))
+            paths.extend(
+                _forbidden_param_paths(
+                    nested,
+                    path=nested_path,
+                    allowed_paths=allowed_paths,
+                )
+            )
     elif isinstance(value, list):
         for index, nested in enumerate(value):
-            paths.extend(_forbidden_param_paths(nested, path=(*path, str(index))))
+            paths.extend(
+                _forbidden_param_paths(
+                    nested,
+                    path=(*path, str(index)),
+                    allowed_paths=allowed_paths,
+                )
+            )
     return paths
+
+
+def _native_intelligence_ref_allowed_paths(
+    node: WorkflowProjectNode,
+) -> frozenset[tuple[str, ...]]:
+    tool = node.params.get("toolCapability")
+    if not isinstance(tool, dict):
+        return frozenset()
+    tool_id = _read_string(tool.get("id"))
+    executor = tool.get("executor")
+    if (
+        not tool_id
+        or not tool_id.startswith("tool.intelligence.native.")
+        or not isinstance(executor, dict)
+        or executor.get("mode") != "native_intelligence"
+    ):
+        return frozenset()
+    return frozenset(
+        {
+            (
+                "params",
+                "toolParams",
+                "intelligenceSessionRef",
+                "sessionId",
+            )
+        }
+    )
 
 
 def _read_string(value: Any) -> str | None:

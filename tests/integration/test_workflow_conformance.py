@@ -8,6 +8,7 @@ from pathlib import Path
 import httpx
 import pytest
 
+from backend.database import commit_session
 from backend.workflow.block_reasons import WORKFLOW_BLOCK_REASON_TAXONOMY
 from backend.workflow.conformance import (
     ConformanceCaseResult,
@@ -204,6 +205,7 @@ async def test_workflow_conformance_sse_stream_matches_snapshot_transcript(clien
 @pytest.mark.asyncio
 async def test_workflow_conformance_redis_event_mirror_matches_snapshot_transcript(
     client,
+    db_session,
     monkeypatch,
 ):
     import redis.asyncio as aioredis
@@ -226,6 +228,7 @@ async def test_workflow_conformance_redis_event_mirror_matches_snapshot_transcri
     )
 
     assert response.status_code == 202
+    await commit_session(db_session)
     assert {entry[0] for entry in fake_redis.entries} == {DEFAULT_WORKFLOW_EVENT_STREAM}
 
     expected = load_expected_events(EXPECTED_EVENTS_DIR / "happy-path.json")
@@ -353,7 +356,8 @@ async def test_workflow_conformance_webhook_delivery_blocks_without_send_permiss
         fake_guarded_async_client,
     )
 
-    run_id = "conformance-webhook-missing-permission"
+    run_id = "conf-webhook-missing-permission"
+    assert len(run_id) <= 36
     response = await client.post(
         "/api/v1/workflows/runs",
         json={
@@ -396,7 +400,8 @@ async def test_workflow_conformance_webhook_delivery_blocks_without_projection(
         fake_guarded_async_client,
     )
 
-    run_id = "conformance-webhook-missing-projection"
+    run_id = "conf-webhook-missing-projection"
+    assert len(run_id) <= 36
     response = await client.post(
         "/api/v1/workflows/runs",
         json={
@@ -428,7 +433,8 @@ async def test_workflow_conformance_webhook_delivery_blocks_without_projection(
 async def test_workflow_conformance_missing_source_credential_blocks_with_stable_reason(
     client,
 ):
-    run_id = "conformance-missing-source-credential"
+    run_id = "conf-missing-source-credential"
+    assert len(run_id) <= 36
     response = await client.post(
         "/api/v1/workflows/runs",
         json={

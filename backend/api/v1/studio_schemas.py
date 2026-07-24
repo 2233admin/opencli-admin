@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
 from backend.schemas import workflow as workflow_schemas
 from backend.schemas.common import UTCModel
@@ -46,7 +46,7 @@ class ProjectRead(UTCModel):
 class WorkflowCreate(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     description: str | None = None
-    graph: dict
+    graph: workflow_schemas.WorkflowProject
 
 
 class BootstrapWorkflowCreate(BaseModel):
@@ -73,15 +73,21 @@ class WorkflowRead(UTCModel):
 
 
 class DraftUpdate(BaseModel):
-    graph: dict
+    graph: workflow_schemas.WorkflowProject
     revision: int = Field(ge=1)
 
 
 class DraftRead(UTCModel):
     revision: int
-    graph: dict
+    graph: workflow_schemas.WorkflowProject
     updated_by_user_id: str
     updated_at: datetime
+
+    @field_serializer("graph")
+    def serialize_graph(
+        self, graph: workflow_schemas.WorkflowProject
+    ) -> dict[str, object]:
+        return graph.model_dump(mode="json", exclude_none=True)
 
 
 class VersionCreate(BaseModel):

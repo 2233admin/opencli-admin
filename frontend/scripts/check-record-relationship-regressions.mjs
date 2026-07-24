@@ -28,8 +28,7 @@ registerHooks({
   load(url, context, nextLoad) {
     if (url.endsWith('.ts') || url.endsWith('.tsx')) {
       const source = stripTypeScriptTypes(readFileSync(fileURLToPath(url), 'utf8'), {
-        mode: 'transform',
-        sourceMap: true,
+        mode: 'strip',
         sourceUrl: url,
       })
       return { format: 'module', source, shortCircuit: true }

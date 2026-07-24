@@ -26,6 +26,10 @@ class RuntimeIOContract:
     event_shape: tuple[str, ...]
     fixture_coverage: tuple[str, ...]
     real_webhook_delivery: bool = False
+    resource_gate: tuple[str, ...] = ()
+    errors: tuple[str, ...] = ()
+    provenance_fields: tuple[str, ...] = ()
+    limits: tuple[tuple[str, int], ...] = ()
 
     def to_manifest(self) -> dict[str, object]:
         return {
@@ -46,6 +50,15 @@ class RuntimeIOContract:
             "configGate": {
                 "required": list(self.config_gate),
             },
+            "resourceGate": {
+                "required": list(self.resource_gate),
+            },
+            "errors": [{"code": code, "stable": True} for code in self.errors],
+            "provenance": {
+                "required": bool(self.provenance_fields),
+                "fields": list(self.provenance_fields),
+            },
+            "limits": dict(self.limits),
             "eventShape": {
                 "events": list(self.event_shape),
             },
@@ -212,9 +225,13 @@ RUNTIME_IO_CONTRACTS: dict[str, RuntimeIOContract] = {
         input_params=("method", "path"),
         output_artifacts=("runtimeInputEnvelope",),
         permission_gate=(),
-        config_gate=("workflow_webhook_ingress",),
+        config_gate=(),
         event_shape=("queued", "started", "completed"),
-        fixture_coverage=("workflow-compile-api", "workflow-capabilities-api"),
+        fixture_coverage=(
+            "workflow-compile-api",
+            "workflow-capabilities-api",
+            "workflow-webhook-ingress-api",
+        ),
     ),
     "workflow.source-pool.parallel-fanout": RuntimeIOContract(
         binding_id="workflow.source-pool.parallel-fanout",
@@ -260,9 +277,9 @@ RUNTIME_IO_CONTRACTS: dict[str, RuntimeIOContract] = {
         binding_id="workflow.collection-output.items",
         status="executable",
         input_ports=(("in", "recordCandidate[]"),),
-        output_ports=(("out", "storedItems[]"),),
+        output_ports=(("out", "items[]"),),
         input_params=("queue", "archive"),
-        output_artifacts=("runTraceItems",),
+        output_artifacts=("runTraceItems", "items[]"),
         permission_gate=(),
         config_gate=("run_trace",),
         event_shape=("partial:itemCount", "completed"),
@@ -424,6 +441,166 @@ RUNTIME_IO_CONTRACTS: dict[str, RuntimeIOContract] = {
         fixture_coverage=("workflow-capabilities-api", "workflow-tool-capabilities-api"),
     ),
 }
+
+NATIVE_INTELLIGENCE_ACTION_CONTRACT_ROWS = (
+    ("research", "storedItems[]", "researchArtifact", ("research_input_required",), True),
+    ("ontology", "researchArtifact", "ontologyArtifact", ("research_artifact_missing",), True),
+    ("graph", "ontologyArtifact", "graphArtifact", ("ontology_artifact_missing",), True),
+    ("personas", "graphArtifact", "personaArtifact", ("graph_artifact_missing",), True),
+    (
+        "simulation.prepare",
+        "personaArtifact",
+        "simulationPlan",
+        ("persona_artifact_missing",),
+        False,
+    ),
+    (
+        "simulation.start",
+        "personaArtifact",
+        "simulationStatus",
+        ("persona_artifact_missing",),
+        True,
+    ),
+    ("simulation.step", "simulationStatus", "simulationStatus", ("simulation_not_running",), True),
+    ("simulation.run", "simulationStatus", "simulationArtifact", ("simulation_not_running",), True),
+    ("simulation.stop", "simulationStatus", "simulationStatus", ("simulation_not_running",), True),
+    (
+        "simulation.resume",
+        "simulationStatus",
+        "simulationStatus",
+        ("simulation_not_stopped",),
+        True,
+    ),
+    (
+        "simulation.status",
+        "intelligenceSession",
+        "simulationStatus",
+        ("intelligence_session_not_found",),
+        False,
+    ),
+    (
+        "simulation.actions",
+        "intelligenceSession",
+        "simulationAction[]",
+        ("simulation_not_available",),
+        False,
+    ),
+    (
+        "simulation.timeline",
+        "intelligenceSession",
+        "simulationTimeline[]",
+        ("simulation_not_available",),
+        False,
+    ),
+    (
+        "simulation.stats",
+        "intelligenceSession",
+        "simulationStats",
+        ("simulation_not_available",),
+        False,
+    ),
+    ("interviews.one", "simulationArtifact", "interviewStatus", ("persona_id_required",), True),
+    ("interviews.batch", "simulationArtifact", "interviewStatus", ("persona_ids_required",), True),
+    (
+        "interviews.all",
+        "simulationArtifact",
+        "interviewStatus",
+        ("simulation_artifact_missing",),
+        True,
+    ),
+    (
+        "interviews.step",
+        "interviewStatus",
+        "interviewArtifact",
+        ("interview_not_in_progress",),
+        True,
+    ),
+    (
+        "interviews.run",
+        "interviewStatus",
+        "interviewArtifact[]",
+        ("interview_not_in_progress",),
+        True,
+    ),
+    (
+        "interviews.history",
+        "intelligenceSession",
+        "interviewArtifact[]",
+        ("intelligence_session_not_found",),
+        False,
+    ),
+    ("report.start", "interviewArtifact[]", "reportStatus", ("interview_artifact_missing",), True),
+    ("report.step", "reportStatus", "reportStatus", ("report_not_in_progress",), True),
+    ("report.run", "reportStatus", "reportArtifact", ("report_not_in_progress",), True),
+    ("report.progress", "intelligenceSession", "reportProgress", ("report_not_available",), False),
+    ("report.read", "intelligenceSession", "reportArtifact", ("report_artifact_missing",), False),
+    ("report.ask", "reportArtifact", "reportAnswerArtifact", ("question_required",), True),
+    (
+        "report.answers",
+        "intelligenceSession",
+        "reportAnswerArtifact[]",
+        ("intelligence_session_not_found",),
+        False,
+    ),
+    ("cancel", "intelligenceSession", "intelligenceSession", ("session_not_cancellable",), True),
+    ("close", "reportArtifact", "closeArtifact", ("report_artifact_missing",), True),
+)
+NATIVE_INTELLIGENCE_COMMON_ERRORS = (
+    "intelligence_artifact_ref_hash_mismatch",
+    "intelligence_artifact_ref_invalid",
+    "intelligence_artifact_ref_kind_mismatch",
+    "intelligence_session_ref_invalid",
+    "intelligence_session_id_invalid",
+    "intelligence_session_not_found",
+    "intelligence_version_conflict",
+    "intelligence_idempotency_conflict",
+    "intelligence_artifact_not_found",
+    "operation_in_progress",
+)
+
+for _action, _input_type, _output_type, _errors, _mutates in (
+    NATIVE_INTELLIGENCE_ACTION_CONTRACT_ROWS
+):
+    _binding_id = f"workflow.native-intelligence.{_action.replace('.', '-')}"
+    RUNTIME_IO_CONTRACTS[_binding_id] = RuntimeIOContract(
+        binding_id=_binding_id,
+        status="executable",
+        input_ports=(
+            (
+                "in",
+                "storedItems[]" if _action == "research" else "intelligenceSessionEnvelope",
+            ),
+        ),
+        output_ports=(("out", "intelligenceSessionEnvelope"),),
+        input_params=("intelligenceSessionRef", "seed"),
+        output_artifacts=(_output_type,),
+        permission_gate=(),
+        config_gate=(),
+        resource_gate=(
+            "database_session",
+        ),
+        event_shape=(
+            "tool_call_started",
+            "partial:outputItemCount",
+            "intelligence.transition",
+            "tool_call_completed",
+            "completed",
+        ),
+        fixture_coverage=("native-intelligence-offline-v1",),
+        errors=tuple(dict.fromkeys((*_errors, *NATIVE_INTELLIGENCE_COMMON_ERRORS))),
+        provenance_fields=(
+            "source",
+            "evidence_artifact_ids",
+            "algorithm_version",
+            "seed",
+        ),
+        limits=(
+            ("commandPayloadBytes", 65_536),
+            ("artifactPayloadBytes", 1_048_576),
+            ("eventPayloadBytes", 16_384),
+            ("queryPageSize", 100),
+        ),
+    )
 
 
 def list_runtime_io_contracts() -> list[RuntimeIOContract]:

@@ -85,8 +85,8 @@ const NODE_TEXT: Record<string, Record<WorkflowLanguage, LocalizedNodeText>> = {
     "en-US": { label: "Record Hygiene & Acceptance", description: "Default cleaning pipeline with normalize, dedupe, and record acceptance" },
   },
   "package.opencli.multi-source-hda": {
-    "zh-CN": { label: "OpenCLI 多源 HDA", description: "封装可扩展 OpenCLI 来源槽并行 fanout 和内部标准化" },
-    "en-US": { label: "OpenCLI Multi-source HDA", description: "Package extensible OpenCLI source-slot fanout and internal normalization" },
+    "zh-CN": { label: "多站点数据采集", description: "从选定网站并行采集数据，并整理为可审查、可追溯的结果" },
+    "en-US": { label: "Multi-site Data Collection", description: "Collect from selected sites in parallel and return traceable results" },
   },
   "package.ops.event": {
     "zh-CN": { label: "Ops 任务事件", description: "封装触发、队列、重试、日志和执行证据的任务事件" },

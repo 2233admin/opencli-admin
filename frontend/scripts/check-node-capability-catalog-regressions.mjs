@@ -27,8 +27,7 @@ registerHooks({
       return {
         format: 'module',
         source: stripTypeScriptTypes(readFileSync(fileURLToPath(url), 'utf8'), {
-          mode: 'transform',
-          sourceMap: true,
+          mode: 'strip',
           sourceUrl: url,
         }),
         shortCircuit: true,

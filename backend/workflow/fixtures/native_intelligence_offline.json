@@ -1,0 +1,89 @@
+{
+  "schema": "native-intelligence.fixture.v1",
+  "id": "native-intelligence-offline-v1",
+  "evidence": [
+    {
+      "id": "evidence-1",
+      "title": "Open models gain adoption",
+      "content": "Open model adoption increased among small teams.",
+      "url": "https://example.test/open-models",
+      "publishedAt": "2026-07-20T00:00:00Z",
+      "source": "fixture",
+      "engagement": 42
+    },
+    {
+      "id": "evidence-2",
+      "title": "Teams evaluate agent workflows",
+      "content": "Teams are evaluating deterministic agent workflows with provenance.",
+      "url": "https://example.test/agent-workflows",
+      "publishedAt": "2026-07-21T00:00:00Z",
+      "source": "fixture",
+      "engagement": 31
+    }
+  ],
+  "expected": {
+    "terminalState": "closed",
+    "actionTranscript": [
+      "research",
+      "ontology",
+      "graph",
+      "personas",
+      "simulation.start",
+      "simulation.run",
+      "simulation.timeline",
+      "simulation.stats",
+      "interviews.all",
+      "interviews.run",
+      "interviews.history",
+      "report.start",
+      "report.progress",
+      "report.run",
+      "report.read",
+      "report.ask",
+      "report.answers",
+      "close"
+    ],
+    "actionScenarios": {
+      "research": {"id": "research-fixture", "action": "research", "expectedState": "research_ready"},
+      "ontology": {"id": "ontology-after-research", "action": "ontology", "expectedState": "ontology_ready"},
+      "graph": {"id": "graph-after-ontology", "action": "graph", "expectedState": "graph_ready"},
+      "personas": {"id": "personas-after-graph", "action": "personas", "expectedState": "prepared"},
+      "simulation.prepare": {"id": "simulation-plan-query", "action": "simulation.prepare", "expectedState": "prepared"},
+      "simulation.start": {"id": "simulation-start", "action": "simulation.start", "expectedState": "running"},
+      "simulation.step": {"id": "simulation-single-step", "action": "simulation.step", "expectedState": "running"},
+      "simulation.run": {"id": "simulation-run-to-complete", "action": "simulation.run", "expectedState": "simulated"},
+      "simulation.stop": {"id": "simulation-stop", "action": "simulation.stop", "expectedState": "stopped"},
+      "simulation.resume": {"id": "simulation-resume", "action": "simulation.resume", "expectedState": "running"},
+      "simulation.status": {"id": "simulation-status-query", "action": "simulation.status", "expectedState": "simulated"},
+      "simulation.actions": {"id": "simulation-actions-query", "action": "simulation.actions", "expectedState": "simulated"},
+      "simulation.timeline": {"id": "simulation-timeline-query", "action": "simulation.timeline", "expectedState": "simulated"},
+      "simulation.stats": {"id": "simulation-stats-query", "action": "simulation.stats", "expectedState": "simulated"},
+      "interviews.one": {"id": "interview-one", "action": "interviews.one", "expectedState": "interviewing"},
+      "interviews.batch": {"id": "interview-batch", "action": "interviews.batch", "expectedState": "interviewing"},
+      "interviews.all": {"id": "interview-all", "action": "interviews.all", "expectedState": "interviewing"},
+      "interviews.step": {"id": "interview-single-step", "action": "interviews.step", "expectedState": "interviewing"},
+      "interviews.run": {"id": "interview-run-to-complete", "action": "interviews.run", "expectedState": "simulated"},
+      "interviews.history": {"id": "interview-history-query", "action": "interviews.history", "expectedState": "simulated"},
+      "report.start": {"id": "report-start", "action": "report.start", "expectedState": "reporting"},
+      "report.step": {"id": "report-single-step", "action": "report.step", "expectedState": "reporting"},
+      "report.run": {"id": "report-run-to-complete", "action": "report.run", "expectedState": "reported"},
+      "report.progress": {"id": "report-progress-query", "action": "report.progress", "expectedState": "reported"},
+      "report.read": {"id": "report-read-query", "action": "report.read", "expectedState": "reported"},
+      "report.ask": {"id": "report-question", "action": "report.ask", "expectedState": "reported"},
+      "report.answers": {"id": "report-answers-query", "action": "report.answers", "expectedState": "reported"},
+      "cancel": {"id": "session-cancel", "action": "cancel", "expectedState": "cancelled"},
+      "close": {"id": "session-close", "action": "close", "expectedState": "closed"}
+    },
+    "artifactKinds": [
+      "research",
+      "ontology",
+      "graph",
+      "persona",
+      "simulation",
+      "interview",
+      "report",
+      "report_answer",
+      "close"
+    ]
+  }
+}

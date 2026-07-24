@@ -22,6 +22,7 @@ import {
   type WorkflowRuntimeIOContract,
   type WorkflowRuntimeCapability,
 } from "./capabilities"
+import type { WorkflowToolCapability } from "./backend-tool-capabilities"
 
 export type WorkflowNodeCatalogCategory =
   | "trigger"
@@ -179,7 +180,35 @@ export type OpenCLISourceSlot = {
   resourceTags?: string[]
 }
 
+export function isOpenCLISourceSlotArray(value: unknown): value is OpenCLISourceSlot[] {
+  return Array.isArray(value) && value.every((source) => {
+    if (!source || typeof source !== "object" || Array.isArray(source)) return false
+    const slot = source as Record<string, unknown>
+    return (
+      typeof slot.id === "string" &&
+      slot.id.trim().length > 0 &&
+      typeof slot.label === "string" &&
+      typeof slot.sourceGroup === "string" &&
+      typeof slot.site === "string" &&
+      slot.site.trim().length > 0 &&
+      typeof slot.command === "string" &&
+      slot.command.trim().length > 0 &&
+      !!slot.args &&
+      typeof slot.args === "object" &&
+      !Array.isArray(slot.args)
+    )
+  })
+}
+
 export const DEFAULT_OPENCLI_HDA_SOURCES: OpenCLISourceSlot[] = [
+  {
+    id: "douyin",
+    label: "Douyin Search",
+    sourceGroup: "short-video",
+    site: "douyin",
+    command: "search",
+    args: { query: "ai" },
+  },
   {
     id: "bilibili",
     label: "Bilibili Search",
@@ -197,6 +226,14 @@ export const DEFAULT_OPENCLI_HDA_SOURCES: OpenCLISourceSlot[] = [
     command: "search",
     args: {},
     positionalArgs: ["ai"],
+  },
+  {
+    id: "twitter",
+    label: "Twitter Search",
+    sourceGroup: "social",
+    site: "twitter",
+    command: "search",
+    args: { query: "ai", product: "live" },
   },
 ]
 
@@ -321,6 +358,62 @@ export function buildOpenCLIMultiSourceHDAInternals(
         id: "internal-normalize-output",
         source: "internal-normalize",
         target: "collection-output",
+        sourcePort: "out",
+        targetPort: "in",
+      },
+    ],
+  }
+}
+
+function buildToolPackageInternals(
+  toolId: string,
+  executorMode: "situation_awareness" | "swarm_simulation",
+  label: string,
+  toolParams: Record<string, unknown>,
+): WorkflowProjectNode["internals"] {
+  return {
+    locked: true,
+    nodes: [
+      {
+        id: "tool",
+        kind: "action",
+        capability: "store",
+        params: {
+          toolCapability: {
+            id: toolId,
+            executor: { mode: executorMode, params: {} },
+          },
+          toolParams,
+        },
+        ui: {
+          label,
+          description: `${label} internal Tool Capability`,
+          icon: executorMode === "situation_awareness" ? "Radar" : "Network",
+          color: executorMode === "situation_awareness" ? "var(--chart-2)" : "var(--chart-5)",
+          catalogId: "external.tool.capability",
+          position: { x: 0, y: 0 },
+        },
+      },
+      {
+        id: "output",
+        kind: "inbox",
+        capability: "store",
+        params: { queue: `${executorMode}-output`, archive: false },
+        ui: {
+          label: `${label} Output`,
+          description: "Expose the complete result with workflow lineage",
+          icon: "Inbox",
+          color: "var(--chart-4)",
+          catalogId: "intelligence.output.inbox",
+          position: { x: 340, y: 0 },
+        },
+      },
+    ],
+    edges: [
+      {
+        id: "tool-output",
+        source: "tool",
+        target: "output",
         sourcePort: "out",
         targetPort: "in",
       },
@@ -717,8 +810,8 @@ export const WORKFLOW_NODE_CATALOG: WorkflowNodeCatalogItem[] = [
   {
     id: "package.opencli.multi-source-hda",
     idPrefix: "pkg-opencli-hda",
-    label: "OpenCLI Multi-source HDA",
-    description: "封装可扩展 OpenCLI source slot 并行 fanout 和内部标准化",
+    label: "多站点数据采集",
+    description: "从选定网站并行采集数据，并整理为可审查、可追溯的结果",
     category: "package",
     profile: "intelligence",
     kind: "agent",
@@ -748,6 +841,131 @@ export const WORKFLOW_NODE_CATALOG: WorkflowNodeCatalogItem[] = [
     },
     internals: buildOpenCLIMultiSourceHDAInternals(DEFAULT_OPENCLI_HDA_SOURCES),
     keywords: ["package", "hda", "opencli", "bilibili", "xiaohongshu", "multi-source", "采集", "封装"],
+  },
+  {
+    id: "package.intelligence.situation-awareness",
+    idPrefix: "pkg-situation",
+    label: "近 30 天事态感知",
+    description: "独立研究能力：严格时间窗、去重、主题聚合、基线对比、异常信号和证据简报",
+    category: "package",
+    profile: "intelligence",
+    kind: "agent",
+    capability: "normalize",
+    icon: "Radar",
+    color: "var(--chart-2)",
+    params: {
+      template: "situation-awareness",
+      runtime: "iii",
+      lockedInternals: true,
+      provider: "opencli-native",
+      query: "人工智能",
+      windowDays: 30,
+      baselineDays: 30,
+      includeUnknownDates: false,
+      topK: 10,
+    },
+    topicCollapse: {
+      groupId: "situation-awareness-package",
+      nodeCount: 2,
+      mode: "locked",
+      packageInternal: true,
+    },
+    internals: buildToolPackageInternals(
+      "tool.intelligence.situation-awareness",
+      "situation_awareness",
+      "近 30 天事态感知",
+      {
+        provider: "opencli-native",
+        query: "人工智能",
+        windowDays: 30,
+        baselineDays: 30,
+        includeUnknownDates: false,
+        topK: 10,
+      },
+    ),
+    keywords: ["last30days", "research", "situation", "awareness", "事态感知", "近30天", "研究"],
+  },
+  {
+    id: "package.intelligence.native-lifecycle",
+    idPrefix: "pkg-native-intelligence",
+    label: "Native Intelligence Lifecycle",
+    description: "零凭据离线研究、知识图谱、推演、访谈、报告、问答与关闭；内部节点由后端能力注册表物化",
+    category: "package",
+    profile: "intelligence",
+    kind: "agent",
+    capability: "normalize",
+    icon: "Brain",
+    color: "var(--chart-3)",
+    params: {
+      template: "native-intelligence-lifecycle",
+      runtime: "iii",
+      lockedInternals: true,
+      offline: true,
+      credentialFree: true,
+      sourceMode: "offline_fixture",
+      fixtureId: "native-intelligence-offline-v1",
+    },
+    topicCollapse: {
+      groupId: "native-intelligence-lifecycle-package",
+      nodeCount: 21,
+      mode: "locked",
+      packageInternal: true,
+    },
+    keywords: [
+      "native",
+      "intelligence",
+      "offline",
+      "research",
+      "ontology",
+      "graph",
+      "simulation",
+      "interview",
+      "report",
+      "qa",
+    ],
+  },
+  {
+    id: "package.simulation.swarm-forecast",
+    idPrefix: "pkg-swarm",
+    label: "群体智能推演",
+    description: "独立推演能力：本地可复现模拟或固定版本 MiroFish provider，输出模拟轨迹和报告",
+    category: "package",
+    profile: "intelligence",
+    kind: "agent",
+    capability: "normalize",
+    icon: "Network",
+    color: "var(--chart-5)",
+    params: {
+      template: "swarm-forecast",
+      runtime: "iii",
+      lockedInternals: true,
+      provider: "local",
+      requirement: "推演事态在不同群体中的传播、立场变化和可能结果",
+      agentCount: 12,
+      maxRounds: 8,
+      platforms: ["twitter", "reddit"],
+      enableGraphMemoryUpdate: false,
+    },
+    topicCollapse: {
+      groupId: "swarm-forecast-package",
+      nodeCount: 2,
+      mode: "locked",
+      packageInternal: true,
+    },
+    internals: buildToolPackageInternals(
+      "tool.simulation.swarm-forecast",
+      "swarm_simulation",
+      "群体智能推演",
+      {
+        provider: "local",
+        requirement: "推演事态在不同群体中的传播、立场变化和可能结果",
+        agentCount: 12,
+        maxRounds: 8,
+        platforms: ["twitter", "reddit"],
+        enableGraphMemoryUpdate: false,
+      },
+    ),
+    keywords: ["mirofish", "swarm", "simulation", "forecast", "群体智能", "推演", "模拟"],
   },
   {
     id: "package.dispatch.fanout",
@@ -878,6 +1096,77 @@ export const WORKFLOW_NODE_CATALOG: WorkflowNodeCatalogItem[] = [
     keywords: ["package", "human", "review", "approval", "inbox", "人工"],
   },
 ]
+
+export function nativeIntelligenceCatalogItems(
+  tools: WorkflowToolCapability[],
+): WorkflowNodeCatalogItem[] {
+  return tools.map((tool) => {
+    const action =
+      typeof tool.executor.params?.action === "string"
+        ? tool.executor.params.action
+        : tool.id.replace("tool.intelligence.native.", "")
+    const runtimeContract =
+      tool.manifest.runtimeContract &&
+      typeof tool.manifest.runtimeContract === "object"
+        ? (tool.manifest.runtimeContract as WorkflowRuntimeIOContract)
+        : undefined
+    const readiness =
+      tool.manifest.readiness && typeof tool.manifest.readiness === "object"
+        ? (tool.manifest.readiness as Record<string, unknown>)
+        : {}
+    const missing = Array.isArray(readiness.missingReasons)
+      ? readiness.missingReasons.filter((value): value is string => typeof value === "string")
+      : []
+    return {
+      id: `intelligence.native.${action}`,
+      idPrefix: `native-${action.replaceAll(".", "-")}`,
+      label: tool.label,
+      description:
+        tool.description ??
+        `Native intelligence action ${action} with durable provenance and limits.`,
+      category: action === "close" || action === "cancel" ? "control" : "processing",
+      profile: "intelligence",
+      kind: "action",
+      capability: "store",
+      icon: action.startsWith("report")
+        ? "FileText"
+        : action.startsWith("simulation")
+          ? "Network"
+          : action.startsWith("interviews")
+            ? "MessageSquare"
+            : "Brain",
+      color: "var(--chart-3)",
+      params: {
+        toolCapability: {
+          id: tool.id,
+          executor: {
+            mode: tool.executor.mode,
+            params: tool.executor.params ?? { action },
+          },
+        },
+        toolParams: {},
+      },
+      runtimeCapability: {
+        id: `resource.tool-capability.${tool.id}`,
+        label: tool.label,
+        surface: "resource",
+        status: tool.status,
+        backendAvailable: tool.status === "runnable",
+        kind: "action",
+        capability: "store",
+        provider: tool.provider,
+        runtimeBinding: "workflow.external-tool.capability",
+        reason: tool.description,
+        missing,
+        tags: tool.tags,
+        source: "backend.workflow.tool_capabilities",
+        manifest: tool.manifest,
+      },
+      runtimeContract,
+      keywords: ["native", "intelligence", "offline", action, ...tool.tags],
+    }
+  })
+}
 
 export function getWorkflowNodeCatalog(
   profile: WorkflowProfile,
@@ -1100,17 +1389,19 @@ export function createWorkflowNodeFromCatalog(
   position: { x: number; y: number },
 ): WorkflowProjectNode {
   const parameterInterface = backendCatalogParameterInterface(id, item)
-    ?? createParameterInterfaceFromInternals(
-      id,
-      getNodeInternals({
+    ?? (item.category === "package" && !item.internals
+      ? undefined
+      : createParameterInterfaceFromInternals(
         id,
-        kind: item.kind,
-        capability: item.capability,
-        adapter: item.adapter,
-        params: item.params,
-        ui: { catalogId: item.id },
-      }),
-    )
+        getNodeInternals({
+          id,
+          kind: item.kind,
+          capability: item.capability,
+          adapter: item.adapter,
+          params: item.params,
+          ui: { catalogId: item.id },
+        }),
+      ))
 
   return {
     id,
@@ -1119,7 +1410,7 @@ export function createWorkflowNodeFromCatalog(
     adapter: item.adapter,
     params: cloneCatalogValue(item.params) ?? {},
     topicCollapse: cloneCatalogValue(item.topicCollapse),
-    parameterInterface,
+    ...(parameterInterface ? { parameterInterface } : {}),
     internals: cloneCatalogValue(item.internals),
     ui: {
       label: item.label,
@@ -1189,6 +1480,8 @@ export function createOperatorNodeFromCatalog(
       icon: item.icon,
       color: item.color,
       position,
+      catalogId: item.id,
+      preferCustomLabel: true,
       networkRole: "operator",
       implementationCatalogId: item.id,
     },

@@ -43,8 +43,7 @@ registerHooks({
     }
     if (url.endsWith('.ts') || url.endsWith('.tsx')) {
       const source = stripTypeScriptTypes(readFileSync(fileURLToPath(url), 'utf8'), {
-        mode: 'transform',
-        sourceMap: true,
+        mode: 'strip',
         sourceUrl: url,
       })
       return { format: 'module', source, shortCircuit: true }
@@ -71,8 +70,13 @@ function compileWithBackend(project) {
     'raise SystemExit(0 if result.valid else 1)',
   ].join('; ')], {
     cwd: repositoryRoot,
-    input: JSON.stringify(project),
+    input: Buffer.from(JSON.stringify(project), 'utf8'),
     encoding: 'utf8',
+    env: {
+      ...process.env,
+      PYTHONIOENCODING: 'utf-8',
+      PYTHONUTF8: '1',
+    },
     maxBuffer: 1024 * 1024,
   })
 
@@ -573,9 +577,10 @@ test('the production studio adopts the selected project-workspace concept with a
   assert.match(projectNavigation, /编排/)
   assert.match(projectNavigation, /运行/)
   assert.match(projectNavigation, /数据/)
-  assert.match(projectNavigation, /协作/)
+  assert.match(projectNavigation, /逻辑与证据/)
   assert.match(projectNavigation, /设置/)
-  assert.match(projectNavigation, /id: 'operations',[\s\S]*enabled: false/)
+  assert.match(projectNavigation, /\{ id: 'operations', label: '运行记录'/)
+  assert.match(projectNavigation, /: null/)
   assert.match(projectNavigation, /aria-disabled="true"/)
   assert.match(workflowPage, /<WorkflowProjectHeader\s*\/>/)
   assert.match(workflowPage, /<WorkflowEditorSession\s*\/>/)
@@ -606,7 +611,8 @@ test('studio and workflow primary controls keep touch targets and explicit selec
   }
   assert.match(commandStrip, /"size-11 text-muted-foreground hover:text-foreground"/)
   assert.match(commandStrip, /className="min-h-11 gap-1\.5 rounded-lg" onClick=\{onToggleRunTrace\}/)
-  assert.doesNotMatch(commandStrip, /text-\[#ff7a17\]|className="size-[78] rounded-lg"/)
+  assert.match(commandStrip, /persistenceNeedsAttention && "text-\[#ff7a17\]"/)
+  assert.doesNotMatch(commandStrip, /className="size-[78] rounded-lg"/)
 })
 
 test('the product-shell prototype reuses the canonical editor without project draft mutations', async () => {
@@ -719,7 +725,7 @@ test('the default canvas is an operator network with recursive four-layer lookup
     readSource('lib/flow/settings-store.ts'),
     readSource('lib/workflow/node-hierarchy.ts'),
   ])
-  const packaged = sourceSection(pipeline, 'export function buildPackagedWorkflowProject()', 'export const PACKAGED_WORKFLOW_PROJECT')
+  const packaged = sourceSection(pipeline, 'export function buildPackagedWorkflowProject(', 'export const PACKAGED_WORKFLOW_PROJECT')
 
   for (const packageId of ['package.opencli.multi-source-hda', 'package.intelligence.pipeline', 'package.review.human-review', 'package.dispatch.fanout']) {
     assert.match(packaged, new RegExp(packageId.replaceAll('.', '\\.')))
@@ -759,10 +765,14 @@ test('the actual packaged default project satisfies backend node and typed-port 
       targetPort,
     })),
     [
+      { source: 'source-pool', target: 'source-douyin', sourcePort: 'out', targetPort: 'in' },
       { source: 'source-pool', target: 'source-bilibili', sourcePort: 'out', targetPort: 'in' },
       { source: 'source-pool', target: 'source-xiaohongshu', sourcePort: 'out', targetPort: 'in' },
+      { source: 'source-pool', target: 'source-twitter', sourcePort: 'out', targetPort: 'in' },
+      { source: 'source-douyin', target: 'internal-normalize', sourcePort: 'out', targetPort: 'in' },
       { source: 'source-bilibili', target: 'internal-normalize', sourcePort: 'out', targetPort: 'in' },
       { source: 'source-xiaohongshu', target: 'internal-normalize', sourcePort: 'out', targetPort: 'in' },
+      { source: 'source-twitter', target: 'internal-normalize', sourcePort: 'out', targetPort: 'in' },
       { source: 'internal-normalize', target: 'collection-output', sourcePort: 'out', targetPort: 'in' },
     ],
   )
@@ -894,17 +904,18 @@ test('EvidenceBatch workbench consumes projection, list, selection, and detail s
   assert.match(workbench, /batches\.map/)
   assert.match(workbench, /onSelectBatch\(batch\.batchId\)/)
   assert.match(workbench, /state\.detail\s*\?\s*<EvidenceBatchDetailCard/)
-  assert.match(proxy, /suffix === "\/projection"/)
-  assert.match(proxy, /`\$\{runRoot\}\/projection`/)
-  assert.match(proxy, /`\$\{runRoot\}\/evidence-batches\$\{suffix\}`/)
+  assert.match(proxy, /export async function proxyWorkflowEvidenceProjectionRequest/)
+  assert.match(proxy, /`\$\{BACKEND_URL\}\/api\/v1\/workflows\/runs\/\$\{encodeURIComponent\(runId\)\}\/projection`/)
+  assert.match(proxy, /`\$\{BACKEND_URL\}\/api\/v1\/workflows\/runs\/\$\{encodeURIComponent\(runId\)\}\/evidence-batches`/)
 })
 
 test('backend Preview traces OpenCLI HDA only when the workflow contains that package', async () => {
   const panel = await readSource('components/flow/run-trace-panel.tsx')
   const preview = sourceSection(panel, 'const runBackendPreview = async () => {', 'const resetRun = () => {')
 
-  assert.match(preview, /compile\.valid && hasOpenCLIHdaPackage\(workflowProject\.nodes\)/)
-  assert.match(preview, /traceOpenCLIHDAWorkflow\(workflowProject, \{ authorization \}\)/)
+  assert.match(preview, /const openCLIPackageNodeId = findOpenCLIHDAWorkflowPackageNodeId\(workflowProject\)/)
+  assert.match(preview, /compile\.valid && openCLIPackageNodeId/)
+  assert.match(preview, /traceOpenCLIHDAWorkflow\(workflowProject, \{[\s\S]*packageNodeId: openCLIPackageNodeId/)
   assert.match(panel, /value === "package\.opencli\.multi-source-hda"/)
   assert.match(panel, /value === "opencli-multi-source"/)
 })

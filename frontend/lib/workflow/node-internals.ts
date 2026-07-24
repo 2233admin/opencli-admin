@@ -494,8 +494,8 @@ const NODE_INTERNALS: Record<string, NodeInternals> = {
     ],
   },
   "package.opencli.multi-source-hda": {
-    title: "OpenCLI Multi-source HDA",
-    summary: "A locked HDA package that materializes node.params.sources into parallel OpenCLI source slots.",
+    title: "多站点采集执行",
+    summary: "按业务配置展开多个网站来源，执行并行采集并统一结果；OpenCLI 仅作为底层执行能力。",
     steps: [
       step("trigger", "Schedule input", "trigger", "Receives the workflow tick from the outer canvas.", "trigger edge", "ready"),
       step("source-slots", "Parallel source slots", "fetch", "Expands params.sources into source-* slots so user/AI can choose sources without editing internals.", "node.params.sources[]", "ready"),

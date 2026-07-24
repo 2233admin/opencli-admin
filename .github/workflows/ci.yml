@@ -82,7 +82,7 @@ jobs:
       postgres:
         image: postgres:16-alpine
         env:
-          POSTGRES_DB: opencli_admin
+          POSTGRES_DB: opencli_admin_test
           POSTGRES_USER: opencli
           POSTGRES_PASSWORD: opencli_secret
         ports:
@@ -96,7 +96,9 @@ jobs:
       # backend/config.py Settings.database_url (case-insensitive env,
       # see backend/migrations/env.py which overrides alembic.ini's
       # sqlalchemy.url from settings.database_url at runtime).
-      DATABASE_URL: postgresql+asyncpg://opencli:opencli_secret@localhost:5432/opencli_admin
+      DATABASE_URL: postgresql+asyncpg://opencli:opencli_secret@localhost:5432/opencli_admin_test
+      TEST_DATABASE_URL_PG: postgresql+asyncpg://opencli:opencli_secret@localhost:5432/opencli_admin_test
+      REQUIRE_POSTGRES_CONFORMANCE: "1"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -124,6 +126,15 @@ jobs:
         run: |
           alembic downgrade -1
           alembic upgrade head
+
+      - name: Native intelligence and event spine PostgreSQL conformance
+        run: >-
+          pytest tests/integration/test_intelligence_session_store.py
+          tests/integration/test_intelligence_session_migration.py
+          tests/unit/test_workflow_run_events.py
+          tests/integration/test_workflow_event_spine_migrations.py
+          tests/integration/test_workflow_event_spine_integration.py
+          -m postgres_conformance --no-cov -p no:cacheprovider -q
 
       # AUDIT follow-up (c): the cursor concurrency tests run on SQLite in the
       # backend job, where `SELECT ... FOR UPDATE` is a silent no-op — they

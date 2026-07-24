@@ -34,8 +34,7 @@ registerHooks({
   load(url, context, nextLoad) {
     if (url.endsWith('.ts') || url.endsWith('.tsx')) {
       const source = stripTypeScriptTypes(readFileSync(fileURLToPath(url), 'utf8'), {
-        mode: 'transform',
-        sourceMap: true,
+        mode: 'strip',
         sourceUrl: url,
       })
       return { format: 'module', source, shortCircuit: true }
@@ -68,8 +67,13 @@ test('browser Dify translation is a locked, non-executable preview', async () =>
     'print(compile_workflow_project(project).model_dump_json())',
   ].join('; ')], {
     cwd: repositoryRoot,
-    input: JSON.stringify(imported.project),
+    input: Buffer.from(JSON.stringify(imported.project), 'utf8'),
     encoding: 'utf8',
+    env: {
+      ...process.env,
+      PYTHONIOENCODING: 'utf-8',
+      PYTHONUTF8: '1',
+    },
   })
   assert.equal(compiled.status, 0, compiled.stderr)
   const compileResult = JSON.parse(compiled.stdout)

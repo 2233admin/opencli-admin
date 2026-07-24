@@ -1,8 +1,13 @@
 import type { ProjectAppType } from '@/lib/api/types'
 
-import { PACKAGED_WORKFLOW_PROJECT } from './collection-pipeline'
+import { PACKAGED_WORKFLOW_PROJECT, buildPackagedWorkflowProject } from './collection-pipeline'
 import { buildAshareMarketWorkflow, buildOpenCLISituationAwarenessWorkflow } from './opencli-business-workflows'
-import { WORKFLOW_NODE_CATALOG, createWorkflowNodeFromCatalog } from './node-catalog'
+import {
+  DEFAULT_OPENCLI_HDA_SOURCES,
+  WORKFLOW_NODE_CATALOG,
+  createWorkflowNodeFromCatalog,
+  opencliAdaptersForSourceSlots,
+} from './node-catalog'
 import { parseWorkflowProject, workflowNodeSchema, type WorkflowProjectNode } from './schema'
 
 export const STUDIO_TEMPLATES = [
@@ -17,6 +22,9 @@ export const STUDIO_TEMPLATES = [
   { id: 'content-summary', variant: 'process', appType: 'text-generator', title: '长内容摘要', description: '拆分长文档，保留关键信息并生成结构化摘要。', category: '内容处理', steps: ['内容切分', '要点提取', '摘要合并'] },
   { id: 'entity-extraction', variant: 'process', appType: 'workflow', title: '实体与关系提取', description: '识别人名、机构、产品及它们之间的关系。', category: '内容处理', steps: ['文本输入', '实体识别', '关系映射'] },
   { id: 'research-agent', variant: 'collection-to-consumption', appType: 'agent', title: '专题研究 Agent', description: '围绕一个问题检索证据、交叉验证并输出研究结论。', category: 'Agent 分析', steps: ['任务拆解', '证据研判', '结论生成'] },
+  { id: 'last30days-research', variant: 'collection-to-consumption', appType: 'agent', title: '近 30 天事态感知', description: '从抖音、小红书、B站和 Twitter 采集证据，形成严格时间窗研究简报。', category: 'Agent 分析', steps: ['多平台采集', '30 天窗口研判', '证据简报'] },
+  { id: 'situation-to-simulation', variant: 'collection-to-consumption', appType: 'workflow', title: '事态感知到群体推演', description: '把两个独立能力按模板连接：先形成事态报告，再作为群体推演种子。', category: '完整链路', steps: ['多平台采集', '事态感知', '群体智能推演'] },
+  { id: 'native-intelligence-lifecycle', variant: 'collection-to-consumption', appType: 'workflow', title: '原生智能完整生命周期', description: '零凭据离线运行研究、知识图谱、群体推演、访谈、报告、问答与关闭，并保留完整运行溯源。', category: '完整链路', steps: ['研究与图谱', '推演与访谈', '报告问答与关闭'] },
   { id: 'signal-triage', variant: 'collection-to-consumption', appType: 'agent', title: '信号研判助手', description: '对新信号进行分级、补充背景并给出处置建议。', category: 'Agent 分析', steps: ['信号接入', 'Agent 研判', '建议输出'] },
   { id: 'quality-review', variant: 'process', appType: 'agent', title: '内容质量审查', description: '按规则和样例检查内容质量，标记需要人工确认的部分。', category: 'Agent 分析', steps: ['规则读取', '质量检查', '人工复核'] },
   { id: 'webhook-delivery', variant: 'deliver', appType: 'workflow', title: 'Webhook 结果分发', description: '把工作流产物转换为稳定负载并投递到业务系统。', category: '分发与集成', steps: ['结果接收', '负载组装', 'Webhook'] },
@@ -45,6 +53,9 @@ const TEMPLATE_INTENTS: Record<(typeof STUDIO_TEMPLATES)[number]['id'], Template
   'content-summary': { cadence: 'on-demand', source: 'long-form-content', objective: 'structured-summary', delivery: 'inbox' },
   'entity-extraction': { cadence: 'on-demand', source: 'text-input', objective: 'extract-entities-and-relations', delivery: 'records' },
   'research-agent': { cadence: 'on-demand', source: 'web-research', objective: 'evidence-backed-research', delivery: 'email' },
+  'last30days-research': { cadence: 'daily', source: 'opencli-multi-source', objective: 'strict-window-situation-awareness', delivery: 'evidence-report' },
+  'situation-to-simulation': { cadence: 'on-demand', source: 'opencli-multi-source', objective: 'situation-to-swarm-simulation', delivery: 'simulation-report' },
+  'native-intelligence-lifecycle': { cadence: 'on-demand', source: 'offline-fixture', objective: 'native-intelligence-lifecycle', delivery: 'report-and-qa' },
   'signal-triage': { cadence: 'realtime', source: 'incoming-signals', objective: 'classify-and-recommend', delivery: 'inbox' },
   'quality-review': { cadence: 'on-demand', source: 'content-under-review', objective: 'quality-gate', delivery: 'human-review' },
   'webhook-delivery': { cadence: 'realtime', source: 'workflow-results', objective: 'assemble-payload', delivery: 'webhook' },
@@ -58,8 +69,12 @@ export function studioAppTypeForTemplate(template: StudioTemplateId): ProjectApp
 }
 
 export function studioGraphForTemplate(template: StudioTemplateId, name: string) {
-  const base = PACKAGED_WORKFLOW_PROJECT
+  if (template === 'native-intelligence-lifecycle') return nativeIntelligenceLifecycleGraph(name)
+  if (template === 'last30days-research' || template === 'situation-to-simulation') {
+    return researchSimulationGraph(template, name)
+  }
   if (template === 'blank') {
+    const base = PACKAGED_WORKFLOW_PROJECT
     const startItem = WORKFLOW_NODE_CATALOG.find((item) => item.id === 'intelligence.input.collection-need')
     if (!startItem) throw new Error('空白工作流起点未注册')
     const start = createWorkflowNodeFromCatalog(startItem, 'start', { x: 160, y: 180 })
@@ -82,6 +97,9 @@ export function studioGraphForTemplate(template: StudioTemplateId, name: string)
   if (template === 'opencli-situation-awareness') return buildOpenCLISituationAwarenessWorkflow(name)
 
   const variant: StudioTemplateVariant = STUDIO_TEMPLATES.find((item) => item.id === template)?.variant ?? 'collection-to-consumption'
+  const base = variant === 'deliver'
+    ? buildPackagedWorkflowProject({ includeUnconfiguredDelivery: true })
+    : PACKAGED_WORKFLOW_PROJECT
   const intent = TEMPLATE_INTENTS[template]
   const nodes = base.nodes.filter((node) => {
     const x = (node.ui?.position as { x?: number } | undefined)?.x ?? 0
@@ -292,6 +310,139 @@ function collectReferencedAdapterIds(nodes: WorkflowProjectNode[]): Set<string> 
   }
   nodes.forEach(visit)
   return ids
+}
+
+function nativeIntelligenceLifecycleGraph(name: string) {
+  return parseWorkflowProject({
+    id: `draft-${Date.now()}`,
+    name,
+    profile: 'intelligence',
+    version: 1,
+    nodes: [
+      {
+        id: 'native-intelligence-lifecycle',
+        kind: 'agent',
+        capability: 'normalize',
+        params: {
+          template: 'native-intelligence-lifecycle',
+          runtime: 'iii',
+          lockedInternals: true,
+          offline: true,
+          credentialFree: true,
+          sourceMode: 'offline_fixture',
+          fixtureId: 'native-intelligence-offline-v1',
+        },
+        ui: {
+          catalogId: 'package.intelligence.native-lifecycle',
+          label: '原生智能完整生命周期',
+          position: { x: 120, y: 160 },
+        },
+      },
+    ],
+    edges: [],
+    adapters: [],
+    agentPermissions: {
+      canFetchNetwork: false,
+      canSendNotifications: false,
+      canWriteInbox: true,
+    },
+  })
+}
+
+function researchSimulationGraph(
+  template: 'last30days-research' | 'situation-to-simulation',
+  name: string,
+) {
+  const collection: WorkflowProjectNode = {
+    id: 'opencli-sources',
+    kind: 'agent',
+    capability: 'normalize',
+    params: {
+      template: 'opencli-multi-source',
+      runtime: 'iii',
+      lockedInternals: true,
+      sources: DEFAULT_OPENCLI_HDA_SOURCES,
+    },
+    ui: {
+      catalogId: 'package.opencli.multi-source-hda',
+      label: '多站点数据采集',
+      position: { x: 80, y: 160 },
+    },
+  }
+  const situation: WorkflowProjectNode = {
+    id: 'situation-awareness',
+    kind: 'agent',
+    capability: 'normalize',
+    params: {
+      template: 'situation-awareness',
+      runtime: 'iii',
+      lockedInternals: true,
+      provider: 'opencli-native',
+      query: '人工智能',
+      windowDays: 30,
+      baselineDays: 30,
+      includeUnknownDates: false,
+      topK: 10,
+    },
+    ui: {
+      catalogId: 'package.intelligence.situation-awareness',
+      label: '近 30 天事态感知',
+      position: { x: 520, y: 160 },
+    },
+  }
+  const swarm: WorkflowProjectNode = {
+    id: 'swarm-forecast',
+    kind: 'agent',
+    capability: 'normalize',
+    params: {
+      template: 'swarm-forecast',
+      runtime: 'iii',
+      lockedInternals: true,
+      provider: 'local',
+      requirement: '推演事态在不同群体中的传播、立场变化和可能结果',
+      agentCount: 12,
+      maxRounds: 8,
+      platforms: ['twitter', 'reddit'],
+      enableGraphMemoryUpdate: false,
+    },
+    ui: {
+      catalogId: 'package.simulation.swarm-forecast',
+      label: '群体智能推演',
+      position: { x: 960, y: 160 },
+    },
+  }
+  const includeSwarm = template === 'situation-to-simulation'
+  return parseWorkflowProject({
+    id: `draft-${Date.now()}`,
+    name,
+    profile: 'intelligence',
+    version: 1,
+    nodes: includeSwarm ? [collection, situation, swarm] : [collection, situation],
+    edges: [
+      {
+        id: 'collection-situation',
+        source: collection.id,
+        target: situation.id,
+        sourcePort: 'out',
+        targetPort: 'in',
+      },
+      ...(includeSwarm
+        ? [{
+            id: 'situation-swarm',
+            source: situation.id,
+            target: swarm.id,
+            sourcePort: 'out',
+            targetPort: 'in',
+          }]
+        : []),
+    ],
+    adapters: opencliAdaptersForSourceSlots(DEFAULT_OPENCLI_HDA_SOURCES),
+    agentPermissions: {
+      canFetchNetwork: true,
+      canSendNotifications: false,
+      canWriteInbox: true,
+    },
+  })
 }
 
 export function studioSlug(value: string) {

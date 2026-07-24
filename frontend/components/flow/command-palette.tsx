@@ -115,16 +115,24 @@ function SectionLabel({ children, count }: { children: React.ReactNode; count?: 
 }
 
 export function CommandPalette({
+  adapterCatalogError,
+  adapterCatalogLoading,
+  catalogItems,
   open,
   onClose,
   onMessage,
+  onNodeCreated,
   getAnchor,
   initialTab = "nodes",
   onImportApp,
 }: {
+  adapterCatalogError?: string | null
+  adapterCatalogLoading?: boolean
+  catalogItems?: WorkflowNodeCatalogItem[]
   open: boolean
   onClose: () => void
   onMessage?: (msg: string) => void
+  onNodeCreated?: () => void
   getAnchor?: () => { x: number; y: number }
   initialTab?: PickerTab
   onImportApp?: () => void
@@ -195,9 +203,10 @@ export function CommandPalette({
     (item: PaletteItem) => {
       addNodeFromPalette(item, anchorPosition())
       onMessage?.(`已添加：${item.label}`)
+      onNodeCreated?.()
       onClose()
     },
-    [addNodeFromPalette, anchorPosition, onClose, onMessage],
+    [addNodeFromPalette, anchorPosition, onClose, onMessage, onNodeCreated],
   )
 
   const addCatalogOperator = useCallback(
@@ -209,9 +218,10 @@ export function CommandPalette({
       addWorkflowNodeFromCatalog(item, anchorPosition())
       const text = localizeNodeText(item.id, { label: item.label, description: item.description }, language)
       onMessage?.(`已添加业务节点：${text.label}`)
+      onNodeCreated?.()
       onClose()
     },
-    [addWorkflowNodeFromCatalog, anchorPosition, language, onClose, onMessage],
+    [addWorkflowNodeFromCatalog, anchorPosition, language, onClose, onMessage, onNodeCreated],
   )
 
   const addPrimitive = useCallback(
@@ -219,9 +229,10 @@ export function CommandPalette({
       addPrimitiveNode(item, anchorPosition(), primitiveRuntimeCapability(capabilities, item.id))
       const text = localizeNodeText(item.id, { label: item.label, description: item.description }, language)
       onMessage?.(`已添加执行节点：${text.label}`)
+      onNodeCreated?.()
       onClose()
     },
-    [addPrimitiveNode, anchorPosition, capabilities, language, onClose, onMessage],
+    [addPrimitiveNode, anchorPosition, capabilities, language, onClose, onMessage, onNodeCreated],
   )
 
   const addOpenCLIAdapter = useCallback(
@@ -233,9 +244,10 @@ export function CommandPalette({
       }
       addWorkflowNodeFromCatalog(workflowCatalogItemForOpenCLIAdapterNode(item, values), anchorPosition())
       onMessage?.(`已添加实时 OpenCLI 数据源：${openCLIAdapterNodePresentation(item).label}`)
+      onNodeCreated?.()
       onClose()
     },
-    [addWorkflowNodeFromCatalog, anchorPosition, onClose, onMessage],
+    [addWorkflowNodeFromCatalog, anchorPosition, onClose, onMessage, onNodeCreated],
   )
 
   const generate = useCallback(
@@ -267,9 +279,10 @@ export function CommandPalette({
   const queryText = query.trim().toLowerCase()
   const catalogOperators = inNodeNetwork
     ? []
-    : getWorkflowNodeCatalog(workflowProfile, capabilities).filter(
+    : (catalogItems ?? getWorkflowNodeCatalog(workflowProfile, capabilities)).filter(
         (item) => item.category === "package" || workflowCatalogIsBackendNode(item) || workflowCatalogPluginProvenance(item) !== null,
       )
+  const catalogBusy = opencliLoading || adapterCatalogLoading
   const matchesCatalog = (item: WorkflowNodeCatalogItem) => {
     if (!queryText) return true
     const text = localizeNodeText(item.id, { label: item.label, description: item.description }, language)
@@ -387,9 +400,10 @@ export function CommandPalette({
 
               {activeTab === "tools" ? (
                 <>
-                  {toolFilter !== "plugin" ? <section><SectionLabel count={filteredOpenCLINodes.length}>OpenCLI 实时数据源</SectionLabel>{opencliLoading ? <div className="flex items-center gap-2 px-3 py-5 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" />正在读取本机 OpenCLI 目录</div> : filteredOpenCLINodes.map((item) => { const presentation = openCLIAdapterNodePresentation(item); return <PickerRow key={item.id} icon={Globe} label={presentation.label} description={presentation.description} onClick={() => addOpenCLIAdapter(item)} trailing={<span className="rounded border border-success/40 px-1.5 py-0.5 font-mono text-[9px] text-success">{item.requiredArgs.length ? `${item.requiredArgs.length} 参数` : "实时"}</span>} /> })}</section> : null}
+                  {toolFilter !== "plugin" ? <section><SectionLabel count={filteredOpenCLINodes.length}>OpenCLI 实时数据源</SectionLabel>{catalogBusy ? <div className="flex items-center gap-2 px-3 py-5 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" />正在读取本机 OpenCLI 目录</div> : filteredOpenCLINodes.map((item) => { const presentation = openCLIAdapterNodePresentation(item); return <PickerRow key={item.id} icon={Globe} label={presentation.label} description={presentation.description} onClick={() => addOpenCLIAdapter(item)} trailing={<span className="rounded border border-success/40 px-1.5 py-0.5 font-mono text-[9px] text-success">{item.requiredArgs.length ? `${item.requiredArgs.length} 参数` : "实时"}</span>} /> })}</section> : null}
                   {toolFilter !== "opencli" ? <section><SectionLabel count={pluginTools.length}>插件与后端工具</SectionLabel>{pluginTools.map((item) => { const text = localizeNodeText(item.id, { label: item.label, description: item.description }, language); const provenance = workflowCatalogPluginProvenance(item); return <PickerRow key={`tool-${item.id}`} icon={getIcon(item.icon)} label={text.label} description={provenance ? `${provenance.providerKey} · ${provenance.version}` : text.description} disabled={workflowCatalogItemLocked(item)} onClick={() => addCatalogOperator(item)} /> })}</section> : null}
-                  {!opencliLoading && ((toolFilter === "opencli" && filteredOpenCLINodes.length === 0) || (toolFilter === "plugin" && pluginTools.length === 0) || (toolFilter === "all" && filteredOpenCLINodes.length === 0 && pluginTools.length === 0)) ? <p className="py-12 text-center text-sm text-muted-foreground">没有匹配的工具</p> : null}
+                  {!catalogBusy && adapterCatalogError ? <p className="px-3 py-2 text-xs text-destructive">{adapterCatalogError}</p> : null}
+                  {!catalogBusy && ((toolFilter === "opencli" && filteredOpenCLINodes.length === 0) || (toolFilter === "plugin" && pluginTools.length === 0) || (toolFilter === "all" && filteredOpenCLINodes.length === 0 && pluginTools.length === 0)) ? <p className="py-12 text-center text-sm text-muted-foreground">没有匹配的工具</p> : null}
                 </>
               ) : null}
 

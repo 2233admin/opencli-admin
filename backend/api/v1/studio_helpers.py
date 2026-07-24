@@ -1,7 +1,7 @@
 """Shared lookup and projection helpers for Studio authoring routes."""
 
 from fastapi import HTTPException, status
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,7 +17,7 @@ from backend.schemas import workflow as workflow_schemas
 LOCAL_USER_ID = "local-development-user"
 
 
-def canonicalize_studio_graph(graph: dict, *, workflow_id: str) -> dict:
+def canonicalize_studio_graph(graph: dict | BaseModel, *, workflow_id: str) -> dict:
     """Return a frontend-safe canonical graph while preserving invalid drafts.
 
     Pydantic accepts ``None`` for optional WorkflowProject fields, but the
@@ -27,7 +27,8 @@ def canonicalize_studio_graph(graph: dict, *, workflow_id: str) -> dict:
     null values stored inside free-form params/config objects.
     """
 
-    candidate = {**graph, "id": workflow_id}
+    graph_data = graph.model_dump(mode="json") if isinstance(graph, BaseModel) else graph
+    candidate = {**graph_data, "id": workflow_id}
     try:
         project = workflow_schemas.WorkflowProject.model_validate(candidate)
     except ValidationError:
