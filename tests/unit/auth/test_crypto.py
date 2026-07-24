@@ -16,7 +16,7 @@ def test_round_trip(monkeypatch):
 
 
 def test_missing_key_raises(monkeypatch):
-    monkeypatch.delenv(crypto.ENV_KEY, raising=False)
+    monkeypatch.setenv(crypto.ENV_KEY, "")
     with pytest.raises(crypto.CredentialCryptoError):
         crypto.encrypt("x")
 

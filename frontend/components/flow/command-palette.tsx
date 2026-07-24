@@ -2,32 +2,47 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useReactFlow } from "@xyflow/react"
-import { Loader2, Sparkles, Network, Save, RotateCcw, CornerDownLeft, Globe, ArrowLeft } from "lucide-react"
+import {
+  ArrowLeft,
+  Boxes,
+  ChevronRight,
+  FileUp,
+  Globe,
+  LayoutGrid,
+  Loader2,
+  RotateCcw,
+  Save,
+  Search,
+  Sparkles,
+} from "lucide-react"
+
 import { NODE_PALETTE } from "@/lib/flow/palette"
+import { getIcon } from "@/lib/flow/icons"
+import { generateWorkflowLocally } from "@/lib/flow/local-generate"
+import { useSettingsStore } from "@/lib/flow/settings-store"
+import { useFlowStore } from "@/lib/flow/store"
 import type { PaletteItem } from "@/lib/flow/types"
 import {
+  featuredOpenCLIAdapterNodes,
+  fetchWorkflowOpenCLIAdapterNodes,
+  openCLIAdapterNodePresentation,
+  workflowCatalogItemForOpenCLIAdapterNode,
+  type WorkflowOpenCLIAdapterNode,
+} from "@/lib/workflow/backend-opencli-adapter-nodes"
+import { primitiveRuntimeCapability, runtimeStatusLabel, runtimeStatusTone } from "@/lib/workflow/capabilities"
+import {
   getWorkflowNodeCatalog,
+  workflowCatalogIsBackendNode,
   workflowCatalogItemLocked,
   workflowCatalogPluginProvenance,
   type WorkflowNodeCatalogItem,
 } from "@/lib/workflow/node-catalog"
-import { getWorkflowPrimitives, type WorkflowPrimitive } from "@/lib/workflow/node-primitives"
 import { workflowNodeDepthFromNetworkStack, workflowNodeLayerAtDepth } from "@/lib/workflow/node-hierarchy"
-import { groupPrimitivesForNodeMenu } from "@/lib/workflow/node-menu"
-import { getIcon } from "@/lib/flow/icons"
-import { useFlowStore } from "@/lib/flow/store"
-import { useSettingsStore } from "@/lib/flow/settings-store"
-import { primitiveRuntimeCapability, runtimeStatusLabel, runtimeStatusTone } from "@/lib/workflow/capabilities"
-import { useWorkflowCapabilities } from "@/lib/workflow/use-workflow-capabilities"
-import { generateWorkflowLocally } from "@/lib/flow/local-generate"
-import type { LayoutDirection, LayoutEngine } from "@/lib/flow/layout"
 import { localizeNodeText } from "@/lib/workflow/node-i18n"
+import { groupPrimitivesForNodeMenu } from "@/lib/workflow/node-menu"
+import { getWorkflowPrimitives, type WorkflowPrimitive } from "@/lib/workflow/node-primitives"
+import { useWorkflowCapabilities } from "@/lib/workflow/use-workflow-capabilities"
 import { cn } from "@/lib/utils"
-import {
-  fetchWorkflowOpenCLIAdapterNodes,
-  workflowCatalogItemForOpenCLIAdapterNode,
-  type WorkflowOpenCLIAdapterNode,
-} from "@/lib/workflow/backend-opencli-adapter-nodes"
 
 const AI_EXAMPLES = [
   "用户注册后发送欢迎邮件，24 小时后如果未激活则再次提醒",
@@ -35,19 +50,68 @@ const AI_EXAMPLES = [
   "收到客服工单，判断优先级，高优先级转人工，其余自动回复",
 ]
 
-type CommandEntry = {
-  id: string
-  label: string
-  caption: string
-  icon: "sparkles" | "network" | "save" | "reset"
-  run?: () => void
+const CATEGORY_LABELS: Record<string, string> = {
+  package: "业务能力包",
+  trigger: "触发与开始",
+  source: "数据来源",
+  transform: "处理与转换",
+  decision: "逻辑与判断",
+  action: "动作",
+  output: "输出",
+  annotation: "注释与辅助",
+  shape: "流程图形",
 }
 
-const cmdIcons = {
-  sparkles: Sparkles,
-  network: Network,
-  save: Save,
-  reset: RotateCcw,
+type PickerTab = "nodes" | "tools" | "start"
+type ToolFilter = "all" | "opencli" | "plugin"
+
+const TAB_META: { id: PickerTab; label: string }[] = [
+  { id: "nodes", label: "节点" },
+  { id: "tools", label: "工具" },
+  { id: "start", label: "开始" },
+]
+
+function PickerRow({
+  icon: Icon,
+  label,
+  description,
+  trailing,
+  onClick,
+  disabled,
+}: {
+  icon: ReturnType<typeof getIcon>
+  label: string
+  description?: string
+  trailing?: React.ReactNode
+  onClick: () => void
+  disabled?: boolean
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="group flex min-h-14 w-full items-center gap-3 rounded-md px-3 text-left outline-none transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-55"
+    >
+      <span className="grid size-9 shrink-0 place-items-center rounded-lg border border-border bg-card text-primary">
+        <Icon className="size-4" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-medium text-foreground">{label}</span>
+        {description ? <span className="block truncate text-[11px] text-muted-foreground">{description}</span> : null}
+      </span>
+      {trailing ?? <ChevronRight className="size-4 text-muted-foreground/60 transition-transform group-hover:translate-x-0.5" />}
+    </button>
+  )
+}
+
+function SectionLabel({ children, count }: { children: React.ReactNode; count?: number }) {
+  return (
+    <div className="flex items-center justify-between px-3 pb-1 pt-4 text-xs font-medium text-muted-foreground">
+      <span>{children}</span>
+      {typeof count === "number" ? <span className="font-mono text-[10px]">{count}</span> : null}
+    </div>
+  )
 }
 
 export function CommandPalette({
@@ -55,59 +119,62 @@ export function CommandPalette({
   onClose,
   onMessage,
   getAnchor,
+  initialTab = "nodes",
+  onImportApp,
 }: {
   open: boolean
   onClose: () => void
   onMessage?: (msg: string) => void
   getAnchor?: () => { x: number; y: number }
+  initialTab?: PickerTab
+  onImportApp?: () => void
 }) {
+  const [activeTab, setActiveTab] = useState<PickerTab>(initialTab)
+  const [toolFilter, setToolFilter] = useState<ToolFilter>("all")
   const [query, setQuery] = useState("")
   const [aiMode, setAiMode] = useState(false)
   const [aiPrompt, setAiPrompt] = useState("")
   const [loading, setLoading] = useState(false)
   const [opencliLoading, setOpencliLoading] = useState(false)
   const [opencliNodes, setOpencliNodes] = useState<WorkflowOpenCLIAdapterNode[]>([])
-  const [opencliSummary, setOpencliSummary] = useState<Record<string, unknown>>({})
   const [selectedOpenCLI, setSelectedOpenCLI] = useState<WorkflowOpenCLIAdapterNode | null>(null)
   const [requiredValues, setRequiredValues] = useState<Record<string, string>>({})
   const inputRef = useRef<HTMLInputElement>(null)
   const aiRef = useRef<HTMLTextAreaElement>(null)
 
   const { screenToFlowPosition } = useReactFlow()
-  const addNodeFromPalette = useFlowStore((s) => s.addNodeFromPalette)
-  const addPrimitiveNode = useFlowStore((s) => s.addPrimitiveNode)
-  const addWorkflowNodeFromCatalog = useFlowStore((s) => s.addWorkflowNodeFromCatalog)
-  const applyGeneratedWorkflow = useFlowStore((s) => s.applyGeneratedWorkflow)
-  const autoLayout = useFlowStore((s) => s.autoLayout)
-  const save = useFlowStore((s) => s.save)
-  const reset = useFlowStore((s) => s.reset)
-  const workflowProfile = useFlowStore((s) => s.workflowProject.profile)
-  const networkStackLength = useFlowStore((s) => s.networkStack.length)
+  const addNodeFromPalette = useFlowStore((state) => state.addNodeFromPalette)
+  const addPrimitiveNode = useFlowStore((state) => state.addPrimitiveNode)
+  const addWorkflowNodeFromCatalog = useFlowStore((state) => state.addWorkflowNodeFromCatalog)
+  const applyGeneratedWorkflow = useFlowStore((state) => state.applyGeneratedWorkflow)
+  const autoLayout = useFlowStore((state) => state.autoLayout)
+  const save = useFlowStore((state) => state.save)
+  const reset = useFlowStore((state) => state.reset)
+  const workflowProfile = useFlowStore((state) => state.workflowProject.profile)
+  const networkStackLength = useFlowStore((state) => state.networkStack.length)
   const inNodeNetwork = networkStackLength > 0
   const nodeDepth = workflowNodeDepthFromNetworkStack(networkStackLength)
   const nodeLayer = workflowNodeLayerAtDepth(nodeDepth)
-  const language = useSettingsStore((s) => s.language)
+  const language = useSettingsStore((state) => state.language)
   const { capabilities } = useWorkflowCapabilities(open)
 
   useEffect(() => {
-    if (open) {
-      setQuery("")
-      setAiMode(false)
-      setAiPrompt("")
-      setSelectedOpenCLI(null)
-      setRequiredValues({})
-      requestAnimationFrame(() => inputRef.current?.focus())
-    }
-  }, [open])
+    if (!open) return
+    setActiveTab(initialTab)
+    setToolFilter("all")
+    setQuery("")
+    setAiMode(false)
+    setAiPrompt("")
+    setSelectedOpenCLI(null)
+    setRequiredValues({})
+    requestAnimationFrame(() => inputRef.current?.focus())
+  }, [initialTab, open])
 
   useEffect(() => {
     if (!open || opencliNodes.length || opencliLoading) return
     setOpencliLoading(true)
     void fetchWorkflowOpenCLIAdapterNodes({ includeWrite: false, limit: 5000 })
-      .then((result) => {
-        setOpencliNodes(result.nodes)
-        setOpencliSummary(result.summary)
-      })
+      .then((result) => setOpencliNodes(result.nodes))
       .finally(() => setOpencliLoading(false))
   }, [open, opencliLoading, opencliNodes.length])
 
@@ -119,20 +186,18 @@ export function CommandPalette({
     if (!loading) onClose()
   }, [loading, onClose])
 
+  const anchorPosition = useCallback(
+    () => getAnchor?.() ?? screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 }),
+    [getAnchor, screenToFlowPosition],
+  )
+
   const addOperator = useCallback(
     (item: PaletteItem) => {
-      // 优先落在唤出热盒时的光标位置，回退到视口中心
-      const position =
-        getAnchor?.() ??
-        screenToFlowPosition({
-          x: window.innerWidth / 2,
-          y: window.innerHeight / 2,
-        })
-      addNodeFromPalette(item, position)
-      onMessage?.(`已添加节点：${item.label}`)
+      addNodeFromPalette(item, anchorPosition())
+      onMessage?.(`已添加：${item.label}`)
       onClose()
     },
-    [getAnchor, screenToFlowPosition, addNodeFromPalette, onMessage, onClose],
+    [addNodeFromPalette, anchorPosition, onClose, onMessage],
   )
 
   const addCatalogOperator = useCallback(
@@ -141,60 +206,36 @@ export function CommandPalette({
         onMessage?.(item.runtimeCapability?.reason ?? "该插件能力尚未绑定运行适配器")
         return
       }
-      const position =
-        getAnchor?.() ??
-        screenToFlowPosition({
-          x: window.innerWidth / 2,
-          y: window.innerHeight / 2,
-        })
-      addWorkflowNodeFromCatalog(item, position)
+      addWorkflowNodeFromCatalog(item, anchorPosition())
       const text = localizeNodeText(item.id, { label: item.label, description: item.description }, language)
-      const status = item.runtimeCapability?.status
-      onMessage?.(
-        status && status !== "runnable"
-          ? `已添加一级业务节点：${text.label} (${runtimeStatusLabel(status)})`
-          : `已添加一级业务节点：${text.label}`,
-      )
+      onMessage?.(`已添加业务节点：${text.label}`)
       onClose()
     },
-    [getAnchor, screenToFlowPosition, addWorkflowNodeFromCatalog, language, onMessage, onClose],
+    [addWorkflowNodeFromCatalog, anchorPosition, language, onClose, onMessage],
   )
 
   const addPrimitive = useCallback(
     (item: WorkflowPrimitive) => {
-      const position =
-        getAnchor?.() ??
-        screenToFlowPosition({
-          x: window.innerWidth / 2,
-          y: window.innerHeight / 2,
-        })
-      addPrimitiveNode(item, position, primitiveRuntimeCapability(capabilities, item.id))
+      addPrimitiveNode(item, anchorPosition(), primitiveRuntimeCapability(capabilities, item.id))
       const text = localizeNodeText(item.id, { label: item.label, description: item.description }, language)
-      onMessage?.(`已添加底层组件：${text.label}`)
+      onMessage?.(`已添加执行节点：${text.label}`)
       onClose()
     },
-    [getAnchor, screenToFlowPosition, addPrimitiveNode, capabilities, language, onMessage, onClose],
+    [addPrimitiveNode, anchorPosition, capabilities, language, onClose, onMessage],
   )
 
   const addOpenCLIAdapter = useCallback(
     (item: WorkflowOpenCLIAdapterNode, values: Record<string, string> = {}) => {
-      const missing = item.requiredArgs.filter((name) => !values[name]?.trim())
-      if (missing.length) {
+      if (item.requiredArgs.some((name) => !values[name]?.trim())) {
         setSelectedOpenCLI(item)
         setRequiredValues(values)
         return
       }
-      const position =
-        getAnchor?.() ??
-        screenToFlowPosition({
-          x: window.innerWidth / 2,
-          y: window.innerHeight / 2,
-        })
-      addWorkflowNodeFromCatalog(workflowCatalogItemForOpenCLIAdapterNode(item, values), position)
-      onMessage?.(`已添加实时 OpenCLI 数据源：${item.label}`)
+      addWorkflowNodeFromCatalog(workflowCatalogItemForOpenCLIAdapterNode(item, values), anchorPosition())
+      onMessage?.(`已添加实时 OpenCLI 数据源：${openCLIAdapterNodePresentation(item).label}`)
       onClose()
     },
-    [addWorkflowNodeFromCatalog, getAnchor, onClose, onMessage, screenToFlowPosition],
+    [addWorkflowNodeFromCatalog, anchorPosition, onClose, onMessage],
   )
 
   const generate = useCallback(
@@ -202,13 +243,13 @@ export function CommandPalette({
       if (!text.trim() || loading) return
       setLoading(true)
       try {
-        const res = await fetch("/api/generate-workflow", {
+        const response = await fetch("/api/generate-workflow", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ prompt: text }),
         })
-        const data = await res.json()
-        if (!res.ok) throw new Error(data?.detail ?? "failed")
+        const data = await response.json()
+        if (!response.ok) throw new Error(data?.detail ?? "failed")
         applyGeneratedWorkflow(data)
         onMessage?.(`已生成工作流：${data.title ?? "未命名"}`)
       } catch {
@@ -220,416 +261,154 @@ export function CommandPalette({
         onClose()
       }
     },
-    [loading, applyGeneratedWorkflow, onMessage, onClose],
+    [applyGeneratedWorkflow, loading, onClose, onMessage],
   )
 
-  const layoutCommands: { engine: LayoutEngine; dir: LayoutDirection; label: string }[] = [
-    { engine: "elk", dir: "TB", label: "Auto Layout · ELK 纵向" },
-    { engine: "elk", dir: "LR", label: "Auto Layout · ELK 横向" },
-    { engine: "dagre", dir: "TB", label: "Auto Layout · Dagre 纵向" },
-    { engine: "dagre", dir: "LR", label: "Auto Layout · Dagre 横向" },
-    { engine: "d3-force", dir: "TB", label: "Auto Layout · 力导向" },
-  ]
-
-  const commands: CommandEntry[] = useMemo(
-    () => [
-      {
-        id: "ai",
-        label: "Generate workflow from description",
-        caption: "AI",
-        icon: "sparkles",
-      },
-      ...layoutCommands.map((l) => ({
-        id: `layout-${l.engine}-${l.dir}`,
-        label: l.label,
-        caption: "LAYOUT",
-        icon: "network" as const,
-        run: () => {
-          void autoLayout(l.dir, l.engine, true)
-          onMessage?.("已应用自动布局")
-          onClose()
-        },
-      })),
-      {
-        id: "save",
-        label: "Save graph to local",
-        caption: "GRAPH",
-        icon: "save",
-        run: () => {
-          save()
-          onMessage?.("已保存到本地")
-          onClose()
-        },
-      },
-      {
-        id: "reset",
-        label: "Reset to example graph",
-        caption: "GRAPH",
-        icon: "reset",
-        run: () => {
-          reset()
-          onMessage?.("已重置为示例")
-          onClose()
-        },
-      },
-    ],
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [autoLayout, save, reset, onMessage, onClose],
-  )
-
-  const q = query.trim().toLowerCase()
+  const queryText = query.trim().toLowerCase()
   const catalogOperators = inNodeNetwork
     ? []
     : getWorkflowNodeCatalog(workflowProfile, capabilities).filter(
-        (item) => item.category === "package" || workflowCatalogPluginProvenance(item) !== null,
+        (item) => item.category === "package" || workflowCatalogIsBackendNode(item) || workflowCatalogPluginProvenance(item) !== null,
       )
-  const filteredCatalogOperators = q
-    ? catalogOperators.filter(
-        (item) => {
-          const text = localizeNodeText(item.id, { label: item.label, description: item.description }, language)
-          return (
-          item.label.toLowerCase().includes(q) ||
-          text.label.toLowerCase().includes(q) ||
-          (text.description ?? "").toLowerCase().includes(q) ||
-          item.kind.toLowerCase().includes(q) ||
-          item.capability.toLowerCase().includes(q) ||
-          item.keywords.some((keyword) => keyword.toLowerCase().includes(q))
-          )
-        },
-      )
-    : catalogOperators
-  const filteredOpenCLINodes = (q
-    ? opencliNodes.filter((item) => {
-        const haystack = `${item.label} ${item.description} ${item.site} ${item.command}`.toLowerCase()
-        return haystack.includes(q)
-      })
-    : opencliNodes
-  ).slice(0, q ? 100 : 24)
-  const primitiveOperators = (inNodeNetwork ? getWorkflowPrimitives() : []).filter((item) => {
-    if (!q) return true
+  const matchesCatalog = (item: WorkflowNodeCatalogItem) => {
+    if (!queryText) return true
     const text = localizeNodeText(item.id, { label: item.label, description: item.description }, language)
-    return (
-      item.label.toLowerCase().includes(q) ||
-      text.label.toLowerCase().includes(q) ||
-      (text.description ?? "").toLowerCase().includes(q) ||
-      item.category.toLowerCase().includes(q) ||
-      item.keywords.some((keyword) => keyword.toLowerCase().includes(q))
-    )
-  })
-  const primitiveGroups = groupPrimitivesForNodeMenu(primitiveOperators)
-  const auxiliaryOperators = NODE_PALETTE.filter(
-    (item) => item.category === "annotation" || item.category === "shape",
+    return `${item.label} ${text.label} ${text.description ?? ""} ${item.kind} ${item.capability} ${item.keywords.join(" ")}`
+      .toLowerCase()
+      .includes(queryText)
+  }
+  const nodeCatalogGroups = useMemo(() => {
+    const groups = new Map<string, WorkflowNodeCatalogItem[]>()
+    for (const item of catalogOperators.filter((item) => workflowCatalogPluginProvenance(item) === null && matchesCatalog(item))) {
+      const current = groups.get(item.category) ?? []
+      current.push(item)
+      groups.set(item.category, current)
+    }
+    return [...groups.entries()]
+    // catalogOperators and matchesCatalog are derived from current render inputs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [capabilities, inNodeNetwork, language, queryText, workflowProfile])
+  const primitiveGroups = groupPrimitivesForNodeMenu(
+    (inNodeNetwork ? getWorkflowPrimitives() : []).filter((item) => {
+      if (!queryText) return true
+      const text = localizeNodeText(item.id, { label: item.label, description: item.description }, language)
+      return `${item.label} ${text.label} ${text.description ?? ""} ${item.category} ${item.keywords.join(" ")}`.toLowerCase().includes(queryText)
+    }),
   )
-  const filteredOperators = q
-    ? auxiliaryOperators.filter(
-        (i) => i.label.toLowerCase().includes(q) || i.nodeType.toLowerCase().includes(q),
-      )
-    : auxiliaryOperators
-  const filteredCommands = q ? commands.filter((c) => c.label.toLowerCase().includes(q)) : []
+  const auxiliaryOperators = NODE_PALETTE.filter((item) => item.category === "annotation" || item.category === "shape").filter(
+    (item) => !queryText || `${item.label} ${item.description} ${item.nodeType}`.toLowerCase().includes(queryText),
+  )
+  const matchesOpenCLI = (item: WorkflowOpenCLIAdapterNode) => {
+    const presentation = openCLIAdapterNodePresentation(item)
+    return !queryText || `${presentation.label} ${presentation.description} ${item.site} ${item.command}`.toLowerCase().includes(queryText)
+  }
+  const commonOpenCLINodes = featuredOpenCLIAdapterNodes(opencliNodes).filter(matchesOpenCLI)
+  const filteredOpenCLINodes = (() => {
+    const matching = opencliNodes.filter(matchesOpenCLI)
+    if (queryText) return matching.slice(0, 100)
+    const commonIds = new Set(commonOpenCLINodes.map((item) => item.id))
+    return [...commonOpenCLINodes, ...matching.filter((item) => !commonIds.has(item.id))].slice(0, 18)
+  })()
+  const pluginTools = catalogOperators.filter(
+    (item) => matchesCatalog(item) && workflowCatalogPluginProvenance(item) !== null,
+  )
+
+  const firstNode = nodeCatalogGroups[0]?.[1][0]
+  const firstPrimitive = primitiveGroups[0]?.items[0]
+  const firstAuxiliary = auxiliaryOperators[0]
 
   if (!open) return null
 
   if (selectedOpenCLI) {
     const missingRequired = selectedOpenCLI.requiredArgs.filter((name) => !requiredValues[name]?.trim())
     return (
-      <div className="fixed inset-0 z-50 flex items-start justify-center bg-background/85 pt-[15vh]" role="dialog" aria-modal="true" aria-label="配置 OpenCLI 数据源">
-        <form
-          className="w-[32rem] max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border bg-popover shadow-2xl"
-          onSubmit={(event) => {
-            event.preventDefault()
-            addOpenCLIAdapter(selectedOpenCLI, requiredValues)
-          }}
-        >
+      <div className="fixed inset-0 z-50 flex items-start justify-center bg-background/80 px-4 pt-[10vh]" role="dialog" aria-modal="true" aria-label="配置 OpenCLI 数据源">
+        <form className="w-[34rem] overflow-hidden rounded-lg border bg-popover shadow-2xl" onSubmit={(event) => { event.preventDefault(); addOpenCLIAdapter(selectedOpenCLI, requiredValues) }}>
           <div className="flex items-center gap-3 border-b px-4 py-3">
-            <button type="button" className="grid size-9 place-items-center rounded-md hover:bg-accent" onClick={() => setSelectedOpenCLI(null)} aria-label="返回数据源列表"><ArrowLeft className="size-4" /></button>
-            <div className="min-w-0"><div className="truncate text-sm font-medium">{selectedOpenCLI.label}</div><div className="truncate text-xs text-muted-foreground">配置必填参数后作为实时 Source 加入画布</div></div>
+            <button type="button" className="grid size-9 place-items-center rounded-md hover:bg-accent" onClick={() => setSelectedOpenCLI(null)} aria-label="返回工具列表"><ArrowLeft className="size-4" /></button>
+            <div className="min-w-0"><div className="truncate text-sm font-medium">{selectedOpenCLI.label}</div><div className="truncate text-xs text-muted-foreground">配置必填参数后加入画布</div></div>
           </div>
-          <div className="grid max-h-[50vh] gap-3 overflow-y-auto p-4">
+          <div className="grid max-h-[52vh] gap-3 overflow-y-auto p-4">
             {selectedOpenCLI.args.filter((arg) => arg.required).map((arg) => (
-              <label key={arg.name} className="grid gap-1.5 text-xs">
-                <span>{arg.name}<span className="ml-1 text-destructive">*</span></span>
-                <input
-                  value={requiredValues[arg.name] ?? ""}
-                  onChange={(event) => setRequiredValues((current) => ({ ...current, [arg.name]: event.target.value }))}
-                  placeholder={arg.help ?? `输入 ${arg.name}`}
-                  className="min-h-11 rounded-md border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring/50"
-                  autoFocus={selectedOpenCLI.requiredArgs[0] === arg.name}
-                />
-              </label>
+              <label key={arg.name} className="grid gap-1.5 text-xs"><span>{arg.name}<span className="ml-1 text-destructive">*</span></span><input value={requiredValues[arg.name] ?? ""} onChange={(event) => setRequiredValues((current) => ({ ...current, [arg.name]: event.target.value }))} placeholder={arg.help ?? `输入 ${arg.name}`} className="min-h-11 rounded-md border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring/50" autoFocus={selectedOpenCLI.requiredArgs[0] === arg.name} /></label>
             ))}
           </div>
-          <div className="flex justify-end gap-2 border-t p-4"><button type="button" className="min-h-10 rounded-md border px-4 text-xs" onClick={() => setSelectedOpenCLI(null)}>取消</button><button type="submit" className="min-h-10 rounded-md bg-primary px-4 text-xs text-primary-foreground disabled:opacity-50" disabled={missingRequired.length > 0}>添加实时数据源</button></div>
+          <div className="flex justify-end gap-2 border-t p-4"><button type="button" className="min-h-10 rounded-md border px-4 text-xs" onClick={() => setSelectedOpenCLI(null)}>取消</button><button type="submit" className="min-h-10 rounded-md bg-primary px-4 text-xs text-primary-foreground disabled:opacity-50" disabled={missingRequired.length > 0}>添加数据源</button></div>
         </form>
       </div>
     )
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-background/85 pt-[15vh]"
-      onClick={close}
-      onKeyDown={(e) => {
-        if (e.key === "Escape") close()
-      }}
-      role="dialog"
-      aria-modal="true"
-      aria-label="节点选择器"
-    >
-      <div
-        className="w-[36rem] max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border bg-popover shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {!aiMode ? (
-          <>
-            <div className="flex items-center gap-2 border-b px-4 py-3">
-              <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
-                ⌘K
-              </span>
-              <input
-                ref={inputRef}
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.nativeEvent.isComposing) {
-                    if (q && filteredOpenCLINodes[0]) {
-                      addOpenCLIAdapter(filteredOpenCLINodes[0])
-                    } else if (filteredCatalogOperators[0]) {
-                      addCatalogOperator(filteredCatalogOperators[0])
-                    } else if (primitiveOperators[0]) {
-                      addPrimitive(primitiveOperators[0])
-                    } else if (filteredOperators[0]) {
-                      addOperator(filteredOperators[0])
-                    } else if (filteredCommands[0]) {
-                      const first = filteredCommands[0]
-                      if (first.id === "ai") setAiMode(true)
-                      else first.run?.()
-                    }
-                  }
-                }}
-                placeholder="搜索节点或操作…"
-                className="w-full bg-transparent text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none"
-                aria-label="搜索命令或节点"
-              />
-              <kbd className="rounded-sm border px-1.5 py-0.5 font-mono text-[9px] text-muted-foreground">
-                ESC
-              </kbd>
-            </div>
-
-            <div className="max-h-[50vh] overflow-y-auto py-2">
-              {filteredCommands.length > 0 ? (
-                <>
-                  <p className="px-4 py-1 font-mono text-[9px] uppercase tracking-[0.2em] text-muted-foreground/60">
-                    快捷操作
-                  </p>
-                  {filteredCommands.map((cmd) => {
-                    const Icon = cmdIcons[cmd.icon]
-                    const isAi = cmd.id === "ai"
-                    return (
-                      <button
-                        key={cmd.id}
-                        type="button"
-                        onClick={() => (isAi ? setAiMode(true) : cmd.run?.())}
-                        className="flex w-full items-center gap-3 px-4 py-2 text-left transition-colors hover:bg-accent"
-                      >
-                        <Icon className={cn("size-3.5", isAi ? "text-[#ff7a17]" : "text-muted-foreground")} />
-                        <span className="min-w-0 flex-1 truncate text-sm">{cmd.label}</span>
-                        <span
-                          className={cn(
-                            "font-mono text-[9px] uppercase tracking-wider",
-                            isAi ? "text-[#ff7a17]" : "text-muted-foreground/50",
-                          )}
-                        >
-                          {cmd.caption}
-                        </span>
-                      </button>
-                    )
-                  })}
-                </>
-              ) : null}
-
-              {opencliLoading || filteredOpenCLINodes.length > 0 ? (
-                <>
-                  <p className="flex items-center justify-between px-4 pb-1 pt-3 font-mono text-[9px] uppercase tracking-[0.2em] text-muted-foreground/60">
-                    <span>OpenCLI 实时数据源</span>
-                    <span>{opencliLoading ? "读取中…" : `${String(opencliSummary.sourceSlotReady ?? opencliNodes.length)} 可直接运行 · ${opencliNodes.length} 个读命令`}</span>
-                  </p>
-                  {opencliLoading ? <div className="flex items-center gap-2 px-4 py-3 text-xs text-muted-foreground"><Loader2 className="size-3.5 animate-spin" />正在读取本机 OpenCLI 目录</div> : filteredOpenCLINodes.map((item) => (
-                    <button key={item.id} type="button" onClick={() => addOpenCLIAdapter(item)} className="flex w-full items-center gap-3 px-4 py-2 text-left transition-colors hover:bg-accent">
-                      <Globe className="size-3.5 text-[#ff7a17]" />
-                      <span className="min-w-0 flex-1"><span className="block truncate text-sm">{item.label}</span><span className="block truncate text-[10px] text-muted-foreground">{item.description || `${item.site} ${item.command}`}</span></span>
-                      <span className={cn("rounded-[3px] border px-1 py-0.5 font-mono text-[8px] uppercase tracking-wider", item.requiredArgs.length ? "border-warning/40 text-warning" : "border-success/40 text-success")}>{item.requiredArgs.length ? `${item.requiredArgs.length} 参数` : "实时"}</span>
-                    </button>
-                  ))}
-                  {!opencliLoading && opencliNodes.length > filteredOpenCLINodes.length && !q ? <p className="px-4 py-2 text-center text-[10px] text-muted-foreground">输入站点或命令名可搜索全部 {opencliNodes.length} 个 OpenCLI 读命令</p> : null}
-                </>
-              ) : null}
-
-              {filteredCatalogOperators.length > 0 ? (
-                <>
-                  <p className="px-4 pb-1 pt-3 font-mono text-[9px] uppercase tracking-[0.2em] text-muted-foreground/60">
-                    一级业务节点 · Dify 风格
-                  </p>
-                  {filteredCatalogOperators.map((item) => {
-                    const Icon = getIcon(item.icon)
-                    const text = localizeNodeText(item.id, { label: item.label, description: item.description }, language)
-                    const locked = workflowCatalogItemLocked(item)
-                    const provenance = workflowCatalogPluginProvenance(item)
-                    return (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onClick={() => addCatalogOperator(item)}
-                        disabled={locked}
-                        title={locked ? item.runtimeCapability?.reason ?? "等待运行适配器" : undefined}
-                        className="flex w-full items-center gap-3 px-4 py-2 text-left transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-65 disabled:hover:bg-transparent"
-                      >
-                        <Icon className="size-3.5 text-[#ff7a17]" />
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-sm">{text.label}</span>
-                          <span className="block truncate text-[10px] text-muted-foreground">
-                            {provenance
-                              ? `${provenance.providerKey} · ${provenance.version}`
-                              : text.description}
-                          </span>
-                        </span>
-                        <span
-                          className={cn(
-                            "rounded-[3px] border px-1 py-0.5 font-mono text-[8px] uppercase tracking-wider",
-                            runtimeStatusTone(item.runtimeCapability?.status),
-                          )}
-                          title={item.runtimeCapability?.reason ?? item.capability}
-                        >
-                          {runtimeStatusLabel(item.runtimeCapability?.status)}
-                        </span>
-                      </button>
-                    )
-                  })}
-                </>
-              ) : null}
-
-              {primitiveOperators.length > 0 ? (
-                <>
-                  <p className="px-4 pb-1 pt-3 font-mono text-[9px] uppercase tracking-[0.2em] text-muted-foreground/60">
-                    L{nodeDepth} · {nodeLayer.label}
-                  </p>
-                  {primitiveGroups.map((group) => (
-                    <div key={group.category}>
-                      <p className="border-y border-border/60 bg-muted/30 px-4 py-1.5 text-[11px] font-medium text-muted-foreground">
-                        {group.label}
-                      </p>
-                      {group.items.map((item) => {
-                        const Icon = getIcon(item.icon)
-                        const text = localizeNodeText(item.id, { label: item.label, description: item.description }, language)
-                        const runtimeCapability = primitiveRuntimeCapability(capabilities, item.id)
-                        return (
-                          <button
-                            key={item.id}
-                            type="button"
-                            onClick={() => addPrimitive(item)}
-                            className="flex w-full items-center gap-3 px-4 py-2 text-left transition-colors hover:bg-accent"
-                          >
-                            <Icon className="size-3.5 text-muted-foreground" />
-                            <span className="min-w-0 flex-1 truncate text-sm">{text.label}</span>
-                            <span
-                              className={cn(
-                                "rounded-[3px] border px-1 py-0.5 font-mono text-[8px] uppercase tracking-wider",
-                                runtimeStatusTone(runtimeCapability?.status ?? "design_only"),
-                              )}
-                              title={runtimeCapability?.reason ?? item.category}
-                            >
-                              {runtimeStatusLabel(runtimeCapability?.status ?? "design_only")}
-                            </span>
-                          </button>
-                        )
-                      })}
-                    </div>
-                  ))}
-                </>
-              ) : null}
-
-              {filteredOperators.length > 0 ? (
-                <>
-                  <p className="px-4 pb-1 pt-3 font-mono text-[9px] uppercase tracking-[0.2em] text-muted-foreground/60">
-                    注释与辅助
-                  </p>
-                  {filteredOperators.map((item) => {
-                    const Icon = getIcon(item.icon)
-                    return (
-                      <button
-                        key={`${item.nodeType}-${item.shape ?? item.label}`}
-                        type="button"
-                        onClick={() => addOperator(item)}
-                        className="flex w-full items-center gap-3 px-4 py-2 text-left transition-colors hover:bg-accent"
-                      >
-                        <Icon className="size-3.5 text-muted-foreground" />
-                        <span className="min-w-0 flex-1 truncate text-sm">{item.label}</span>
-                        <span className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground/50">
-                          {(item.shape ?? item.nodeType).toUpperCase()}
-                        </span>
-                      </button>
-                    )
-                  })}
-                </>
-              ) : null}
-
-              {filteredCommands.length === 0 && filteredOpenCLINodes.length === 0 && filteredCatalogOperators.length === 0 && primitiveOperators.length === 0 && filteredOperators.length === 0 ? (
-                <p className="px-4 py-6 text-center font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-                  没有匹配的节点或操作
-                </p>
-              ) : null}
-            </div>
-          </>
-        ) : (
-          <div className="p-4">
-            <div className="mb-3 flex items-center gap-2">
-              <Sparkles className="size-4 text-[#ff7a17]" />
-              <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#ff7a17]">
-                Generate from description
-              </span>
-            </div>
-            <div className="relative">
-              <textarea
-                ref={aiRef}
-                value={aiPrompt}
-                onChange={(e) => setAiPrompt(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !e.nativeEvent.isComposing) {
-                    e.preventDefault()
-                    void generate(aiPrompt)
-                  }
-                  if (e.key === "Escape") setAiMode(false)
-                }}
-                placeholder="描述你想要的流程，例如：用户下单后校验库存，成功则通知发货，失败则退款…"
-                className="min-h-24 w-full resize-none rounded-md border bg-background p-3 text-sm text-foreground placeholder:text-muted-foreground/60 focus:border-[#ff7a17]/60 focus:outline-none"
-                disabled={loading}
-              />
-              <button
-                type="button"
-                onClick={() => void generate(aiPrompt)}
-                disabled={loading || !aiPrompt.trim()}
-                className="absolute bottom-2.5 right-2.5 flex size-7 items-center justify-center rounded-sm bg-primary text-primary-foreground transition-opacity disabled:opacity-40"
-                aria-label="生成"
-              >
-                {loading ? <Loader2 className="size-3.5 animate-spin" /> : <CornerDownLeft className="size-3.5" />}
-              </button>
-            </div>
-            <div className="mt-3 space-y-1">
-              {AI_EXAMPLES.map((ex) => (
-                <button
-                  key={ex}
-                  type="button"
-                  disabled={loading}
-                  onClick={() => void generate(ex)}
-                  className="block w-full truncate rounded-sm border border-transparent px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:border-border hover:text-foreground disabled:opacity-50"
-                >
-                  {ex}
-                </button>
-              ))}
-            </div>
-            <p className="mt-3 font-mono text-[9px] uppercase tracking-wider text-muted-foreground/50">
-              ⌘+Enter 生成 · ESC 返回
-            </p>
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-background/80 px-4 pt-[7vh]" onClick={close} onKeyDown={(event) => { if (event.key === "Escape") close() }} role="dialog" aria-modal="true" aria-label="节点选择器">
+      <div className="flex max-h-[82vh] w-[46rem] max-w-full flex-col overflow-hidden rounded-xl border bg-popover shadow-2xl" onClick={(event) => event.stopPropagation()}>
+        {aiMode ? (
+          <div className="p-5">
+            <button type="button" onClick={() => setAiMode(false)} className="mb-4 flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft className="size-4" />返回开始</button>
+            <div className="mb-3 flex items-center gap-2"><Sparkles className="size-4 text-primary" /><span className="text-sm font-medium">AI 生成工作流</span></div>
+            <textarea ref={aiRef} value={aiPrompt} onChange={(event) => setAiPrompt(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && !event.nativeEvent.isComposing) { event.preventDefault(); void generate(aiPrompt) } }} placeholder="描述你想要的流程…" className="min-h-28 w-full resize-none rounded-lg border bg-background p-3 text-sm outline-none focus:ring-2 focus:ring-ring/50" disabled={loading} />
+            <div className="mt-3 grid gap-1">{AI_EXAMPLES.map((example) => <button key={example} type="button" onClick={() => void generate(example)} className="truncate rounded-md px-3 py-2 text-left text-xs text-muted-foreground hover:bg-accent hover:text-foreground">{example}</button>)}</div>
+            <div className="mt-4 flex justify-end"><button type="button" onClick={() => void generate(aiPrompt)} disabled={loading || !aiPrompt.trim()} className="flex min-h-10 items-center gap-2 rounded-md bg-primary px-4 text-sm text-primary-foreground disabled:opacity-40">{loading ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}生成</button></div>
           </div>
+        ) : (
+          <>
+            <div className="flex items-center gap-1 border-b px-4 pt-2" role="tablist" aria-label="节点选择类型">
+              {TAB_META.map((tab) => (
+                <button key={tab.id} type="button" role="tab" aria-selected={activeTab === tab.id} onClick={() => { setActiveTab(tab.id); setQuery(""); requestAnimationFrame(() => inputRef.current?.focus()) }} className={cn("min-h-12 border-b-2 px-4 text-sm font-medium transition-colors", activeTab === tab.id ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground")}>{tab.label}</button>
+              ))}
+              <button type="button" onClick={close} className="ml-auto rounded-md px-2 py-1 font-mono text-[10px] text-muted-foreground hover:bg-accent">ESC</button>
+            </div>
+
+            {activeTab !== "start" ? <div className="border-b p-4">
+              <label className="flex min-h-12 items-center gap-3 rounded-lg border bg-background px-4 focus-within:ring-2 focus-within:ring-ring/50">
+                <Search className="size-5 text-muted-foreground" />
+                <input ref={inputRef} value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key !== "Enter" || event.nativeEvent.isComposing) return; if (activeTab === "nodes") { if (firstNode) addCatalogOperator(firstNode); else if (firstPrimitive) addPrimitive(firstPrimitive); else if (firstAuxiliary) addOperator(firstAuxiliary) } else if (toolFilter !== "plugin" && filteredOpenCLINodes[0]) addOpenCLIAdapter(filteredOpenCLINodes[0]); else if (pluginTools[0]) addCatalogOperator(pluginTools[0]) }} placeholder={activeTab === "nodes" ? "搜索节点、Agent、逻辑或数据能力" : "搜索工具、插件或 OpenCLI 数据源"} className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground/60" aria-label="搜索节点选择器" />
+              </label>
+              {activeTab === "tools" ? (
+                <div className="mt-3 flex items-center gap-2" aria-label="工具筛选">
+                  {([['all', '全部'], ['opencli', 'OpenCLI'], ['plugin', '插件能力']] as const).map(([id, label]) => <button key={id} type="button" aria-pressed={toolFilter === id} onClick={() => setToolFilter(id)} className={cn("rounded-md px-3 py-1.5 text-xs", toolFilter === id ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground")}>{label}</button>)}
+                </div>
+              ) : null}
+            </div> : null}
+
+            <div className="min-h-0 flex-1 overflow-y-auto p-3">
+              {activeTab === "nodes" ? (
+                <>
+                  {inNodeNetwork ? <div className="mb-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-xs text-muted-foreground"><span className="font-medium text-foreground">L{nodeDepth} · {nodeLayer.label}</span> · 当前只展示本层可用执行节点</div> : null}
+                  {!inNodeNetwork && (opencliLoading || commonOpenCLINodes.length > 0) ? <section><SectionLabel count={commonOpenCLINodes.length}>常用网站数据源</SectionLabel>{opencliLoading ? <div className="flex items-center gap-2 px-3 py-5 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" />正在读取常用网站数据源</div> : commonOpenCLINodes.map((item) => { const presentation = openCLIAdapterNodePresentation(item); return <PickerRow key={item.id} icon={Globe} label={presentation.label} description={presentation.description} onClick={() => addOpenCLIAdapter(item)} trailing={<span className="rounded border border-success/40 px-1.5 py-0.5 font-mono text-[9px] text-success">实时</span>} /> })}</section> : null}
+                  {nodeCatalogGroups.map(([category, items]) => (
+                    <section key={category}><SectionLabel count={items.length}>{CATEGORY_LABELS[category] ?? category}</SectionLabel>{items.map((item) => { const Icon = getIcon(item.icon); const text = localizeNodeText(item.id, { label: item.label, description: item.description }, language); const provenance = workflowCatalogPluginProvenance(item); const locked = workflowCatalogItemLocked(item); return <PickerRow key={item.id} icon={Icon} label={text.label} description={provenance ? `${provenance.providerKey} · ${provenance.version}` : text.description} disabled={locked} onClick={() => addCatalogOperator(item)} trailing={<span className={cn("rounded border px-1.5 py-0.5 font-mono text-[9px] uppercase", runtimeStatusTone(item.runtimeCapability?.status))}>{runtimeStatusLabel(item.runtimeCapability?.status)}</span>} /> })}</section>
+                  ))}
+                  {primitiveGroups.map((group) => <section key={group.category}><SectionLabel count={group.items.length}>{group.label}</SectionLabel>{group.items.map((item) => { const text = localizeNodeText(item.id, { label: item.label, description: item.description }, language); return <PickerRow key={item.id} icon={getIcon(item.icon)} label={text.label} description={text.description} onClick={() => addPrimitive(item)} /> })}</section>)}
+                  {auxiliaryOperators.length ? <section><SectionLabel count={auxiliaryOperators.length}>注释与辅助</SectionLabel>{auxiliaryOperators.map((item) => <PickerRow key={`${item.nodeType}-${item.shape ?? item.label}`} icon={getIcon(item.icon)} label={item.label} description={item.description} onClick={() => addOperator(item)} />)}</section> : null}
+                  {nodeCatalogGroups.length === 0 && primitiveGroups.length === 0 && auxiliaryOperators.length === 0 ? <p className="py-12 text-center text-sm text-muted-foreground">没有匹配的节点</p> : null}
+                </>
+              ) : null}
+
+              {activeTab === "tools" ? (
+                <>
+                  {toolFilter !== "plugin" ? <section><SectionLabel count={filteredOpenCLINodes.length}>OpenCLI 实时数据源</SectionLabel>{opencliLoading ? <div className="flex items-center gap-2 px-3 py-5 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" />正在读取本机 OpenCLI 目录</div> : filteredOpenCLINodes.map((item) => { const presentation = openCLIAdapterNodePresentation(item); return <PickerRow key={item.id} icon={Globe} label={presentation.label} description={presentation.description} onClick={() => addOpenCLIAdapter(item)} trailing={<span className="rounded border border-success/40 px-1.5 py-0.5 font-mono text-[9px] text-success">{item.requiredArgs.length ? `${item.requiredArgs.length} 参数` : "实时"}</span>} /> })}</section> : null}
+                  {toolFilter !== "opencli" ? <section><SectionLabel count={pluginTools.length}>插件与后端工具</SectionLabel>{pluginTools.map((item) => { const text = localizeNodeText(item.id, { label: item.label, description: item.description }, language); const provenance = workflowCatalogPluginProvenance(item); return <PickerRow key={`tool-${item.id}`} icon={getIcon(item.icon)} label={text.label} description={provenance ? `${provenance.providerKey} · ${provenance.version}` : text.description} disabled={workflowCatalogItemLocked(item)} onClick={() => addCatalogOperator(item)} /> })}</section> : null}
+                  {!opencliLoading && ((toolFilter === "opencli" && filteredOpenCLINodes.length === 0) || (toolFilter === "plugin" && pluginTools.length === 0) || (toolFilter === "all" && filteredOpenCLINodes.length === 0 && pluginTools.length === 0)) ? <p className="py-12 text-center text-sm text-muted-foreground">没有匹配的工具</p> : null}
+                </>
+              ) : null}
+
+              {activeTab === "start" ? (
+                <section><SectionLabel>创建与导入</SectionLabel>
+                  <PickerRow icon={Sparkles} label="AI 生成工作流" description="用自然语言生成可编辑的工作流草稿" onClick={() => setAiMode(true)} />
+                  <PickerRow icon={FileUp} label="导入应用" description="支持 Dify、n8n、JSON、YAML 与 Mermaid" onClick={() => { onClose(); onImportApp?.() }} />
+                  <PickerRow icon={Boxes} label="从节点开始" description="进入节点目录，手动搭建业务流程" onClick={() => { setActiveTab("nodes"); setQuery("") }} />
+                  <SectionLabel>画布操作</SectionLabel>
+                  <PickerRow icon={LayoutGrid} label="自动整理画布" description="按纵向业务流重新排布当前节点" onClick={() => { void autoLayout("TB", "elk", true); onMessage?.("已应用自动布局"); onClose() }} />
+                  <PickerRow icon={Save} label="保存当前草稿" description="将当前工作流保存到本地状态" onClick={() => { save(); onMessage?.("已保存到本地"); onClose() }} />
+                  <PickerRow icon={RotateCcw} label="恢复示例工作流" description="清空当前改动并恢复默认示例" onClick={() => { reset(); onMessage?.("已恢复示例工作流"); onClose() }} />
+                </section>
+              ) : null}
+            </div>
+
+            {activeTab === "tools" ? <a href="/plugins" className="flex min-h-12 items-center justify-between border-t px-5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground"><span>在插件中心查找更多</span><ChevronRight className="size-4" /></a> : null}
+            <div className="flex min-h-10 items-center justify-between border-t px-4 font-mono text-[10px] text-muted-foreground"><span>{activeTab === "start" ? "选择一种开始方式" : "输入搜索 · Enter 添加"}</span><span>Esc 关闭</span></div>
+          </>
         )}
       </div>
     </div>

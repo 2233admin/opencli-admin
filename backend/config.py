@@ -17,6 +17,10 @@ class Settings(BaseSettings):
     app_env: Literal["development", "staging", "production"] = "development"
     debug: bool = False
     secret_key: str = "change-me-in-production"
+    # Fernet key used to encrypt provider credentials at rest. Keep this
+    # stable after providers have been saved, or their stored API keys cannot
+    # be decrypted on the next process start.
+    credential_encryption_key: str = ""
 
     # Database
     database_url: str = "sqlite+aiosqlite:///./opencli_admin.db"

@@ -172,7 +172,9 @@ export function PrimaryModelCard({ providers }: { providers: ModelProvider[] }) 
                 }}
               >
                 <SelectTrigger className="w-full">
-                  <SelectValue placeholder="选择供应商" />
+                  <SelectValue>
+                    {() => selectedProvider?.name ?? '选择供应商'}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {providers.map((provider) => (
@@ -222,6 +224,13 @@ export function PrimaryModelCard({ providers }: { providers: ModelProvider[] }) 
                   自动获取
                 </Button>
               </div>
+              {providerId && !providerModels.isLoading ? (
+                <span className="text-xs font-normal text-muted-foreground">
+                  {modelOptions.length > 0
+                    ? `已发现 ${modelOptions.length} 个模型`
+                    : '尚未发现模型'}
+                </span>
+              ) : null}
             </label>
           </div>
 

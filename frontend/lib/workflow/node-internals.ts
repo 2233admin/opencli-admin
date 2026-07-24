@@ -192,8 +192,8 @@ const NODE_INTERNALS: Record<string, NodeInternals> = {
     summary: "Turns provider-shaped items into the local intelligence item shape.",
     steps: [
       step("map-fields", "Map fields", "parse", "Maps provider fields into local item keys.", "field mapping", "ready"),
-      step("language", "Language normalize", "resolve", "Applies the requested output language.", "language param", "ready", [
-        exposedParam("language", "Language", "transform", "Transform", "select", "zh-CN", {
+      step("language", "Language annotation", "annotate", "Records the requested language as metadata; it does not translate content.", "language annotation", "ready", [
+        exposedParam("language", "Language Annotation", "transform", "Transform", "select", "zh-CN", {
           options: [
             { value: "zh-CN", label: "zh-CN" },
             { value: "en-US", label: "en-US" },
@@ -213,7 +213,7 @@ const NODE_INTERNALS: Record<string, NodeInternals> = {
       step("key", "Dedupe key", "parse", "Builds a stable key from title/source/time fields.", "dedupe key", "ready", [
         exposedParam("key", "Key", "transform", "Transform", "text", "title+source+publishedAt", { order: 1 }),
       ]),
-      step("window", "Window lookup", "cache", "Checks the configured dedupe time window.", "window param", "ready", [
+      step("window", "Batch window comparison", "compare", "Compares records inside the current input batch using the configured time window; it does not persist cross-run state.", "batch comparison metrics", "ready", [
         exposedParam("window", "Window", "transform", "Transform", "text", "24h", { order: 2 }),
       ]),
       step("filter", "Unique filter", "filter", "Keeps first-seen items and drops repeats.", "unique count", "simulated"),
@@ -285,6 +285,41 @@ const NODE_INTERNALS: Record<string, NodeInternals> = {
       step("default", "Default branch", "fallback", "Keeps unmatched items recoverable.", "default route", "future"),
       step("preview", "Route preview", "preview", "Shows how sample items would route.", "simulation trace", "simulated"),
       step("warnings", "Missing branch warning", "validate", "Flags routers without expected outputs.", "edge count", "ready"),
+    ],
+  },
+  "intelligence.control.record-acceptance": {
+    title: "Record Acceptance Gate Internals",
+    summary: "Accepts only canonical record candidates that satisfy schema, lineage, dedupe, and quality policy.",
+    steps: [
+      step("policy", "Acceptance policy", "accept", "Selects automatic, reviewed, or strict acceptance.", "accepted record[]", "ready", [
+        exposedParam("mode", "Mode", "acceptance", "Acceptance", "select", "automatic_with_review", {
+          options: [
+            { value: "automatic_with_review", label: "Automatic With Review" },
+            { value: "manual_review", label: "Manual Review" },
+            { value: "automatic_strict", label: "Automatic Strict" },
+          ],
+          order: 1,
+        }),
+        exposedParam("schema", "Schema", "acceptance", "Acceptance", "text", "record.v1", { order: 2 }),
+        exposedParam("dedupe", "Dedupe", "acceptance", "Acceptance", "select", "required", {
+          options: [
+            { value: "required", label: "Required" },
+            { value: "advisory", label: "Advisory" },
+            { value: "off", label: "Off" },
+          ],
+          order: 3,
+        }),
+      ]),
+      step("evidence", "Lineage and quality", "validate", "Rejects candidates that lack required lineage or quality.", "validation evidence", "ready", [
+        exposedParam("lineageRequired", "Lineage Required", "evidence", "Evidence", "boolean", true, { groupOrder: 2, order: 1 }),
+        exposedParam("minQuality", "Minimum Quality", "evidence", "Evidence", "slider", 0, {
+          groupOrder: 2,
+          order: 2,
+          min: 0,
+          max: 1,
+          step: 0.05,
+        }),
+      ]),
     ],
   },
   "intelligence.output.webhook": {
@@ -416,6 +451,46 @@ const NODE_INTERNALS: Record<string, NodeInternals> = {
       step("score", "Score dimensions", "score", "Ranks items by market importance.", "scorecard", "simulated"),
       step("review", "Human review", "audit", "Stores high-signal evidence for review.", "inbox refs", "ready"),
       step("notify", "Mock notify", "send", "Records delivery evidence without live side effects.", "delivery trace", "ready"),
+    ],
+  },
+  "package.processing.record-hygiene": {
+    title: "Record Hygiene & Acceptance",
+    summary: "A locked, reusable cleaning pipeline that normalizes, deduplicates, and accepts canonical records.",
+    steps: [
+      step("normalize", "Normalize Items", "normalize", "Normalizes fields, records a language annotation, and preserves source evidence; it does not translate content.", "recordCandidate[]", "ready", [
+        exposedParam("language", "Language Annotation", "normalize", "Normalize", "select", "zh-CN", {
+          options: [
+            { value: "zh-CN", label: "zh-CN" },
+            { value: "en-US", label: "en-US" },
+          ],
+          order: 1,
+        }),
+        exposedParam("preserveSourceRefs", "Preserve Source Refs", "normalize", "Normalize", "boolean", true, { order: 2 }),
+      ]),
+      step("dedupe", "Dedupe Items", "dedupe", "Removes duplicate candidates by comparing a stable key and time window within the current input batch; it does not persist cross-run state.", "unique recordCandidate[]", "ready", [
+        exposedParam("key", "Dedupe Key", "dedupe", "Dedupe", "text", "title+source+publishedAt", { groupOrder: 2, order: 1 }),
+        exposedParam("window", "Window", "dedupe", "Dedupe", "text", "24h", { groupOrder: 2, order: 2 }),
+      ]),
+      step("record-acceptance", "Record Acceptance Gate", "accept", "Applies schema, lineage, and quality acceptance policy.", "record[]", "ready", [
+        exposedParam("mode", "Mode", "acceptance", "Acceptance", "select", "automatic_with_review", {
+          options: [
+            { value: "automatic_with_review", label: "Automatic With Review" },
+            { value: "manual_review", label: "Manual Review" },
+            { value: "automatic_strict", label: "Automatic Strict" },
+          ],
+          groupOrder: 3,
+          order: 1,
+        }),
+        exposedParam("schema", "Schema", "acceptance", "Acceptance", "text", "record.v1", { groupOrder: 3, order: 2 }),
+        exposedParam("lineageRequired", "Lineage Required", "acceptance", "Acceptance", "boolean", true, { groupOrder: 3, order: 3 }),
+        exposedParam("minQuality", "Minimum Quality", "acceptance", "Acceptance", "slider", 0, {
+          groupOrder: 3,
+          order: 4,
+          min: 0,
+          max: 1,
+          step: 0.05,
+        }),
+      ]),
     ],
   },
   "package.opencli.multi-source-hda": {
@@ -589,6 +664,7 @@ export function getNodeInternals(node: WorkflowProjectNode | undefined): NodeInt
   if (node.kind === "agent" && node.capability === "score") return NODE_INTERNALS["intelligence.agent.score"]
   if (node.kind === "agent" && node.capability === "tag") return NODE_INTERNALS["intelligence.agent.tag"]
   if (node.kind === "router" && node.capability === "route") return NODE_INTERNALS["intelligence.router.importance"]
+  if (node.kind === "control" && node.capability === "accept") return NODE_INTERNALS["intelligence.control.record-acceptance"]
   if (node.kind === "inbox" && node.capability === "store" && node.params.queue === "opencli-hda-output") return NODE_INTERNALS["intelligence.output.collection-result"]
   if (node.kind === "inbox" && node.capability === "store") return NODE_INTERNALS["intelligence.output.inbox"]
   if (node.kind === "notify" && node.adapter?.startsWith("turbopush")) return NODE_INTERNALS["intelligence.output.turbopush-publish"]

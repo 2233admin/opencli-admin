@@ -13,6 +13,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from backend.schemas.workflow import WorkflowProjectNode
+from backend.workflow.native_node_runtime import NATIVE_PRIMITIVE_IDS
 
 NodeOriginKind = Literal["node_library", "primitive_library", "n8n", "legacy"]
 
@@ -38,6 +39,7 @@ WORKFLOW_CATALOG_IDS = {
     "intelligence.output.turbopush-publish",
     "external.tool.capability",
     "package.collection.pipeline",
+    "package.processing.record-hygiene",
     "package.opencli.multi-source-hda",
     "package.dispatch.fanout",
     "package.intelligence.pipeline",
@@ -159,7 +161,7 @@ WORKFLOW_PRIMITIVE_IDS = {
     "primitive.map.semantic-link",
     "primitive.map.link-weight",
     "primitive.map.knowledge-export",
-}
+} | NATIVE_PRIMITIVE_IDS
 
 FORBIDDEN_UI_KEYS = {
     "executor",

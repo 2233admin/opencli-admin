@@ -62,6 +62,113 @@ test('pure Dify DSL becomes one locked expandable compatibility package', async 
   assert.equal(translated.report.executable, false, 'browser fallback must never claim execution readiness')
 })
 
+test('all 25 user-visible Dify node families resolve to stable OpenCLI capability IDs', async () => {
+  const {
+    DIFY_INTERNAL_NODE_TYPES,
+    DIFY_MIGRATABLE_NODE_TYPES,
+    DIFY_NODE_CAPABILITY_IDS,
+    resolveDifyNodeCapability,
+  } = await importTypeScript('lib/workflow/dify-capability-map.ts')
+  const backendCatalog = await readRepositorySource('backend/plugins/capability_catalog.py')
+
+  assert.equal(DIFY_MIGRATABLE_NODE_TYPES.length, 25)
+  for (const nodeType of DIFY_MIGRATABLE_NODE_TYPES) {
+    const config = nodeType === 'list-operator' ? { operation: 'filter' } : {}
+    const mapping = resolveDifyNodeCapability(nodeType, config)
+    assert.notEqual(mapping.resolution, 'unsupported', nodeType)
+    assert.ok(mapping.capabilityId, `${nodeType} must retain a stable capability catalog ID`)
+    assert.ok(
+      backendCatalog.includes(`"${nodeType}": "${mapping.capabilityId}"`),
+      `${nodeType} must use the backend-authoritative capability ID`,
+    )
+  }
+
+  assert.equal(resolveDifyNodeCapability('template-transform').capabilityId, DIFY_NODE_CAPABILITY_IDS.templateTransform)
+  assert.equal(resolveDifyNodeCapability('assigner').capabilityId, DIFY_NODE_CAPABILITY_IDS.variableAssign)
+  assert.equal(resolveDifyNodeCapability('variable-assigner').capabilityId, DIFY_NODE_CAPABILITY_IDS.variableAggregate)
+  assert.equal(resolveDifyNodeCapability('list-operator', { operation: 'sort' }).capabilityId, DIFY_NODE_CAPABILITY_IDS.listSort)
+  assert.equal(resolveDifyNodeCapability('tool').capabilityId, DIFY_NODE_CAPABILITY_IDS.tool)
+
+  assert.deepEqual(DIFY_INTERNAL_NODE_TYPES, ['loop-start', 'loop-end', 'iteration-start'])
+  for (const nodeType of DIFY_INTERNAL_NODE_TYPES) {
+    assert.equal(resolveDifyNodeCapability(nodeType).resolution, 'unsupported')
+  }
+})
+
+test('Dify preview preserves sanitized source config and reports ambiguous or missing mappings', async () => {
+  const { translateDifyWorkflowToWorkflowProject } = await importTypeScript('lib/workflow/dify-translator.ts')
+  const translated = translateDifyWorkflowToWorkflowProject({
+    kind: 'app',
+    version: '0.3.0',
+    app: { name: 'Mapping fidelity', mode: 'workflow' },
+    workflow: {
+      graph: {
+        nodes: [
+          {
+            id: 'tool-node',
+            position: { x: 12, y: 34 },
+            data: {
+              type: 'tool',
+              title: 'Search tool',
+              provider_id: 'acme/search',
+              provider_name: 'Acme Search',
+              tool_name: 'lookup',
+              tool_configurations: Object.fromEntries([
+                ['region', 'cn'],
+                ['api_key', ['do', 'not', 'store'].join('-')],
+              ]),
+            },
+          },
+          {
+            id: 'list-node',
+            data: { type: 'list-operator', title: 'Unknown list operation', custom_flag: true },
+          },
+          {
+            id: 'future-node',
+            data: { type: 'future-node-family', title: 'Future node', nested: { preserved: 42 } },
+          },
+        ],
+        edges: [],
+      },
+    },
+  })
+
+  assert.equal(translated.ok, true)
+  const internalNodes = translated.project.nodes[0].internals.nodes
+  const tool = internalNodes.find((node) => node.params.difyType === 'tool')
+  const list = internalNodes.find((node) => node.params.difyType === 'list-operator')
+  const future = internalNodes.find((node) => node.params.difyType === 'future-node-family')
+
+  assert.equal(tool.params.capabilityRef.id, 'external.tool.capability')
+  assert.equal(tool.params.capabilityRef.resolution, 'backend')
+  assert.equal(tool.params.config.provider_id, 'acme/search')
+  assert.equal(tool.params.config.tool_name, 'lookup')
+  assert.equal(tool.params.config.tool_configurations.region, 'cn')
+  assert.equal(tool.params.config.tool_configurations.api_key, '[REDACTED]')
+  assert.deepEqual(tool.params.sourceProvenance, {
+    format: 'dify-app-dsl',
+    version: '0.3.0',
+    nodeId: 'tool-node',
+    nodeType: 'tool',
+    position: { x: 12, y: 34 },
+  })
+
+  assert.equal(list.params.capabilityRef.id, null)
+  assert.deepEqual(list.params.capabilityRef.candidates, [
+    'primitive.core.list-filter',
+    'primitive.core.list-sort',
+  ])
+  assert.equal(future.params.config.nested.preserved, 42)
+  assert.equal(future.params.capabilityRef.resolution, 'unsupported')
+  assert.ok(translated.report.blockers.some((blocker) => blocker.code === 'import.mapping_ambiguous' && blocker.nodeId === 'tool-node'))
+  assert.ok(translated.report.blockers.some((blocker) => blocker.code === 'import.mapping_ambiguous' && blocker.nodeId === 'list-node'))
+  assert.ok(translated.report.blockers.some((blocker) => blocker.code === 'import.mapping_missing' && blocker.nodeId === 'future-node'))
+  assert.equal(translated.report.executable, false)
+  assert.equal(translated.project.adapters.length, 0)
+  assert.doesNotMatch(JSON.stringify(translated.project), /do-not-store/)
+  assert.doesNotMatch(JSON.stringify(translated.project), /"mode":"mock"|"mode":"fixture"/)
+})
+
 test('Studio uses the managed backend import boundary and explains exact blockers', async () => {
   const [codec, backendImport, studio, commandStrip] = await Promise.all([
     readFrontendSource('lib/workflow/codec.ts'),

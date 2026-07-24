@@ -460,7 +460,20 @@ test('studio templates persist template-specific source, cadence, and delivery i
   assert.equal(opencliLive.nodes.find((node) => node.id === 'source-opencli-bbc-news')?.params.opencliAdapterNodeId, 'opencli.adapter.bbc.news')
   assert.deepEqual(
     opencliLive.nodes.map((node) => node.id),
-    ['schedule', 'source-opencli-bbc-news', 'normalize', 'dedupe', 'record-acceptance', 'records', 'notify-webhook'],
+    ['schedule', 'source-opencli-bbc-news', 'record-hygiene', 'records', 'notify-webhook'],
+  )
+  const hygiene = opencliLive.nodes.find((node) => node.id === 'record-hygiene')
+  assert.equal(hygiene?.ui?.catalogId, 'package.processing.record-hygiene')
+  assert.equal(hygiene?.internals?.locked, true)
+  assert.deepEqual(hygiene?.internals?.nodes.map((node) => node.id), ['normalize', 'dedupe', 'record-acceptance'])
+  assert.deepEqual(
+    opencliLive.edges.map((edge) => [edge.id, edge.source, edge.sourcePort, edge.target, edge.targetPort]),
+    [
+      ['schedule-source', 'schedule', undefined, 'source-opencli-bbc-news', undefined],
+      ['source-record-hygiene', 'source-opencli-bbc-news', 'out', 'record-hygiene', 'in'],
+      ['record-hygiene-records', 'record-hygiene', 'out', 'records', 'records'],
+      ['record-hygiene-notify', 'record-hygiene', 'out', 'notify-webhook', 'in'],
+    ],
   )
   assert.equal(opencliLive.agentPermissions.canSendNotifications, true)
   assert.deepEqual(
@@ -617,36 +630,90 @@ test('workflow validation waits for the runtime capability catalog', async () =>
     readSource('components/flow/workflow-editor-session.tsx'),
   ])
 
-  assert.match(capabilitiesHook, /return \{ capabilities, error, loading \}/)
+  assert.match(capabilitiesHook, /capabilities: projectedCapabilities/)
+  assert.match(capabilitiesHook, /loading: loading \|\| nodeCatalog\.loading/)
   assert.match(session, /const \{ error: capabilityError, loading: capabilityLoading \} = useWorkflowCapabilities\(true\)/)
   assert.match(session, /if \(capabilityLoading\) \{[\s\S]*运行能力目录仍在加载/)
   assert.match(session, /disabled=\{capabilityLoading \|\| Boolean\(capabilityError\)/)
   assert.match(session, /capabilityLoading \? '正在加载运行能力目录'/)
 })
 
-test('workflow adopts the Dify-style add-node path while preserving the four-layer hierarchy', async () => {
-  const [editor, surface, palette] = await Promise.all([
+test('workflow separates lightweight canvas actions from the guided node picker', async () => {
+  const [editor, surface, palette, contextMenu, commandStrip, effects, runTrace] = await Promise.all([
     readSource('components/flow/workflow-editor.tsx'),
     readSource('components/flow/workflow-canvas-surface.tsx'),
     readSource('components/flow/command-palette.tsx'),
+    readSource('components/flow/node-context-menu.tsx'),
+    readSource('components/flow/command-strip.tsx'),
+    readSource('components/flow/workflow-editor-effects.ts'),
+    readSource('components/flow/run-trace-panel.tsx'),
   ])
 
-  assert.match(editor, /const onPaneContextMenu/)
-  assert.match(editor, /setPaletteAnchor\(\{ x: event\.clientX, y: event\.clientY \}\)/)
+  const paneContextHandler = sourceSection(editor, 'const onPaneContextMenu', 'const openNodePicker')
+  assert.match(paneContextHandler, /setNodeMenu\(\{ x: event\.clientX, y: event\.clientY \}\)/)
+  assert.doesNotMatch(paneContextHandler, /setPaletteOpen\(true\)/)
+  for (const action of ['添加节点', '添加注释', '测试运行', '导入应用']) {
+    assert.match(contextMenu, new RegExp(action))
+  }
+  assert.match(contextMenu, /w-56/)
+  assert.match(contextMenu, /className="size-3\.5/)
+  assert.doesNotMatch(contextMenu, /当前节点|进入内部网络|选择当前流程分支|参数与通道|节点信息/)
+  assert.doesNotMatch(contextMenu, /DOP Operators|Add Internal Primitive/)
+  assert.match(contextMenu, /querySelector<HTMLButtonElement>\('\[role="menuitem"\]'\)\?\.focus\(\)/)
+  assert.match(contextMenu, /event\.key === ["']ArrowDown["']/)
+  assert.match(contextMenu, /event\.key === ["']ArrowUp["']/)
+  assert.match(editor, /NODE_PALETTE\.find\(\(item\) => item\.nodeType === ["']note["']\)/)
+  assert.match(editor, /addNodeFromPalette\(note, screenToFlowPosition/)
+  assert.match(editor, /importInputRef\.current\?\.click\(\)/)
+  assert.match(editor, /setRunRequestId\(\(current\) => current \+ 1\)/)
+  assert.match(runTrace, /runButtonRef\.current\?\.click\(\)/)
+  assert.match(runTrace, /startWorkflowRun\(workflowProject/)
+  assert.match(commandStrip, /importInputRef\?: RefObject<HTMLInputElement \| null>/)
   assert.match(surface, /onPaneContextMenu=\{props\.onPaneContextMenu\}/)
+  assert.match(surface, /onAddNode=\{props\.onAddNodeFromMenu\}/)
+  assert.match(surface, /onAddNote=\{props\.onAddNoteFromMenu\}/)
+  assert.match(surface, /onImportApp=\{props\.onImportApp\}/)
+  assert.match(surface, /onTestRun=\{props\.onTestRun\}/)
+  for (const tab of ['节点', '工具', '开始']) {
+    assert.match(palette, new RegExp(`label: ["']${tab}["']`))
+  }
+  assert.match(palette, /role="tablist"/)
+  assert.match(palette, /OpenCLI 实时数据源/)
+  assert.match(palette, /插件与后端工具/)
+  assert.match(palette, /href="\/plugins"/)
   assert.match(palette, /item\.category === ["']package["']/)
   assert.match(palette, /inNodeNetwork \? getWorkflowPrimitives\(\) : \[\]/)
   assert.match(palette, /item\.category === ["']annotation["'] \|\| item\.category === ["']shape["']/)
-  assert.match(palette, /一级业务节点 · Dify 风格/)
-  assert.match(palette, /L\{nodeDepth\} · \{nodeLayer\.label\}/)
-  assert.match(palette, /groupPrimitivesForNodeMenu\(primitiveOperators\)/)
-  assert.match(palette, /group\.label/)
+  assert.match(palette, /groupPrimitivesForNodeMenu/)
+  assert.match(effects, /event\.key === ["']Escape["']/)
+  assert.doesNotMatch(effects, /addEventListener\(["']keydown["'], close\)/)
+})
+
+test('workflow node ports show contract names without anonymous duplicates', async () => {
+  const [node, capabilities] = await Promise.all([
+    readSource('components/flow/nodes/workflow-node.tsx'),
+    readSource('lib/workflow/capabilities.ts'),
+  ])
+
+  for (const label of ['触发信号', '条目', '候选记录', '记录', '投递结果', '已存储条目']) {
+    assert.match(node, new RegExp(label))
+  }
+  assert.match(node, /primitiveOutputs\.length > 0 \? primitiveOutputs : semanticPorts\.outputs/)
+  assert.match(node, /primitiveInputs\.length > 0 \? primitiveInputs : semanticPorts\.inputs/)
+  assert.match(node, /if \(id === undefined && declared\.length > 0\) continue/)
+  assert.match(node, /direction: ["']IN["'] as const/)
+  assert.match(node, /direction: ["']OUT["'] as const/)
+  assert.match(node, /\{direction\} · \{port\.id \?\? ["']default["']\}/)
+  assert.match(node, /\[\{port\.type\}\]/)
+  assert.doesNotMatch(node, /outputs: \[\{ id: undefined, label: ["']out["'] \}, \{ id: ["']out["'], label: ["']out["'] \}\]/)
+  assert.match(capabilities, /missingLabels: Array\.from\(new Set\(missing\.map\(displayMissingLabel\)\)\)/)
 })
 
 test('the default canvas is an operator network with recursive four-layer lookup', async () => {
-  const [pipeline, store, commandStrip, editor, settings, hierarchy] = await Promise.all([
+  const [pipeline, store, nodePath, commandStrip, editor, settings, hierarchy] = await Promise.all([
     readSource('lib/workflow/collection-pipeline.ts'),
     readSource('lib/flow/store.ts'),
+    readSource('lib/workflow/node-path.ts'),
     readSource('components/flow/command-strip.tsx'),
     readSource('components/flow/workflow-editor.tsx'),
     readSource('lib/flow/settings-store.ts'),
@@ -662,7 +729,8 @@ test('the default canvas is an operator network with recursive four-layer lookup
     assert.match(packaged, new RegExp(operatorId))
   }
   assert.match(store, /const initialWorkflowProject = PACKAGED_WORKFLOW_PROJECT/)
-  assert.match(store, /function findProjectNodeByCanvasId[\s\S]*scopedInternalId\(scopedId, child\.id\)/)
+  assert.match(store, /findWorkflowProjectNodeByCanvasId as findProjectNodeByCanvasId/)
+  assert.match(nodePath, /function findWorkflowProjectNodeByCanvasId[\s\S]*CANVAS_NODE_PATH_SEPARATOR[\s\S]*child\.id/)
   assert.match(store, /materializeProjectInternals\(projectNode, node, nodeId, ["']network["']\)/)
   assert.match(store, /networkStack\.length >= MAX_WORKFLOW_NODE_DEPTH - 1/)
   assert.match(commandStrip, /载入完整采集示例/)
@@ -731,7 +799,7 @@ test('inspector is driven only by the single selected node and never falls back 
   assert.match(inspector, /const selected = nodes\.filter\(\(n\) => n\.selected\)/)
   assert.match(inspector, /if \(selected\.length !== 1\) return null/)
   assert.match(inspector, /const node = selected\[0\]/)
-  assert.match(inspector, /workflowProject\.nodes\.find\(\(candidate\) => candidate\.id === node\.id\)/)
+  assert.match(inspector, /findWorkflowProjectNodeByCanvasId\(workflowProject, node\.id\)/)
   assert.doesNotMatch(inspector, /fallback[\s\S]{0,80}schedule|schedule[\s\S]{0,80}fallback/i)
 })
 
@@ -1388,6 +1456,89 @@ test('four-level runtime paths update exact nodes without a completed leaf clear
   current = useFlowStore.getState()
   assert.equal(canonicalNodeAtPath(current.workflowProject, ['l1']).ui.runtimeRunState.status, 'blocked')
   assert.equal(canonicalNodeAtPath(current.workflowProject, ['l1', 'l2', 'l3', 'l4']).ui.runtimeRunState.status, 'completed')
+})
+
+test('locked package internals keep semantic identity, typed ports, runtime capability, and handle-bound edges', async () => {
+  const [{ useFlowStore }, catalog, nodePath, storeSource, nodeSource, inspectorSource] = await Promise.all([
+    importTypeScript('lib/flow/store.ts'),
+    importTypeScript('lib/workflow/node-catalog.ts'),
+    importTypeScript('lib/workflow/node-path.ts'),
+    readSource('lib/flow/store.ts'),
+    readSource('components/flow/nodes/workflow-node.tsx'),
+    readSource('components/flow/inspector.tsx'),
+  ])
+  const catalogItem = catalog.WORKFLOW_NODE_CATALOG.find(
+    (item) => item.id === catalog.RECORD_HYGIENE_PACKAGE_CATALOG_ID,
+  )
+  assert.ok(catalogItem)
+  const packageNode = catalog.createWorkflowNodeFromCatalog(catalogItem, 'hygiene', { x: 0, y: 0 })
+  const project = workflowProjectFixture([packageNode])
+  useFlowStore.getState().importWorkflowProject(project)
+  assert.equal(useFlowStore.getState().enterNodeNetwork('hygiene'), 3)
+
+  const contract = (bindingId, inputPorts, outputPorts) => ({
+    schemaVersion: 1,
+    bindingId,
+    status: 'executable',
+    inputShape: { ports: inputPorts.map(([name, type]) => ({ name, type })), params: [] },
+    outputShape: { ports: outputPorts.map(([name, type]) => ({ name, type })), artifacts: [] },
+    permissionGate: { required: [] },
+    configGate: { required: [] },
+    eventShape: { events: [] },
+    fixtureCoverage: { cases: [] },
+    certification: { realNodeIoContract: true, realWebhookDelivery: false },
+    canvas: { exposeResourceInternals: false },
+  })
+  const runtime = (id, kind, capability, ioContract) => ({
+    id,
+    label: id,
+    surface: 'catalog',
+    status: 'runnable',
+    backendAvailable: true,
+    kind,
+    capability,
+    reason: null,
+    missing: [],
+    tags: ['test'],
+    source: 'test.runtime',
+    manifest: { contract: ioContract },
+  })
+  useFlowStore.getState().applyWorkflowCapabilities({
+    version: 'test',
+    catalog: [
+      runtime('intelligence.processing.normalize', 'agent', 'normalize', contract('normalize', [['in', 'items[]']], [['out', 'recordCandidate[]']])),
+      runtime('intelligence.processing.dedupe', 'agent', 'dedupe', contract('dedupe', [['in', 'recordCandidate[]']], [['out', 'recordCandidate[]']])),
+      runtime('intelligence.control.record-acceptance', 'control', 'accept', contract('accept', [['candidates', 'recordCandidate[]']], [['records', 'record[]']])),
+    ],
+    primitives: [],
+    channels: [],
+    notifiers: [],
+    triggers: [],
+    resources: [],
+  })
+
+  const current = useFlowStore.getState()
+  const normalize = current.nodes.find((node) => node.id === 'hygiene__normalize')
+  const dedupe = current.nodes.find((node) => node.id === 'hygiene__dedupe')
+  const acceptance = current.nodes.find((node) => node.id === 'hygiene__record-acceptance')
+  assert.equal(normalize.data.runtimeCapability.status, 'runnable')
+  assert.equal(dedupe.data.runtimeCapability.status, 'runnable')
+  assert.equal(acceptance.data.runtimeCapability.status, 'runnable')
+  assert.deepStrictEqual(dedupe.data.runtimeContract.inputShape.ports.map((port) => port.name), ['in'])
+  assert.deepStrictEqual(acceptance.data.runtimeContract.outputShape.ports.map((port) => port.name), ['records'])
+  assert.deepStrictEqual(current.nodes.map((node) => node.data.status), ['idle', 'idle', 'idle'])
+  assert.equal(
+    nodePath.findWorkflowProjectNodeByCanvasId(current.workflowProject, 'hygiene__dedupe').capability,
+    'dedupe',
+  )
+
+  assert.match(storeSource, /sourceHandle: edge\.sourcePort/)
+  assert.match(storeSource, /targetHandle: edge\.targetPort/)
+  assert.doesNotMatch(storeSource, /status: mode === ["']network["'] \? ["']success["']/)
+  assert.match(nodeSource, /findWorkflowProjectNodeByCanvasId\(workflowProject, id\)/)
+  assert.match(nodeSource, /typeCaption\(data\.category, canonical\?\.capability \?\? data\.nodeType\)/)
+  assert.doesNotMatch(nodeSource, /LOCKED PACKAGE/)
+  assert.match(inspectorSource, /findWorkflowProjectNodeByCanvasId\(workflowProject, node\.id\)/)
 })
 
 test('internal primitive menu edits the clicked node child scope at L2/L3 and rejects L4', async () => {

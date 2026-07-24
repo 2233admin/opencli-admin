@@ -10,9 +10,14 @@ import {
   useSigma,
 } from '@react-sigma/core'
 import FA2Layout from 'graphology-layout-forceatlas2/worker'
+import type { NodeLabelDrawingFunction } from 'sigma/rendering'
 
 import type { ProjectRecordGraphPreview } from '@/lib/api/types'
-import { buildProjectRecordGraph } from '@/lib/records/project-record-graph'
+import {
+  buildProjectRecordGraph,
+  type ProjectGraphEdgeAttributes,
+  type ProjectGraphNodeAttributes,
+} from '@/lib/records/project-record-graph'
 
 import '@react-sigma/core/lib/style.css'
 
@@ -20,6 +25,47 @@ type ProjectRecordGraphCanvasProps = {
   preview: ProjectRecordGraphPreview
   selectedNodeId: string | null
   onSelectNode: (nodeId: string | null) => void
+}
+
+const drawReadableNodeLabel: NodeLabelDrawingFunction<
+  ProjectGraphNodeAttributes,
+  ProjectGraphEdgeAttributes
+> = (context, data, settings) => {
+  if (!data.label) return
+
+  const selected = Boolean(data.selected)
+  const fontSize = settings.labelSize + (selected ? 1 : 0)
+  const fontWeight = selected ? '650' : settings.labelWeight
+  const label = compactGraphLabel(data.label, selected ? 56 : 38)
+  const paddingX = selected ? 8 : 6
+  const paddingY = selected ? 5 : 4
+  const x = data.x + data.size + 7
+  const baselineY = data.y + fontSize / 3
+
+  context.font = `${fontWeight} ${fontSize}px ${settings.labelFont}`
+  const textWidth = context.measureText(label).width
+  const boxX = x - paddingX
+  const boxY = baselineY - fontSize - paddingY
+  const boxWidth = textWidth + paddingX * 2
+  const boxHeight = fontSize + paddingY * 2
+
+  context.beginPath()
+  context.roundRect(boxX, boxY, boxWidth, boxHeight, selected ? 5 : 4)
+  context.fillStyle = selected ? 'rgba(9, 9, 11, 0.97)' : 'rgba(9, 9, 11, 0.82)'
+  context.fill()
+
+  if (selected) {
+    context.lineWidth = 1.25
+    context.strokeStyle = data.color
+    context.stroke()
+  }
+
+  context.fillStyle = selected ? data.color : '#d4d4d8'
+  context.fillText(label, x, baselineY)
+}
+
+function compactGraphLabel(label: string, limit: number) {
+  return label.length > limit ? `${label.slice(0, limit - 1)}…` : label
 }
 
 function LayoutController() {
@@ -84,6 +130,7 @@ function InteractionController({
     graph.updateEachNodeAttributes((node, data) => ({
       ...data,
       forceLabel: node === selectedNodeId,
+      selected: node === selectedNodeId,
       label: node === selectedNodeId
         ? data.baseLabel
         : data.graphNode.kind === 'record'
@@ -125,6 +172,7 @@ export function ProjectRecordGraphCanvas({
   const settings = useMemo(
     () => ({
       allowInvalidContainer: true,
+      defaultDrawNodeLabel: drawReadableNodeLabel,
       defaultEdgeColor: '#3f3f46',
       defaultNodeColor: '#94a3b8',
       enableEdgeEvents: false,
@@ -132,6 +180,8 @@ export function ProjectRecordGraphCanvas({
       labelColor: { color: '#e4e4e7' },
       labelDensity: graph.order > 1_000 ? 0.025 : 0.045,
       labelFont: 'var(--font-sans), system-ui, sans-serif',
+      labelSize: 12,
+      labelWeight: '500',
       labelGridCellSize: graph.order > 1_000 ? 140 : 100,
       labelRenderedSizeThreshold: graph.order > 800 ? 18 : 14,
       renderEdgeLabels: false,

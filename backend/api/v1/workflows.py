@@ -26,6 +26,10 @@ from backend.workflow.fleet_inventory import (
     build_workflow_fleet_inventory,
     match_workflow_fleet_capability,
 )
+from backend.workflow.node_edit_draft import (
+    WorkflowNodeEditDraftError,
+    draft_workflow_node_edit,
+)
 from backend.workflow.opencli_adapter_nodes import list_opencli_adapter_nodes
 from backend.workflow.opencli_hda_tracer import (
     build_opencli_hda_trace,
@@ -177,6 +181,23 @@ async def draft_demand_workflow(
     """Assemble a user collection need into reviewable WorkflowProject patches."""
 
     return ApiResponse.ok(draft_workflow_demand(body))
+
+
+@router.post(
+    "/node-edit-draft",
+    response_model=ApiResponse[workflow_schemas.WorkflowNodeEditDraftResponse],
+)
+async def draft_node_edit(
+    body: workflow_schemas.WorkflowNodeEditDraftRequest,
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse[workflow_schemas.WorkflowNodeEditDraftResponse]:
+    """Ask the configured chat model for a reviewable edit of one node."""
+
+    try:
+        result = await draft_workflow_node_edit(body, session=db)
+    except WorkflowNodeEditDraftError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return ApiResponse.ok(result)
 
 
 @router.post(

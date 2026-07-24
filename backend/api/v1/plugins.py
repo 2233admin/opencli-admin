@@ -7,9 +7,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.v1.dify_imports import get_dify_graphon_client
 from backend.database import get_db
+from backend.plugins.capability_catalog import build_plugin_node_catalog
 from backend.plugins.dify_package import MAX_COMPRESSED_BYTES, DifyPackageError
 from backend.schemas.common import ApiResponse
-from backend.schemas.plugin import PluginInstallationRead
+from backend.schemas.plugin import PluginInstallationRead, PluginNodeCatalogRead
 from backend.services.plugin_registry_service import (
     PluginRegistryError,
     delete_plugin_installation,
@@ -33,6 +34,20 @@ async def list_plugins(
             dify_runtime_ready=await graphon_client.is_healthy(),
         )
     )
+
+
+@router.get("/capabilities", response_model=ApiResponse[PluginNodeCatalogRead])
+async def list_plugin_capabilities(
+    db: AsyncSession = Depends(get_db),
+    graphon_client: DifyGraphonClient = Depends(get_dify_graphon_client),
+) -> ApiResponse[PluginNodeCatalogRead]:
+    """Return the backend-authoritative node capability catalog."""
+
+    installations = await list_plugin_installations(
+        db,
+        dify_runtime_ready=await graphon_client.is_healthy(),
+    )
+    return ApiResponse.ok(build_plugin_node_catalog(installations))
 
 
 @router.get("/{installation_id}", response_model=ApiResponse[PluginInstallationRead])

@@ -57,3 +57,12 @@ test('dashboard keeps existing real operational views after the action layer', a
   assert.match(dashboard, /<WorkerAllocation workers=\{workers\}/)
   assert.match(dashboard, /<OpinionMonitorPanel/)
 })
+
+test('task stream uses a compact empty state instead of rendering an empty table shell', async () => {
+  const taskStream = await read('components/monitor/task-stream.tsx')
+
+  assert.match(taskStream, /tasks\.length === 0/)
+  assert.match(taskStream, /data-stream-empty/)
+  assert.match(taskStream, /当前没有排队或运行中的任务/)
+  assert.match(taskStream, /<Card size="sm" className="h-full">/)
+})

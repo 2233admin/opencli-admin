@@ -59,7 +59,13 @@ import type {
 } from "../workflow/backend-runs"
 import { applyEvidenceBatchRuntimePatches } from "../workflow/runtime-bridge"
 import { MAX_WORKFLOW_NODE_DEPTH, NODE_NETWORK_DEPTH_LIMIT_REACHED } from "../workflow/node-hierarchy"
-import { normalizeWorkflowRuntimeNodePath, workflowRuntimeCanvasNodeIds } from "../workflow/node-path"
+import {
+  findWorkflowProjectNodeByCanvasId as findProjectNodeByCanvasId,
+  mapWorkflowProjectNodeTree,
+  normalizeWorkflowRuntimeNodePath,
+  workflowProjectNodeChildren,
+  workflowRuntimeCanvasNodeIds,
+} from "../workflow/node-path"
 import {
   appendCanonicalNetworkNode,
   canonicalPositionFromNetworkCanvas,
@@ -616,7 +622,7 @@ function materializeProjectInternals(
       },
       data: {
         ...reactNode.data,
-        status: mode === "network" ? "success" : reactNode.data.status,
+        status: reactNode.data.status,
         internalOf: parentId,
         internalStepId: normalizedNode.id,
         ...(catalogId?.startsWith("primitive.")
@@ -642,6 +648,8 @@ function materializeProjectInternals(
       id: `e-${parentId}__${edge.id}`,
       source: scopedInternalId(parentId, edge.source),
       target: scopedInternalId(parentId, edge.target),
+      sourceHandle: edge.sourcePort,
+      targetHandle: edge.targetPort,
       label: edge.label,
       type: "workflow" as const,
       animated: true,
@@ -679,24 +687,6 @@ function isWorkflowProjectNode(value: unknown): value is WorkflowProjectNode {
     typeof node.capability === "string" &&
     (!("params" in node) || Boolean(node.params && typeof node.params === "object" && !Array.isArray(node.params)))
   )
-}
-
-function findProjectNodeByCanvasId(project: WorkflowProject, canvasNodeId: string): WorkflowProjectNode | undefined {
-  const visit = (node: WorkflowProjectNode, scopedId: string): WorkflowProjectNode | undefined => {
-    if (scopedId === canvasNodeId) return node
-    const children = node.internals?.nodes.filter(isWorkflowProjectNode) ?? []
-    for (const child of children) {
-      const match = visit(child, scopedInternalId(scopedId, child.id))
-      if (match) return match
-    }
-    return undefined
-  }
-
-  for (const node of project.nodes) {
-    const match = visit(node, node.id)
-    if (match) return match
-  }
-  return undefined
 }
 
 function projectNodeFromCanvasNode(node: WorkflowNode): WorkflowProjectNode | undefined {
@@ -1294,7 +1284,7 @@ export const useFlowStore = create<FlowState>((set, get) => ({
 
   applyWorkflowCapabilities: (capabilities) => {
     set((state) => {
-      const projectNodes = state.workflowProject.nodes.map((node) => {
+      const projectRuntimeCapability = (node: WorkflowProjectNode): WorkflowProjectNode => {
         const catalogId = typeof node.ui?.catalogId === "string" ? node.ui.catalogId : null
         if (!catalogId) return node
         const runtimeCapability = projectedCatalogRuntimeCapability(
@@ -1316,20 +1306,29 @@ export const useFlowStore = create<FlowState>((set, get) => ({
             runtimeContract: runtimeContractForCapability(runtimeCapability),
           },
         }
-      })
+      }
+      const projectNodes = state.workflowProject.nodes.map((node) =>
+        mapWorkflowProjectNodeTree(node, projectRuntimeCapability),
+      )
       const workflowProject = parseWorkflowProject({
         ...state.workflowProject,
         nodes: projectNodes,
       })
       const runtimeByNodeId = new Map<string, { capability: WorkflowRuntimeCapability; contract: WorkflowNodeData["runtimeContract"] }>()
-      for (const node of workflowProject.nodes) {
+      const collectRuntime = (node: WorkflowProjectNode, canvasNodeId: string) => {
         const runtimeCapability = node.ui?.runtimeCapability
         if (isWorkflowRuntimeCapability(runtimeCapability)) {
-          runtimeByNodeId.set(node.id, {
+          runtimeByNodeId.set(canvasNodeId, {
             capability: runtimeCapability,
             contract: runtimeContractForCapability(runtimeCapability),
           })
         }
+        for (const child of workflowProjectNodeChildren(node)) {
+          collectRuntime(child, scopedInternalId(canvasNodeId, child.id))
+        }
+      }
+      for (const node of workflowProject.nodes) {
+        collectRuntime(node, node.id)
       }
       return {
         workflowProject,

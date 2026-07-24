@@ -110,11 +110,7 @@ async def test_compile_reports_webhook_notify_contract_without_live_delivery(cli
     assert response.status_code == 200
     data = response.json()["data"]
     assert data["valid"] is True
-    node = next(
-        node
-        for node in data["plan"]["runtime"]["nodes"]
-        if node["id"] == "notify-webhook"
-    )
+    node = next(node for node in data["plan"]["runtime"]["nodes"] if node["id"] == "notify-webhook")
     assert node["runtime"]["origin"]["catalog_id"] == "intelligence.output.webhook"
     assert "binding" not in node["runtime"]
     assert node["runtime"]["notifier"]["binding_id"] == "workflow.notifier.webhook.send"
@@ -196,8 +192,7 @@ async def test_workflow_capabilities_project_real_backend_surfaces(client, monke
     assert "canFetchNetwork" in opencli_manifest["permissions"]
     assert "source_output_ingest_available" in opencli_manifest["probes"]
     assert (
-        "frontend_run_event_binding"
-        not in catalog["intelligence.source.opencli-slot"]["missing"]
+        "frontend_run_event_binding" not in catalog["intelligence.source.opencli-slot"]["missing"]
     )
     assert catalog["intelligence.source.pool"]["status"] == "runnable"
     assert catalog["intelligence.source.pool"]["backendAvailable"] is True
@@ -219,6 +214,17 @@ async def test_workflow_capabilities_project_real_backend_surfaces(client, monke
     assert merge_manifest["trace"]["events"] == [
         "partial:mergedCandidateCount",
         "completed",
+    ]
+    assert catalog["intelligence.processing.dedupe"]["status"] == "runnable"
+    assert catalog["intelligence.processing.dedupe"]["backendAvailable"] is True
+    assert catalog["intelligence.processing.dedupe"]["runtimeBinding"] == (
+        "workflow.transform.dedupe"
+    )
+    dedupe_manifest = catalog["intelligence.processing.dedupe"]["manifest"]
+    assert dedupe_manifest["contract"]["outputShape"]["artifacts"] == [
+        "recordCandidate[]",
+        "rejected[]",
+        "metrics",
     ]
     assert catalog["intelligence.control.record-acceptance"]["status"] == "runnable"
     assert catalog["intelligence.control.record-acceptance"]["runtimeBinding"] == (
@@ -256,13 +262,26 @@ async def test_workflow_capabilities_project_real_backend_surfaces(client, monke
     assert "tool_capability_registry" in external_tool_manifest["resources"]
     assert "partial:outputItemCount" in external_tool_manifest["trace"]["events"]
     assert catalog["package.opencli.multi-source-hda"]["status"] == "runnable"
+    record_hygiene_package = catalog["package.processing.record-hygiene"]
+    assert record_hygiene_package["status"] == "runnable"
+    assert record_hygiene_package["backendAvailable"] is True
+    assert record_hygiene_package["runtimeBinding"] is None
+    assert record_hygiene_package["manifest"]["canvas"]["structural"] is True
+    assert record_hygiene_package["manifest"]["implementation"]["authority"] == (
+        "locked-internal-nodes"
+    )
+    assert record_hygiene_package["manifest"]["ports"]["outputs"] == [
+        {"name": "out", "type": "record[]"}
+    ]
+    assert record_hygiene_package["manifest"]["artifacts"] == {
+        "trace": ["rejected[]", "metrics"],
+        "routable": False,
+    }
     assert (
-        "frontend_run_event_binding"
-        not in catalog["package.opencli.multi-source-hda"]["missing"]
+        "frontend_run_event_binding" not in catalog["package.opencli.multi-source-hda"]["missing"]
     )
     assert (
-        "typed_demand_input_envelope"
-        not in catalog["package.opencli.multi-source-hda"]["missing"]
+        "typed_demand_input_envelope" not in catalog["package.opencli.multi-source-hda"]["missing"]
     )
     assert catalog["intelligence.output.webhook"]["status"] == "blocked"
     assert catalog["intelligence.output.webhook"]["backendAvailable"] is True
@@ -310,21 +329,17 @@ async def test_workflow_capabilities_project_real_backend_surfaces(client, monke
     assert primitives["primitive.ops.trigger-webhook"]["runtimeBinding"] == (
         "workflow.trigger.webhook_input"
     )
-    assert primitives["primitive.ops.trigger-webhook"]["manifest"]["contract"][
-        "outputShape"
-    ]["ports"] == [{"name": "request", "type": "webhookRequest"}]
-    assert primitives["primitive.ops.trigger-webhook"]["missing"] == [
-        "workflow_webhook_ingress"
-    ]
+    assert primitives["primitive.ops.trigger-webhook"]["manifest"]["contract"]["outputShape"][
+        "ports"
+    ] == [{"name": "request", "type": "webhookRequest"}]
+    assert primitives["primitive.ops.trigger-webhook"]["missing"] == ["workflow_webhook_ingress"]
 
     triggers = {item["id"]: item for item in data["triggers"]}
     assert triggers["trigger.manual"]["status"] == "runnable"
     assert triggers["trigger.manual"]["missing"] == []
     assert triggers["trigger.webhook"]["status"] == "blocked"
     assert triggers["trigger.webhook"]["runtimeBinding"] == "workflow.trigger.webhook_input"
-    assert triggers["trigger.webhook"]["manifest"]["contract"]["status"] == (
-        "dispatch_only"
-    )
+    assert triggers["trigger.webhook"]["manifest"]["contract"]["status"] == ("dispatch_only")
 
     resources = {item["id"]: item for item in data["resources"]}
     fleet_resource = resources["resource.workflow-fleet-runtime"]
@@ -341,9 +356,7 @@ async def test_workflow_capabilities_project_real_backend_surfaces(client, monke
     assert adapter_registry["backendAvailable"] is True
     assert adapter_registry["runtimeBinding"] == "iii.collector-opencli.snapshot"
     assert adapter_registry["manifest"]["canvas"]["node"] is False
-    assert adapter_registry["manifest"]["endpoint"] == (
-        "/api/v1/workflows/opencli-adapter-nodes"
-    )
+    assert adapter_registry["manifest"]["endpoint"] == ("/api/v1/workflows/opencli-adapter-nodes")
     assert adapter_registry["manifest"]["summary"]["total"] == 3
     assert adapter_registry["manifest"]["materialization"]["write"] == (
         "external.tool.capability with review"
@@ -354,9 +367,7 @@ async def test_workflow_capabilities_project_real_backend_surfaces(client, monke
     assert tool_resource["runtimeBinding"] == "workflow.external-tool.capability"
     assert tool_resource["manifest"]["toolCapability"]["id"] == "tool.search.fixture"
     assert tool_resource["manifest"]["toolCapability"]["executor"]["mode"] == "fixture"
-    realtime_resource = resources[
-        "resource.tool-capability.tool.realtime.stream.subscribe"
-    ]
+    realtime_resource = resources["resource.tool-capability.tool.realtime.stream.subscribe"]
     assert realtime_resource["status"] == "runnable"
     assert realtime_resource["runtimeBinding"] == "workflow.external-tool.capability"
     assert realtime_resource["manifest"]["toolCapability"]["id"] == (
@@ -387,18 +398,14 @@ def test_opencli_adapter_nodes_classify_manifest_entries(monkeypatch):
     assert twitter_search.status == "blocked"
     assert twitter_search.catalogId == "intelligence.source.opencli-slot"
     assert twitter_search.requiredArgs == ["query"]
-    assert twitter_search.manifest["canvas"]["materialization"] == (
-        "source_slot_requires_params"
-    )
+    assert twitter_search.manifest["canvas"]["materialization"] == ("source_slot_requires_params")
     assert twitter_search.manifest["canvas"]["positionalRequiredArgs"] == ["query"]
 
     twitter_post = nodes["opencli.adapter.twitter.post"]
     assert twitter_post.status == "blocked"
     assert twitter_post.catalogId == "external.tool.capability"
     assert twitter_post.manifest["canvas"]["node"] is False
-    assert twitter_post.manifest["canvas"]["materialization"] == (
-        "tool_capability_review_required"
-    )
+    assert twitter_post.manifest["canvas"]["materialization"] == ("tool_capability_review_required")
     assert response.summary == {
         "total": 3,
         "sites": 2,
@@ -443,9 +450,7 @@ async def test_workflow_tool_capabilities_register_opencli_tool_bindings(client)
     assert fixture_tool["executor"]["mode"] == "fixture"
     assert fixture_tool["inputPorts"] == [{"name": "in", "type": "unknown"}]
     assert fixture_tool["outputPorts"] == [{"name": "out", "type": "unknown"}]
-    assert fixture_tool["manifest"]["runtime"]["binding"] == (
-        "workflow.external-tool.capability"
-    )
+    assert fixture_tool["manifest"]["runtime"]["binding"] == ("workflow.external-tool.capability")
     realtime_ids = {
         "tool.realtime.stream.subscribe",
         "tool.realtime.event.normalize",

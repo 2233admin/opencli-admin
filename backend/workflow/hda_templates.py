@@ -40,7 +40,11 @@ def _materialize_node(node: WorkflowProjectNode) -> WorkflowProjectNode:
     if _is_opencli_multi_source_hda(node):
         sources = _source_slots(node.params.get("sources"))
         if sources:
-            internals = _opencli_multi_source_internals(sources)
+            expose_raw_source_items = node.params.get("exposeRawSourceItems") is True
+            internals = _opencli_multi_source_internals(
+                sources,
+                expose_raw_source_items=expose_raw_source_items,
+            )
             topic = _topic_collapse(node, len(internals.nodes))
             params = {
                 **node.params,
@@ -106,9 +110,36 @@ def _source_slots(value: Any) -> list[dict[str, Any]]:
     return slots
 
 
-def _opencli_multi_source_internals(sources: list[dict[str, Any]]) -> WorkflowPackageInternals:
+def _opencli_multi_source_internals(
+    sources: list[dict[str, Any]],
+    *,
+    expose_raw_source_items: bool = False,
+) -> WorkflowPackageInternals:
     source_pool_node = _source_pool_node(sources)
-    source_nodes = [_opencli_source_node(source, index) for index, source in enumerate(sources)]
+    source_nodes = [
+        _opencli_source_node(
+            source,
+            index,
+            dispatch_policy="inline" if expose_raw_source_items else None,
+        )
+        for index, source in enumerate(sources)
+    ]
+    source_edges = [
+        WorkflowProjectEdge(
+            id=f"source-pool-{source.id}",
+            source=source_pool_node.id,
+            target=source.id,
+            sourcePort="out",
+            targetPort="in",
+        )
+        for source in source_nodes
+    ]
+    if expose_raw_source_items:
+        return WorkflowPackageInternals(
+            locked=True,
+            nodes=[source_pool_node, *source_nodes],
+            edges=source_edges,
+        )
     normalize_node = WorkflowProjectNode(
         id="internal-normalize",
         kind="agent",
@@ -131,16 +162,7 @@ def _opencli_multi_source_internals(sources: list[dict[str, Any]]) -> WorkflowPa
             "position": {"x": 920, "y": 64 + max(len(sources) - 1, 0) * 72},
         },
     )
-    edges = [
-        WorkflowProjectEdge(
-            id=f"source-pool-{source.id}",
-            source=source_pool_node.id,
-            target=source.id,
-            sourcePort="out",
-            targetPort="in",
-        )
-        for source in source_nodes
-    ] + [
+    edges = source_edges + [
         WorkflowProjectEdge(
             id=f"{source.id}-normalize",
             source=source.id,
@@ -188,7 +210,12 @@ def _source_pool_node(sources: list[dict[str, Any]]) -> WorkflowProjectNode:
     )
 
 
-def _opencli_source_node(source: dict[str, Any], index: int) -> WorkflowProjectNode:
+def _opencli_source_node(
+    source: dict[str, Any],
+    index: int,
+    *,
+    dispatch_policy: str | None = None,
+) -> WorkflowProjectNode:
     source_id = f"source-{source['id']}"
     args = _read_dict(source.get("args"))
     adapter_id = _adapter_id(source)
@@ -203,6 +230,7 @@ def _opencli_source_node(source: dict[str, Any], index: int) -> WorkflowProjectN
             "args": args,
             "sourceGroup": source["sourceGroup"],
             "format": _read_string(source.get("format")) or "json",
+            **({"dispatchPolicy": dispatch_policy} if dispatch_policy else {}),
             **_optional_source_runtime_params(source),
         },
         ui={

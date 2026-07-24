@@ -8,7 +8,7 @@ import type { WorkflowPrimitive } from "@/lib/workflow/node-primitives"
 import { NODE_NETWORK_DEPTH_LIMIT_REACHED } from "@/lib/workflow/node-hierarchy"
 import type { CanvasPoint } from "./workflow-canvas-geometry"
 
-export type NodeMenuState = { nodeId: string; x: number; y: number }
+export type NodeMenuState = { nodeId?: string; x: number; y: number }
 
 type FitView = (options?: { padding?: number; duration?: number; nodes?: { id: string }[] }) => unknown
 
@@ -93,7 +93,7 @@ export function useWorkflowNodeMenuActions(options: {
 
   const addPrimitiveFromMenu = useCallback(
     (item: WorkflowPrimitive, itemIndex: number) => {
-      if (!nodeMenu) return
+      if (!nodeMenu?.nodeId) return
       const text = localizeNodeText(item.id, { label: item.label, description: item.description }, language)
       const count = addPrimitiveToNodeNetwork(
         nodeMenu.nodeId,

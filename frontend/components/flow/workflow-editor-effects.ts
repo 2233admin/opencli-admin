@@ -63,11 +63,14 @@ export function useDismissNodeMenu(
   useEffect(() => {
     if (!nodeMenu) return
     const close = () => setNodeMenu(null)
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") close()
+    }
     window.addEventListener("click", close)
-    window.addEventListener("keydown", close)
+    window.addEventListener("keydown", closeOnEscape)
     return () => {
       window.removeEventListener("click", close)
-      window.removeEventListener("keydown", close)
+      window.removeEventListener("keydown", closeOnEscape)
     }
   }, [nodeMenu, setNodeMenu])
 }

@@ -342,6 +342,7 @@ export const listRunEvents = (task_id: string, run_id: string) =>
 export const listRecords = (params?: {
   source_id?: string
   task_id?: string
+  project_id?: string
   status?: string
   search?: string
   page?: number

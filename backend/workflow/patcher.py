@@ -283,10 +283,18 @@ def _validate_added_node(node, path: list[str]) -> list[WorkflowCompileError]:
 
 
 def _find_node(project: WorkflowProject, node_id: str):
-    for node in project.nodes:
-        if node.id == node_id:
-            return node
-    return None
+    parts = [part for part in node_id.split("::") if part]
+    if not parts:
+        return None
+    node = next((candidate for candidate in project.nodes if candidate.id == parts[0]), None)
+    for part in parts[1:]:
+        if node is None or node.internals is None:
+            return None
+        node = next(
+            (candidate for candidate in node.internals.nodes if candidate.id == part),
+            None,
+        )
+    return node
 
 
 def _package_nodes(

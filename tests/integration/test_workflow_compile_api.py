@@ -157,9 +157,7 @@ def test_runtime_trigger_selection_isolates_each_hybrid_entry_run():
             },
             depends_on=depends_on or [],
             runtime=(
-                {"binding": {"binding_id": SCHEDULE_TRIGGER_BINDING_ID}}
-                if is_trigger
-                else {}
+                {"binding": {"binding_id": SCHEDULE_TRIGGER_BINDING_ID}} if is_trigger else {}
             ),
         )
 
@@ -236,9 +234,7 @@ async def test_hybrid_run_projects_only_the_selected_trigger_entry(client):
             "params": {"mode": "manual"},
             "ui": {
                 "primitiveId": "primitive.core.manual-trigger",
-                "primitivePorts": [
-                    {"id": "out", "direction": "output", "type": "trigger"}
-                ],
+                "primitivePorts": [{"id": "out", "direction": "output", "type": "trigger"}],
             },
         },
         {
@@ -293,13 +289,13 @@ async def test_hybrid_run_projects_only_the_selected_trigger_entry(client):
         "merge-entries",
         "records-output",
     ]
-    events_response = await client.get(
-        "/api/v1/workflows/runs/run-hybrid-manual-entry/events"
-    )
+    events_response = await client.get("/api/v1/workflows/runs/run-hybrid-manual-entry/events")
     assert events_response.status_code == 200
-    assert {
-        event["nodeId"] for event in events_response.json()["data"]
-    } == {"manual-entry", "merge-entries", "records-output"}
+    assert {event["nodeId"] for event in events_response.json()["data"]} == {
+        "manual-entry",
+        "merge-entries",
+        "records-output",
+    }
 
     schedule_response = await client.post(
         "/api/v1/workflows/runs",
@@ -318,13 +314,13 @@ async def test_hybrid_run_projects_only_the_selected_trigger_entry(client):
         "merge-entries",
         "records-output",
     ]
-    schedule_events = await client.get(
-        "/api/v1/workflows/runs/run-hybrid-schedule-entry/events"
-    )
+    schedule_events = await client.get("/api/v1/workflows/runs/run-hybrid-schedule-entry/events")
     assert schedule_events.status_code == 200
-    assert {
-        event["nodeId"] for event in schedule_events.json()["data"]
-    } == {"schedule-entry", "merge-entries", "records-output"}
+    assert {event["nodeId"] for event in schedule_events.json()["data"]} == {
+        "schedule-entry",
+        "merge-entries",
+        "records-output",
+    }
 
 
 def _opencli_workflow_project() -> dict:
@@ -628,9 +624,7 @@ async def test_compile_accepts_multiple_trigger_roots_and_isolated_output_fanout
             "params": {"mode": "manual", "inputSchema": {"query": "string"}},
             "ui": {
                 "primitiveId": "primitive.core.manual-trigger",
-                "primitivePorts": [
-                    {"id": "tick", "direction": "output", "type": "trigger"}
-                ],
+                "primitivePorts": [{"id": "tick", "direction": "output", "type": "trigger"}],
             },
         },
         {
@@ -774,9 +768,7 @@ async def test_compile_requires_visible_merge_for_builder_multi_input_nodes(clie
             "params": {"limit": 10},
         }
     )
-    invalid["nodes"][1]["ui"] = {
-        "builder": {"nodeType": "llm-transform-agent"}
-    }
+    invalid["nodes"][1]["ui"] = {"builder": {"nodeType": "llm-transform-agent"}}
     invalid["edges"].insert(
         1,
         {
@@ -798,7 +790,8 @@ async def test_compile_requires_visible_merge_for_builder_multi_input_nodes(clie
     assert invalid_data["valid"] is False
     assert invalid_data["plan"] is None
     merge_errors = [
-        error for error in invalid_data["errors"]
+        error
+        for error in invalid_data["errors"]
         if error["code"] == "multiple_inputs_require_merge"
     ]
     assert merge_errors == [
@@ -826,9 +819,7 @@ async def test_compile_requires_visible_merge_for_builder_multi_input_nodes(clie
     assert valid_response.status_code == 200
     valid_data = valid_response.json()["data"]
     assert valid_data["valid"] is True, valid_data["errors"]
-    runtime_nodes = {
-        node["id"]: node for node in valid_data["plan"]["runtime"]["nodes"]
-    }
+    runtime_nodes = {node["id"]: node for node in valid_data["plan"]["runtime"]["nodes"]}
     assert runtime_nodes["merge-candidates"]["capability"] == "merge"
     assert runtime_nodes["merge-candidates"]["depends_on"] == [
         "normalize-bilibili",
@@ -873,15 +864,18 @@ async def test_compile_resolves_opencli_source_to_iii_runtime_binding(client):
     runtime = response.json()["data"]["plan"]["runtime"]
     source_node = runtime["nodes"][0]
     assert source_node["id"] == "source-bilibili"
-    _assert_binding_includes(source_node["runtime"]["binding"], {
-        "status": "bound",
-        "binding_id": "iii.collector-opencli.snapshot",
-        "runtime": "iii",
-        "worker": "collector-opencli",
-        "function_id": "odp.collect::opencli_snapshot",
-        "channel": "opencli",
-        "input": {"site": "bilibili", "command": "search"},
-    })
+    _assert_binding_includes(
+        source_node["runtime"]["binding"],
+        {
+            "status": "bound",
+            "binding_id": "iii.collector-opencli.snapshot",
+            "runtime": "iii",
+            "worker": "collector-opencli",
+            "function_id": "odp.collect::opencli_snapshot",
+            "channel": "opencli",
+            "input": {"site": "bilibili", "command": "search"},
+        },
+    )
     assert source_node["runtime"]["resource_requirement"] == {
         "nodeId": "source-bilibili",
         "sourceGroup": "source-bilibili",
@@ -901,9 +895,7 @@ async def test_compile_projects_native_first_loop_nodes_to_runtime_bindings(clie
     assert response.status_code == 200
     data = response.json()["data"]
     assert data["valid"] is True
-    runtime_nodes = {
-        node["id"]: node for node in data["plan"]["runtime"]["nodes"]
-    }
+    runtime_nodes = {node["id"]: node for node in data["plan"]["runtime"]["nodes"]}
 
     merge = runtime_nodes["merge-candidates"]
     assert merge["kind"] == "flow"
@@ -918,9 +910,7 @@ async def test_compile_projects_native_first_loop_nodes_to_runtime_bindings(clie
     gate = runtime_nodes["accept-records"]
     assert gate["kind"] == "control"
     assert gate["capability"] == "accept"
-    assert gate["runtime"]["binding"]["binding_id"] == (
-        "workflow.gate.record-acceptance"
-    )
+    assert gate["runtime"]["binding"]["binding_id"] == ("workflow.gate.record-acceptance")
     assert gate["runtime"]["record_acceptance"] == {
         "node_id": "accept-records",
         "candidate_port": "recordCandidate[]",
@@ -932,21 +922,15 @@ async def test_compile_projects_native_first_loop_nodes_to_runtime_bindings(clie
     assert sink["capability"] == "store"
     assert sink["runtime"]["binding"]["binding_id"] == "workflow.record-sink.records"
 
-    plan_nodes = {
-        node["id"]: node for node in data["plan"]["runtime"]["plan_ir"]["nodes"]
-    }
+    plan_nodes = {node["id"]: node for node in data["plan"]["runtime"]["plan_ir"]["nodes"]}
     assert plan_nodes["merge-candidates"]["kind"] == "merge"
     assert plan_nodes["merge-candidates"]["inputs"] == [
         {"name": "in1", "type": "recordCandidate[]"},
         {"name": "in2", "type": "recordCandidate[]"},
     ]
-    assert plan_nodes["accept-records"]["outputs"] == [
-        {"name": "records", "type": "record[]"}
-    ]
+    assert plan_nodes["accept-records"]["outputs"] == [{"name": "records", "type": "record[]"}]
     assert plan_nodes["record-sink"]["kind"] == "sink"
-    assert plan_nodes["record-sink"]["inputs"] == [
-        {"name": "records", "type": "record[]"}
-    ]
+    assert plan_nodes["record-sink"]["inputs"] == [{"name": "records", "type": "record[]"}]
 
 
 @pytest.mark.asyncio
@@ -1003,16 +987,12 @@ async def test_compile_rejects_explicit_incompatible_builder_edge_mapping(client
     data = response.json()["data"]
     assert data["valid"] is False
     assert data["plan"] is None
-    errors = [
-        error for error in data["errors"]
-        if error["code"] == "incompatible_edge_mapping"
-    ]
+    errors = [error for error in data["errors"] if error["code"] == "incompatible_edge_mapping"]
     assert errors == [
         {
             "code": "incompatible_edge_mapping",
             "message": (
-                'Workflow edge "e-source-normalize" cannot compile: '
-                "data.count: string -> number"
+                'Workflow edge "e-source-normalize" cannot compile: data.count: string -> number'
             ),
             "node_id": None,
             "edge_id": "e-source-normalize",
@@ -1058,10 +1038,7 @@ async def test_compile_rejects_incompatible_mapping_inside_package_internals(cli
     assert response.status_code == 200
     data = response.json()["data"]
     assert data["valid"] is False
-    errors = [
-        error for error in data["errors"]
-        if error["code"] == "incompatible_edge_mapping"
-    ]
+    errors = [error for error in data["errors"] if error["code"] == "incompatible_edge_mapping"]
     assert len(errors) == 1
     assert errors[0]["edge_id"] == "internal-source-normalize"
     assert errors[0]["path"] == [
@@ -1104,18 +1081,21 @@ async def test_compile_resolves_normalize_to_native_transform_binding(client):
     runtime_nodes = response.json()["data"]["plan"]["runtime"]["nodes"]
     normalize_node = runtime_nodes[1]
     assert normalize_node["id"] == "normalize-items"
-    _assert_binding_includes(normalize_node["runtime"]["binding"], {
-        "status": "bound",
-        "binding_id": "workflow.transform.normalize",
-        "runtime": "workflow",
-        "channel": "transform",
-        "input": {
-            "language": "zh-CN",
-            "preserveSourceRefs": True,
-            "inputPort": "items[]",
-            "outputPort": "recordCandidate[]",
+    _assert_binding_includes(
+        normalize_node["runtime"]["binding"],
+        {
+            "status": "bound",
+            "binding_id": "workflow.transform.normalize",
+            "runtime": "workflow",
+            "channel": "transform",
+            "input": {
+                "language": "zh-CN",
+                "preserveSourceRefs": True,
+                "inputPort": "items[]",
+                "outputPort": "recordCandidate[]",
+            },
         },
-    })
+    )
     assert normalize_node["runtime"]["normalize"] == {
         "node_id": "normalize-items",
         "candidate_port": "recordCandidate[]",
@@ -1280,6 +1260,105 @@ async def test_compile_expands_package_internals_and_binds_public_params(client)
 
 
 @pytest.mark.asyncio
+async def test_compile_binds_public_param_names_to_namespaced_interface_fields(client):
+    project = _valid_workflow_project()
+    project["nodes"] = [
+        {
+            "id": "record-hygiene",
+            "kind": "agent",
+            "capability": "normalize",
+            "params": {
+                "window": "12h",
+                "mode": "automatic_strict",
+                "minQuality": 0.85,
+            },
+            "parameterInterface": {
+                "groups": [{"id": "public", "label": "Public"}],
+                "fields": [
+                    {
+                        "id": "dedupe.window",
+                        "label": "Dedupe window",
+                        "groupId": "public",
+                        "type": "text",
+                        "binding": {
+                            "nodeId": "record-hygiene__dedupe",
+                            "source": "params",
+                            "fieldId": "window",
+                        },
+                        "value": "24h",
+                    },
+                    {
+                        "id": "acceptance.mode",
+                        "label": "Acceptance mode",
+                        "groupId": "public",
+                        "type": "select",
+                        "binding": {
+                            "nodeId": "record-acceptance",
+                            "source": "params",
+                            "fieldId": "mode",
+                        },
+                        "value": "automatic_with_review",
+                    },
+                    {
+                        "id": "acceptance.minQuality",
+                        "label": "Minimum quality",
+                        "groupId": "public",
+                        "type": "number",
+                        "binding": {
+                            "nodeId": "record-hygiene::record-acceptance",
+                            "source": "params",
+                            "fieldId": "minQuality",
+                        },
+                        "value": 0,
+                    },
+                ],
+            },
+            "internals": {
+                "nodes": [
+                    {
+                        "id": "normalize",
+                        "kind": "agent",
+                        "capability": "normalize",
+                        "params": {"language": "zh-CN"},
+                    },
+                    {
+                        "id": "dedupe",
+                        "kind": "agent",
+                        "capability": "normalize",
+                        "params": {"window": "24h"},
+                    },
+                    {
+                        "id": "record-acceptance",
+                        "kind": "agent",
+                        "capability": "normalize",
+                        "params": {
+                            "mode": "automatic_with_review",
+                            "minQuality": 0,
+                        },
+                    },
+                ],
+                "edges": [],
+            },
+        }
+    ]
+    project["edges"] = []
+
+    response = await client.post("/api/v1/workflows/compile", json={"project": project})
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["valid"] is True, data["errors"]
+    runtime_nodes = {node["id"]: node for node in data["plan"]["runtime"]["nodes"]}
+    dedupe = runtime_nodes["record-hygiene::dedupe"]
+    acceptance = runtime_nodes["record-hygiene::record-acceptance"]
+    assert dedupe["params"] == {"window": "12h"}
+    assert acceptance["params"] == {
+        "mode": "automatic_strict",
+        "minQuality": 0.85,
+    }
+
+
+@pytest.mark.asyncio
 async def test_compile_recurses_through_four_node_levels_with_canonical_paths(client):
     response = await client.post(
         "/api/v1/workflows/compile",
@@ -1354,9 +1433,7 @@ async def test_compile_rejects_a_fifth_node_level(client):
     data = response.json()["data"]
     assert data["valid"] is False
     assert data["plan"] is None
-    errors = [
-        error for error in data["errors"] if error["code"] == "node_path_depth_exceeded"
-    ]
+    errors = [error for error in data["errors"] if error["code"] == "node_path_depth_exceeded"]
     assert errors == [
         {
             "code": "node_path_depth_exceeded",
@@ -1419,9 +1496,7 @@ async def test_compile_rewrites_operator_edges_to_executable_boundaries(client):
     assert runtime["plan_ir"]["edges"][0]["source_node"] == (
         "collect-operator::collect-implementation"
     )
-    assert runtime["plan_ir"]["edges"][0]["target_node"] == (
-        "clean-operator::clean-implementation"
-    )
+    assert runtime["plan_ir"]["edges"][0]["target_node"] == ("clean-operator::clean-implementation")
     assert runtime["plan_ir"]["edges"][0]["source_port"] == "out"
     assert runtime["plan_ir"]["edges"][0]["target_port"] == "in"
 
@@ -1438,9 +1513,7 @@ async def test_compile_topologically_orders_reversed_operator_nodes(client):
 
     assert response.status_code == 200
     runtime = response.json()["data"]["plan"]["runtime"]
-    executable_ids = [
-        node["id"] for node in runtime["nodes"] if node["runtime"]["executable"]
-    ]
+    executable_ids = [node["id"] for node in runtime["nodes"] if node["runtime"]["executable"]]
     assert executable_ids == [
         "collect-operator::collect-implementation",
         "clean-operator::clean-implementation",
@@ -1459,9 +1532,7 @@ async def test_compile_uses_declared_primitive_ports_for_validation_and_plan_ir(
             "ui": {
                 "catalogId": "primitive.input.manual-sample",
                 "primitiveId": "primitive.input.manual-sample",
-                "primitivePorts": [
-                    {"id": "sample", "direction": "output", "type": "items[]"}
-                ],
+                "primitivePorts": [{"id": "sample", "direction": "output", "type": "items[]"}],
             },
         },
         {
@@ -1496,12 +1567,8 @@ async def test_compile_uses_declared_primitive_ports_for_validation_and_plan_ir(
     data = response.json()["data"]
     assert data["valid"] is True, data["errors"]
     plan_nodes = {node["id"]: node for node in data["plan"]["runtime"]["plan_ir"]["nodes"]}
-    assert plan_nodes["manual-sample"]["outputs"] == [
-        {"name": "sample", "type": "items[]"}
-    ]
-    assert plan_nodes["filter-items"]["inputs"] == [
-        {"name": "items", "type": "items[]"}
-    ]
+    assert plan_nodes["manual-sample"]["outputs"] == [{"name": "sample", "type": "items[]"}]
+    assert plan_nodes["filter-items"]["inputs"] == [{"name": "items", "type": "items[]"}]
 
     project["nodes"][1]["ui"]["primitivePorts"][0]["type"] = "object"
     incompatible = await client.post(
@@ -1636,8 +1703,8 @@ async def test_compile_materializes_opencli_hda_sources_from_ai_params_in_parall
                 "template": "opencli-multi-source",
                 "runtime": "iii",
                 "lockedInternals": True,
-                    "execution": {
-                        "fanout": "serial",
+                "execution": {
+                    "fanout": "serial",
                 },
                 "sources": [
                     {
@@ -1789,9 +1856,7 @@ async def test_compile_materializes_nested_opencli_hda_and_merges_adapters(clien
     assert data["valid"] is True
     runtime = data["plan"]["runtime"]
     source_package = next(
-        node
-        for node in runtime["nodes"]
-        if node["id"] == "source-operator::source-package"
+        node for node in runtime["nodes"] if node["id"] == "source-operator::source-package"
     )
     assert source_package["params"]["execution"] == {"fanout": "parallel"}
     assert "source-operator::source-package::source-bili" in runtime["node_ids"]
@@ -2073,9 +2138,7 @@ async def test_compile_accepts_collection_need_input_node(client):
     data = response.json()["data"]
     assert data["valid"] is True
     node = next(
-        node
-        for node in data["plan"]["runtime"]["nodes"]
-        if node["id"] == "collection-need"
+        node for node in data["plan"]["runtime"]["nodes"] if node["id"] == "collection-need"
     )
     assert node["runtime"]["origin"]["catalog_id"] == "intelligence.input.collection-need"
     assert node["runtime"]["binding"]["binding_id"] == "workflow.demand-draft.patch"
@@ -2084,11 +2147,13 @@ async def test_compile_accepts_collection_need_input_node(client):
     ]
     assert "missing_runtime" not in node["runtime"]
     plan_node = next(
-        node for node in data["plan"]["runtime"]["plan_ir"]["nodes"]
+        node
+        for node in data["plan"]["runtime"]["plan_ir"]["nodes"]
         if node["id"] == "collection-need"
     )
     assert plan_node["inputs"] == [{"name": "in", "type": "collectionNeed"}]
     assert plan_node["outputs"] == [{"name": "patch", "type": "workflowPatch"}]
+
 
 @pytest.mark.asyncio
 async def test_compile_resolves_schedule_trigger_binding(client):
@@ -2121,23 +2186,22 @@ async def test_compile_resolves_schedule_trigger_binding(client):
     assert response.status_code == 200
     data = response.json()["data"]
     assert data["valid"] is True
-    node = next(
-        node
-        for node in data["plan"]["runtime"]["nodes"]
-        if node["id"] == "schedule-cron"
-    )
+    node = next(node for node in data["plan"]["runtime"]["nodes"] if node["id"] == "schedule-cron")
     assert node["runtime"]["origin"]["catalog_id"] == "intelligence.schedule.cron"
-    _assert_binding_includes(node["runtime"]["binding"], {
-        "status": "bound",
-        "binding_id": "workflow.trigger.schedule_tick",
-        "runtime": "workflow",
-        "channel": "schedule",
-        "input": {
-            "interval": "5m",
-            "timezone": "Asia/Shanghai",
-            "enabled": True,
+    _assert_binding_includes(
+        node["runtime"]["binding"],
+        {
+            "status": "bound",
+            "binding_id": "workflow.trigger.schedule_tick",
+            "runtime": "workflow",
+            "channel": "schedule",
+            "input": {
+                "interval": "5m",
+                "timezone": "Asia/Shanghai",
+                "enabled": True,
+            },
         },
-    })
+    )
     assert node["runtime"]["trigger"] == {
         "node_id": "schedule-cron",
         "mode": "manual_schedule_tick",
@@ -2163,17 +2227,13 @@ async def test_compile_resolves_webhook_trigger_input_contract(client):
     assert response.status_code == 200
     data = response.json()["data"]
     assert data["valid"] is True
-    node = next(
-        item for item in data["plan"]["runtime"]["nodes"]
-        if item["id"] == "webhook-input"
-    )
+    node = next(item for item in data["plan"]["runtime"]["nodes"] if item["id"] == "webhook-input")
     plan_node = next(
-        item for item in data["plan"]["runtime"]["plan_ir"]["nodes"]
+        item
+        for item in data["plan"]["runtime"]["plan_ir"]["nodes"]
         if item["id"] == "webhook-input"
     )
-    assert plan_node["outputs"] == [
-        {"name": "request", "type": "webhookRequest"}
-    ]
+    assert plan_node["outputs"] == [{"name": "request", "type": "webhookRequest"}]
     assert node["runtime"]["binding"]["binding_id"] == "workflow.trigger.webhook_input"
     assert node["runtime"]["binding"]["input"] == {
         "method": "POST",

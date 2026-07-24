@@ -1,8 +1,8 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import Link from "next/link"
-import { AlertTriangle, PlugZap } from "lucide-react"
+import { AlertTriangle, Bot, CheckCircle2, Loader2, PlugZap } from "lucide-react"
 import { useFlowStore } from "@/lib/flow/store"
 import type {
   FieldConfig,
@@ -26,6 +26,8 @@ import { getNodeTemplate } from "@/lib/workflow/node-templates"
 import { buildParameterInterfaceView, type ParameterInterfaceViewField } from "@/lib/workflow/parameter-interface"
 import { blockedActionViewForRuntime } from "@/lib/workflow/capabilities"
 import { buildCanonicalNodeViewContract } from "@/lib/workflow/canonical-node-contract"
+import { findWorkflowProjectNodeByCanvasId } from "@/lib/workflow/node-path"
+import { requestWorkflowNodeEditDraft, type WorkflowNodeEditDraft } from "@/lib/workflow/node-edit-draft"
 import { MonoRow, PanelShell, SectionCaption } from "./inspector-shell"
 import { cn } from "@/lib/utils"
 
@@ -67,6 +69,12 @@ const houdiniDetailsClass = "overflow-hidden rounded-[3px] border border-[#20242
 const houdiniSummaryClass =
   "flex cursor-pointer list-none items-center justify-between gap-3 bg-[#171a1f] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground transition-colors hover:text-foreground"
 
+type NodeAiEditState =
+  | { status: "idle"; result: null; error: null }
+  | { status: "loading"; result: null; error: null }
+  | { status: "ready"; result: WorkflowNodeEditDraft; error: null }
+  | { status: "error"; result: null; error: string }
+
 type ProjectNodeWithIdentity = {
   params: Record<string, unknown>
   ui?: Record<string, unknown>
@@ -101,6 +109,12 @@ function readCanonical(data: WorkflowNodeData): CanonicalNodeData | undefined {
   return canonical as CanonicalNodeData
 }
 
+function nodeParameterDisplayValue(value: unknown): string | undefined {
+  if (typeof value === "string") return value.trim() ? value : undefined
+  if (typeof value === "number" || typeof value === "boolean") return String(value)
+  return undefined
+}
+
 export function Inspector() {
   const nodes = useFlowStore((s) => s.nodes)
   const edges = useFlowStore((s) => s.edges)
@@ -111,14 +125,23 @@ export function Inspector() {
   const toggleEdgeAnimated = useFlowStore((s) => s.toggleEdgeAnimated)
   const updateWorkflowNodeParams = useFlowStore((s) => s.updateWorkflowNodeParams)
   const updateParameterInterfaceField = useFlowStore((s) => s.updateParameterInterfaceField)
+  const importWorkflowProject = useFlowStore((s) => s.importWorkflowProject)
   const takeSnapshot = useFlowStore((s) => s.takeSnapshot)
   const setNodes = useFlowStore((s) => s.setNodes)
   const onEdgesChange = useFlowStore((s) => s.onEdgesChange)
   const [nodeTab, setNodeTab] = useState<"config" | "prompt" | "run" | "trace">("config")
   const [parameterGroupTab, setParameterGroupTab] = useState("")
+  const [aiEditMessage, setAiEditMessage] = useState("")
+  const [aiEditState, setAiEditState] = useState<NodeAiEditState>({ status: "idle", result: null, error: null })
 
   const selected = nodes.filter((n) => n.selected)
   const selectedEdges = edges.filter((e) => e.selected)
+  const selectedNodeId = selected.length === 1 ? selected[0].id : null
+
+  useEffect(() => {
+    setAiEditMessage("")
+    setAiEditState({ status: "idle", result: null, error: null })
+  }, [selectedNodeId])
 
   const deselectAll = () => {
     setNodes((ns) => ns.map((n) => (n.selected ? { ...n, selected: false } : n)))
@@ -332,7 +355,7 @@ export function Inspector() {
   const data = node.data as WorkflowNodeData
   const canonical = data.canonical as { kind?: string; capability?: string; adapter?: string; params?: Record<string, unknown> } | undefined
   const projectNode = hydrateProjectNodeIdentity(
-    workflowProject.nodes.find((candidate) => candidate.id === node.id),
+    findWorkflowProjectNodeByCanvasId(workflowProject, node.id),
     data,
   )
   const projectAdapter = projectNode?.adapter
@@ -351,6 +374,19 @@ export function Inspector() {
   const promptCapable =
     canonical?.kind === "agent" ||
     typeof data.primitiveId === "string" && (data.primitiveId.includes("prompt") || data.primitiveId.includes("model"))
+  const promptParameter = (id: string) =>
+    projectNode?.params[id] ?? canonical?.params?.[id] ?? data.fields?.find((field) => field.id === id)?.value
+  const promptConfiguration: Array<{ key: string; value: string }> = [
+    { key: "preset", value: promptParameter("style") },
+    { key: "version", value: promptParameter("promptVersion") ?? promptParameter("version") },
+    { key: "model", value: promptParameter("model") },
+  ].flatMap(({ key, value }) => {
+    const displayValue = nodeParameterDisplayValue(value)
+    return displayValue ? [{ key, value: displayValue }] : []
+  })
+  const configuredPrompt = nodeParameterDisplayValue(promptParameter("prompt") ?? promptParameter("systemPrompt"))
+  const testInput = nodeParameterDisplayValue(promptParameter("input"))
+  const expectedOutput = nodeParameterDisplayValue(promptParameter("expected"))
 
   const update = (patch: Partial<WorkflowNodeData>) => updateNodeData(node.id, patch)
 
@@ -583,6 +619,24 @@ export function Inspector() {
     : parameterGroups[0]?.id
   const activeParameterFields = parameterInterfaceView?.fields.filter((field) => field.groupId === activeParameterGroupId) ?? []
   const blockedAction = blockedActionViewForRuntime(data)
+  const requestAiEdit = async () => {
+    const message = aiEditMessage.trim()
+    if (!message) return
+    setAiEditState({ status: "loading", result: null, error: null })
+    try {
+      const result = await requestWorkflowNodeEditDraft(workflowProject, node.id.replaceAll("__", "::"), message)
+      setAiEditState({ status: "ready", result, error: null })
+    } catch (error) {
+      setAiEditState({ status: "error", result: null, error: error instanceof Error ? error.message : "节点 AI 编辑失败" })
+    }
+  }
+  const applyAiEdit = () => {
+    const project = aiEditState.status === "ready" ? aiEditState.result.patch?.project : null
+    if (!project) return
+    importWorkflowProject(project)
+    setAiEditState({ status: "idle", result: null, error: null })
+    setAiEditMessage("")
+  }
   return (
     <PanelShell
       title={data.label}
@@ -613,28 +667,35 @@ export function Inspector() {
 
         {nodeTab === "prompt" ? (
           <div className="space-y-3">
-            <SectionCaption>Prompt Playground</SectionCaption>
+            <SectionCaption>节点提示词配置</SectionCaption>
             <div className="rounded-md border bg-card p-3 text-[11px] leading-relaxed text-muted-foreground">
-              Prompt edits are staged through Agent proposal before they update the canonical workflow.
+              这里只显示节点已保存的提示词配置和测试用例，不会注入演示文本。通过 AI 编辑生成的是待审阅提案，确认应用后才会更新工作流。
             </div>
-            <MonoRow k="preset" v={String(canonical?.params?.style ?? data.fields?.find((field) => field.id === "preset")?.value ?? "macro-brief")} />
-            <MonoRow k="version" v={String(canonical?.params?.promptVersion ?? data.fields?.find((field) => field.id === "version")?.value ?? "v1")} />
-            <MonoRow k="model" v={String(canonical?.params?.model ?? data.fields?.find((field) => field.id === "model")?.value ?? "deepseek/mock")} />
-            <Separator />
-            <div className="space-y-1.5">
-              <Label className="font-mono text-[10px] uppercase tracking-wider">Test Input</Label>
-              <Textarea readOnly rows={3} className="font-mono text-xs" value="JIN10 macro news sample with policy/market impact." />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="font-mono text-[10px] uppercase tracking-wider">Mock Output</Label>
-              <Textarea readOnly rows={4} className="font-mono text-xs" value="3-bullet macro brief, impact score, source refs, and risk note." />
-            </div>
-            <div className="rounded-md border bg-card p-3">
-              <SectionCaption>Version Note</SectionCaption>
-              <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
-                Baseline prompt version for deterministic local evaluation and regression gate.
-              </p>
-            </div>
+            {promptConfiguration.map(({ key, value }) => <MonoRow key={key} k={key} v={value} />)}
+            {configuredPrompt ? (
+              <div className="space-y-1.5">
+                <Label className="font-mono text-[10px] uppercase tracking-wider">已配置提示词</Label>
+                <Textarea readOnly rows={4} className="font-mono text-xs" value={configuredPrompt} />
+              </div>
+            ) : null}
+            {testInput || expectedOutput ? <Separator /> : null}
+            {testInput ? (
+              <div className="space-y-1.5">
+                <Label className="font-mono text-[10px] uppercase tracking-wider">测试输入</Label>
+                <Textarea readOnly rows={3} className="font-mono text-xs" value={testInput} />
+              </div>
+            ) : null}
+            {expectedOutput ? (
+              <div className="space-y-1.5">
+                <Label className="font-mono text-[10px] uppercase tracking-wider">期望输出</Label>
+                <Textarea readOnly rows={4} className="font-mono text-xs" value={expectedOutput} />
+              </div>
+            ) : null}
+            {!configuredPrompt && !testInput && !expectedOutput ? (
+              <div className="rounded-md border border-dashed bg-card p-3 text-[11px] leading-relaxed text-muted-foreground">
+                当前节点未配置提示词测试用例。真实运行输入和输出只在执行时产生，请在“运行结果”或 Run Trace 中查看。
+              </div>
+            ) : null}
           </div>
         ) : nodeTab === "run" ? (
           <div className="space-y-3">
@@ -662,6 +723,43 @@ export function Inspector() {
           </div>
         ) : (
           <>
+        <section className="overflow-hidden rounded-[3px] border border-[#2f4055] bg-[#0b121c]" aria-label="与 AI 对话编辑节点">
+          <div className="flex items-center gap-2 border-b border-[#26394d] bg-[#101b29] px-3 py-2">
+            <Bot className="size-3.5 text-[#a0c3ec]" />
+            <SectionCaption>与 AI 对话编辑此节点</SectionCaption>
+          </div>
+          <div className="space-y-2.5 p-3">
+            <p className="text-[11px] leading-relaxed text-muted-foreground">基于已绑定的对话模型生成参数变更提案；不会自动保存，需先审阅再应用。</p>
+            <Textarea
+              value={aiEditMessage}
+              onChange={(event) => setAiEditMessage(event.target.value)}
+              rows={3}
+              placeholder="例如：把最大条数改为 50，并保留来源引用"
+              className={houdiniTextareaClass}
+              aria-label="告诉 AI 如何编辑当前节点"
+            />
+            <Button type="button" size="sm" className="w-full" onClick={() => void requestAiEdit()} disabled={!aiEditMessage.trim() || aiEditState.status === "loading"}>
+              {aiEditState.status === "loading" ? <Loader2 className="size-3.5 animate-spin" /> : <Bot className="size-3.5" />}
+              生成编辑提案
+            </Button>
+            {aiEditState.status === "error" ? <p className="text-[11px] leading-relaxed text-destructive">{aiEditState.error}</p> : null}
+            {aiEditState.status === "ready" ? (
+              <div className="space-y-2 rounded-[2px] border border-[#314864] bg-[#0a1018] p-2.5">
+                <p className="text-[11px] leading-relaxed text-foreground">{aiEditState.result.reply}</p>
+                {aiEditState.result.patch?.patch.operations.length ? (
+                  <>
+                    <p className="font-mono text-[10px] text-muted-foreground">{aiEditState.result.patch.patch.operations.length} 项参数变更 · {aiEditState.result.patch.valid ? "已通过校验" : "未通过校验"}</p>
+                    {aiEditState.result.patch.valid && aiEditState.result.patch.project ? (
+                      <Button type="button" size="sm" variant="outline" className="w-full" onClick={applyAiEdit}>
+                        <CheckCircle2 className="size-3.5" />应用到草稿
+                      </Button>
+                    ) : null}
+                  </>
+                ) : <p className="font-mono text-[10px] text-muted-foreground">未生成可安全应用的参数变更。</p>}
+              </div>
+            ) : null}
+          </div>
+        </section>
         {blockedAction ? (
           <div className="overflow-hidden rounded-[3px] border border-[#7f1d1d]/60 bg-[#180b0b]/70">
             <div className="flex items-center justify-between gap-3 border-b border-[#7f1d1d]/50 bg-[#2a1010]/72 px-3 py-2">
@@ -886,8 +984,10 @@ export function Inspector() {
         {data.nodeType !== "note" && data.nodeType !== "group" ? (
           <details className={houdiniDetailsClass}>
             <summary className={houdiniSummaryClass}>
-              <span>Ports</span>
-              <span className="text-[10px] normal-case tracking-normal">{ports.length} ports</span>
+              <span>接口</span>
+              <span className="text-[10px] normal-case tracking-normal">
+                {ports.filter((port) => port.dir === "input").length} IN · {ports.filter((port) => port.dir === "output").length} OUT
+              </span>
             </summary>
             <div className="space-y-1.5 border-t p-3">
               {ports.map((p) => (

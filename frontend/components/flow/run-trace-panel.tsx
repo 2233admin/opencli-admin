@@ -1,7 +1,7 @@
 "use client"
 
-import { useMemo, useState } from "react"
-import { Activity, Boxes, Loader2, Play, RotateCcw } from "lucide-react"
+import { useEffect, useMemo, useRef, useState } from "react"
+import { Activity, Boxes, FileInput, Loader2, Play, RotateCcw } from "lucide-react"
 import { getApiAuthToken } from "@/lib/api/auth-token"
 import { useFlowStore } from "@/lib/flow/store"
 import { compileWorkflowProject, type WorkflowCompileResponse } from "@/lib/workflow/backend-compile"
@@ -25,6 +25,8 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
+import { Textarea } from "@/components/ui/textarea"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { cn } from "@/lib/utils"
 
 type RealRunState =
@@ -63,8 +65,10 @@ const RUN_STATUS_LABELS: Record<WorkflowRunStatus, string> = {
   failed: "失败",
 }
 
-export function RunTracePanel() {
+export function RunTracePanel({ runRequestId = 0 }: { runRequestId?: number }) {
+  const runButtonRef = useRef<HTMLButtonElement>(null)
   const workflowProject = useFlowStore((state) => state.workflowProject)
+  const selectedNodeId = useFlowStore((state) => state.nodes.find((node) => node.selected)?.id ?? null)
   const nodeCount = useFlowStore((state) => state.nodes.length)
   const edgeCount = useFlowStore((state) => state.edges.length)
   const setNodes = useFlowStore((state) => state.setNodes)
@@ -81,6 +85,15 @@ export function RunTracePanel() {
     selectedBatchId: null,
     error: null,
   })
+  const [importNodeId, setImportNodeId] = useState("")
+  const [importOutputText, setImportOutputText] = useState("[\n  {\n    \"title\": \"Imported example\",\n    \"url\": \"https://example.com/item\"\n  }\n]")
+  const [importError, setImportError] = useState<string | null>(null)
+
+  const outputInputNodes = useMemo(() => collectOutputInputNodes(workflowProject), [workflowProject])
+  const selectedSourceId = outputInputNodes.some((node) => node.id === selectedNodeId) ? selectedNodeId : null
+  const effectiveImportNodeId = outputInputNodes.some((node) => node.id === importNodeId)
+    ? importNodeId
+    : selectedSourceId ?? outputInputNodes[0]?.id ?? ""
 
   const projection = runState.projection
   const errors = projection?.errors ?? []
@@ -94,12 +107,12 @@ export function RunTracePanel() {
   const isRunning = runState.status === "running"
   const isBackendRunning = backendState.status === "running"
 
-  const runBackendWorkflow = async () => {
+  const runBackendWorkflow = async (sourceOutputs?: Record<string, Array<Record<string, unknown>>>) => {
     setRunState((current) => ({ status: "running", projection: current.projection, events: current.events, error: null }))
     try {
       const token = getApiAuthToken()
       const authorization = token ? `Bearer ${token}` : null
-      const started = await startWorkflowRun(workflowProject, { authorization })
+      const started = await startWorkflowRun(workflowProject, { authorization, sourceOutputs })
       applyWorkflowRunProjection(started)
       setRunState({ status: "running", projection: started, events: [], error: null })
 
@@ -120,6 +133,32 @@ export function RunTracePanel() {
       }))
     }
   }
+
+  const runImportedOutput = async () => {
+    if (!effectiveImportNodeId) {
+      setImportError("当前工作流没有可接收导入输出的输入节点。")
+      return
+    }
+    try {
+      const decoded: unknown = JSON.parse(importOutputText)
+      const items = Array.isArray(decoded)
+        ? decoded
+        : decoded && typeof decoded === "object" && Array.isArray((decoded as { items?: unknown }).items)
+          ? (decoded as { items: unknown[] }).items
+          : null
+      if (!items || !items.every((item) => item && typeof item === "object" && !Array.isArray(item))) {
+        throw new Error("输出必须是对象数组，或形如 { \"items\": [...] }。")
+      }
+      setImportError(null)
+      await runBackendWorkflow({ [effectiveImportNodeId]: items as Array<Record<string, unknown>> })
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : "导入输出格式无效")
+    }
+  }
+
+  useEffect(() => {
+    if (runRequestId > 0) runButtonRef.current?.click()
+  }, [runRequestId])
 
   const loadEvidenceBatchResults = async (runId: string, authorization: string | null) => {
     setEvidenceState((current) => ({ ...current, status: "loading", error: null, detail: null, selectedBatchId: null }))
@@ -226,7 +265,7 @@ export function RunTracePanel() {
           </Badge>
         </div>
         <div className="mt-3 grid grid-cols-[1fr_1fr_auto] gap-2">
-          <Button size="sm" onClick={runBackendWorkflow} disabled={isRunning || isBackendRunning}>
+          <Button ref={runButtonRef} size="sm" onClick={() => void runBackendWorkflow()} disabled={isRunning || isBackendRunning}>
             {isRunning ? <Loader2 className="size-3.5 animate-spin" /> : <Play className="size-3.5" />}
             Run
           </Button>
@@ -244,6 +283,20 @@ export function RunTracePanel() {
             <span className="sr-only">Reset run trace</span>
           </Button>
         </div>
+        <details className="mt-3 rounded-md border bg-card/50 p-2.5" open={Boolean(selectedSourceId)}>
+          <summary className="flex cursor-pointer items-center gap-2 font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
+            <FileInput className="size-3.5" />导入节点输出
+          </summary>
+          <div className="mt-2.5 space-y-2">
+            <p className="text-[11px] leading-relaxed text-muted-foreground">把真实或测试 JSON 输出注入一个源节点，再启动同一条原生运行链路；不会改写节点配置。</p>
+            {outputInputNodes.length ? <Select value={effectiveImportNodeId} onValueChange={(value) => setImportNodeId(value ?? "")}><SelectTrigger className="h-8 text-xs"><SelectValue placeholder="选择输入节点" /></SelectTrigger><SelectContent>{outputInputNodes.map((node) => <SelectItem key={node.id} value={node.id}>{node.label}</SelectItem>)}</SelectContent></Select> : null}
+            <Textarea value={importOutputText} onChange={(event) => setImportOutputText(event.target.value)} rows={5} className="font-mono text-[10px]" aria-label="导入节点输出 JSON" />
+            {importError ? <p className="text-[11px] text-destructive">{importError}</p> : null}
+            <Button size="sm" variant="outline" className="w-full" onClick={() => void runImportedOutput()} disabled={!outputInputNodes.length || isRunning || isBackendRunning}>
+              <FileInput className="size-3.5" />导入输出并运行
+            </Button>
+          </div>
+        </details>
       </div>
 
       <ScrollArea className="min-h-0 flex-1">
@@ -318,6 +371,40 @@ export function RunTracePanel() {
 
 function hasOpenCLIHdaPackage(nodes: WorkflowProject["nodes"]): boolean {
   return nodes.some((node) => containsOpenCLIHdaReference(node))
+}
+
+type OutputInputNode = { id: string; label: string }
+
+function collectOutputInputNodes(project: WorkflowProject): OutputInputNode[] {
+  const inputNodes: OutputInputNode[] = []
+  for (const node of project.nodes) {
+    if (canReceiveImportedOutput(node)) inputNodes.push({ id: node.id, label: nodeLabel(node) })
+    for (const internalNode of node.internals?.nodes ?? []) {
+      const parsed = readWorkflowProjectNode(internalNode)
+      if (parsed && canReceiveImportedOutput(parsed)) {
+        inputNodes.push({ id: `${node.id}::${parsed.id}`, label: `${nodeLabel(node)} / ${nodeLabel(parsed)}` })
+      }
+    }
+  }
+  return inputNodes
+}
+
+function canReceiveImportedOutput(node: WorkflowProject["nodes"][number]): boolean {
+  return node.kind === "source" || node.capability === "fetch" || Array.isArray(node.params.sources)
+}
+
+function readWorkflowProjectNode(value: unknown): WorkflowProject["nodes"][number] | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null
+  const candidate = value as Record<string, unknown>
+  return typeof candidate.id === "string" && typeof candidate.kind === "string" && typeof candidate.capability === "string"
+    && candidate.params && typeof candidate.params === "object" && !Array.isArray(candidate.params)
+    ? candidate as WorkflowProject["nodes"][number]
+    : null
+}
+
+function nodeLabel(node: WorkflowProject["nodes"][number]): string {
+  const label = node.ui?.label
+  return typeof label === "string" && label.trim() ? label : node.id
 }
 
 function containsOpenCLIHdaReference(value: unknown): boolean {

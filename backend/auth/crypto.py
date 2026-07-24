@@ -12,6 +12,8 @@ import os
 
 from cryptography.fernet import Fernet, InvalidToken
 
+from backend.config import get_settings
+
 ENV_KEY = "CREDENTIAL_ENCRYPTION_KEY"
 
 
@@ -20,7 +22,13 @@ class CredentialCryptoError(RuntimeError):
 
 
 def _fernet() -> Fernet:
-    key = os.environ.get(ENV_KEY, "").strip()
+    # Process environment takes precedence so deployment systems can inject
+    # the secret without an on-disk file. Local development uses the same
+    # repository-root .env convention as the rest of Settings.
+    environment_key = os.environ.get(ENV_KEY)
+    key = environment_key.strip() if environment_key is not None else ""
+    if environment_key is None:
+        key = get_settings().credential_encryption_key.strip()
     if not key:
         raise CredentialCryptoError(
             f"{ENV_KEY} is not set; cannot encrypt/decrypt credentials. Generate one "

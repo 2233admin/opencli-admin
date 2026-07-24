@@ -30,6 +30,7 @@ class RecordGraphNode(BaseModel):
     url: str | None = None
     preview: str | None = None
     status: str | None = None
+    source_published_at: str | None = None
     created_at: datetime | None = None
 
 

@@ -140,7 +140,9 @@ function RoleEditor({
           }}
         >
           <SelectTrigger size="sm" className="w-40">
-            <SelectValue placeholder="选择供应商" />
+            <SelectValue>
+              {() => providerName(pickerProviderId) || '选择供应商'}
+            </SelectValue>
           </SelectTrigger>
           <SelectContent>
             {providers.map((p) => (

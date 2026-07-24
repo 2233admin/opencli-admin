@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.auth.crypto import CredentialCryptoError
 from backend.database import get_db
 from backend.llm.base import LlmAdapterError
 from backend.llm.factory import get_adapter
@@ -187,7 +188,16 @@ async def list_providers(db: AsyncSession = Depends(get_db)) -> ApiResponse:
 async def create_provider(
     body: ModelProviderCreate, db: AsyncSession = Depends(get_db)
 ) -> ApiResponse:
-    provider = ModelProvider(**body.model_dump())
+    try:
+        provider = ModelProvider(**body.model_dump())
+    except CredentialCryptoError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Provider credential encryption is not configured. Set "
+                "CREDENTIAL_ENCRYPTION_KEY before saving an API key."
+            ),
+        ) from exc
     db.add(provider)
     await db.commit()
     await db.refresh(provider)
@@ -202,8 +212,18 @@ async def update_provider(
     provider = result.scalar_one_or_none()
     if not provider:
         raise HTTPException(status_code=404, detail="Provider not found")
-    for field, value in body.model_dump(exclude_unset=True).items():
-        setattr(provider, field, value)
+    try:
+        for field, value in body.model_dump(exclude_unset=True).items():
+            setattr(provider, field, value)
+    except CredentialCryptoError as exc:
+        await db.rollback()
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Provider credential encryption is not configured. Set "
+                "CREDENTIAL_ENCRYPTION_KEY before saving an API key."
+            ),
+        ) from exc
     await db.commit()
     await db.refresh(provider)
     return ApiResponse.ok(ModelProviderRead.from_model(provider))

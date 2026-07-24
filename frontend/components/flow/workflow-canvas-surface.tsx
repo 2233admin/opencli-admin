@@ -49,6 +49,7 @@ import {
 } from "./workflow-editor-overlays"
 import { WorkflowMotionRuntime } from "./workflow-motion-runtime"
 import type { CanvasPoint } from "./workflow-canvas-geometry"
+import { WorkflowWorkbenchPanel, type WorkflowWorkbenchMode } from "./workflow-workbench-panel"
 
 const nodeTypes = {
   workflow: WorkflowNodeComp,
@@ -95,6 +96,10 @@ type WorkflowCanvasSurfaceProps = {
   nodeMenu: NodeMenuState | null
   nodes: WorkflowNode[]
   onBeforeDelete: OnBeforeDelete<WorkflowNode, WorkflowEdge>
+  onAddNodeFromMenu: () => void
+  onAddNoteFromMenu: () => void
+  onImportApp: () => void
+  onTestRun: () => void
   onCanvasMouseDownCapture: (event: ReactMouseEvent<HTMLDivElement>) => void
   onCanvasMouseMoveCapture: (event: ReactMouseEvent<HTMLDivElement>) => void
   onCanvasMouseUpCapture: (event: ReactMouseEvent<HTMLDivElement>) => void
@@ -115,19 +120,19 @@ type WorkflowCanvasSurfaceProps = {
   projectSettingsOpen: boolean
   rejectProposal: () => void
   runTraceOpen: boolean
+  runRequestId: number
   scissorTrail: CanvasPoint[]
-  selectComponentFromMenu: (nodeId: string) => void
   setAgentDrawerOpen: (open: boolean) => void
   setNodeManagementOpen: (open: boolean) => void
   settings: CanvasSettings
   settingsOpen: boolean
-  showNodeInfo: () => void
-  showParameters: () => void
   takeSnapshot: () => void
   toast: string | null
   toolMode: ToolMode
   unlockInternals: (nodeId: string) => void
   workflowProfile: FlowState["workflowProject"]["profile"]
+  workbenchMode: WorkflowWorkbenchMode | null
+  onChangeWorkbenchMode: (mode: WorkflowWorkbenchMode | null) => void
   wrapperRef: RefObject<HTMLDivElement | null>
   zoom: number
   setZoom: (zoom: number) => void
@@ -191,55 +196,28 @@ function OptionalMiniMap({ visible }: { visible: boolean }) {
 }
 
 function NodeMenuOverlay({
-  addDopNodeFromMenu,
-  addPrimitiveFromMenu,
-  capabilities,
-  diveIntoNetwork,
-  dopNodeMenuItems,
-  lockInternals,
   menu,
-  primitiveMenuGroups,
-  showDopOperators,
-  selectComponentFromMenu,
-  settings,
-  showNodeInfo,
-  showParameters,
-  unlockInternals,
+  onAddNode,
+  onAddNote,
+  onImportApp,
+  onTestRun,
   wrapperElement,
 }: {
-  addDopNodeFromMenu: (item: WorkflowNodeCatalogItem) => void
-  addPrimitiveFromMenu: (item: WorkflowPrimitive, itemIndex: number) => void
-  capabilities: WorkflowCapabilitiesResponse | null | undefined
-  diveIntoNetwork: (nodeId: string) => void
-  dopNodeMenuItems: WorkflowNodeCatalogItem[]
-  lockInternals: (nodeId: string) => void
   menu: NodeMenuState | null
-  primitiveMenuGroups: PrimitiveMenuGroup[]
-  showDopOperators: boolean
-  selectComponentFromMenu: (nodeId: string) => void
-  settings: CanvasSettings
-  showNodeInfo: () => void
-  showParameters: () => void
-  unlockInternals: (nodeId: string) => void
+  onAddNode: () => void
+  onAddNote: () => void
+  onImportApp: () => void
+  onTestRun: () => void
   wrapperElement: HTMLElement | null
 }) {
   if (!menu) return null
   return (
     <NodeContextMenu
-      capabilities={capabilities}
-      dopNodeMenuItems={dopNodeMenuItems}
-      language={settings.language}
       menu={menu}
-      onAddDopNode={addDopNodeFromMenu}
-      onAddPrimitive={addPrimitiveFromMenu}
-      onDiveIntoNetwork={diveIntoNetwork}
-      onLockInternals={lockInternals}
-      onSelectComponent={selectComponentFromMenu}
-      onShowNodeInfo={showNodeInfo}
-      onShowParameters={showParameters}
-      onUnlockInternals={unlockInternals}
-      primitiveMenuGroups={primitiveMenuGroups}
-      showDopOperators={showDopOperators}
+      onAddNode={onAddNode}
+      onAddNote={onAddNote}
+      onImportApp={onImportApp}
+      onTestRun={onTestRun}
       wrapperElement={wrapperElement}
     />
   )
@@ -326,20 +304,11 @@ export function WorkflowCanvasSurface(props: WorkflowCanvasSurfaceProps) {
       <NetworkBreadcrumb locked={props.networkLocked} networkStack={props.networkStack} onExit={props.exitCurrentNetwork} />
 
       <NodeMenuOverlay
-        addDopNodeFromMenu={props.addDopNodeFromMenu}
-        addPrimitiveFromMenu={props.addPrimitiveFromMenu}
-        capabilities={props.capabilities}
-        diveIntoNetwork={props.diveIntoNetwork}
-        dopNodeMenuItems={props.dopNodeMenuItems}
-        lockInternals={props.lockInternals}
         menu={props.nodeMenu}
-        primitiveMenuGroups={props.primitiveMenuGroups}
-        showDopOperators={props.networkStack.length === 0}
-        selectComponentFromMenu={props.selectComponentFromMenu}
-        settings={props.settings}
-        showNodeInfo={props.showNodeInfo}
-        showParameters={props.showParameters}
-        unlockInternals={props.unlockInternals}
+        onAddNode={props.onAddNodeFromMenu}
+        onAddNote={props.onAddNoteFromMenu}
+        onImportApp={props.onImportApp}
+        onTestRun={props.onTestRun}
         wrapperElement={props.wrapperRef.current}
       />
 
@@ -350,9 +319,20 @@ export function WorkflowCanvasSurface(props: WorkflowCanvasSurfaceProps) {
         onProfileChange={props.onProfileChange}
         projectSettingsOpen={props.projectSettingsOpen}
         runTraceOpen={props.runTraceOpen}
+        runRequestId={props.runRequestId}
         settingsOpen={props.settingsOpen}
         workflowProfile={props.workflowProfile}
       />
+
+      {props.workbenchMode ? (
+        <WorkflowWorkbenchPanel
+          mode={props.workbenchMode}
+          nodes={props.nodes}
+          edges={props.edges}
+          onModeChange={props.onChangeWorkbenchMode}
+          onClose={() => props.onChangeWorkbenchMode(null)}
+        />
+      ) : null}
 
       <AgentDrawer
         open={props.agentDrawerOpen}

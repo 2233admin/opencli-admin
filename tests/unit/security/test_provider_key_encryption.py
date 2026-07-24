@@ -125,7 +125,7 @@ def test_setter_raises_when_encryption_key_missing(monkeypatch):
     """Setting a real key without CREDENTIAL_ENCRYPTION_KEY configured must
     fail loudly (matches crypto.py / AuthManager precedent) rather than
     silently storing plaintext."""
-    monkeypatch.delenv(crypto.ENV_KEY, raising=False)
+    monkeypatch.setenv(crypto.ENV_KEY, "")
     provider = ModelProvider(name="Test", provider_type="openai")
     with pytest.raises(crypto.CredentialCryptoError):
         provider.api_key = "sk-should-not-be-stored"

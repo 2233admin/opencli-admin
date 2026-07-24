@@ -26,8 +26,9 @@ import {
   type StudioTemplateId,
 } from '@/lib/workflow/studio-templates'
 
-const CATEGORIES = ['全部', '采集与监控', '内容处理', 'Agent 分析', '分发与集成', '完整链路'] as const
+const CATEGORIES = ['全部', '真实业务测试', '采集与监控', '内容处理', 'Agent 分析', '分发与集成', '完整链路'] as const
 const ICONS = {
+  '真实业务测试': Sparkles,
   '采集与监控': Database,
   '内容处理': Blocks,
   'Agent 分析': Sparkles,

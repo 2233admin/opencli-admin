@@ -85,6 +85,7 @@ export function WorkflowFloatingPanels({
   onProfileChange,
   projectSettingsOpen,
   runTraceOpen,
+  runRequestId,
   settingsOpen,
   workflowProfile,
 }: {
@@ -94,6 +95,7 @@ export function WorkflowFloatingPanels({
   onProfileChange: (profile: WorkflowProfile) => void
   projectSettingsOpen: boolean
   runTraceOpen: boolean
+  runRequestId: number
   settingsOpen: boolean
   workflowProfile: WorkflowProfile
 }) {
@@ -101,7 +103,7 @@ export function WorkflowFloatingPanels({
     <>
       {runTraceOpen ? (
         <div className={cn("workflow-floating-panel absolute top-3 z-40", nodeManagementOpen ? "left-[28.75rem]" : "left-3")}>
-          <RunTracePanel />
+          <RunTracePanel runRequestId={runRequestId} />
         </div>
       ) : null}
 

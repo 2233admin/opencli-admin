@@ -244,6 +244,7 @@ export function useInfiniteTasks(
 
 export function useRecords(params?: {
   source_id?: string
+  project_id?: string
   status?: string
   search?: string
   page?: number

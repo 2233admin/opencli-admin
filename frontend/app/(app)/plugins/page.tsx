@@ -51,9 +51,16 @@ import {
   useBackendPluginCatalog,
   type BackendPluginInstallation,
 } from '@/lib/plugins/backend-plugin-catalog'
+import {
+  nodeCapabilityReadinessLabel,
+  nodeCapabilityReadinessTone,
+  type BackendNodeCapabilityCatalog,
+  type BackendNodeCapabilityDefinition,
+  type BackendNodeCapabilityReadiness,
+} from '@/lib/plugins/backend-node-capabilities'
 import { useOpenCLIAdapterRegistry } from '@/lib/plugins/use-opencli-adapter-registry'
 import { cn } from '@/lib/utils'
-import { runtimeStatusLabel, runtimeStatusTone } from '@/lib/workflow/capabilities'
+import { backendNodeCapabilityIsRunnable } from '@/lib/workflow/backend-node-capability-adapter'
 import { getWorkflowNodeCatalog, type WorkflowNodeCatalogItem } from '@/lib/workflow/node-catalog'
 import { localizeNodeText } from '@/lib/workflow/node-i18n'
 import { useWorkflowCapabilities } from '@/lib/workflow/use-workflow-capabilities'
@@ -64,6 +71,17 @@ type ProviderState = 'ready' | 'partial' | 'configuration' | 'unavailable' | 'ma
 type RegistryPluginProvider = PluginProvider & {
   installation?: BackendPluginInstallation
   backendUnavailable?: boolean
+  nodeCatalog?: boolean
+}
+
+type ProviderNodeView = {
+  id: string
+  label: string
+  description: string
+  category: string
+  readiness: BackendNodeCapabilityReadiness
+  runtimeReady: boolean
+  missing: string[]
 }
 
 const PROVIDER_ICONS: Record<PluginProviderIcon, typeof Wrench> = {
@@ -101,24 +119,24 @@ function isPluginCategory(value: string | null): value is PluginCategoryFilter {
 
 function providerState(
   provider: RegistryPluginProvider,
-  nodesById: Map<string, WorkflowNodeCatalogItem>,
+  nodes: ProviderNodeView[],
   opencliAdapterCount: number,
 ): ProviderState {
   if (provider.marketplace) return 'marketplace'
   if (provider.backendUnavailable) return 'unavailable'
-  const nodes = provider.nodeIds.map((id) => nodesById.get(id)).filter(Boolean) as WorkflowNodeCatalogItem[]
   if (provider.installation) {
     if (provider.installation.runtimeStatus !== 'READY') return 'configuration'
-    if (nodes.length > 0 && nodes.every((node) => node.runtimeCapability?.status !== 'runnable')) {
+    if (nodes.length > 0 && nodes.every((node) => !nodeCapabilityIsUsable(node))) {
       return 'configuration'
     }
-    if (nodes.some((node) => node.runtimeCapability?.status !== 'runnable')) return 'partial'
+    if (nodes.some((node) => !nodeCapabilityIsUsable(node))) return 'partial'
     return 'ready'
   }
   if (provider.id === 'opencli' && opencliAdapterCount > 0) return 'ready'
 
-  if (nodes.some((node) => node.runtimeCapability?.status === 'runnable')) return 'ready'
-  if (nodes.some((node) => node.runtimeCapability?.backendAvailable)) return 'configuration'
+  if (nodes.length > 0 && nodes.every(nodeCapabilityIsUsable)) return 'ready'
+  if (nodes.some(nodeCapabilityIsUsable)) return 'partial'
+  if (nodes.length > 0) return 'configuration'
   return 'unavailable'
 }
 
@@ -227,22 +245,43 @@ function ProviderCard({
   )
 }
 
+function CapabilityMetric({
+  label,
+  value,
+  detail,
+}: {
+  label: string
+  value: number
+  detail: string
+}) {
+  return (
+    <div className="rounded-md border bg-muted/15 px-3 py-2.5">
+      <div className="text-3xs text-muted-foreground">{label}</div>
+      <div className="mt-1 flex items-end justify-between gap-3">
+        <span className="font-mono text-lg font-semibold tabular-nums">{value}</span>
+        <span className="pb-0.5 text-3xs text-muted-foreground">{detail}</span>
+      </div>
+    </div>
+  )
+}
+
 function ProviderDetails({
   provider,
-  nodesById,
+  nodes,
   state,
   opencliAdapterCount,
   onImportRss,
 }: {
   provider: RegistryPluginProvider
-  nodesById: Map<string, WorkflowNodeCatalogItem>
+  nodes: ProviderNodeView[]
   state: ProviderState
   opencliAdapterCount: number
   onImportRss: () => void
 }) {
   const Icon = PROVIDER_ICONS[provider.icon]
-  const nodes = provider.nodeIds.map((id) => nodesById.get(id)).filter(Boolean) as WorkflowNodeCatalogItem[]
   const installation = provider.installation
+  const hasRunnableNode = nodes.some(nodeCapabilityIsUsable)
+  const hasComposedNode = nodes.some((node) => node.readiness === 'composed')
 
   return (
     <SheetContent className="w-[94vw] sm:max-w-lg">
@@ -397,22 +436,25 @@ function ProviderDetails({
             </div>
             <div className="divide-y rounded-lg border">
               {nodes.map((node) => {
-                const text = localizeNodeText(
-                  node.id,
-                  { label: node.label, description: node.description },
-                  'zh-CN',
-                )
+                const text = localizeNodeText(node.id, { label: node.label, description: node.description }, 'zh-CN')
                 return (
                   <div key={node.id} className="flex items-center gap-3 px-3 py-2.5">
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-xs font-medium">{text.label}</div>
-                      <div className="mt-0.5 truncate font-mono text-3xs text-muted-foreground">{node.id}</div>
+                      <div className="mt-0.5 truncate font-mono text-3xs text-muted-foreground">
+                        {node.category} · {node.id}
+                      </div>
+                      {node.missing[0] ? (
+                        <p className="mt-1 text-3xs leading-4 text-muted-foreground">
+                          缺少：{node.missing.join('、')}
+                        </p>
+                      ) : null}
                     </div>
                     <Badge
                       variant="outline"
-                      className={cn('h-5 shrink-0 px-1.5 text-3xs', runtimeStatusTone(node.runtimeCapability?.status))}
+                      className={cn('h-5 shrink-0 px-1.5 text-3xs', nodeCapabilityReadinessTone(node.readiness))}
                     >
-                      {runtimeStatusLabel(node.runtimeCapability?.status)}
+                      {nodeCapabilityReadinessLabel(node.readiness)}
                     </Badge>
                   </div>
                 )
@@ -424,13 +466,17 @@ function ProviderDetails({
           </section>
         )}
 
-        {!provider.marketplace && installation?.runtimeStatus !== 'BLOCKED' ? (
+        {!provider.marketplace && installation?.runtimeStatus !== 'BLOCKED' && hasRunnableNode ? (
           <Button className="w-full" nativeButton={false} render={<Link href="/studio" />}>
             在工作流中使用
           </Button>
         ) : installation?.runtimeStatus === 'BLOCKED' ? (
           <Button className="w-full" disabled title="需要兼容的 OpenCLI 运行适配器">
             能力已登记，等待运行适配器
+          </Button>
+        ) : hasComposedNode ? (
+          <Button className="w-full" disabled title="组合依赖与运行绑定尚未全部验证">
+            组合方案可预览，等待依赖就绪
           </Button>
         ) : (
           <Button className="w-full" disabled title="插件安装运行时尚未接入">
@@ -458,7 +504,13 @@ export default function PluginHubPage() {
     error: pluginError,
     loading: pluginLoading,
   } = useBackendPluginCatalog(true)
-  const { capabilities, error: capabilityError, loading: capabilityLoading } = useWorkflowCapabilities(true)
+  const {
+    capabilities,
+    nodeCatalog,
+    error: capabilityError,
+    catalogError,
+    loading: capabilityLoading,
+  } = useWorkflowCapabilities(true)
   const {
     summary,
     error: opencliError,
@@ -466,6 +518,16 @@ export default function PluginHubPage() {
   } = useOpenCLIAdapterRegistry(true)
   const nodes = useMemo(() => getWorkflowNodeCatalog('intelligence', capabilities), [capabilities])
   const nodesById = useMemo(() => new Map(nodes.map((node) => [node.id, node])), [nodes])
+  const nodeCatalogCounts = useMemo(() => {
+    const catalogNodes = nodeCatalog?.nodes ?? []
+    const runnable = catalogNodes.filter(backendNodeCapabilityIsRunnable).length
+    const composed = catalogNodes.filter((node) => node.readiness === 'composed').length
+    return {
+      runnable,
+      composed,
+      pending: Math.max(0, catalogNodes.length - runnable - composed),
+    }
+  }, [nodeCatalog])
 
   function updateRoute(next: { tab?: PluginPageTab; category?: PluginCategoryFilter }) {
     const params = new URLSearchParams(searchParams.toString())
@@ -482,7 +544,10 @@ export default function PluginHubPage() {
   const availableProviders = useMemo(() => {
     const source: RegistryPluginProvider[] = activeTab === 'installed'
       ? installations
-        ? installations.map(backendProviderFromInstallation)
+        ? [
+            ...(nodeCatalog?.nodes.length ? [backendNodeCatalogProvider(nodeCatalog)] : []),
+            ...installations.map(backendProviderFromInstallation),
+          ]
         : pluginError
           ? PLUGIN_PROVIDERS.filter((provider) => provider.bundled).map((provider) => ({
               ...provider,
@@ -491,7 +556,7 @@ export default function PluginHubPage() {
           : []
       : PLUGIN_PROVIDERS.filter((provider) => provider.marketplace)
     return source
-  }, [activeTab, installations, pluginError])
+  }, [activeTab, installations, nodeCatalog, pluginError])
 
   const categoryCounts = useMemo(() => {
     const counts = new Map<PluginCategoryFilter, number>([['all', availableProviders.length]])
@@ -597,7 +662,7 @@ export default function PluginHubPage() {
             </div>
           </div>
 
-          {pluginError || capabilityError || opencliError ? (
+          {pluginError || catalogError || capabilityError || opencliError ? (
             <div className="mb-4 flex items-start gap-3 rounded-lg border border-warning/30 bg-warning/5 p-3 text-xs">
               <CircleAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-warning" />
               <div>
@@ -605,7 +670,7 @@ export default function PluginHubPage() {
                   {pluginError ? '后端插件注册表暂时不可用' : '部分 Provider 状态暂时不可用'}
                 </div>
                 <p className="mt-1 text-muted-foreground">
-                  {pluginError ?? capabilityError ?? opencliError}
+                  {pluginError ?? catalogError ?? capabilityError ?? opencliError}
                 </p>
                 {pluginError ? (
                   <p className="mt-1 text-muted-foreground">
@@ -614,6 +679,19 @@ export default function PluginHubPage() {
                 ) : null}
               </div>
             </div>
+          ) : null}
+
+          {nodeCatalog ? (
+            <section aria-label="后端节点能力摘要" className="mb-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+              <CapabilityMetric label="节点总数" value={nodeCatalog.summary.total} detail={`${nodeCatalog.categories.length} 个分类`} />
+              <CapabilityMetric label="可运行" value={nodeCatalogCounts.runnable} detail="已验证运行绑定" />
+              <CapabilityMetric label="组合能力" value={nodeCatalogCounts.composed} detail="预览，不计入可运行" />
+              <CapabilityMetric
+                label="待补齐"
+                value={nodeCatalogCounts.pending}
+                detail="受阻或需要插件"
+              />
+            </section>
           ) : null}
 
           {(pluginLoading || capabilityLoading || opencliLoading) &&
@@ -627,10 +705,11 @@ export default function PluginHubPage() {
           ) : providers.length ? (
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
               {providers.map((provider) => {
-                const state = providerState(provider, nodesById, summary.adapterCount)
+                const providerNodes = providerNodeViews(provider, nodeCatalog, nodesById)
+                const state = providerState(provider, providerNodes, summary.adapterCount)
                 const capabilityCount = provider.id === 'opencli'
                   ? summary.adapterCount
-                  : provider.nodeIds.filter((id) => nodesById.has(id)).length
+                  : providerNodes.length
                 const metric = provider.id === 'opencli'
                   ? `${capabilityCount} 个网站`
                   : capabilityCount > 0
@@ -689,8 +768,12 @@ export default function PluginHubPage() {
         {selectedProvider ? (
           <ProviderDetails
             provider={selectedProvider}
-            nodesById={nodesById}
-            state={providerState(selectedProvider, nodesById, summary.adapterCount)}
+            nodes={providerNodeViews(selectedProvider, nodeCatalog, nodesById)}
+            state={providerState(
+              selectedProvider,
+              providerNodeViews(selectedProvider, nodeCatalog, nodesById),
+              summary.adapterCount,
+            )}
             opencliAdapterCount={summary.adapterCount}
             onImportRss={() => {
               setSelectedProvider(null)
@@ -745,6 +828,79 @@ function backendProviderFromInstallation(
     bundled: installation.bundled,
     installation,
   }
+}
+
+function backendNodeCatalogProvider(
+  catalog: BackendNodeCapabilityCatalog,
+): RegistryPluginProvider {
+  return {
+    id: 'backend-node-capabilities',
+    name: 'OpenCLI 节点能力',
+    author: catalog.authority === 'backend' ? 'OpenCLI Backend' : catalog.authority,
+    category: 'bundle',
+    description: '后端统一登记的原生、组合、插件与兼容节点；Plugin Center 和 Studio 使用同一份目录。',
+    icon: 'puzzle',
+    nodeIds: catalog.nodes.map((node) => node.id),
+    tags: ['node', 'capability', 'dify', ...catalog.categories.map((category) => category.label)],
+    bundled: true,
+    nodeCatalog: true,
+  }
+}
+
+function providerNodeViews(
+  provider: RegistryPluginProvider,
+  catalog: BackendNodeCapabilityCatalog | null,
+  legacyNodesById: Map<string, WorkflowNodeCatalogItem>,
+): ProviderNodeView[] {
+  const referencedIds = new Set(provider.nodeIds)
+  const installation = provider.installation
+  for (const definition of installation?.nodeDefinitions ?? []) referencedIds.add(definition.id)
+  for (const capability of installation?.capabilities ?? []) {
+    if (capability.runtimeAdapterId) referencedIds.add(capability.runtimeAdapterId)
+  }
+
+  const backendNodes = (catalog?.nodes ?? []).filter((node) => {
+    if (provider.nodeCatalog) return true
+    if (referencedIds.has(node.id)) return true
+    return installation ? node.provider === installation.providerKey : false
+  })
+  if (backendNodes.length > 0) return backendNodes.map(providerNodeViewFromBackend)
+
+  return [...referencedIds].flatMap((id) => {
+    const node = legacyNodesById.get(id)
+    return node ? [providerNodeViewFromLegacy(node)] : []
+  })
+}
+
+function providerNodeViewFromBackend(node: BackendNodeCapabilityDefinition): ProviderNodeView {
+  const runtimeReady = backendNodeCapabilityIsRunnable(node)
+  return {
+    id: node.id,
+    label: node.label,
+    description: node.description,
+    category: node.category,
+    readiness: node.readiness === 'runnable' && !runtimeReady ? 'blocked' : node.readiness,
+    runtimeReady,
+    missing: node.missing,
+  }
+}
+
+function providerNodeViewFromLegacy(node: WorkflowNodeCatalogItem): ProviderNodeView {
+  const status = node.runtimeCapability?.status
+  const runtimeReady = status === 'runnable' && node.runtimeCapability?.backendAvailable === true
+  return {
+    id: node.id,
+    label: node.label,
+    description: node.description,
+    category: node.category,
+    readiness: runtimeReady ? 'runnable' : 'blocked',
+    runtimeReady,
+    missing: node.runtimeCapability?.missing ?? [],
+  }
+}
+
+function nodeCapabilityIsUsable(node: ProviderNodeView): boolean {
+  return node.runtimeReady
 }
 
 function pluginCategoryFromInstallation(

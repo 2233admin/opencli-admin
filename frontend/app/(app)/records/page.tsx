@@ -160,9 +160,9 @@ export default function RecordsPage() {
       tabs={<RouteTabs tabs={DATA_EXPLORER_TABS} />}
       className="max-w-none"
     >
-      <section className="grid min-h-[38rem] overflow-hidden rounded-xl border bg-card lg:grid-cols-[17rem_minmax(0,1fr)]">
+      <section className="grid overflow-hidden rounded-xl border bg-card lg:grid-cols-[15rem_minmax(0,1fr)]">
         <aside className="flex min-h-0 flex-col border-b bg-muted/20 lg:border-r lg:border-b-0">
-          <div className="border-b px-4 py-4">
+          <div className="border-b px-3 py-3">
             <div className="flex items-center gap-2">
               <Database className="size-4 text-muted-foreground" />
               <h2 className="font-medium">数据集</h2>
@@ -235,7 +235,7 @@ export default function RecordsPage() {
         </aside>
 
         <div className="flex min-w-0 flex-col">
-          <header className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3">
+          <header className="grid gap-3 border-b px-4 py-3 sm:grid-cols-[minmax(0,1fr)_18rem] sm:items-center">
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <h2 className="truncate font-medium">{selectedSource?.name ?? '全部数据'}</h2>
@@ -247,7 +247,7 @@ export default function RecordsPage() {
                 当前显示 {visibleFields.length} 个业务字段，每页 {PAGE_SIZE} 行
               </p>
             </div>
-            <div className="relative w-full sm:w-72">
+            <div className="relative w-full">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 value={search}
@@ -259,20 +259,25 @@ export default function RecordsPage() {
           </header>
 
           {recordsQuery.isLoading ? (
-            <div className="p-4">
+            <div className="min-h-[20rem] p-4">
               <LoadingState rows={8} />
             </div>
           ) : recordsQuery.isError ? (
-            <div className="p-4">
+            <div className="grid min-h-[20rem] place-items-center p-4">
               <ErrorState message={(recordsQuery.error as Error)?.message} hint={BACKEND_HINT} />
             </div>
           ) : records.length === 0 ? (
-            <div className="grid flex-1 place-items-center p-8">
-              <EmptyState title="这个数据集暂无成果" description="运行采集管线后，结构化数据会显示在这里。" />
+            <div className="grid min-h-[20rem] place-items-center px-4 py-6 sm:px-8">
+              <div className="w-full max-w-xl">
+                <EmptyState
+                  title="这个数据集暂无成果"
+                  description="运行采集管线后，结构化字段和原始证据会显示在这里。"
+                />
+              </div>
             </div>
           ) : (
             <>
-              <div className="min-h-0 flex-1 overflow-auto">
+              <div className="min-h-[32rem] flex-1 overflow-auto">
                 <Table className="min-w-max">
                   <TableHeader className="sticky top-0 z-10 bg-card shadow-[0_1px_0_hsl(var(--border))]">
                     <TableRow>

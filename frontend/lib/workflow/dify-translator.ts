@@ -1,11 +1,14 @@
 import {
   parseWorkflowProject,
-  type WorkflowCapability,
-  type WorkflowNodeKind,
   type WorkflowProject,
   type WorkflowProjectEdge,
   type WorkflowProjectNode,
 } from "./schema"
+import {
+  difyNodeMappingBlocker,
+  resolveDifyNodeCapability,
+  type DifyNodeCapabilityMapping,
+} from "./dify-capability-map"
 
 type JsonRecord = Record<string, unknown>
 
@@ -14,13 +17,6 @@ type DifyDsl = {
   kind?: unknown
   version?: unknown
   workflow: JsonRecord
-}
-
-type NodeMapping = {
-  kind: WorkflowNodeKind
-  capability: WorkflowCapability
-  icon: string
-  color: string
 }
 
 export type DifyTranslationReport = {
@@ -87,12 +83,14 @@ export function translateDifyWorkflowToWorkflowProject(input: unknown): DifyTran
   const workflowName = readString(app.name) ?? "Dify Workflow Import"
   const usedNodeIds = new Set<string>()
   const nodeLookup = new Map<string, string>()
-  const nodes = nodeEntries.map((entry, index) => {
+  const translatedNodes = nodeEntries.map((entry, index) => {
     const translated = translateNode(entry, index, usedNodeIds, readString(input.version))
     const sourceId = readString(entry.id)
-    if (sourceId) nodeLookup.set(sourceId, translated.id)
+    if (sourceId) nodeLookup.set(sourceId, translated.node.id)
     return translated
   })
+  const nodes = translatedNodes.map(({ node }) => node)
+  const mappingBlockers = translatedNodes.flatMap(({ blocker }) => blocker ? [blocker] : [])
   const translatedEdges = translateEdges(graph.edges, nodeLookup)
   const packageId = uniqueSlug(`dify-package-${workflowName}`, new Set())
   const project = parseWorkflowProject({
@@ -108,6 +106,7 @@ export function translateDifyWorkflowToWorkflowProject(input: unknown): DifyTran
         params: {
           packageFormat: "dify",
           packageExecution: "blocked",
+          executionAuthority: "backend-authoritative",
           appMode: readString(app.mode),
           dslVersion: readString(input.version),
           compatRuntime: {
@@ -137,6 +136,13 @@ export function translateDifyWorkflowToWorkflowProject(input: unknown): DifyTran
                 detail: "浏览器翻译仅用于结构预览，不能发布或运行。",
                 blockingActions: ["publish", "run"],
               },
+              ...mappingBlockers.map((blocker) => ({
+                id: `${blocker.code}:${blocker.nodeId ?? "workflow"}`,
+                title: blocker.code === "import.mapping_missing" ? "缺少节点映射" : "节点映射需要解析",
+                detail: blocker.message,
+                nodeId: blocker.nodeId,
+                blockingActions: ["publish", "run"],
+              })),
             ],
           },
         },
@@ -175,6 +181,7 @@ export function translateDifyWorkflowToWorkflowProject(input: unknown): DifyTran
           code: "dify_backend_inspection_required",
           message: "浏览器翻译仅用于结构预览；必须经后端 Graphon 检查后才能执行。",
         },
+        ...mappingBlockers,
       ],
     },
   }
@@ -185,26 +192,45 @@ function translateNode(
   index: number,
   usedIds: Set<string>,
   dslVersion?: string,
-): WorkflowProjectNode {
+): { node: WorkflowProjectNode; blocker: DifyCompatibilityBlocker | null } {
   const data = isRecord(entry.data) ? entry.data : {}
   const nodeType = readString(data.type) ?? readString(entry.type) ?? "unknown"
   const title = readString(data.title) ?? `Dify ${nodeType} ${index + 1}`
   const sourceId = readString(entry.id)
-  const mapping = classifyNode(nodeType)
+  const mapping = resolveDifyNodeCapability(nodeType, data)
   const id = uniqueSlug(`${prefixFor(mapping)}-${title}`, usedIds)
+  const blocker = difyNodeMappingBlocker(mapping, sourceId, nodeType)
+  const sanitizedConfig = sanitizePreviewValue(data)
   return {
+    blocker,
+    node: {
       id,
       kind: mapping.kind,
       capability: mapping.capability,
       params: {
         difyType: nodeType,
         title,
-        config: compactData(data),
+        config: isRecord(sanitizedConfig) ? sanitizedConfig : {},
+        sourceProvenance: {
+          format: "dify-app-dsl",
+          version: dslVersion,
+          nodeId: sourceId,
+          nodeType,
+          position: readPosition(entry.position) ?? null,
+        },
+        capabilityRef: {
+          id: mapping.capabilityId,
+          candidates: [...mapping.candidateCapabilityIds],
+          resolution: mapping.resolution,
+          source: "opencli-capability-catalog",
+        },
         compatRuntime: {
           target: "dify",
           dslVersion,
           nodeType,
           sourceNodeId: sourceId,
+          executionAuthority: "backend-only",
+          runtimeBinding: null,
         },
       },
       sourceAnchor: {
@@ -219,42 +245,18 @@ function translateNode(
         icon: mapping.icon,
         color: mapping.color,
         position: readPosition(entry.position) ?? { x: 420 + (index % 4) * 300, y: 100 + Math.floor(index / 4) * 180 },
-        dify: { source: "dify", originalId: sourceId, type: nodeType },
+        dify: {
+          source: "dify",
+          originalId: sourceId,
+          type: nodeType,
+          dslVersion,
+          capabilityId: mapping.capabilityId,
+          capabilityCandidates: [...mapping.candidateCapabilityIds],
+          mappingResolution: mapping.resolution,
+        },
       },
+    },
   }
-}
-
-function classifyNode(type: string): NodeMapping {
-  const value = type.toLowerCase()
-  if (["start", "trigger", "trigger-webhook"].includes(value)) {
-    return { kind: "schedule", capability: "trigger", icon: "Play", color: "var(--chart-1)" }
-  }
-  if (["if-else", "question-classifier", "iteration", "loop"].includes(value)) {
-    return { kind: "router", capability: "route", icon: "GitBranch", color: "var(--chart-5)" }
-  }
-  if (["llm", "agent"].includes(value)) {
-    return {
-      kind: "agent",
-      capability: "summarize",
-      icon: "Sparkles",
-      color: "var(--chart-2)",
-    }
-  }
-  if (["knowledge-retrieval", "http-request", "tool"].includes(value)) {
-    return {
-      kind: "source",
-      capability: "fetch",
-      icon: "Globe",
-      color: "var(--chart-4)",
-    }
-  }
-  if (["answer", "end"].includes(value)) {
-    return { kind: "notify", capability: "send", icon: "Send", color: "var(--chart-1)" }
-  }
-  if (["code", "template-transform", "variable-aggregator", "parameter-extractor", "document-extractor"].includes(value)) {
-    return { kind: "agent", capability: "normalize", icon: "ArrowRightLeft", color: "var(--chart-2)" }
-  }
-  return { kind: "action", capability: "send", icon: "Play", color: "var(--chart-3)" }
 }
 
 function translateEdges(
@@ -293,14 +295,6 @@ function translateEdges(
     })
   }
   return { edges, unsupportedEdgeCount }
-}
-
-function compactData(data: JsonRecord): JsonRecord {
-  const compact: JsonRecord = {}
-  for (const key of ["type", "title", "model", "provider", "query_variable_selector", "dataset_ids", "method", "url", "code_language"]) {
-    if (key in data) compact[key] = compactValue(sanitizePreviewValue(data[key], key))
-  }
-  return compact
 }
 
 function sanitizePreviewValue(value: unknown, key = ""): unknown {
@@ -366,13 +360,7 @@ function isSecretPreviewKey(key: string): boolean {
     || ["_api_key", "_password", "_secret", "_access_token", "_refresh_token"].some((suffix) => key.endsWith(suffix))
 }
 
-function compactValue(value: unknown): unknown {
-  if (value == null || typeof value === "number" || typeof value === "boolean") return value
-  const serialized = typeof value === "string" ? value : JSON.stringify(value)
-  return serialized.length > 400 ? `${serialized.slice(0, 399)}...` : serialized
-}
-
-function prefixFor(mapping: NodeMapping): string {
+function prefixFor(mapping: DifyNodeCapabilityMapping): string {
   if (mapping.kind === "schedule") return "trigger"
   if (mapping.kind === "source") return "source"
   if (mapping.kind === "router") return "router"

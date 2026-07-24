@@ -1,4 +1,9 @@
 import type {
+  ParameterFieldType,
+  ParameterInterface,
+  ParameterInterfaceField,
+} from "@/lib/flow/types"
+import type {
   AdapterBinding,
   WorkflowCapability,
   WorkflowNodeKind,
@@ -52,6 +57,77 @@ export type WorkflowNodeCatalogItem = {
 
 export const COLLECTION_NEED_CATALOG_ID = "intelligence.input.collection-need"
 export const TURBOPUSH_PUBLISH_CATALOG_ID = "intelligence.output.turbopush-publish"
+export const RECORD_HYGIENE_PACKAGE_CATALOG_ID = "package.processing.record-hygiene"
+
+const RECORD_HYGIENE_INTERNALS: NonNullable<WorkflowProjectNode["internals"]> = {
+  locked: true,
+  nodes: [
+    {
+      id: "normalize",
+      kind: "agent",
+      capability: "normalize",
+      params: { language: "zh-CN", preserveSourceRefs: true },
+      ui: {
+        label: "Normalize Items",
+        description: "统一字段，记录语言标注并保留来源引用（不翻译内容）",
+        icon: "ArrowRightLeft",
+        color: "var(--chart-2)",
+        catalogId: "intelligence.processing.normalize",
+        position: { x: 80, y: 120 },
+      },
+    },
+    {
+      id: "dedupe",
+      kind: "agent",
+      capability: "dedupe",
+      params: { key: "title+source+publishedAt", window: "24h" },
+      ui: {
+        label: "Dedupe Items",
+        description: "按稳定业务键和时间窗口去重",
+        icon: "Filter",
+        color: "var(--chart-2)",
+        catalogId: "intelligence.processing.dedupe",
+        position: { x: 400, y: 120 },
+      },
+    },
+    {
+      id: "record-acceptance",
+      kind: "control",
+      capability: "accept",
+      params: {
+        mode: "automatic_with_review",
+        schema: "record.v1",
+        dedupe: "required",
+        lineageRequired: true,
+        minQuality: 0,
+      },
+      ui: {
+        label: "Record Acceptance Gate",
+        description: "按 schema、质量和 lineage 接收 Record",
+        icon: "BadgeCheck",
+        color: "var(--chart-3)",
+        catalogId: "intelligence.control.record-acceptance",
+        position: { x: 720, y: 120 },
+      },
+    },
+  ],
+  edges: [
+    {
+      id: "normalize-dedupe",
+      source: "normalize",
+      target: "dedupe",
+      sourcePort: "out",
+      targetPort: "in",
+    },
+    {
+      id: "dedupe-record-acceptance",
+      source: "dedupe",
+      target: "record-acceptance",
+      sourcePort: "out",
+      targetPort: "candidates",
+    },
+  ],
+}
 
 const JIN10_ADAPTER: AdapterBinding = {
   id: "jin10-kuaixun",
@@ -92,6 +168,7 @@ export type OpenCLISourceSlot = {
   site: string
   command: string
   args: Record<string, unknown>
+  positionalArgs?: string[]
   adapterId?: string
   format?: string
   mode?: string
@@ -109,7 +186,8 @@ export const DEFAULT_OPENCLI_HDA_SOURCES: OpenCLISourceSlot[] = [
     sourceGroup: "video",
     site: "bilibili",
     command: "search",
-    args: { keyword: "ai" },
+    args: { limit: 20 },
+    positionalArgs: ["ai"],
   },
   {
     id: "xiaohongshu",
@@ -117,7 +195,8 @@ export const DEFAULT_OPENCLI_HDA_SOURCES: OpenCLISourceSlot[] = [
     sourceGroup: "social",
     site: "xiaohongshu",
     command: "search",
-    args: { keyword: "ai" },
+    args: {},
+    positionalArgs: ["ai"],
   },
 ]
 
@@ -132,7 +211,10 @@ export function opencliAdaptersForSourceSlots(sources: OpenCLISourceSlot[]): Ada
   return Array.from(new Map(adapters.map((adapter) => [adapter.id, adapter])).values())
 }
 
-export function buildOpenCLIMultiSourceHDAInternals(sources: OpenCLISourceSlot[]): WorkflowProjectNode["internals"] {
+export function buildOpenCLIMultiSourceHDAInternals(
+  sources: OpenCLISourceSlot[],
+  options: { exposeRawSourceItems?: boolean } = {},
+): WorkflowProjectNode["internals"] {
   const sourceGroups = sources.map((source) => source.sourceGroup || source.site)
   const sourcePoolNode = {
     id: "source-pool",
@@ -157,6 +239,7 @@ export function buildOpenCLIMultiSourceHDAInternals(sources: OpenCLISourceSlot[]
       site: source.site,
       command: source.command,
       args: source.args,
+      ...(source.positionalArgs ? { positionalArgs: source.positionalArgs } : {}),
       sourceGroup: source.sourceGroup,
       ...(source.format ? { format: source.format } : {}),
       ...(source.mode ? { mode: source.mode } : {}),
@@ -176,6 +259,20 @@ export function buildOpenCLIMultiSourceHDAInternals(sources: OpenCLISourceSlot[]
     },
   }))
   const midpointY = Math.max(0, ((sourceNodes.length - 1) * 150) / 2)
+  const sourcePoolEdges = sourceNodes.map((sourceNode) => ({
+    id: `source-pool-${sourceNode.id}`,
+    source: "source-pool",
+    target: sourceNode.id,
+    sourcePort: "out",
+    targetPort: "in",
+  }))
+  if (options.exposeRawSourceItems) {
+    return {
+      locked: true,
+      nodes: [sourcePoolNode, ...sourceNodes],
+      edges: sourcePoolEdges,
+    }
+  }
   const outputNode = {
     id: "collection-output",
     kind: "inbox" as const,
@@ -212,13 +309,7 @@ export function buildOpenCLIMultiSourceHDAInternals(sources: OpenCLISourceSlot[]
       outputNode,
     ],
     edges: [
-      ...sourceNodes.map((sourceNode) => ({
-        id: `source-pool-${sourceNode.id}`,
-        source: "source-pool",
-        target: sourceNode.id,
-        sourcePort: "out",
-        targetPort: "in",
-      })),
+      ...sourcePoolEdges,
       ...sourceNodes.map((sourceNode) => ({
         id: `${sourceNode.id}-normalize`,
         source: sourceNode.id,
@@ -319,7 +410,7 @@ export const WORKFLOW_NODE_CATALOG: WorkflowNodeCatalogItem[] = [
     id: "intelligence.processing.normalize",
     idPrefix: "normalize",
     label: "Normalize Items",
-    description: "统一字段、语言和时间格式",
+    description: "统一字段与时间格式，并记录语言标注（不翻译内容）",
     category: "processing",
     profile: "intelligence",
     kind: "agent",
@@ -437,6 +528,49 @@ export const WORKFLOW_NODE_CATALOG: WorkflowNodeCatalogItem[] = [
       minQuality: 0,
     },
     keywords: ["record", "acceptance", "gate", "quality", "lineage", "入库", "审核"],
+  },
+  {
+    id: RECORD_HYGIENE_PACKAGE_CATALOG_ID,
+    idPrefix: "pkg-record-hygiene",
+    label: "Record Hygiene & Acceptance",
+    description: "默认清洗管线：标准化、去重并通过 Record Acceptance Gate 准入",
+    category: "package",
+    profile: "intelligence",
+    kind: "agent",
+    capability: "normalize",
+    icon: "ShieldCheck",
+    color: "var(--chart-2)",
+    params: {
+      template: "record-hygiene",
+      lockedInternals: true,
+      language: "zh-CN",
+      preserveSourceRefs: true,
+      key: "title+source+publishedAt",
+      window: "24h",
+      mode: "automatic_with_review",
+      schema: "record.v1",
+      lineageRequired: true,
+      minQuality: 0,
+    },
+    topicCollapse: {
+      groupId: "record-hygiene-package",
+      nodeCount: 3,
+      mode: "locked",
+      packageInternal: true,
+    },
+    internals: RECORD_HYGIENE_INTERNALS,
+    keywords: [
+      "package",
+      "record hygiene",
+      "normalize",
+      "dedupe",
+      "acceptance",
+      "cleaning",
+      "记录清洗",
+      "准入",
+      "标准化",
+      "去重",
+    ],
   },
   {
     id: "intelligence.output.inbox",
@@ -762,11 +896,13 @@ export function getWorkflowNodeCatalog(
     }
   })
   if (profile !== "intelligence") return staticCatalog
-  const dynamicPluginCatalog = (capabilities?.catalog ?? []).flatMap((runtimeCapability) => {
-    const item = pluginNodeCatalogItem(runtimeCapability)
+  const dynamicBackendCatalog = (capabilities?.catalog ?? []).flatMap((runtimeCapability) => {
+    const item = backendNodeCatalogItem(runtimeCapability)
     return item ? [item] : []
   })
-  return [...staticCatalog, ...dynamicPluginCatalog]
+  // The backend capability catalog is the source of truth once it is available.
+  // Static entries remain only as an offline and legacy-workflow compatibility fallback.
+  return dynamicBackendCatalog.length > 0 ? dynamicBackendCatalog : staticCatalog
 }
 
 export function workflowCatalogItemLocked(item: WorkflowNodeCatalogItem): boolean {
@@ -785,58 +921,81 @@ export function workflowCatalogPluginProvenance(
   return providerKey && version ? { providerKey, version } : null
 }
 
-function pluginNodeCatalogItem(
+export function workflowCatalogIsBackendNode(item: WorkflowNodeCatalogItem): boolean {
+  const manifest = readCatalogRecord(item.runtimeCapability?.manifest)
+  const nodeCatalog = readCatalogRecord(manifest?.nodeCatalog)
+  return nodeCatalog?.authority === "backend"
+}
+
+function backendNodeCatalogItem(
   runtimeCapability: WorkflowRuntimeCapability,
 ): WorkflowNodeCatalogItem | null {
-  if (runtimeCapability.source !== "backend.services.plugin_registry_service") return null
-  const kind = pluginNodeKind(runtimeCapability.kind)
-  const capability = pluginNodeCapability(runtimeCapability.capability)
-  if (!kind || !capability) return null
   const manifest = readCatalogRecord(runtimeCapability.manifest)
+  const nodeCatalog = readCatalogRecord(manifest?.nodeCatalog)
+  const canvas = readCatalogRecord(manifest?.canvas)
+  const legacyPlugin = runtimeCapability.source === "backend.services.plugin_registry_service"
+  if (!legacyPlugin && (nodeCatalog?.authority !== "backend" || canvas?.node !== true)) return null
+  const kind = catalogNodeKind(runtimeCapability.kind)
+  const capability = catalogNodeCapability(runtimeCapability.capability)
+  if (!kind || !capability) return null
   const plugin = readCatalogRecord(manifest?.plugin)
-  const providerKey = typeof plugin?.providerKey === "string" ? plugin.providerKey : "plugin"
-  const version = typeof plugin?.version === "string" ? plugin.version : "unknown"
-  const family = typeof plugin?.family === "string" ? plugin.family : "tool"
+  const presentation = readCatalogRecord(manifest?.presentation)
+  const providerKey = typeof plugin?.providerKey === "string"
+    ? plugin.providerKey
+    : runtimeCapability.provider ?? "opencli"
+  const version = typeof plugin?.version === "string" ? plugin.version : "catalog"
+  const category = typeof nodeCatalog?.category === "string"
+    ? backendCatalogCategory(nodeCatalog.category)
+    : pluginCatalogCategory(typeof plugin?.family === "string" ? plugin.family : "tool")
+  const origin = typeof nodeCatalog?.origin === "string" ? nodeCatalog.origin : "plugin"
+  const description = typeof presentation?.description === "string"
+    ? presentation.description
+    : runtimeCapability.reason ?? "后端节点能力"
+  const icon = typeof presentation?.icon === "string"
+    ? presentation.icon
+    : backendCatalogIcon(category)
   return {
     id: runtimeCapability.id,
     idPrefix: safeIdPart(`${providerKey}-${runtimeCapability.label}`),
     label: runtimeCapability.label,
-    description: `${providerKey} · ${version} · ${runtimeCapability.reason ?? "等待运行适配器"}`,
-    category: pluginCatalogCategory(family),
+    description,
+    category,
     profile: "intelligence",
     kind,
     capability,
-    icon: pluginCatalogIcon(family),
+    icon,
     color: "var(--muted-foreground)",
     params: {
+      ...catalogParameterDefaults(presentation?.parameters),
       pluginInstallationId: plugin?.installationId,
-      pluginProviderKey: providerKey,
-      pluginVersion: version,
+      ...(origin === "plugin" ? { pluginProviderKey: providerKey, pluginVersion: version } : {}),
       pluginCapabilityId: plugin?.capabilityId,
     },
     runtimeCapability,
+    runtimeContract: runtimeContractForCapability(runtimeCapability),
     keywords: [
-      "plugin",
+      "node-capability",
       "dify",
       providerKey,
       version,
-      family,
+      category,
+      origin,
       runtimeCapability.label,
       ...runtimeCapability.tags,
     ],
   }
 }
 
-function pluginNodeKind(value: string | null | undefined): WorkflowNodeKind | null {
-  return ["schedule", "source", "agent", "action"].includes(value ?? "")
+function catalogNodeKind(value: string | null | undefined): WorkflowNodeKind | null {
+  return ["schedule", "source", "agent", "router", "notify", "inbox", "action", "flow", "control", "sink"].includes(value ?? "")
     ? value as WorkflowNodeKind
     : null
 }
 
-function pluginNodeCapability(
+function catalogNodeCapability(
   value: string | null | undefined,
 ): WorkflowCapability | null {
-  return ["trigger", "fetch", "summarize", "store"].includes(value ?? "")
+  return ["trigger", "fetch", "normalize", "dedupe", "summarize", "score", "tag", "route", "send", "store", "merge", "accept"].includes(value ?? "")
     ? value as WorkflowCapability
     : null
 }
@@ -848,11 +1007,86 @@ function pluginCatalogCategory(family: string): WorkflowNodeCatalogCategory {
   return "output"
 }
 
-function pluginCatalogIcon(family: string): string {
-  if (family === "trigger") return "Clock"
-  if (family === "datasource") return "Database"
-  if (family === "agent_strategy") return "Bot"
-  return "Puzzle"
+function backendCatalogCategory(value: string): WorkflowNodeCatalogCategory {
+  if (value === "input" || value === "trigger") return "trigger"
+  if (value === "knowledge") return "source"
+  if (value === "logic") return "decision"
+  if (value === "flow") return "flow"
+  if (value === "human") return "control"
+  if (value === "output") return "output"
+  if (value === "compatibility") return "package"
+  if (value === "tool" || value === "plugin") return "output"
+  return "processing"
+}
+
+function backendCatalogIcon(category: WorkflowNodeCatalogCategory): string {
+  if (category === "trigger") return "Clock"
+  if (category === "source") return "Database"
+  if (category === "decision") return "GitBranch"
+  if (category === "flow") return "GitMerge"
+  if (category === "control") return "BadgeCheck"
+  if (category === "output") return "Send"
+  if (category === "package") return "Package"
+  return "Sparkles"
+}
+
+function catalogParameterDefaults(value: unknown): Record<string, unknown> {
+  if (!Array.isArray(value)) return {}
+  return Object.fromEntries(value.flatMap((entry) => {
+    const parameter = readCatalogRecord(entry)
+    const name = typeof parameter?.name === "string" ? parameter.name : null
+    return name && "default" in (parameter ?? {}) ? [[name, parameter?.default]] : []
+  }))
+}
+
+function backendCatalogParameterInterface(
+  nodeId: string,
+  item: WorkflowNodeCatalogItem,
+): ParameterInterface | undefined {
+  if (!workflowCatalogIsBackendNode(item)) return undefined
+  const manifest = readCatalogRecord(item.runtimeCapability?.manifest)
+  const presentation = readCatalogRecord(manifest?.presentation)
+  const parameters = presentation?.parameters
+  if (!Array.isArray(parameters)) return undefined
+  const fields = parameters.flatMap((entry, order): ParameterInterfaceField[] => {
+    const parameter = readCatalogRecord(entry)
+    const name = typeof parameter?.name === "string" ? parameter.name : null
+    if (!parameter || !name) return []
+    return [{
+      id: name,
+      label: typeof parameter.label === "string" ? parameter.label : name,
+      groupId: "parameters",
+      type: backendParameterFieldType(name, parameter),
+      binding: { nodeId, source: "params", fieldId: name },
+      order,
+      value: "default" in parameter ? parameter.default : undefined,
+      options: backendParameterOptions(parameter.options),
+    }]
+  })
+  return fields.length > 0
+    ? { groups: [{ id: "parameters", label: "参数", order: 1 }], fields }
+    : undefined
+}
+
+function backendParameterFieldType(name: string, parameter: Record<string, unknown>): ParameterFieldType {
+  const type = typeof parameter.type === "string" ? parameter.type : "string"
+  if (type === "boolean") return "boolean"
+  if (type === "number" || type === "integer") return "number"
+  if (type === "select" && backendParameterOptions(parameter.options).length > 0) return "select"
+  if (type === "array") return backendParameterOptions(parameter.options).length > 0 ? "tokens" : "textarea"
+  if (type === "object" || type === "code" || /prompt|template|instruction|body|schema/i.test(name)) return "textarea"
+  return "text"
+}
+
+function backendParameterOptions(value: unknown): Array<{ value: string; label: string }> {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((entry) => {
+    if (typeof entry === "string") return [{ value: entry, label: entry }]
+    const option = readCatalogRecord(entry)
+    const optionValue = typeof option?.value === "string" ? option.value : null
+    if (!option || !optionValue) return []
+    return [{ value: optionValue, label: typeof option.label === "string" ? option.label : optionValue }]
+  })
 }
 
 function readCatalogRecord(value: unknown): Record<string, unknown> | null {
@@ -865,17 +1099,18 @@ export function createWorkflowNodeFromCatalog(
   id: string,
   position: { x: number; y: number },
 ): WorkflowProjectNode {
-  const parameterInterface = createParameterInterfaceFromInternals(
-    id,
-    getNodeInternals({
+  const parameterInterface = backendCatalogParameterInterface(id, item)
+    ?? createParameterInterfaceFromInternals(
       id,
-      kind: item.kind,
-      capability: item.capability,
-      adapter: item.adapter,
-      params: item.params,
-      ui: { catalogId: item.id },
-    }),
-  )
+      getNodeInternals({
+        id,
+        kind: item.kind,
+        capability: item.capability,
+        adapter: item.adapter,
+        params: item.params,
+        ui: { catalogId: item.id },
+      }),
+    )
 
   return {
     id,

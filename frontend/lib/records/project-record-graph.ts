@@ -15,8 +15,10 @@ export type ProjectGraphNodeAttributes = {
   count: number
   forceLabel: boolean
   graphNode: RecordGraphNode
+  highlighted: boolean
   kind: RecordGraphNodeKind
   label: string
+  selected: boolean
   size: number
   x: number
   y: number
@@ -130,8 +132,10 @@ export function buildProjectRecordGraph(preview: ProjectRecordGraphPreview) {
       count: node.count,
       forceLabel: false,
       graphNode: node,
+      highlighted: false,
       kind: node.kind,
       label: overviewLabel,
+      selected: false,
       size,
       zIndex: node.kind === 'project' ? 3 : node.kind === 'record' ? 0 : 2,
     })

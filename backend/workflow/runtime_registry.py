@@ -27,6 +27,7 @@ from backend.workflow.dify_graphon_client import (
     DIFY_GRAPHON_SOURCE_FORMAT,
     DIFY_GRAPHON_VERSION,
 )
+from backend.workflow.native_node_runtime import prepare_native_node
 from backend.workflow.runtime_contracts import runtime_io_contract_manifest
 from backend.workflow.tool_capabilities import resolve_workflow_tool_capability
 from backend.workflow.turbopush_runtime import (
@@ -50,6 +51,7 @@ SOURCE_FETCH_BINDING_ID = "workflow.source.fetch"
 SOURCE_POOL_BINDING_ID = "workflow.source-pool.parallel-fanout"
 COLLECTION_OUTPUT_BINDING_ID = "workflow.collection-output.items"
 NORMALIZE_BINDING_ID = "workflow.transform.normalize"
+DEDUPE_BINDING_ID = "workflow.transform.dedupe"
 MERGE_BINDING_ID = "workflow.flow.merge"
 ROUTER_ROUTE_BINDING_ID = "workflow.router.route"
 RECORD_ACCEPTANCE_BINDING_ID = "workflow.gate.record-acceptance"
@@ -92,7 +94,10 @@ def resolve_runtime_metadata(
     """Return runtime binding metadata for a compiled WorkflowProject node."""
 
     resolved_node_id = node_id or node.id
-    if _is_dify_graphon_managed_package(node):
+    native_metadata = _resolve_native_node(node, node_id=resolved_node_id)
+    if native_metadata is not None:
+        metadata = native_metadata
+    elif _is_dify_graphon_managed_package(node):
         metadata = _resolve_dify_graphon_package(node, node_id=resolved_node_id)
     elif _is_collection_need(node):
         metadata = _resolve_collection_need(node, node_id=resolved_node_id)
@@ -106,6 +111,8 @@ def resolve_runtime_metadata(
         metadata = _resolve_collection_output(node, node_id=resolved_node_id)
     elif _is_normalize_node(node):
         metadata = _resolve_normalize_node(node, node_id=resolved_node_id)
+    elif _is_dedupe_node(node):
+        metadata = _resolve_dedupe_node(node, node_id=resolved_node_id)
     elif _is_merge_node(node):
         metadata = _resolve_merge_node(node, node_id=resolved_node_id)
     elif _is_router_route_node(node):
@@ -139,8 +146,7 @@ def resolve_runtime_metadata(
                     adapter_id=adapter.id if adapter else None,
                     provider=adapter.provider if adapter else None,
                     message=(
-                        f"No runtime binding registered for workflow.{node.kind}."
-                        f"{node.capability}"
+                        f"No runtime binding registered for workflow.{node.kind}.{node.capability}"
                     ),
                 )
             )
@@ -151,6 +157,68 @@ def resolve_runtime_metadata(
         adapter=adapter,
         node_id=resolved_node_id,
     )
+
+
+def _resolve_native_node(
+    node: WorkflowProjectNode,
+    *,
+    node_id: str,
+) -> dict[str, Any] | None:
+    ui = node.ui or {}
+    node_library_id = _read_string(ui.get("primitiveId")) or _read_string(ui.get("catalogId"))
+    if node_library_id is None:
+        dify_type = _read_string(node.params.get("difyType"))
+        node_library_id = f"compat.dify.{dify_type}" if dify_type else None
+    if node_library_id is None:
+        return None
+
+    preparation = prepare_native_node(node_library_id, node.params)
+    if preparation is None:
+        return None
+
+    readiness = preparation.model_dump(mode="json")
+    if preparation.status != "ready":
+        return {
+            "native": {
+                "node_id": node_id,
+                "node_type": preparation.node_type,
+                "binding_id": preparation.binding_id,
+                "readiness": readiness,
+            },
+            "missing_runtime": _dump_missing_runtime(
+                WorkflowMissingRuntime(
+                    code="invalid_native_node_config",
+                    node_id=node_id,
+                    kind=node.kind,
+                    capability=node.capability,
+                    required_params=preparation.errors,
+                    message=(
+                        f'Native node "{preparation.node_type}" has invalid '
+                        "configuration and cannot execute."
+                    ),
+                )
+            ),
+        }
+
+    return {
+        "binding": {
+            "status": "bound",
+            "binding_id": preparation.binding_id,
+            "runtime": "workflow",
+            "channel": "native",
+            "executor": preparation.executor,
+            "input": {
+                "nodeType": preparation.node_type,
+                "config": preparation.config,
+            },
+        },
+        "native": {
+            "node_id": node_id,
+            "node_type": preparation.node_type,
+            "binding_id": preparation.binding_id,
+            "readiness": readiness,
+        },
+    }
 
 
 def _resolve_opencli_source(
@@ -337,6 +405,52 @@ def _resolve_normalize_node(node: WorkflowProjectNode, *, node_id: str) -> dict[
         "normalize": {
             "node_id": node_id,
             "candidate_port": "recordCandidate[]",
+        },
+    }
+
+
+def _resolve_dedupe_node(node: WorkflowProjectNode, *, node_id: str) -> dict[str, Any]:
+    identity_fields = node.params.get("identityFields")
+    if not isinstance(identity_fields, list) or not all(
+        isinstance(field, str) and field.strip() for field in identity_fields
+    ):
+        identity_fields = ["title", "source"]
+    window_config: dict[str, Any]
+    if "window" in node.params:
+        # Studio owns the duration-string syntax. Preserve it verbatim so the
+        # RecordHygiene interface can validate supported and invalid values.
+        window_config = {"window": node.params.get("window")}
+    else:
+        window_hours = _read_number(node.params.get("windowHours"))
+        if window_hours is None:
+            window_seconds = _read_number(node.params.get("windowSeconds"))
+            window_hours = window_seconds / 3600 if window_seconds is not None else 24.0
+        window_config = {
+            "windowHours": window_hours,
+            "windowSeconds": window_hours * 3600,
+        }
+    return {
+        "binding": {
+            "status": "bound",
+            "binding_id": DEDUPE_BINDING_ID,
+            "runtime": "workflow",
+            "channel": "transform",
+            "input": {
+                "key": _read_string(node.params.get("key")) or "title+source+publishedAt",
+                **window_config,
+                "identityFields": identity_fields,
+                "eventTimeField": (
+                    _read_string(node.params.get("eventTimeField")) or "publishedAt"
+                ),
+                "strategy": _read_string(node.params.get("strategy")) or "keep_first",
+                "inputPort": "recordCandidate[]",
+                "outputPort": "recordCandidate[]",
+            },
+        },
+        "dedupe": {
+            "node_id": node_id,
+            "candidate_port": "recordCandidate[]",
+            "evidence_ports": ["rejected[]", "metrics"],
         },
     }
 
@@ -672,14 +786,14 @@ def _resolve_webhook_notifier(
         "dispatch": "blocked_until_projection",
         "input": {
             "notifier_type": "webhook",
-                "template": _read_string(node.params.get("template")) or "brief",
-                "target": target,
-                "adapter_mode": adapter.mode if adapter else "webhook",
-                "delivery_configured": delivery_configured,
-                "url": webhook_url,
-                "config": config,
-            },
-        }
+            "template": _read_string(node.params.get("template")) or "brief",
+            "target": target,
+            "adapter_mode": adapter.mode if adapter else "webhook",
+            "delivery_configured": delivery_configured,
+            "url": webhook_url,
+            "config": config,
+        },
+    }
     if not delivery_configured:
         return {
             "notifier": notifier_contract,
@@ -807,6 +921,12 @@ def _is_normalize_node(node: WorkflowProjectNode) -> bool:
     )
 
 
+def _is_dedupe_node(node: WorkflowProjectNode) -> bool:
+    return _read_string((node.ui or {}).get("catalogId")) == "intelligence.processing.dedupe" or (
+        node.kind == "agent" and node.capability == "dedupe"
+    )
+
+
 def _is_merge_node(node: WorkflowProjectNode) -> bool:
     return _read_string((node.ui or {}).get("catalogId")) == "intelligence.flow.merge" or (
         node.kind == "flow" and node.capability == "merge"
@@ -849,9 +969,7 @@ def _is_schedule_trigger(node: WorkflowProjectNode) -> bool:
 
 def _is_webhook_trigger(node: WorkflowProjectNode) -> bool:
     ui = node.ui or {}
-    node_library_id = _read_string(ui.get("primitiveId")) or _read_string(
-        ui.get("catalogId")
-    )
+    node_library_id = _read_string(ui.get("primitiveId")) or _read_string(ui.get("catalogId"))
     return node_library_id in {
         "primitive.core.webhook-trigger",
         "primitive.ops.trigger-webhook",
@@ -925,20 +1043,14 @@ def _resolve_dify_graphon_package(
         return {
             "missing_runtime": {
                 "status": "missing",
-                "code": (
-                    _read_string(blocker.get("code"))
-                    if isinstance(blocker, dict)
-                    else None
-                )
+                "code": (_read_string(blocker.get("code")) if isinstance(blocker, dict) else None)
                 or _read_string(inspection.get("loadReason"))
                 or "dify_graphon_unavailable",
                 "node_id": node_id,
                 "kind": node.kind,
                 "capability": node.capability,
                 "message": (
-                    _read_string(blocker.get("message"))
-                    if isinstance(blocker, dict)
-                    else None
+                    _read_string(blocker.get("message")) if isinstance(blocker, dict) else None
                 )
                 or "Managed Dify package has not passed Graphon inspection.",
             }
@@ -960,14 +1072,10 @@ def _resolve_dify_graphon_package(
                 "engineCommit": DIFY_GRAPHON_COMMIT,
                 "appMode": _read_string(node.params.get("appMode")),
                 "policy": _read_dict(compat_runtime.get("executionPolicy")),
-                "dependencies": (
-                    dependencies if isinstance(dependencies, list) else []
-                ),
+                "dependencies": (dependencies if isinstance(dependencies, list) else []),
                 "sourceNodeIndex": [
                     source_node_id
-                    for item in (
-                        inspection_nodes if isinstance(inspection_nodes, list) else []
-                    )
+                    for item in (inspection_nodes if isinstance(inspection_nodes, list) else [])
                     if isinstance(item, dict)
                     and (source_node_id := _read_string(item.get("sourceNodeId")))
                 ],

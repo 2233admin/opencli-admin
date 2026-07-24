@@ -1,7 +1,5 @@
 """Unit tests for the pipeline normalizer."""
 
-import pytest
-
 from backend.pipeline.normalizer import normalize_item, normalize_items
 
 
@@ -68,7 +66,13 @@ def test_normalize_items_batch():
 
 def test_weibo_word_maps_to_title():
     """weibo hot: uses 'word' as the topic name."""
-    raw = {"rank": 1, "word": "福建一鸭子活吞41只小鸡", "hot_value": 126652, "category": "民生新闻", "url": "https://s.weibo.com/..."}
+    raw = {
+        "rank": 1,
+        "word": "福建一鸭子活吞41只小鸡",
+        "hot_value": 126652,
+        "category": "民生新闻",
+        "url": "https://s.weibo.com/...",
+    }
     normalized, _ = normalize_item(raw, "weibo-src")
     assert normalized["title"] == "福建一鸭子活吞41只小鸡"
     assert "extra_hot_value" in normalized
@@ -88,7 +92,14 @@ def test_twitter_trending_topic_maps_to_title():
 
 def test_youtube_channel_maps_to_author():
     """youtube search: uses 'channel' as the uploader."""
-    raw = {"rank": 1, "title": "Python Tutorial", "channel": "TechChannel", "views": "1.2M", "duration": "15:30", "url": "https://youtube.com/..."}
+    raw = {
+        "rank": 1,
+        "title": "Python Tutorial",
+        "channel": "TechChannel",
+        "views": "1.2M",
+        "duration": "15:30",
+        "url": "https://youtube.com/...",
+    }
     normalized, _ = normalize_item(raw, "yt-src")
     assert normalized["author"] == "TechChannel"
     assert "extra_channel" not in normalized
@@ -96,10 +107,33 @@ def test_youtube_channel_maps_to_author():
 
 def test_linkedin_listed_maps_to_published_at():
     """linkedin search: uses 'listed' as the posting date."""
-    raw = {"rank": 1, "title": "AI Engineer", "company": "ACME", "location": "Remote", "listed": "2 days ago", "salary": "$150K", "url": "https://linkedin.com/..."}
+    raw = {
+        "rank": 1,
+        "title": "AI Engineer",
+        "company": "ACME",
+        "location": "Remote",
+        "listed": "2 days ago",
+        "salary": "$150K",
+        "url": "https://linkedin.com/...",
+    }
     normalized, _ = normalize_item(raw, "li-src")
     assert normalized["published_at"] == "2 days ago"
     assert "extra_listed" not in normalized
+
+
+def test_announcement_display_time_wins_over_date_only_time():
+    raw = {
+        "title": "公司公告",
+        "time": "2026-07-24 00:00:00",
+        "noticeDate": "2026-07-24 00:00:00",
+        "displayTime": "2026-07-23 21:23:02:245",
+    }
+
+    normalized, _ = normalize_item(raw, "announcement-src")
+
+    assert normalized["published_at"] == "2026-07-23 21:23:02:245"
+    assert "extra_displayTime" not in normalized
+    assert "extra_noticeDate" not in normalized
 
 
 def test_xueqiu_text_maps_to_content():

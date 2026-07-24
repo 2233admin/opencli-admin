@@ -10,6 +10,10 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import yaml
 
+from backend.plugins.capability_catalog import (
+    get_plugin_node_capability,
+    resolve_dify_node_capability_id,
+)
 from backend.schemas.dify_compat import (
     DifyBlocker,
     DifyImportRequest,
@@ -17,6 +21,7 @@ from backend.schemas.dify_compat import (
     DifyInspection,
     DifyTranslationReport,
 )
+from backend.schemas.plugin import PluginNodeCapabilityRead
 from backend.schemas.workflow import (
     WorkflowAgentPermissions,
     WorkflowPackageInternals,
@@ -36,33 +41,59 @@ from backend.workflow.dify_graphon_client import (
 
 DIFY_SOURCE_MAX_BYTES = 1_048_576
 SUPPORTED_APP_MODES = frozenset({"workflow", "advanced-chat"})
-SUPPORTED_NODE_TYPES = frozenset(
+DIFY_MIGRATABLE_NODE_TYPES = (
+    "start",
+    "end",
+    "answer",
+    "llm",
+    "knowledge-retrieval",
+    "knowledge-index",
+    "if-else",
+    "code",
+    "template-transform",
+    "question-classifier",
+    "http-request",
+    "tool",
+    "datasource",
+    "variable-aggregator",
+    "loop",
+    "iteration",
+    "parameter-extractor",
+    "assigner",
+    "document-extractor",
+    "list-operator",
+    "agent",
+    "trigger-webhook",
+    "trigger-schedule",
+    "trigger-plugin",
+    "human-input",
+)
+DIFY_INTERNAL_NODE_TYPES = frozenset({"loop-start", "loop-end", "iteration-start"})
+DIFY_NODE_TYPE_ALIASES = {
+    "user-input": "start",
+    "schedule": "trigger-schedule",
+    "schedule-trigger": "trigger-schedule",
+    "webhook-trigger": "trigger-webhook",
+    "plugin-trigger": "trigger-plugin",
+    "data-source": "datasource",
+}
+COMPOSED_CAPABILITY_IDS = frozenset(
     {
-        "start",
-        "end",
-        "answer",
-        "llm",
-        "agent",
-        "if-else",
-        "question-classifier",
-        "iteration",
-        "loop",
-        "exit-loop",
-        "code",
-        "template-transform",
-        "variable-aggregator",
-        "variable-assigner",
-        "assigner",
-        "parameter-extractor",
-        "document-extractor",
-        "list-operator",
-        "list-filter",
-        "http-request",
-        "tool",
-        "knowledge-retrieval",
-        "human-input",
+        "primitive.core.answer",
+        "primitive.ai.question-classifier",
+        "primitive.ai.parameter-extract",
+        "primitive.human.approval",
     }
 )
+BACKEND_RESOLVED_CAPABILITY_IDS = frozenset(
+    {
+        "external.tool.capability",
+        "primitive.plugin.datasource",
+        "primitive.plugin.trigger",
+        "primitive.ai.agent",
+    }
+)
+BLOCKING_CAPABILITY_READINESS = frozenset({"blocked", "plugin_required"})
 
 
 class DifyImportError(ValueError):
@@ -238,33 +269,49 @@ def _build_project(
                 f'Dify DSL contains duplicate node id "{source_node_id}".',
             )
         node_ids.add(source_node_id)
+        data = _record(raw_node.get("data"))
+        source_node_type = _non_empty_string(data.get("type")) or "unknown"
+        node_type = _normalize_node_type(source_node_type)
+        if node_type in DIFY_INTERNAL_NODE_TYPES:
+            blockers.append(
+                DifyBlocker(
+                    code="dify_internal_node_unsupported",
+                    message=(
+                        f'Dify internal node type "{source_node_type}" is preserved in '
+                        "the managed Graphon source but is not projected as an OpenCLI node."
+                    ),
+                    node_id=source_node_id,
+                )
+            )
+            continue
+
         internal_node_id = _internal_node_id(source_node_id, used=internal_node_ids)
         internal_node_ids.add(internal_node_id)
         internal_id_by_source_id[source_node_id] = internal_node_id
-        data = _record(raw_node.get("data"))
-        node_type = _non_empty_string(data.get("type")) or "unknown"
+        mapping, mapping_blocker, candidate_capability_ids = _resolve_node_capability(
+            source_node_id=source_node_id,
+            source_node_type=source_node_type,
+            node_type=node_type,
+            data=data,
+        )
         internal_nodes.append(
             _build_internal_node(
                 internal_node_id,
                 source_node_id=source_node_id,
-                node_type=node_type,
+                source_node_type=source_node_type,
+                normalized_node_type=node_type,
+                mapping=mapping,
+                mapping_blocker=mapping_blocker,
+                candidate_capability_ids=candidate_capability_ids,
                 data=data,
                 position=_record(raw_node.get("position")),
                 index=index,
             )
         )
-        if node_type not in SUPPORTED_NODE_TYPES:
-            blockers.append(
-                DifyBlocker(
-                    code="dify_node_unsupported",
-                    message=(
-                        f'Dify node type "{node_type}" is not supported by the pinned runtime.'
-                    ),
-                    node_id=source_node_id,
-                )
-            )
+        if mapping_blocker is not None:
+            blockers.append(mapping_blocker)
 
-    if not internal_nodes:
+    if not node_ids:
         raise DifyImportError(
             "dify_source_invalid",
             "Dify workflow graph must contain at least one node.",
@@ -276,7 +323,7 @@ def _build_project(
             continue
         source_id = _non_empty_string(raw_edge.get("source")) or ""
         target_id = _non_empty_string(raw_edge.get("target")) or ""
-        if source_id not in node_ids or target_id not in node_ids:
+        if source_id not in internal_id_by_source_id or target_id not in internal_id_by_source_id:
             continue
         source = internal_id_by_source_id[source_id]
         target = internal_id_by_source_id[target_id]
@@ -363,37 +410,64 @@ def _build_internal_node(
     internal_node_id: str,
     *,
     source_node_id: str,
-    node_type: str,
+    source_node_type: str,
+    normalized_node_type: str,
+    mapping: PluginNodeCapabilityRead | None,
+    mapping_blocker: DifyBlocker | None,
+    candidate_capability_ids: list[str],
     data: dict[str, Any],
     position: dict[str, Any],
     index: int,
 ) -> WorkflowProjectNode:
-    kind, capability, catalog_id = _node_projection(node_type)
-    title = _non_empty_string(data.get("title")) or f"Dify {node_type} {index + 1}"
+    kind = mapping.kind if mapping is not None else "control"
+    capability = mapping.capability if mapping is not None else "accept"
+    catalog_id = mapping.id if mapping is not None else "compat.dify.unsupported"
+    resolution = (
+        "ambiguous"
+        if mapping_blocker is not None and mapping_blocker.code == "dify_capability_ambiguous"
+        else _mapping_resolution(mapping)
+    )
+    title = _non_empty_string(data.get("title")) or f"Dify {source_node_type} {index + 1}"
     ui: dict[str, Any] = {
         "label": title,
-        "description": _non_empty_string(data.get("desc")) or f"{node_type} from Dify import",
+        "description": _non_empty_string(data.get("desc"))
+        or f"{source_node_type} from Dify import",
         "catalogId": catalog_id,
-        "dify": {"source": "dify", "originalId": source_node_id, "type": node_type},
+        "dify": {
+            "source": "dify",
+            "originalId": source_node_id,
+            "type": source_node_type,
+            "normalizedType": normalized_node_type,
+            "capabilityId": mapping.id if mapping is not None else None,
+            "resolution": resolution,
+        },
     }
-    if isinstance(position.get("x"), (int, float)) and isinstance(
-        position.get("y"), (int, float)
-    ):
+    if isinstance(position.get("x"), (int, float)) and isinstance(position.get("y"), (int, float)):
         ui["position"] = {"x": position["x"], "y": position["y"]}
     return WorkflowProjectNode(
         id=internal_node_id,
         kind=kind,
         capability=capability,
         params={
-            "difyType": node_type,
+            "difyType": source_node_type,
             "title": title,
             "config": deepcopy(data),
+            "capabilityRef": {
+                "id": mapping.id if mapping is not None else None,
+                "candidateIds": candidate_capability_ids,
+                "resolution": resolution,
+                "readiness": mapping.readiness if mapping is not None else "blocked",
+                "runtimeBinding": (mapping.runtime_binding if mapping is not None else None),
+                "missing": list(mapping.missing) if mapping is not None else [],
+            },
             "compatRuntime": {
                 "target": "dify",
-                "nodeType": node_type,
+                "execution": "managed-graphon",
+                "nodeType": source_node_type,
+                "normalizedNodeType": normalized_node_type,
                 "sourceNodeId": source_node_id,
             },
-            "blocked": node_type not in SUPPORTED_NODE_TYPES,
+            "blocked": mapping is None or mapping_blocker is not None,
         },
         sourceAnchor=WorkflowSourceAnchor(
             kind="artifact",
@@ -406,20 +480,120 @@ def _build_internal_node(
     )
 
 
-def _node_projection(node_type: str) -> tuple[str, str, str]:
-    if node_type not in SUPPORTED_NODE_TYPES:
-        return "control", "accept", "compat.dify.unsupported"
-    if node_type in {"start", "trigger", "trigger-webhook"}:
-        return "schedule", "trigger", "compat.dify.start"
-    if node_type in {"if-else", "question-classifier", "iteration", "loop", "exit-loop"}:
-        return "router", "route", f"compat.dify.{node_type}"
-    if node_type in {"llm", "agent"}:
-        return "agent", "summarize", f"compat.dify.{node_type}"
-    if node_type in {"knowledge-retrieval", "http-request", "tool"}:
-        return "source", "fetch", f"compat.dify.{node_type}"
-    if node_type in {"answer", "end"}:
-        return "notify", "send", f"compat.dify.{node_type}"
-    return "agent", "normalize", f"compat.dify.{node_type}"
+def _resolve_node_capability(
+    *,
+    source_node_id: str,
+    source_node_type: str,
+    node_type: str,
+    data: dict[str, Any],
+) -> tuple[PluginNodeCapabilityRead | None, DifyBlocker | None, list[str]]:
+    canonical_node_type = DIFY_NODE_TYPE_ALIASES.get(node_type, node_type)
+    if canonical_node_type == "list-operator":
+        operation = _read_operation(data)
+        if "sort" in operation or "order" in operation:
+            capability_id = "primitive.core.list-sort"
+        elif "filter" in operation or "select" in operation:
+            capability_id = resolve_dify_node_capability_id(canonical_node_type)
+        else:
+            candidates = ["primitive.core.list-filter", "primitive.core.list-sort"]
+            return (
+                None,
+                DifyBlocker(
+                    code="dify_capability_ambiguous",
+                    message=(
+                        f'Dify node type "{source_node_type}" requires one of: '
+                        f"{', '.join(candidates)}."
+                    ),
+                    node_id=source_node_id,
+                ),
+                candidates,
+            )
+    else:
+        capability_id = resolve_dify_node_capability_id(canonical_node_type)
+
+    if capability_id is None:
+        return (
+            None,
+            DifyBlocker(
+                code="dify_node_unsupported",
+                message=(
+                    f'Dify node type "{source_node_type}" is not supported by the pinned runtime.'
+                ),
+                node_id=source_node_id,
+            ),
+            [],
+        )
+    mapping = get_plugin_node_capability(capability_id)
+    if mapping is None:
+        return (
+            None,
+            DifyBlocker(
+                code="dify_capability_missing",
+                message=(
+                    f'OpenCLI capability "{capability_id}" for Dify node type '
+                    f'"{source_node_type}" is absent from the backend catalog.'
+                ),
+                node_id=source_node_id,
+            ),
+            [capability_id],
+        )
+    return (
+        mapping,
+        _capability_readiness_blocker(
+            mapping,
+            source_node_id=source_node_id,
+            source_node_type=source_node_type,
+        ),
+        [mapping.id],
+    )
+
+
+def _capability_readiness_blocker(
+    mapping: PluginNodeCapabilityRead,
+    *,
+    source_node_id: str,
+    source_node_type: str,
+) -> DifyBlocker | None:
+    if mapping.readiness not in BLOCKING_CAPABILITY_READINESS:
+        return None
+    missing = ", ".join(mapping.missing) or "runtime_dependency"
+    return DifyBlocker(
+        code="dify_capability_gap",
+        message=(
+            f'OpenCLI capability "{mapping.id}" for Dify node type '
+            f'"{source_node_type}" has catalog readiness "{mapping.readiness}"; '
+            f"missing: {missing}."
+        ),
+        node_id=source_node_id,
+    )
+
+
+def _mapping_resolution(mapping: PluginNodeCapabilityRead | None) -> str:
+    if mapping is None:
+        return "unsupported"
+    if mapping.id in COMPOSED_CAPABILITY_IDS:
+        return "composed"
+    if mapping.id in BACKEND_RESOLVED_CAPABILITY_IDS:
+        return "backend"
+    return "exact"
+
+
+def _read_operation(data: dict[str, Any]) -> str:
+    return " ".join(
+        value
+        for key in (
+            "operation",
+            "action",
+            "operation_type",
+            "trigger_type",
+            "provider_type",
+        )
+        if isinstance((value := data.get(key)), str)
+    ).lower()
+
+
+def _normalize_node_type(value: str) -> str:
+    return value.strip().lower().replace("_", "-")
 
 
 def _sanitize_embedded_secrets(value: Any, *, key: str = "") -> Any:
@@ -560,8 +734,7 @@ def _sanitize_url_value(value: str) -> str:
             (
                 query_key,
                 "[REDACTED]"
-                if _is_secret_key(query_key)
-                or _is_sensitive_header_name(query_key)
+                if _is_secret_key(query_key) or _is_sensitive_header_name(query_key)
                 else query_value,
             )
             for query_key, query_value in parse_qsl(

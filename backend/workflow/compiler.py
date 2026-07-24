@@ -296,8 +296,7 @@ def _validate_project(project: WorkflowProject) -> list[WorkflowCompileError]:
                 WorkflowCompileError(
                     code="missing_adapter_binding",
                     message=(
-                        f'Workflow node "{node.id}" references missing adapter '
-                        f'"{node.adapter}"'
+                        f'Workflow node "{node.id}" references missing adapter "{node.adapter}"'
                     ),
                     node_id=node.id,
                     path=["nodes", node.id, "adapter"],
@@ -352,10 +351,7 @@ def _has_package_internals(node: WorkflowProjectNode) -> bool:
 
 
 def _is_managed_runtime_package(node: WorkflowProjectNode) -> bool:
-    return (
-        _has_package_internals(node)
-        and node.params.get("packageExecution") == "managed"
-    )
+    return _has_package_internals(node) and node.params.get("packageExecution") == "managed"
 
 
 def _validate_node_origin(
@@ -991,10 +987,21 @@ def _bind_internal_parameters(node: WorkflowProjectNode) -> list[WorkflowProject
         for field in node.parameterInterface.fields:
             if field.binding.source != "params":
                 continue
-            value = node.params.get(field.id, field.value)
+            if field.id in node.params:
+                value = node.params[field.id]
+            elif field.binding.fieldId in node.params:
+                value = node.params[field.binding.fieldId]
+            else:
+                value = field.value
             if value is None:
                 continue
-            params_by_node[field.binding.nodeId][field.binding.fieldId] = value
+            internal_node_id = _parameter_binding_internal_node_id(
+                field.binding.nodeId,
+                package_node_ids=(node.id,),
+                internal_node_ids=set(internal_by_id),
+            )
+            if internal_node_id is not None:
+                params_by_node[internal_node_id][field.binding.fieldId] = value
 
     return [
         internal_by_id[internal_node.id].model_copy(
@@ -1002,6 +1009,26 @@ def _bind_internal_parameters(node: WorkflowProjectNode) -> list[WorkflowProject
         )
         for internal_node in node.internals.nodes
     ]
+
+
+def _parameter_binding_internal_node_id(
+    binding_node_id: str,
+    *,
+    package_node_ids: tuple[str, ...],
+    internal_node_ids: set[str],
+) -> str | None:
+    """Resolve old short and Studio-generated package-qualified binding ids."""
+
+    if binding_node_id in internal_node_ids:
+        return binding_node_id
+    for package_node_id in package_node_ids:
+        for separator in (INTERNAL_ID_SEPARATOR, "__"):
+            prefix = f"{package_node_id}{separator}"
+            if binding_node_id.startswith(prefix):
+                candidate = binding_node_id.removeprefix(prefix)
+                if candidate in internal_node_ids:
+                    return candidate
+    return None
 
 
 def _validate_package_internals(
@@ -1037,8 +1064,7 @@ def _validate_package_internals(
                 WorkflowCompileError(
                     code="duplicate_edge_id",
                     message=(
-                        f'Package node "{package_node_id}" has duplicated internal '
-                        f'edge "{edge_id}"'
+                        f'Package node "{package_node_id}" has duplicated internal edge "{edge_id}"'
                     ),
                     node_id=package_node_id,
                     edge_id=edge_id,
@@ -1093,7 +1119,7 @@ def _validate_package_internals(
                     code="node_path_depth_exceeded",
                     message=(
                         f'Workflow node "{internal_node_id}" exceeds the maximum '
-                        f'nesting depth of {MAX_NODE_PATH_DEPTH}'
+                        f"nesting depth of {MAX_NODE_PATH_DEPTH}"
                     ),
                     node_id=internal_node_id,
                     path=internal_path_prefix,
@@ -1159,7 +1185,12 @@ def _validate_package_internals(
 
     if node.parameterInterface:
         for field in node.parameterInterface.fields:
-            if field.binding.nodeId not in internal_node_ids:
+            resolved_binding_node_id = _parameter_binding_internal_node_id(
+                field.binding.nodeId,
+                package_node_ids=(package_node_id, node.id),
+                internal_node_ids=internal_node_ids,
+            )
+            if resolved_binding_node_id is None:
                 errors.append(
                     WorkflowCompileError(
                         code="invalid_parameter_binding",
@@ -1270,6 +1301,9 @@ def _compile_node(
     }
     if runtime:
         runtime_metadata.update(runtime)
+    source_label = (node.ui or {}).get("label")
+    if node.kind == "source" and isinstance(source_label, str) and source_label.strip():
+        runtime_metadata["display_name"] = source_label.strip()
     if _is_structural_container(node):
         runtime_metadata.update({"structural": True, "executable": False})
     else:

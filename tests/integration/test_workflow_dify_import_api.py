@@ -3,10 +3,13 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+import yaml
 
 from backend.api.v1.dify_imports import get_dify_graphon_client
 from backend.main import app
+from backend.plugins.capability_catalog import resolve_dify_node_capability_id
 from backend.schemas.workflow import WorkflowProject
+from backend.workflow.dify_importer import DIFY_MIGRATABLE_NODE_TYPES
 
 FIXTURES = Path(__file__).parents[1] / "fixtures" / "dify"
 
@@ -284,3 +287,202 @@ workflow:
     assert internal_ids == [colliding_id, f"{colliding_id}-2"]
     edge = package["internals"]["edges"][0]
     assert (edge["source"], edge["target"]) == tuple(internal_ids)
+
+
+@pytest.mark.asyncio
+async def test_import_maps_all_25_visible_dify_families_to_catalog_capabilities(
+    client,
+    graphon_client_override,
+):
+    assert len(DIFY_MIGRATABLE_NODE_TYPES) == 25
+    nodes = []
+    for index, node_type in enumerate(DIFY_MIGRATABLE_NODE_TYPES):
+        data = {"type": node_type, "title": node_type}
+        if node_type == "list-operator":
+            data["operation"] = "filter"
+        nodes.append({"id": f"node-{index}", "data": data})
+    source = yaml.safe_dump(
+        {
+            "kind": "app",
+            "version": "0.3.0",
+            "app": {"name": "All visible families", "mode": "workflow"},
+            "workflow": {"graph": {"nodes": nodes, "edges": []}},
+        },
+        sort_keys=False,
+    )
+
+    response = await client.post("/api/v1/workflows/import/dify", json={"source": source})
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["report"]["nodeCount"] == 25
+    assert data["inspection"]["loadStatus"] == "blocked"
+    imported = data["project"]["nodes"][0]["internals"]["nodes"]
+    capability_ids = {
+        node["params"]["difyType"]: node["params"]["capabilityRef"]["id"] for node in imported
+    }
+    assert capability_ids == {
+        node_type: resolve_dify_node_capability_id(node_type)
+        for node_type in DIFY_MIGRATABLE_NODE_TYPES
+    }
+    assert all(
+        node["params"]["compatRuntime"]["execution"] == "managed-graphon" for node in imported
+    )
+    assert {blocker["nodeId"] for blocker in data["inspection"]["blockers"]} == {
+        "node-3",  # llm
+        "node-4",  # knowledge-retrieval
+        "node-5",  # knowledge-index
+        "node-7",  # code
+        "node-10",  # http-request
+        "node-11",  # tool
+        "node-12",  # datasource
+        "node-18",  # document-extractor
+        "node-20",  # agent
+        "node-23",  # trigger-plugin
+    }
+    assert all(
+        blocker["code"] == "dify_capability_gap" for blocker in data["inspection"]["blockers"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_import_uses_catalog_readiness_and_missing_dependencies_as_blockers(
+    client,
+    graphon_client_override,
+):
+    source = """kind: app
+app: {name: Catalog readiness, mode: workflow}
+workflow:
+  graph:
+    nodes:
+      - id: blocked-llm
+        data: {type: llm}
+      - id: plugin-tool
+        data: {type: tool}
+      - id: composed-classifier
+        data: {type: question-classifier}
+    edges: []
+"""
+
+    response = await client.post("/api/v1/workflows/import/dify", json={"source": source})
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["inspection"]["loadStatus"] == "blocked"
+    assert data["report"]["executable"] is False
+    assert data["inspection"]["blockers"] == [
+        {
+            "code": "dify_capability_gap",
+            "message": (
+                'OpenCLI capability "primitive.ai.llm" for Dify node type "llm" '
+                'has catalog readiness "blocked"; missing: '
+                "provider_resource_binding, workflow_agent_executor."
+            ),
+            "nodeId": "blocked-llm",
+        },
+        {
+            "code": "dify_capability_gap",
+            "message": (
+                'OpenCLI capability "external.tool.capability" for Dify node type "tool" '
+                'has catalog readiness "plugin_required"; missing: '
+                "node_level_tool_capability_binding."
+            ),
+            "nodeId": "plugin-tool",
+        },
+    ]
+    nodes = {node["id"]: node for node in data["project"]["nodes"][0]["internals"]["nodes"]}
+    assert nodes["blocked-llm"]["params"]["blocked"] is True
+    assert nodes["blocked-llm"]["params"]["capabilityRef"] == {
+        "id": "primitive.ai.llm",
+        "candidateIds": ["primitive.ai.llm"],
+        "resolution": "exact",
+        "readiness": "blocked",
+        "runtimeBinding": None,
+        "missing": ["provider_resource_binding", "workflow_agent_executor"],
+    }
+    assert nodes["plugin-tool"]["params"]["blocked"] is True
+    assert nodes["plugin-tool"]["params"]["capabilityRef"]["resolution"] == "backend"
+    assert nodes["plugin-tool"]["params"]["capabilityRef"]["readiness"] == ("plugin_required")
+    assert nodes["composed-classifier"]["params"]["blocked"] is False
+    assert nodes["composed-classifier"]["params"]["capabilityRef"]["readiness"] == ("composed")
+
+
+@pytest.mark.asyncio
+async def test_import_preserves_legacy_assigner_alias_and_source_provenance(
+    client,
+    graphon_client_override,
+):
+    source = """kind: app
+version: 0.3.0
+app: {name: Legacy assigner, mode: workflow}
+workflow:
+  graph:
+    nodes:
+      - id: legacy-variable-node
+        position: {x: 12, y: 34}
+        data:
+          type: variable_assigner
+          title: Legacy aggregate
+          variables: [[start, value]]
+          nested: {preserved: true}
+    edges: []
+"""
+
+    response = await client.post("/api/v1/workflows/import/dify", json={"source": source})
+
+    assert response.status_code == 200
+    internal = response.json()["data"]["project"]["nodes"][0]["internals"]["nodes"][0]
+    assert internal["ui"]["catalogId"] == "primitive.core.variable-aggregate"
+    assert internal["params"]["capabilityRef"]["id"] == ("primitive.core.variable-aggregate")
+    assert internal["params"]["difyType"] == "variable_assigner"
+    assert internal["params"]["config"]["nested"] == {"preserved": True}
+    assert internal["params"]["compatRuntime"] == {
+        "target": "dify",
+        "execution": "managed-graphon",
+        "nodeType": "variable_assigner",
+        "normalizedNodeType": "variable-assigner",
+        "sourceNodeId": "legacy-variable-node",
+    }
+
+
+@pytest.mark.asyncio
+async def test_import_reports_ambiguous_internal_and_unsupported_capability_gaps(
+    client,
+    graphon_client_override,
+):
+    source = """kind: app
+app: {name: Capability gaps, mode: workflow}
+workflow:
+  graph:
+    nodes:
+      - id: loop-pseudo
+        data: {type: loop-start}
+      - id: list-ambiguous
+        data: {type: list-operator}
+      - id: future
+        data: {type: future-node-family}
+    edges: []
+"""
+
+    response = await client.post("/api/v1/workflows/import/dify", json={"source": source})
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["inspection"]["loadStatus"] == "blocked"
+    assert [blocker["code"] for blocker in data["inspection"]["blockers"]] == [
+        "dify_internal_node_unsupported",
+        "dify_capability_ambiguous",
+        "dify_node_unsupported",
+    ]
+    imported = data["project"]["nodes"][0]["internals"]["nodes"]
+    assert [node["id"] for node in imported] == ["list-ambiguous", "future"]
+    list_node = imported[0]
+    assert list_node["params"]["capabilityRef"] == {
+        "id": None,
+        "candidateIds": ["primitive.core.list-filter", "primitive.core.list-sort"],
+        "resolution": "ambiguous",
+        "readiness": "blocked",
+        "runtimeBinding": None,
+        "missing": [],
+    }
+    assert list_node["params"]["blocked"] is True

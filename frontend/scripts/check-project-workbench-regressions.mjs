@@ -1,0 +1,75 @@
+import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
+import path from 'node:path'
+import test from 'node:test'
+import { fileURLToPath } from 'node:url'
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+const source = (file) => readFile(path.join(root, file), 'utf8')
+
+test('project navigation exposes orchestration, data, and evidence as project surfaces', async () => {
+  const navigation = await source('components/studio/project-navigation.tsx')
+  assert.match(navigation, /'orchestration' \| 'data' \| 'evidence'/)
+  assert.match(navigation, /label: '业务编排'/)
+  assert.match(navigation, /label: '数据工作台'/)
+  assert.match(navigation, /label: '逻辑与证据'/)
+  assert.match(navigation, /projects\/\$\{projectId\}\/data/)
+  assert.match(navigation, /projects\/\$\{projectId\}\/evidence/)
+})
+
+test('project data workbench is project scoped and links data back to workflow evidence', async () => {
+  const page = await source('app/(app)/studio/projects/[projectId]/data/page.tsx')
+  assert.match(page, /project_id: projectId/)
+  assert.match(page, /active="data"/)
+  assert.match(page, /数据集/)
+  assert.match(page, /字段分析/)
+  assert.match(page, /项目文件/)
+  assert.match(page, /FieldProfileView/)
+  assert.match(page, /ProjectInputsView/)
+  assert.match(page, /原始输入/)
+  assert.match(page, /标准化结果/)
+  assert.match(page, /AI 富化/)
+  assert.match(page, /查看逻辑与证据/)
+})
+
+test('logic and evidence page shows auditable graph paths instead of raw chain of thought', async () => {
+  const page = await source('app/(app)/studio/projects/[projectId]/evidence/page.tsx')
+  const graph = await source('components/records/project-record-graph-canvas.tsx')
+  assert.match(page, /useProjectRecordGraph/)
+  assert.match(page, /ProjectRecordGraphCanvas/)
+  assert.match(page, /shortestEvidencePath/)
+  assert.match(page, /运行轨迹/)
+  assert.match(page, /决策图/)
+  assert.match(page, /证据关系/)
+  assert.match(page, /RunTimeline/)
+  assert.match(page, /DecisionMap/)
+  assert.match(page, /可审计路径/)
+  assert.match(page, /从项目到当前节点的最短可审计链路/)
+  assert.match(page, /与当前节点直接相连的证据对象/)
+  assert.match(page, /xl:grid-cols-\[minmax\(0,1fr\)_26rem\]/)
+  assert.match(page, /inspectorRef\.current\?\.scrollTo/)
+  assert.match(page, /不暴露模型内部原始思维链/)
+  assert.match(page, /active="evidence"/)
+  assert.match(graph, /drawReadableNodeLabel/)
+  assert.match(graph, /defaultDrawNodeLabel/)
+  assert.match(graph, /selected: node === selectedNodeId/)
+  assert.match(graph, /rgba\(9, 9, 11, 0\.97\)/)
+})
+
+test('workflow canvas exposes node-scoped data and evidence workbench views', async () => {
+  const editor = await source('components/flow/workflow-editor.tsx')
+  const strip = await source('components/flow/command-strip.tsx')
+  const surface = await source('components/flow/workflow-canvas-surface.tsx')
+  const panel = await source('components/flow/workflow-workbench-panel.tsx')
+  assert.match(editor, /workbenchMode/)
+  assert.match(strip, /画布工作视图/)
+  assert.match(strip, />编排</)
+  assert.match(strip, />数据</)
+  assert.match(strip, />证据</)
+  assert.match(surface, /WorkflowWorkbenchPanel/)
+  assert.match(panel, /节点数据/)
+  assert.match(panel, /逻辑证据/)
+  assert.match(panel, /输入输出接口/)
+  assert.match(panel, /上游决策路径/)
+  assert.match(panel, /不展示模型内部原始思维链/)
+})

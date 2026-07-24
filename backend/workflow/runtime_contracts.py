@@ -62,7 +62,90 @@ class RuntimeIOContract:
         }
 
 
+def _native_contract(
+    binding_id: str,
+    *,
+    input_type: str,
+    output_type: str,
+    input_params: tuple[str, ...],
+    output_ports: tuple[tuple[str, str], ...] | None = None,
+    output_artifacts: tuple[str, ...] = ("output",),
+) -> RuntimeIOContract:
+    return RuntimeIOContract(
+        binding_id=binding_id,
+        status="executable",
+        input_ports=(("in", input_type),),
+        output_ports=output_ports or (("out", output_type),),
+        input_params=input_params,
+        output_artifacts=output_artifacts,
+        permission_gate=(),
+        config_gate=("native_config_valid",),
+        event_shape=("started", "partial", "completed"),
+        fixture_coverage=("native-node-runtime",),
+    )
+
+
 RUNTIME_IO_CONTRACTS: dict[str, RuntimeIOContract] = {
+    "workflow.native.template-transform": _native_contract(
+        "workflow.native.template-transform",
+        input_type="object",
+        output_type="object",
+        input_params=("template", "output_key?"),
+    ),
+    "workflow.native.variable-assign": _native_contract(
+        "workflow.native.variable-assign",
+        input_type="object",
+        output_type="object",
+        input_params=("assignments",),
+    ),
+    "workflow.native.variable-aggregate": _native_contract(
+        "workflow.native.variable-aggregate",
+        input_type="object",
+        output_type="object",
+        input_params=("variables", "strategy?", "output_key?"),
+    ),
+    "workflow.native.list-filter": _native_contract(
+        "workflow.native.list-filter",
+        input_type="any[]",
+        output_type="any[]",
+        input_params=("field?", "operator", "value?"),
+    ),
+    "workflow.native.list-sort": _native_contract(
+        "workflow.native.list-sort",
+        input_type="any[]",
+        output_type="any[]",
+        input_params=("field?", "direction?"),
+    ),
+    "workflow.native.if": _native_contract(
+        "workflow.native.if",
+        input_type="any",
+        output_type="any",
+        input_params=("condition",),
+        output_ports=(("true", "any"), ("false", "any")),
+        output_artifacts=("output", "route"),
+    ),
+    "workflow.native.switch": _native_contract(
+        "workflow.native.switch",
+        input_type="any",
+        output_type="any",
+        input_params=("cases", "default?"),
+        output_artifacts=("output", "route"),
+    ),
+    "workflow.native.iteration": _native_contract(
+        "workflow.native.iteration",
+        input_type="any[]",
+        output_type="iteration[]",
+        input_params=("max_items?",),
+        output_artifacts=("iterations", "itemCount"),
+    ),
+    "workflow.native.loop": _native_contract(
+        "workflow.native.loop",
+        input_type="loopState",
+        output_type="loopState",
+        input_params=("condition", "max_iterations?"),
+        output_ports=(("continue", "loopState"), ("done", "loopState")),
+        output_artifacts=("output", "route", "iteration"),
+    ),
     "workflow.compat.dify.graphon": RuntimeIOContract(
         binding_id="workflow.compat.dify.graphon",
         status="blocked_until_preconditions",
@@ -196,6 +279,30 @@ RUNTIME_IO_CONTRACTS: dict[str, RuntimeIOContract] = {
         config_gate=(),
         event_shape=("partial:recordCandidateCount", "completed"),
         fixture_coverage=("happy-path", "sse-parity", "odp-redis-mirror"),
+    ),
+    "workflow.transform.dedupe": RuntimeIOContract(
+        binding_id="workflow.transform.dedupe",
+        status="executable",
+        input_ports=(("in", "recordCandidate[]"),),
+        output_ports=(("out", "recordCandidate[]"),),
+        input_params=(
+            "key",
+            "window",
+            "identityFields",
+            "eventTimeField",
+            "windowSeconds",
+            "strategy",
+        ),
+        output_artifacts=("recordCandidate[]", "rejected[]", "metrics"),
+        permission_gate=(),
+        config_gate=(),
+        event_shape=(
+            "partial:deduplicatedCandidateCount",
+            "partial:rejectedCount",
+            "partial:metrics",
+            "completed",
+        ),
+        fixture_coverage=("workflow-opencli-hda-trace-api",),
     ),
     "workflow.flow.merge": RuntimeIOContract(
         binding_id="workflow.flow.merge",

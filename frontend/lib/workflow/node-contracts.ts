@@ -229,7 +229,7 @@ const CONTRACTS: Record<string, NodeContract> = {
     [port("in", "input", "items[]", true, "Consumes source items.")],
     [port("out", "output", "recordCandidate[]", true, "Emits normalized record candidates.")],
     [
-      param("language", "params", "string", true, "zh-CN", { description: "Normalized output language." }),
+      param("language", "params", "string", true, "zh-CN", { description: "Language metadata annotation; content is not translated." }),
       param("preserveSourceRefs", "params", "boolean", false, true, { description: "Keeps source references available downstream." }),
     ],
     ["normalized item count should match fetched item count in deterministic simulation"],
@@ -365,6 +365,31 @@ const CONTRACTS: Record<string, NodeContract> = {
     [
       "accepted records must satisfy schema and lineage requirements",
       "raw artifacts or candidates cannot bypass this gate into the record sink",
+    ],
+  ),
+  "package.processing.record-hygiene": contract(
+    "package.processing.record-hygiene",
+    "Record Hygiene & Acceptance",
+    "items[] -> record[]",
+    [port("in", "input", "items[]", true, "Consumes raw source items for the default cleaning pipeline.")],
+    [port("out", "output", "record[]", true, "Emits records accepted by the internal gate.")],
+    [
+      param("language", "params", "string", true, "zh-CN", { description: "Language metadata annotation; content is not translated." }),
+      param("preserveSourceRefs", "params", "boolean", true, true, { description: "Preserves source references and lineage evidence." }),
+      param("key", "params", "string", true, "title+source+publishedAt", { description: "Stable deduplication key expression." }),
+      param("window", "params", "string", true, "24h", { description: "Deduplication time window." }),
+      param("mode", "params", "string", true, "automatic_with_review", {
+        enum: ["automatic_with_review", "manual_review", "automatic_strict"],
+        description: "Record acceptance policy.",
+      }),
+      param("schema", "params", "string", true, "record.v1", { description: "Required output record schema." }),
+      param("lineageRequired", "params", "boolean", true, true, { description: "Rejects candidates without lineage." }),
+      param("minQuality", "params", "number", false, 0, { min: 0, max: 1, description: "Minimum accepted candidate quality." }),
+    ],
+    [
+      "internal graph must remain Normalize -> Dedupe -> Record Acceptance Gate",
+      "package parameters must bind to their canonical internal nodes",
+      "accepted records must retain source lineage",
     ],
   ),
   "intelligence.output.inbox": contract(

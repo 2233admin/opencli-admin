@@ -44,6 +44,27 @@ _EDGE_LABEL = {
     "batch": "同一采集批次",
     "duplicate": "相同内容",
 }
+_SOURCE_PUBLISHED_RAW_KEYS = (
+    # Prefer an explicit source display/send time over date-only fields. Some
+    # announcement feeds expose ``time`` as midnight while ``displayTime``
+    # contains the actual publication clock time.
+    "displayTime",
+    "published_at",
+    "publishedAt",
+    "published",
+    "sent_at",
+    "sentAt",
+    "time",
+    "timestamp",
+)
+_SOURCE_PUBLISHED_FALLBACK_KEYS = (
+    "noticeDate",
+    "date",
+    "created_at",
+    "createdAt",
+    "listed",
+    "updated",
+)
 
 
 def _read_string(value: object) -> str | None:
@@ -78,6 +99,26 @@ def _record_url(record: CollectedRecord) -> str | None:
     return _read_string(_payload(record).get("url")) or _read_string(
         (record.raw_data or {}).get("url")
     )
+
+
+def _record_source_published_at(record: CollectedRecord) -> str | None:
+    """Return a source-owned publication timestamp, never an ingestion time."""
+
+    raw = record.raw_data or {}
+    for key in _SOURCE_PUBLISHED_RAW_KEYS:
+        candidate = _read_string(raw.get(key))
+        if candidate:
+            return candidate
+
+    candidate = _read_string((record.normalized_data or {}).get("published_at"))
+    if candidate:
+        return candidate
+
+    for key in _SOURCE_PUBLISHED_FALLBACK_KEYS:
+        candidate = _read_string(raw.get(key))
+        if candidate:
+            return candidate
+    return None
 
 
 def _record_domain(record: CollectedRecord) -> str | None:
@@ -449,6 +490,7 @@ async def build_project_record_graph_preview(
                 url=url,
                 preview=_record_preview(record),
                 status=record.status,
+                source_published_at=_record_source_published_at(record),
                 created_at=record.created_at,
             )
         )

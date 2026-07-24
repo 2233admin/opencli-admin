@@ -1,6 +1,8 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
+import { useBackendNodeCapabilityCatalog } from "@/lib/plugins/backend-node-capabilities"
+import { mergeBackendNodeCapabilityCatalog } from "./backend-node-capability-adapter"
 import { fetchWorkflowCapabilities } from "./backend-capabilities"
 import type { WorkflowCapabilitiesResponse } from "./capabilities"
 
@@ -8,6 +10,7 @@ let cachedCapabilities: WorkflowCapabilitiesResponse | null = null
 let inFlight: Promise<WorkflowCapabilitiesResponse> | null = null
 
 export function useWorkflowCapabilities(enabled = true) {
+  const nodeCatalog = useBackendNodeCapabilityCatalog(enabled)
   const [capabilities, setCapabilities] = useState<WorkflowCapabilitiesResponse | null>(
     cachedCapabilities,
   )
@@ -45,5 +48,16 @@ export function useWorkflowCapabilities(enabled = true) {
     }
   }, [enabled])
 
-  return { capabilities, error, loading }
+  const projectedCapabilities = useMemo(
+    () => mergeBackendNodeCapabilityCatalog(capabilities, nodeCatalog.catalog),
+    [capabilities, nodeCatalog.catalog],
+  )
+
+  return {
+    capabilities: projectedCapabilities,
+    nodeCatalog: nodeCatalog.catalog,
+    error: error && !nodeCatalog.catalog ? error : null,
+    catalogError: nodeCatalog.error,
+    loading: loading || nodeCatalog.loading,
+  }
 }

@@ -20,6 +20,7 @@ class BatchDeleteRequest(BaseModel):
 async def list_records(
     source_id: Optional[str] = None,
     task_id: Optional[str] = None,
+    project_id: Optional[str] = None,
     status: Optional[str] = None,
     search: Optional[str] = Query(None),
     page: int = Query(1, ge=1),
@@ -30,6 +31,7 @@ async def list_records(
         db,
         source_id=source_id,
         task_id=task_id,
+        project_id=project_id,
         status=status,
         search=search,
         page=page,

@@ -4,6 +4,7 @@ import pytest
 
 from backend.models.record import CollectedRecord
 from backend.models.source import DataSource
+from backend.models.studio import StudioProject, StudioWorkflow, StudioWorkspace
 from backend.models.task import CollectionTask
 
 
@@ -138,3 +139,44 @@ async def test_list_records_pagination(client, db_session, source_and_task):
     data = response.json()
     assert len(data["data"]) <= 2
     assert data["meta"]["total"] >= 3
+
+
+@pytest.mark.asyncio
+async def test_list_records_scopes_results_to_project(client, db_session, source_and_task):
+    source_id, task_id = source_and_task
+    workspace = StudioWorkspace(name="Record workspace", slug="record-workspace")
+    db_session.add(workspace)
+    await db_session.flush()
+
+    project = StudioProject(
+        workspace_id=workspace.id,
+        name="Record project",
+        slug="record-project",
+        created_by_user_id="local-user",
+    )
+    other_project = StudioProject(
+        workspace_id=workspace.id,
+        name="Other project",
+        slug="other-record-project",
+        created_by_user_id="local-user",
+    )
+    db_session.add_all([project, other_project])
+    await db_session.flush()
+
+    workflow = StudioWorkflow(project_id=project.id, name="Project workflow")
+    other_workflow = StudioWorkflow(project_id=other_project.id, name="Other workflow")
+    db_session.add_all([workflow, other_workflow])
+    await db_session.flush()
+
+    included = await _create_record(db_session, source_id, task_id, "hash-project")
+    included.workflow_id = workflow.id
+    excluded = await _create_record(db_session, source_id, task_id, "hash-other-project")
+    excluded.workflow_id = other_workflow.id
+    await db_session.flush()
+
+    response = await client.get(f"/api/v1/records?project_id={project.id}")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["meta"]["total"] == 1
+    assert [record["id"] for record in data["data"]] == [included.id]

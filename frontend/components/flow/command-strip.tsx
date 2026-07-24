@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react"
 import { useReactFlow, getNodesBounds, getViewportForBounds } from "@xyflow/react"
 import { toPng } from "html-to-image"
 import {
@@ -22,6 +22,8 @@ import {
   SlidersHorizontal,
   Play,
   Bot,
+  BrainCircuit,
+  Database,
   ListTree,
   Magnet,
   Scissors,
@@ -53,6 +55,7 @@ import {
 import { cn } from "@/lib/utils"
 import { MAX_WORKFLOW_NODE_DEPTH, workflowNodeDepthFromNetworkStack, workflowNodeLayerAtDepth } from "@/lib/workflow/node-hierarchy"
 import { COLLECTION_WORKFLOW_PROJECT } from "@/lib/workflow/collection-pipeline"
+import type { WorkflowWorkbenchMode } from "./workflow-workbench-panel"
 
 function downloadText(filename: string, data: string, type: string) {
   const blob = new Blob([data], { type })
@@ -116,6 +119,9 @@ export function CommandStrip({
   onToggleAgentDrawer,
   nodeManagementOpen,
   onToggleNodeManagement,
+  workbenchMode,
+  onChangeWorkbenchMode,
+  importInputRef,
 }: {
   onOpenPalette: () => void
   onExported?: (msg: string) => void
@@ -131,8 +137,12 @@ export function CommandStrip({
   onToggleAgentDrawer?: () => void
   nodeManagementOpen?: boolean
   onToggleNodeManagement?: () => void
+  workbenchMode?: WorkflowWorkbenchMode | null
+  onChangeWorkbenchMode?: (mode: WorkflowWorkbenchMode | null) => void
+  importInputRef?: RefObject<HTMLInputElement | null>
 }) {
-  const fileInputRef = useRef<HTMLInputElement>(null)
+  const localFileInputRef = useRef<HTMLInputElement>(null)
+  const fileInputRef = importInputRef ?? localFileInputRef
   const { getNodes } = useReactFlow()
 
   const undo = useFlowStore((s) => s.undo)
@@ -351,6 +361,12 @@ export function CommandStrip({
         <span>{networkDepth === 1 ? networkLayer.description : networkDepth < MAX_WORKFLOW_NODE_DEPTH ? "双击节点继续展开内部网络" : networkLayer.description}</span>
       </div>
 
+      <div className="hidden shrink-0 items-center rounded-lg border bg-card/60 p-1 xl:flex" aria-label="画布工作视图">
+        <button type="button" aria-pressed={!workbenchMode} onClick={() => onChangeWorkbenchMode?.(null)} className={cn("min-h-8 rounded-md px-2.5 text-[11px] transition-colors", !workbenchMode ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>编排</button>
+        <button type="button" aria-pressed={workbenchMode === "data"} onClick={() => onChangeWorkbenchMode?.("data")} className={cn("flex min-h-8 items-center gap-1.5 rounded-md px-2.5 text-[11px] transition-colors", workbenchMode === "data" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}><Database className="size-3.5" />数据</button>
+        <button type="button" aria-pressed={workbenchMode === "evidence"} onClick={() => onChangeWorkbenchMode?.("evidence")} className={cn("flex min-h-8 items-center gap-1.5 rounded-md px-2.5 text-[11px] transition-colors", workbenchMode === "evidence" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}><BrainCircuit className="size-3.5" />证据</button>
+      </div>
+
       <div className="flex shrink-0 items-center gap-1.5">
         <Button variant="outline" size="sm" className="min-h-11 gap-1.5 rounded-lg" onClick={onOpenPalette}>
           <span className="text-base leading-none">＋</span>
@@ -470,6 +486,14 @@ export function CommandStrip({
               <DropdownMenuItem onClick={onToggleRunTrace}>
                 <Play className="size-3.5" />
                 {runTraceOpen ? "关闭运行记录" : "运行记录与结果"}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onChangeWorkbenchMode?.(workbenchMode === "data" ? null : "data")}>
+                <Database className="size-3.5" />
+                {workbenchMode === "data" ? "关闭节点数据工作台" : "节点数据工作台"}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onChangeWorkbenchMode?.(workbenchMode === "evidence" ? null : "evidence")}>
+                <BrainCircuit className="size-3.5" />
+                {workbenchMode === "evidence" ? "关闭逻辑证据工作台" : "逻辑证据工作台"}
               </DropdownMenuItem>
               <DropdownMenuItem onClick={onToggleProjectSettings}>
                 <SlidersHorizontal className="size-3.5" />

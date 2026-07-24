@@ -67,6 +67,8 @@ logs/
 
 # Docker volumes / data
 data/
+!frontend/app/(app)/studio/projects/**/data/
+!frontend/app/(app)/studio/projects/**/data/**
 redis-data/
 
 # Celery

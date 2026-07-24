@@ -10,7 +10,10 @@
     "check:navigation-transitions": "node --test scripts/check-navigation-transition-regressions.mjs",
     "check:control-plane": "node --test scripts/check-control-plane-regressions.mjs scripts/check-dashboard-regressions.mjs scripts/check-inbox-regressions.mjs scripts/check-visualization-regressions.mjs",
     "check:dify-p0": "node --test scripts/check-dify-p0-regressions.mjs",
+    "check:node-capabilities": "node --test scripts/check-node-capability-catalog-regressions.mjs",
+    "check:record-hygiene": "node --test scripts/check-record-hygiene-regressions.mjs",
     "check:record-relationships": "node --test scripts/check-record-relationship-regressions.mjs",
+    "check:opencli-business-workflows": "node --test scripts/check-opencli-business-workflows.mjs",
     "test:workflow-contracts": "node scripts/assert-workflow-contracts.mjs",
     "start": "next start",
     "lint": "eslint ."

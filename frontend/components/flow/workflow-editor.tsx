@@ -10,6 +10,7 @@ import { useSettingsStore } from "@/lib/flow/settings-store"
 import type { WorkflowNode, WorkflowEdge, ToolMode } from "@/lib/flow/types"
 import { CommandStrip } from "./command-strip"
 import { CommandPalette } from "./command-palette"
+import { NODE_PALETTE } from "@/lib/flow/palette"
 import { getWorkflowNodeCatalog } from "@/lib/workflow/node-catalog"
 import { getWorkflowPrimitives } from "@/lib/workflow/node-primitives"
 import { groupPrimitivesForNodeMenu } from "@/lib/workflow/node-menu"
@@ -27,6 +28,7 @@ import { useWorkflowNodeMenuActions, type NodeMenuState } from "./workflow-node-
 import { useWorkflowAgentProposal } from "./workflow-agent-proposal"
 import { selectEditorCanvasState } from "./workflow-editor-selectors"
 import { WorkflowCanvasSurface } from "./workflow-canvas-surface"
+import type { WorkflowWorkbenchMode } from "./workflow-workbench-panel"
 import {
   isNetworkLocked,
   useApplyWorkflowCapabilities,
@@ -93,6 +95,7 @@ function EditorCanvas() {
 
   const { screenToFlowPosition, getInternalNode, setViewport, fitView } = useReactFlow<WorkflowNode, WorkflowEdge>()
   const wrapperRef = useRef<HTMLDivElement>(null)
+  const importInputRef = useRef<HTMLInputElement>(null)
   const mousePos = useRef({ x: 0, y: 0 })
   const shakeRef = useRef<Map<string, ShakeState>>(new Map())
   const scissorDraggingRef = useRef(false)
@@ -106,8 +109,10 @@ function EditorCanvas() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [projectSettingsOpen, setProjectSettingsOpen] = useState(false)
   const [runTraceOpen, setRunTraceOpen] = useState(false)
+  const [runRequestId, setRunRequestId] = useState(0)
   const [agentDrawerOpen, setAgentDrawerOpen] = useState(false)
   const [nodeManagementOpen, setNodeManagementOpen] = useState(false)
+  const [workbenchMode, setWorkbenchMode] = useState<WorkflowWorkbenchMode | null>(null)
   const [zoom, setZoom] = useState(1)
   const [compactViewport, setCompactViewport] = useState(false)
   const [nodeMenu, setNodeMenu] = useState<NodeMenuState | null>(null)
@@ -185,9 +190,6 @@ function EditorCanvas() {
     addPrimitiveFromMenu,
     diveIntoNetwork,
     lockInternals,
-    selectComponentFromMenu,
-    showNodeInfo,
-    showParameters,
     unlockInternals,
   } = useWorkflowNodeMenuActions({
     addPrimitiveToNodeNetwork,
@@ -214,8 +216,8 @@ function EditorCanvas() {
   )
 
   const onNodeClick: NodeMouseHandler<WorkflowNode> = useCallback(() => {
-    setInspectorOpen(true)
-  }, [])
+    if (!workbenchMode) setInspectorOpen(true)
+  }, [workbenchMode])
 
   const onNodeContextMenu: NodeMouseHandler<WorkflowNode> = useCallback((event, node) => {
     event.preventDefault()
@@ -226,9 +228,8 @@ function EditorCanvas() {
 
   const onPaneContextMenu = useCallback((event: ReactMouseEvent<Element> | MouseEvent) => {
     event.preventDefault()
-    setNodeMenu(null)
-    setPaletteAnchor({ x: event.clientX, y: event.clientY })
-    setPaletteOpen(true)
+    setPaletteOpen(false)
+    setNodeMenu({ x: event.clientX, y: event.clientY })
   }, [])
 
   const openNodePicker = useCallback(() => {
@@ -239,6 +240,38 @@ function EditorCanvas() {
         : { x: window.innerWidth / 2, y: window.innerHeight / 2 },
     )
     setPaletteOpen(true)
+  }, [])
+
+  const openNodePickerFromMenu = useCallback(() => {
+    if (!nodeMenu) return
+    setPaletteAnchor({ x: nodeMenu.x, y: nodeMenu.y })
+    setNodeMenu(null)
+    setPaletteOpen(true)
+  }, [nodeMenu])
+
+  const addNoteFromMenu = useCallback(() => {
+    if (!nodeMenu) return
+    const note = NODE_PALETTE.find((item) => item.nodeType === "note")
+    if (!note) {
+      showToast("未找到注释节点定义")
+      setNodeMenu(null)
+      return
+    }
+    addNodeFromPalette(note, screenToFlowPosition({ x: nodeMenu.x, y: nodeMenu.y }))
+    setNodeMenu(null)
+    showToast("已添加注释")
+  }, [addNodeFromPalette, nodeMenu, screenToFlowPosition, showToast])
+
+  const testRunFromMenu = useCallback(() => {
+    setNodeMenu(null)
+    setRunTraceOpen(true)
+    setRunRequestId((current) => current + 1)
+    showToast("已启动测试运行")
+  }, [showToast])
+
+  const importAppFromMenu = useCallback(() => {
+    setNodeMenu(null)
+    importInputRef.current?.click()
   }, [])
 
   const { isValidConnection, onBeforeDelete } = useConnectionGuards({ settings, showToast })
@@ -266,9 +299,18 @@ function EditorCanvas() {
     settings.set("collabProvider", settings.collabProvider === "off" ? "yjs" : "off")
   }, [settings])
 
+  const changeWorkbenchMode = useCallback((mode: WorkflowWorkbenchMode | null) => {
+    setWorkbenchMode(mode)
+    if (!mode) return
+    setInspectorOpen(false)
+    setSettingsOpen(false)
+    setProjectSettingsOpen(false)
+  }, [])
+
   return (
     <div data-health="workflow-editor" className="flex h-full min-h-0 flex-1 flex-col">
       <CommandStrip
+        importInputRef={importInputRef}
         onOpenPalette={openNodePicker}
         onExported={showToast}
         collab={settings.collabProvider !== "off"}
@@ -283,6 +325,8 @@ function EditorCanvas() {
         onToggleAgentDrawer={() => setAgentDrawerOpen((v) => !v)}
         nodeManagementOpen={nodeManagementOpen}
         onToggleNodeManagement={() => setNodeManagementOpen((v) => !v)}
+        workbenchMode={workbenchMode}
+        onChangeWorkbenchMode={changeWorkbenchMode}
       />
       <div className="flex min-h-0 flex-1">
         <WorkflowCanvasSurface
@@ -310,6 +354,10 @@ function EditorCanvas() {
           nodeMenu={nodeMenu}
           nodes={nodes}
           onBeforeDelete={onBeforeDelete}
+          onAddNodeFromMenu={openNodePickerFromMenu}
+          onAddNoteFromMenu={addNoteFromMenu}
+          onImportApp={importAppFromMenu}
+          onTestRun={testRunFromMenu}
           onCanvasMouseDownCapture={onCanvasMouseDownCapture}
           onCanvasMouseMoveCapture={onCanvasMouseMoveCapture}
           onCanvasMouseUpCapture={onCanvasMouseUpCapture}
@@ -330,19 +378,19 @@ function EditorCanvas() {
           projectSettingsOpen={projectSettingsOpen}
           rejectProposal={rejectProposal}
           runTraceOpen={runTraceOpen}
+          runRequestId={runRequestId}
           scissorTrail={scissorTrail}
-          selectComponentFromMenu={selectComponentFromMenu}
           setAgentDrawerOpen={setAgentDrawerOpen}
           setNodeManagementOpen={setNodeManagementOpen}
           settings={settings}
           settingsOpen={settingsOpen}
-          showNodeInfo={showNodeInfo}
-          showParameters={showParameters}
           takeSnapshot={takeSnapshot}
           toast={toast}
           toolMode={toolMode}
           unlockInternals={unlockInternals}
           workflowProfile={workflowProject.profile}
+          workbenchMode={workbenchMode}
+          onChangeWorkbenchMode={changeWorkbenchMode}
           wrapperRef={wrapperRef}
           zoom={zoom}
           setZoom={setZoom}
@@ -351,6 +399,7 @@ function EditorCanvas() {
 
       <CommandPalette
         open={paletteOpen}
+        onImportApp={() => importInputRef.current?.click()}
         onClose={() => {
           setPaletteOpen(false)
           setPaletteAnchor(null)

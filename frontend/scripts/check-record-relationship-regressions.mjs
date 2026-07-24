@@ -154,3 +154,20 @@ test('records graph is project-scoped, bounded and rendered through a client-onl
   assert.match(endpoints, /projects\/\$\{projectId\}\/record-graph/)
   assert.match(hooks, /\['project-record-graph'/)
 })
+
+test('project record surfaces distinguish source freshness from ingestion time', async () => {
+  const [evidencePage, dataPage, types] = await Promise.all([
+    read('app/(app)/studio/projects/[projectId]/evidence/page.tsx'),
+    read('app/(app)/studio/projects/[projectId]/data/page.tsx'),
+    read('lib/api/types.ts'),
+  ])
+
+  assert.match(types, /source_published_at: string \| null/)
+  assert.match(evidencePage, /源发布时间/)
+  assert.match(evidencePage, /数据新鲜度/)
+  assert.match(evidencePage, /采集时间/)
+  assert.doesNotMatch(evidencePage, /Fact label="创建时间"/)
+  assert.match(dataPage, /源发布时间/)
+  assert.doesNotMatch(dataPage, /<TableHead>更新时间<\/TableHead>/)
+  assert.doesNotMatch(dataPage, /formatRelative\(record\.updated_at\)/)
+})

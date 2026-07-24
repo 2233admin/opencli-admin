@@ -983,6 +983,7 @@ export interface RecordGraphNode {
   url: string | null
   preview: string | null
   status: string | null
+  source_published_at: string | null
   created_at: string | null
 }
 

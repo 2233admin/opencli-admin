@@ -24,7 +24,7 @@ export default function NodesPage() {
   return (
     <PageContainer
       title="节点与 Worker"
-      description="边缘浏览器采集节点及其在线状态"
+      description="这里管理边缘采集 Worker 的在线状态；网站数据源请在工作流画布中通过“添加节点”直接选择。"
       tabs={<RouteTabs tabs={COMPUTE_TABS} />}
     >
       {isLoading ? (

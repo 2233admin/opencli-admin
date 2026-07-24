@@ -238,9 +238,7 @@ async def test_standalone_opencli_source_executes_live_channel(client, monkeypat
             {},
         )
     ]
-    events = (
-        await client.get(f"/api/v1/workflows/runs/{data['runId']}/events")
-    ).json()["data"]
+    events = (await client.get(f"/api/v1/workflows/runs/{data['runId']}/events")).json()["data"]
     source_partial = next(
         event
         for event in events
@@ -248,6 +246,107 @@ async def test_standalone_opencli_source_executes_live_channel(client, monkeypat
     )
     assert source_partial["details"]["itemCount"] == 1
     assert source_partial["details"]["agentDispatch"]["protocol"] == "local"
+
+
+@pytest.mark.asyncio
+async def test_raw_output_opencli_hda_executes_live_channel_inline(
+    client,
+    db_session,
+    monkeypatch,
+):
+    calls: list[tuple[dict, dict]] = []
+
+    async def collect(_self, config, parameters):
+        calls.append((config, parameters))
+        return ChannelResult.ok(
+            [{"title": "OpenCLI packaged live item", "url": "https://www.bbc.com/news/2"}],
+            site="bbc",
+            command="news",
+        )
+
+    monkeypatch.setattr(OpenCLIChannel, "collect", collect)
+    project = _multi_source_opencli_hda_project()
+    package = project["nodes"][0]
+    package.pop("internals")
+    package["params"] = {
+        "template": "opencli-multi-source",
+        "runtime": "iii",
+        "lockedInternals": True,
+        "exposeRawSourceItems": True,
+        "sources": [
+            {
+                "id": "bbc",
+                "sourceGroup": "news",
+                "site": "bbc",
+                "command": "news",
+                "args": {},
+            }
+        ],
+    }
+    hygiene = _record_hygiene_project(packaged=True)["nodes"][1]
+    sink = {
+        "id": "record-sink",
+        "kind": "sink",
+        "capability": "store",
+        "params": {
+            "target": "records",
+            "writeMode": "append",
+            "preserveLineage": True,
+        },
+        "ui": {"catalogId": "intelligence.sink.records"},
+    }
+    project["nodes"].extend([hygiene, sink])
+    project["edges"] = [
+        {"id": "source-hygiene", "source": package["id"], "target": hygiene["id"]},
+        {
+            "id": "hygiene-sink",
+            "source": hygiene["id"],
+            "target": sink["id"],
+            "sourcePort": "records",
+            "targetPort": "records",
+        },
+    ]
+    project["adapters"] = []
+
+    response = await client.post("/api/v1/workflows/runs", json={"project": project})
+
+    assert response.status_code == 202, response.text
+    data = response.json()["data"]
+    assert data["status"] == "completed"
+    assert calls == [
+        (
+            {
+                "site": "bbc",
+                "command": "news",
+                "format": "json",
+                "args": {},
+            },
+            {},
+        )
+    ]
+    events = (await client.get(f"/api/v1/workflows/runs/{data['runId']}/events")).json()[
+        "data"
+    ]
+    source_partial = next(
+        event
+        for event in events
+        if event["nodeId"] == "multi-source-opencli::source-bbc"
+        and event["eventType"] == "partial"
+    )
+    assert source_partial["details"]["itemCount"] == 1
+    assert source_partial["details"]["agentDispatch"]["protocol"] == "local"
+    sink_partial = next(
+        event
+        for event in events
+        if event["nodeId"] == "record-sink" and event["eventType"] == "partial"
+    )
+    assert sink_partial["details"]["storedRecordCount"] == 1
+    record = (await db_session.execute(select(CollectedRecord))).scalar_one()
+    assert record.workflow_id == project["id"]
+    assert record.workflow_run_id == data["runId"]
+    assert record.raw_data["_workflowLineage"][0]["nodeId"] == (
+        "multi-source-opencli::source-bbc"
+    )
 
 
 def _native_first_loop_project() -> dict:
@@ -320,6 +419,13 @@ def _native_first_loop_project() -> dict:
                 "ui": {"catalogId": "intelligence.flow.merge"},
             },
             {
+                "id": "dedupe-candidates",
+                "kind": "agent",
+                "capability": "dedupe",
+                "params": {"key": "title+source+publishedAt", "window": "24h"},
+                "ui": {"catalogId": "intelligence.processing.dedupe"},
+            },
+            {
                 "id": "accept-records",
                 "kind": "control",
                 "capability": "accept",
@@ -370,8 +476,15 @@ def _native_first_loop_project() -> dict:
                 "targetPort": "in2",
             },
             {
-                "id": "e-merge-accept",
+                "id": "e-merge-dedupe",
                 "source": "merge-candidates",
+                "target": "dedupe-candidates",
+                "sourcePort": "out",
+                "targetPort": "in",
+            },
+            {
+                "id": "e-dedupe-accept",
+                "source": "dedupe-candidates",
                 "target": "accept-records",
                 "sourcePort": "out",
                 "targetPort": "candidates",
@@ -415,6 +528,158 @@ def _legacy_canvas_intelligence_project() -> dict:
         can_send_notifications=False,
         delivery_configured=False,
     )
+
+
+def _record_hygiene_project(*, packaged: bool = False) -> dict:
+    source = {
+        "id": "source-records",
+        "kind": "source",
+        "capability": "fetch",
+        "adapter": "opencli-records",
+        "params": {
+            "site": "bbc",
+            "command": "news",
+            "fixtureItems": [
+                {
+                    "title": "Same title",
+                    "source": "bbc",
+                    "publishedAt": "2026-07-22T01:00:00Z",
+                    "url": "https://bbc.example/1",
+                },
+                {
+                    "title": "Same title",
+                    "source": "bbc",
+                    "publishedAt": "2026-07-22T02:00:00Z",
+                    "url": "https://bbc.example/duplicate",
+                },
+                {
+                    "title": "Same title",
+                    "source": "reuters",
+                    "publishedAt": "2026-07-22T02:00:00Z",
+                    "url": "https://reuters.example/1",
+                },
+            ],
+        },
+        "ui": {"catalogId": "intelligence.source.opencli-slot"},
+    }
+    hygiene_nodes = [
+        {
+            "id": "normalize",
+            "kind": "agent",
+            "capability": "normalize",
+            "params": {"language": "zh-CN", "preserveSourceRefs": True},
+            "ui": {"catalogId": "intelligence.processing.normalize"},
+        },
+        {
+            "id": "dedupe",
+            "kind": "agent",
+            "capability": "dedupe",
+            "params": {"key": "title+source+publishedAt", "window": "24h"},
+            "ui": {"catalogId": "intelligence.processing.dedupe"},
+        },
+        {
+            "id": "record-acceptance",
+            "kind": "control",
+            "capability": "accept",
+            "params": {
+                "schema": "record.v1",
+                "dedupe": "required",
+                "lineageRequired": True,
+                "minQuality": 0,
+            },
+            "ui": {"catalogId": "intelligence.control.record-acceptance"},
+        },
+    ]
+    hygiene_edges = [
+        {
+            "id": "normalize-dedupe",
+            "source": "normalize",
+            "target": "dedupe",
+            "sourcePort": "out",
+            "targetPort": "in",
+        },
+        {
+            "id": "dedupe-accept",
+            "source": "dedupe",
+            "target": "record-acceptance",
+            "sourcePort": "out",
+            "targetPort": "candidates",
+        },
+    ]
+    if packaged:
+        hygiene_node = {
+            "id": "hygiene",
+            "kind": "agent",
+            "capability": "normalize",
+            "params": {"window": "24h", "minQuality": 0},
+            "topicCollapse": {
+                "groupId": "record-hygiene",
+                "nodeCount": 3,
+                "mode": "locked",
+                "packageInternal": True,
+            },
+            "parameterInterface": {
+                "groups": [{"id": "policy", "label": "Policy"}],
+                "fields": [
+                    {
+                        "id": "window",
+                        "label": "Window",
+                        "groupId": "policy",
+                        "type": "text",
+                        "binding": {
+                            "nodeId": "hygiene__dedupe",
+                            "source": "params",
+                            "fieldId": "window",
+                        },
+                        "value": "24h",
+                    },
+                    {
+                        "id": "minQuality",
+                        "label": "Minimum quality",
+                        "groupId": "policy",
+                        "type": "number",
+                        "binding": {
+                            "nodeId": "hygiene__record-acceptance",
+                            "source": "params",
+                            "fieldId": "minQuality",
+                        },
+                        "value": 0,
+                    },
+                ],
+            },
+            "internals": {"locked": True, "nodes": hygiene_nodes, "edges": hygiene_edges},
+            "ui": {"catalogId": "package.processing.record-hygiene"},
+        }
+        nodes = [source, hygiene_node]
+        edges = [{"id": "source-hygiene", "source": "source-records", "target": "hygiene"}]
+    else:
+        nodes = [source, *hygiene_nodes]
+        edges = [
+            {"id": "source-normalize", "source": "source-records", "target": "normalize"},
+            *hygiene_edges,
+        ]
+    return {
+        "id": "wf-record-hygiene-package" if packaged else "wf-record-hygiene",
+        "name": "Record hygiene",
+        "profile": "intelligence",
+        "version": 1,
+        "nodes": nodes,
+        "edges": edges,
+        "adapters": [
+            {
+                "id": "opencli-records",
+                "type": "source",
+                "provider": "opencli",
+                "mode": "live",
+                "config": {"channel": "opencli"},
+            }
+        ],
+        "agentPermissions": {
+            "canFetchNetwork": True,
+            "canSendNotifications": False,
+            "canWriteInbox": True,
+        },
+    }
 
 
 async def _seed_collected_record(
@@ -924,9 +1189,7 @@ async def test_workflow_run_blocks_missing_opencli_profile_resource(
 
     assert response.status_code == 202
     events = (
-        await client.get(
-            "/api/v1/workflows/runs/run-missing-profile-resource/events"
-        )
+        await client.get("/api/v1/workflows/runs/run-missing-profile-resource/events")
     ).json()["data"]
     blocked = next(
         event
@@ -958,6 +1221,7 @@ async def test_workflow_run_emits_native_first_loop_trace_events(client, db_sess
     states = {state["nodeId"]: state for state in data["nodeStates"]}
     assert states["normalize-bilibili"]["status"] == "completed"
     assert states["merge-candidates"]["status"] == "completed"
+    assert states["dedupe-candidates"]["status"] == "completed"
     assert states["accept-records"]["status"] == "completed"
     assert states["record-sink"]["status"] == "completed"
 
@@ -984,6 +1248,13 @@ async def test_workflow_run_emits_native_first_loop_trace_events(client, db_sess
         "normalize-bilibili",
         "normalize-xhs",
     ]
+
+    dedupe_partial = by_node["dedupe-candidates"][2]
+    assert dedupe_partial["details"]["bindingId"] == "workflow.transform.dedupe"
+    assert dedupe_partial["details"]["inputCandidateCount"] == 2
+    assert dedupe_partial["details"]["deduplicatedCandidateCount"] == 2
+    assert dedupe_partial["details"]["rejectedCount"] == 0
+    assert dedupe_partial["details"]["metrics"]["duplicateCount"] == 0
 
     gate_partial = by_node["accept-records"][2]
     assert gate_partial["details"]["bindingId"] == "workflow.gate.record-acceptance"
@@ -1030,6 +1301,147 @@ async def test_workflow_run_emits_native_first_loop_trace_events(client, db_sess
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("packaged", [False, True])
+async def test_record_hygiene_compile_run_dedupes_with_evidence(client, packaged):
+    project = _record_hygiene_project(packaged=packaged)
+    compile_response = await client.post("/api/v1/workflows/compile", json={"project": project})
+
+    assert compile_response.status_code == 200, compile_response.text
+    compile_data = compile_response.json()["data"]
+    assert compile_data["valid"] is True, compile_data["errors"]
+    runtime_nodes = {node["id"]: node for node in compile_data["plan"]["runtime"]["nodes"]}
+    prefix = "hygiene::" if packaged else ""
+    dedupe_runtime = runtime_nodes[f"{prefix}dedupe"]["runtime"]
+    assert dedupe_runtime["binding"]["binding_id"] == "workflow.transform.dedupe"
+    assert "missing_runtime" not in dedupe_runtime
+    if packaged:
+        assert runtime_nodes["hygiene::dedupe"]["params"]["window"] == "24h"
+
+    run_id = "run-record-hygiene-package" if packaged else "run-record-hygiene"
+    response = await client.post(
+        "/api/v1/workflows/runs",
+        json={"project": project, "runId": run_id, "traceId": f"trace-{run_id}"},
+    )
+
+    assert response.status_code == 202, response.text
+    data = response.json()["data"]
+    assert data["status"] == "completed"
+    events = (await client.get(f"/api/v1/workflows/runs/{run_id}/events")).json()["data"]
+    by_node: dict[str, list[dict]] = {}
+    for event in events:
+        by_node.setdefault(event["nodeId"], []).append(event)
+
+    dedupe_partial = next(
+        event for event in by_node[f"{prefix}dedupe"] if event["eventType"] == "partial"
+    )
+    assert dedupe_partial["details"]["inputCandidateCount"] == 3
+    assert dedupe_partial["details"]["deduplicatedCandidateCount"] == 2
+    assert dedupe_partial["details"]["rejectedCount"] == 1
+    assert dedupe_partial["details"]["metrics"]["duplicateCount"] == 1
+    assert dedupe_partial["details"]["rejected"][0]["duplicateOf"]
+
+    accept_partial = next(
+        event for event in by_node[f"{prefix}record-acceptance"] if event["eventType"] == "partial"
+    )
+    assert accept_partial["details"]["acceptedRecordCount"] == 2
+    assert accept_partial["details"]["rejectedCount"] == 0
+    assert accept_partial["details"]["metrics"]["acceptedCount"] == 2
+    accepted_lineage = accept_partial["details"]["metrics"]
+    assert accepted_lineage["dedupeRequired"] is True
+    assert accepted_lineage["lineageRequired"] is True
+
+
+@pytest.mark.asyncio
+async def test_record_acceptance_enforces_dedupe_lineage_and_quality(client):
+    project = _record_hygiene_project()
+    source_items = project["nodes"][0]["params"]["fixtureItems"]
+    source_items[0]["quality"] = 0.9
+    source_items[1]["quality"] = 0.9
+    source_items[2]["quality"] = 0.1
+    acceptance = next(node for node in project["nodes"] if node["id"] == "record-acceptance")
+    acceptance["params"]["minQuality"] = 0.5
+
+    response = await client.post(
+        "/api/v1/workflows/runs",
+        json={
+            "project": project,
+            "runId": "run-record-hygiene-quality",
+            "traceId": "trace-record-hygiene-quality",
+        },
+    )
+
+    assert response.status_code == 202, response.text
+    assert response.json()["data"]["status"] == "completed"
+    events = (await client.get("/api/v1/workflows/runs/run-record-hygiene-quality/events")).json()[
+        "data"
+    ]
+    gate_partial = next(
+        event
+        for event in events
+        if event["nodeId"] == "record-acceptance" and event["eventType"] == "partial"
+    )
+    assert gate_partial["details"]["inputCandidateCount"] == 2
+    assert gate_partial["details"]["acceptedRecordCount"] == 1
+    assert gate_partial["details"]["rejectedCount"] == 1
+    assert gate_partial["details"]["metrics"]["rejectionReasons"] == {"quality_below_minimum": 1}
+    rejected = gate_partial["details"]["rejected"][0]
+    assert rejected["rejection"]["reasons"] == ["quality_below_minimum"]
+    assert [entry["step"] for entry in rejected["lineage"][-3:]] == [
+        "normalize",
+        "dedupe",
+        "accept",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_workflow_run_executes_native_template_with_workflow_input(client):
+    project = {
+        "id": "wf-native-template",
+        "name": "Native template",
+        "profile": "intelligence",
+        "version": 1,
+        "nodes": [
+            {
+                "id": "render-greeting",
+                "kind": "agent",
+                "capability": "normalize",
+                "params": {
+                    "template": "Hello {{name}}",
+                    "outputKey": "message",
+                },
+                "ui": {"primitiveId": "primitive.core.template-transform"},
+            }
+        ],
+        "edges": [],
+    }
+
+    response = await client.post(
+        "/api/v1/workflows/runs",
+        json={
+            "project": project,
+            "runId": "run-native-template",
+            "traceId": "trace-native-template",
+            "input": {"payload": {"name": "Ada"}},
+        },
+    )
+
+    assert response.status_code == 202
+    assert response.json()["data"]["status"] == "completed", response.json()["data"]["errors"]
+    events = (await client.get("/api/v1/workflows/runs/run-native-template/events")).json()["data"]
+    native_events = [event for event in events if event["nodeId"] == "render-greeting"]
+    assert [event["eventType"] for event in native_events] == [
+        "queued",
+        "started",
+        "partial",
+        "completed",
+    ]
+    assert native_events[2]["details"] == native_events[3]["details"]
+    assert native_events[2]["details"]["bindingId"] == ("workflow.native.template-transform")
+    assert native_events[2]["details"]["input"] == {"name": "Ada"}
+    assert native_events[2]["details"]["output"] == {"message": "Hello Ada"}
+
+
+@pytest.mark.asyncio
 async def test_workflow_run_moves_data_between_operator_implementation_boundaries(client):
     project = _two_operator_pipeline_project()
     project["nodes"].reverse()
@@ -1056,9 +1468,9 @@ async def test_workflow_run_moves_data_between_operator_implementation_boundarie
     assert states[clean_node_id]["packageNodeId"] == "clean-operator"
     assert states[clean_node_id]["internalNodeId"] == "clean-implementation"
 
-    events = (
-        await client.get("/api/v1/workflows/runs/run-operator-boundaries/events")
-    ).json()["data"]
+    events = (await client.get("/api/v1/workflows/runs/run-operator-boundaries/events")).json()[
+        "data"
+    ]
     by_node: dict[str, list[dict]] = {}
     for event in events:
         by_node.setdefault(event["nodeId"], []).append(event)
@@ -1096,9 +1508,7 @@ async def test_workflow_run_locates_four_level_implementation_events(client):
     data = response.json()["data"]
     assert data["valid"] is True
     assert data["status"] == "completed"
-    leaf_id = (
-        "level-1-operator::level-2-package::level-3-package::level-4-implementation"
-    )
+    leaf_id = "level-1-operator::level-2-package::level-3-package::level-4-implementation"
     leaf_state = next(state for state in data["nodeStates"] if state["nodeId"] == leaf_id)
     assert leaf_state["nodePath"] == [
         "level-1-operator",
@@ -1106,14 +1516,10 @@ async def test_workflow_run_locates_four_level_implementation_events(client):
         "level-3-package",
         "level-4-implementation",
     ]
-    assert leaf_state["packageNodeId"] == (
-        "level-1-operator::level-2-package::level-3-package"
-    )
+    assert leaf_state["packageNodeId"] == ("level-1-operator::level-2-package::level-3-package")
     assert leaf_state["internalNodeId"] == "level-4-implementation"
 
-    events = (
-        await client.get("/api/v1/workflows/runs/run-four-level-path/events")
-    ).json()["data"]
+    events = (await client.get("/api/v1/workflows/runs/run-four-level-path/events")).json()["data"]
     leaf_events = [event for event in events if event["nodeId"] == leaf_id]
     assert [event["eventType"] for event in leaf_events] == [
         "queued",
@@ -1168,9 +1574,9 @@ async def test_workflow_run_resolves_legacy_canvas_runtime_bindings(client, db_s
         for reason in state["blockReasons"]
     )
 
-    events = (
-        await client.get("/api/v1/workflows/runs/run-legacy-canvas-bindings/events")
-    ).json()["data"]
+    events = (await client.get("/api/v1/workflows/runs/run-legacy-canvas-bindings/events")).json()[
+        "data"
+    ]
     by_node = {}
     for event in events:
         by_node.setdefault(event["nodeId"], []).append(event)
@@ -1196,9 +1602,7 @@ async def test_workflow_run_resolves_legacy_canvas_runtime_bindings(client, db_s
         "started",
         "blocked",
     ]
-    assert notify_events[-1]["blockReason"]["details"]["bindingId"] == (
-        "workflow.notify.send"
-    )
+    assert notify_events[-1]["blockReason"]["details"]["bindingId"] == ("workflow.notify.send")
 
     records = (
         (await db_session.execute(select(CollectedRecord).order_by(CollectedRecord.created_at)))
@@ -1443,13 +1847,11 @@ async def test_workflow_run_executes_live_http_sources(
 
     assert response.status_code == 202
     assert response.json()["data"]["status"] == "completed"
-    events = (
-        await client.get("/api/v1/workflows/runs/run-live-http-sources/events")
-    ).json()["data"]
+    events = (await client.get("/api/v1/workflows/runs/run-live-http-sources/events")).json()[
+        "data"
+    ]
     source_partials = [
-        event
-        for event in events
-        if event["message"] == "Live HTTP source loaded as workflow items"
+        event for event in events if event["message"] == "Live HTTP source loaded as workflow items"
     ]
     assert len(source_partials) == 2
     assert all(event["details"]["statusCode"] == 200 for event in source_partials)
@@ -1471,9 +1873,9 @@ async def test_workflow_run_executes_live_http_sources(
         "Live Bilibili AI video",
         "Live XHS AI note",
     }
-    assert {
-        record.raw_data["_workflowLineage"][0]["artifact"] for record in records
-    } == {"live_http_source"}
+    assert {record.raw_data["_workflowLineage"][0]["artifact"] for record in records} == {
+        "live_http_source"
+    }
 
 
 @pytest.mark.asyncio
@@ -1554,13 +1956,9 @@ async def test_workflow_run_executes_grouped_live_rss_sources(
 
     assert response.status_code == 202
     assert response.json()["data"]["status"] == "completed"
-    events = (
-        await client.get("/api/v1/workflows/runs/run-live-rss-sources/events")
-    ).json()["data"]
+    events = (await client.get("/api/v1/workflows/runs/run-live-rss-sources/events")).json()["data"]
     source_partials = [
-        event
-        for event in events
-        if event["message"] == "Live RSS source loaded as workflow items"
+        event for event in events if event["message"] == "Live RSS source loaded as workflow items"
     ]
     assert len(source_partials) == 2
     assert {event["details"]["feedTitle"] for event in source_partials} == {
@@ -1581,12 +1979,13 @@ async def test_workflow_run_executes_grouped_live_rss_sources(
         "FED live update",
         "SEC live update",
     }
-    assert {
-        record.raw_data["_workflowLineage"][0]["artifact"] for record in records
-    } == {"live_rss_source"}
-    assert {
-        record.raw_data["_workflowLineage"][0]["sourceGroup"] for record in records
-    } == {"macro-policy", "market-regulation"}
+    assert {record.raw_data["_workflowLineage"][0]["artifact"] for record in records} == {
+        "live_rss_source"
+    }
+    assert {record.raw_data["_workflowLineage"][0]["sourceGroup"] for record in records} == {
+        "macro-policy",
+        "market-regulation",
+    }
 
     sources = (await db_session.execute(select(DataSource))).scalars().all()
     assert {source.channel_type for source in sources} == {"rss"}

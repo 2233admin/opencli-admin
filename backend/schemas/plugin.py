@@ -73,3 +73,100 @@ class PluginInstallationRead(UTCModel):
     bundled: bool = False
     installed_at: datetime = Field(alias="installedAt")
     updated_at: datetime = Field(alias="updatedAt")
+
+
+class PluginNodePortRead(BaseModel):
+    name: str
+    type: str
+    required: bool = False
+
+
+class PluginNodeParameterRead(BaseModel):
+    name: str
+    label: str
+    type: str
+    required: bool = False
+    default: Any = None
+    options: list[Any] = Field(default_factory=list)
+
+
+class PluginNodeCapabilityRead(BaseModel):
+    model_config = {"populate_by_name": True}
+
+    id: str
+    label: str
+    description: str
+    category: Literal[
+        "input",
+        "trigger",
+        "ai",
+        "knowledge",
+        "logic",
+        "transform",
+        "flow",
+        "tool",
+        "agent",
+        "human",
+        "output",
+        "plugin",
+        "compatibility",
+    ]
+    origin: Literal["native", "composite", "plugin", "compatibility"]
+    kind: Literal[
+        "schedule",
+        "source",
+        "agent",
+        "router",
+        "notify",
+        "inbox",
+        "action",
+        "flow",
+        "control",
+        "sink",
+    ]
+    capability: Literal[
+        "trigger",
+        "fetch",
+        "normalize",
+        "dedupe",
+        "summarize",
+        "score",
+        "tag",
+        "route",
+        "send",
+        "store",
+        "merge",
+        "accept",
+    ]
+    icon: str
+    provider: str
+    source: str
+    readiness: Literal["runnable", "blocked", "composed", "plugin_required"]
+    runtime_binding: str | None = Field(default=None, alias="runtimeBinding")
+    input_ports: list[PluginNodePortRead] = Field(default_factory=list, alias="inputPorts")
+    output_ports: list[PluginNodePortRead] = Field(default_factory=list, alias="outputPorts")
+    parameters: list[PluginNodeParameterRead] = Field(default_factory=list)
+    dify_node_types: list[str] = Field(default_factory=list, alias="difyNodeTypes")
+    missing: list[str] = Field(default_factory=list)
+
+
+class PluginNodeCategoryRead(BaseModel):
+    id: str
+    label: str
+    count: int
+
+
+class PluginNodeCatalogSummaryRead(BaseModel):
+    model_config = {"populate_by_name": True}
+
+    total: int
+    by_readiness: dict[str, int] = Field(alias="byReadiness")
+    by_origin: dict[str, int] = Field(alias="byOrigin")
+
+
+class PluginNodeCatalogRead(BaseModel):
+    version: Literal["opencli.node-capabilities.v1"] = "opencli.node-capabilities.v1"
+    authority: Literal["backend"] = "backend"
+    nodes: list[PluginNodeCapabilityRead] = Field(default_factory=list)
+    categories: list[PluginNodeCategoryRead] = Field(default_factory=list)
+    summary: PluginNodeCatalogSummaryRead

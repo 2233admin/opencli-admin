@@ -1,10 +1,13 @@
 import type { ProjectAppType } from '@/lib/api/types'
 
 import { PACKAGED_WORKFLOW_PROJECT } from './collection-pipeline'
+import { buildAshareMarketWorkflow, buildOpenCLISituationAwarenessWorkflow } from './opencli-business-workflows'
 import { WORKFLOW_NODE_CATALOG, createWorkflowNodeFromCatalog } from './node-catalog'
 import { parseWorkflowProject, workflowNodeSchema, type WorkflowProjectNode } from './schema'
 
 export const STUDIO_TEMPLATES = [
+  { id: 'ashare-market-intelligence', variant: 'collection-to-consumption', appType: 'workflow', title: 'A 股真实金融数据采集', description: '用 OpenCLI 并行采集沪深京行情、财务、公告与实时财经新闻，并写入可追溯 Records。', category: '真实业务测试', steps: ['A 股多源采集', '清洗与准入', '数据工作台'] },
+  { id: 'opencli-situation-awareness', variant: 'collection-to-consumption', appType: 'workflow', title: 'OpenCLI 态势感知框架', description: '采集实时事件、新闻和视频字幕，保留证据血缘，并投影到数据工作台与逻辑证据页。', category: '真实业务测试', steps: ['多模态证据采集', '证据准入', '数据与证据工作台'] },
   { id: 'opencli-live-pipeline', variant: 'collection-to-consumption', appType: 'workflow', title: 'OpenCLI 实时采集清洗发送', description: '从 OpenCLI 动态数据源实时提取，完成标准化、去重、Records 入库并发送结果。', category: '完整链路', steps: ['OpenCLI 实时采集', '清洗与 Records', 'Webhook 发送'] },
   { id: 'financial-rss-intelligence', variant: 'collect', appType: 'workflow', title: '财经多源 RSS 情报', description: '并行采集央行政策、监管公告与研究动态，按来源 Group 清洗后写入成果与数据。', category: '采集与监控', steps: ['多源 RSS', 'Group 标准化', 'Records 入库'] },
   { id: 'website-watch', variant: 'collect', appType: 'workflow', title: '网站变化监控', description: '定时读取指定页面，识别内容变化并形成可追溯记录。', category: '采集与监控', steps: ['网页来源', '变化检测', '记录入库'] },
@@ -31,6 +34,8 @@ type TemplateIntent = {
 }
 
 const TEMPLATE_INTENTS: Record<(typeof STUDIO_TEMPLATES)[number]['id'], TemplateIntent> = {
+  'ashare-market-intelligence': { cadence: '5m', source: 'opencli-ashare-live', objective: 'collect-normalize-store-financial-evidence', delivery: 'records' },
+  'opencli-situation-awareness': { cadence: '5m', source: 'opencli-news-video-live', objective: 'collect-normalize-project-evidence', delivery: 'records-and-evidence' },
   'opencli-live-pipeline': { cadence: '5m', source: 'opencli-live-catalog', objective: 'collect-clean-store-deliver', delivery: 'webhook' },
   'financial-rss-intelligence': { cadence: '15m', source: 'financial-rss-groups', objective: 'collect-normalize-store', delivery: 'records' },
   'website-watch': { cadence: 'hourly', source: 'webpage-url', objective: 'detect-change', delivery: 'records' },
@@ -73,6 +78,8 @@ export function studioGraphForTemplate(template: StudioTemplateId, name: string)
   }
   if (template === 'opencli-live-pipeline') return opencliLivePipelineGraph(name)
   if (template === 'financial-rss-intelligence') return financialRssIntelligenceGraph(name)
+  if (template === 'ashare-market-intelligence') return buildAshareMarketWorkflow(name)
+  if (template === 'opencli-situation-awareness') return buildOpenCLISituationAwarenessWorkflow(name)
 
   const variant: StudioTemplateVariant = STUDIO_TEMPLATES.find((item) => item.id === template)?.variant ?? 'collection-to-consumption'
   const intent = TEMPLATE_INTENTS[template]
@@ -118,12 +125,10 @@ function opencliLivePipelineGraph(name: string) {
       catalogId: 'intelligence.source.opencli-slot',
     },
   }
-  const normalize = createWorkflowNodeFromCatalog(catalog('intelligence.processing.normalize'), 'normalize', { x: 620, y: 150 })
-  const dedupe = createWorkflowNodeFromCatalog(catalog('intelligence.processing.dedupe'), 'dedupe', { x: 880, y: 150 })
-  const acceptance = createWorkflowNodeFromCatalog(catalog('intelligence.control.record-acceptance'), 'record-acceptance', { x: 1140, y: 150 })
-  const records = createWorkflowNodeFromCatalog(catalog('intelligence.sink.records'), 'records', { x: 1420, y: 80 })
+  const hygiene = createWorkflowNodeFromCatalog(catalog('package.processing.record-hygiene'), 'record-hygiene', { x: 700, y: 150 })
+  const records = createWorkflowNodeFromCatalog(catalog('intelligence.sink.records'), 'records', { x: 1020, y: 80 })
   const notifyItem = catalog('intelligence.output.webhook')
-  const notify = createWorkflowNodeFromCatalog(notifyItem, 'notify-webhook', { x: 1420, y: 270 })
+  const notify = createWorkflowNodeFromCatalog(notifyItem, 'notify-webhook', { x: 1020, y: 270 })
   const adapters = [
     {
       id: 'opencli-bbc',
@@ -145,14 +150,12 @@ function opencliLivePipelineGraph(name: string) {
       canWriteInbox: true,
       canSendNotifications: true,
     },
-    nodes: [schedule, source, normalize, dedupe, acceptance, records, notify],
+    nodes: [schedule, source, hygiene, records, notify],
     edges: [
       { id: 'schedule-source', source: schedule.id, target: source.id },
-      { id: 'source-normalize', source: source.id, target: normalize.id },
-      { id: 'normalize-dedupe', source: normalize.id, target: dedupe.id },
-      { id: 'dedupe-acceptance', source: dedupe.id, target: acceptance.id },
-      { id: 'acceptance-records', source: acceptance.id, target: records.id },
-      { id: 'acceptance-notify', source: acceptance.id, target: notify.id },
+      { id: 'source-record-hygiene', source: source.id, sourcePort: 'out', target: hygiene.id, targetPort: 'in' },
+      { id: 'record-hygiene-records', source: hygiene.id, sourcePort: 'out', target: records.id, targetPort: 'records' },
+      { id: 'record-hygiene-notify', source: hygiene.id, sourcePort: 'out', target: notify.id, targetPort: 'in' },
     ],
   })
 }

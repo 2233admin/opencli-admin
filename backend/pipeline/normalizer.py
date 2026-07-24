@@ -30,14 +30,19 @@ _AUTHOR_KEYS = (
     "user",     # generic
 )
 _DATE_KEYS = (
-    "created_at",   # twitter, bilibili
+    "displayTime",  # announcements: exact display/publication clock
     "published_at", # generic
+    "publishedAt",  # generic camelCase
     "published",    # generic RSS
+    "sent_at",      # generic delivery timestamp
+    "sentAt",       # generic camelCase delivery timestamp
+    "created_at",   # twitter, bilibili (source-owned timestamp)
+    "time",         # v2ex notifications, finance news
+    "timestamp",    # generic
+    "noticeDate",   # announcements date-only fallback
     "date",         # reuters
-    "time",         # v2ex notifications
     "listed",       # linkedin
     "updated",      # xiaoyuzhou podcast
-    "timestamp",    # generic
 )
 
 # All known standard field names (lowercase) — used to decide what goes into extra_*

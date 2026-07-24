@@ -24,6 +24,7 @@ from backend.workflow.opencli_adapter_nodes import get_opencli_adapter_node_summ
 from backend.workflow.runtime_contracts import runtime_io_contract_manifest
 from backend.workflow.runtime_registry import (
     COLLECTION_OUTPUT_BINDING_ID,
+    DEDUPE_BINDING_ID,
     DEMAND_DRAFT_BINDING_ID,
     EXTERNAL_TOOL_BINDING_ID,
     MERGE_BINDING_ID,
@@ -297,11 +298,35 @@ def _catalog_capabilities(*, dify_runtime_ready: bool) -> list[WorkflowRuntimeCa
                 probes=["normalizer_import_available"],
             ),
         ),
-        _blocked_catalog(
-            "intelligence.processing.dedupe",
-            "Dedupe Items",
-            "agent",
-            "dedupe",
+        _capability(
+            id="intelligence.processing.dedupe",
+            label="Dedupe Items",
+            surface="catalog",
+            status="runnable",
+            backend_available=True,
+            kind="agent",
+            capability="dedupe",
+            provider="workflow",
+            runtime_binding=DEDUPE_BINDING_ID,
+            reason="Batch deduplication runs through the shared RecordHygiene module and "
+            "emits duplicate evidence plus deterministic metrics.",
+            tags=["transform", "dedupe", "record-candidate", "record-hygiene"],
+            source="backend.workflow.record_hygiene",
+            manifest=_manifest(
+                schema="capability.transform.dedupe.v1",
+                input_ports=[_port("in", "recordCandidate[]")],
+                output_ports=[_port("out", "recordCandidate[]")],
+                resources=[],
+                permissions=[],
+                runtime_binding=DEDUPE_BINDING_ID,
+                trace_events=[
+                    "partial:deduplicatedCandidateCount",
+                    "partial:rejectedCount",
+                    "partial:metrics",
+                    "completed",
+                ],
+                probes=["record_hygiene_module_available"],
+            ),
         ),
         _capability(
             id="intelligence.flow.merge",
@@ -533,6 +558,46 @@ def _catalog_capabilities(*, dify_runtime_ready: bool) -> list[WorkflowRuntimeCa
             missing=["channel_capability_projection", "package_materializer"],
         ),
         _capability(
+            id="package.processing.record-hygiene",
+            label="Record Hygiene",
+            surface="catalog",
+            status="runnable",
+            backend_available=True,
+            kind="agent",
+            capability="normalize",
+            provider="workflow",
+            reason="Structural package composing Normalize, Dedupe, and Record Acceptance. "
+            "Its locked internal nodes remain the executable runtime authority.",
+            tags=["package", "structural", "composed", "record-hygiene"],
+            source="backend.workflow.record_hygiene",
+            manifest={
+                "schema": "capability.package.record-hygiene.v1",
+                "ports": {
+                    "inputs": [_port("in", "items[]")],
+                    "outputs": [_port("out", "record[]")],
+                },
+                "artifacts": {
+                    "trace": ["rejected[]", "metrics"],
+                    "routable": False,
+                },
+                "canvas": {
+                    "node": True,
+                    "structural": True,
+                    "composed": True,
+                    "managedInternals": True,
+                },
+                "implementation": {
+                    "executor": None,
+                    "authority": "locked-internal-nodes",
+                    "internalCatalogIds": [
+                        "intelligence.processing.normalize",
+                        "intelligence.processing.dedupe",
+                        "intelligence.control.record-acceptance",
+                    ],
+                },
+            },
+        ),
+        _capability(
             id="package.opencli.multi-source-hda",
             label="OpenCLI Multi-source Package",
             surface="catalog",
@@ -603,8 +668,7 @@ def _catalog_capabilities(*, dify_runtime_ready: bool) -> list[WorkflowRuntimeCa
 
 def _dify_runtime_ready(installations: list[PluginInstallationRead]) -> bool:
     return any(
-        installation.id == "bundled:dify-graphon-runtime"
-        and installation.runtime_status == "READY"
+        installation.id == "bundled:dify-graphon-runtime" and installation.runtime_status == "READY"
         for installation in installations
     )
 
@@ -633,11 +697,7 @@ def _plugin_catalog_capabilities(
                         node.lock_reason
                         or "This plugin capability has no compatible OpenCLI runtime adapter."
                     ),
-                    missing=(
-                        ["dify_plugin_runtime_adapter"]
-                        if node.status == "BLOCKED"
-                        else []
-                    ),
+                    missing=(["dify_plugin_runtime_adapter"] if node.status == "BLOCKED" else []),
                     tags=[
                         "plugin",
                         "dify",

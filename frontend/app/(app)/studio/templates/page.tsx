@@ -14,8 +14,8 @@ import { Input } from '@/components/ui/input'
 import { useBootstrapWorkspaceProject, useMyWorkspaces } from '@/lib/api/hooks'
 import { STUDIO_TEMPLATES, studioAppTypeForTemplate, studioGraphForTemplate, studioSlug, type StudioTemplateId } from '@/lib/workflow/studio-templates'
 
-const CATEGORIES = ['全部', '采集与监控', '内容处理', 'Agent 分析', '分发与集成', '完整链路'] as const
-const ICONS = { '采集与监控': Database, '内容处理': Blocks, 'Agent 分析': Sparkles, '分发与集成': Send, '完整链路': Workflow } as const
+const CATEGORIES = ['全部', '真实业务测试', '采集与监控', '内容处理', 'Agent 分析', '分发与集成', '完整链路'] as const
+const ICONS = { '真实业务测试': Sparkles, '采集与监控': Database, '内容处理': Blocks, 'Agent 分析': Sparkles, '分发与集成': Send, '完整链路': Workflow } as const
 
 export default function StudioTemplatesPage() {
   const router = useRouter()

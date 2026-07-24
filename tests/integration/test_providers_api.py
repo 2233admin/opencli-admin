@@ -2,6 +2,8 @@
 
 import pytest
 
+from backend.auth.crypto import ENV_KEY
+
 
 @pytest.fixture
 def provider_data():
@@ -30,6 +32,18 @@ async def test_create_provider(client, provider_data):
     assert data["name"] == "Test Provider"
     assert data["provider_type"] == "openai"
     assert "id" in data
+
+
+@pytest.mark.asyncio
+async def test_create_provider_reports_missing_credential_encryption_key(
+    client, provider_data, monkeypatch
+):
+    monkeypatch.setenv(ENV_KEY, "")
+
+    response = await client.post("/api/v1/providers", json=provider_data)
+
+    assert response.status_code == 503
+    assert "CREDENTIAL_ENCRYPTION_KEY" in response.json()["detail"]
 
 
 @pytest.mark.asyncio

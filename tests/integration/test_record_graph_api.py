@@ -127,6 +127,93 @@ async def test_project_graph_is_scoped_and_contains_bidirectional_semantic_hub(
 
 
 @pytest.mark.asyncio
+async def test_project_graph_exposes_source_published_time_separately_from_ingestion(
+    client, db_session
+):
+    workspace, project, workflow = await _project(
+        db_session, name="时效项目", slug="freshness"
+    )
+    record = await _record(
+        db_session,
+        workflow_id=workflow.id,
+        run_id="33333333-3333-4333-8333-333333333333",
+        source_name="实时快讯",
+        index=1,
+    )
+    record.normalized_data = {
+        **record.normalized_data,
+        "published_at": "2026-07-23T21:51:21+08:00",
+    }
+    record_without_source_time = await _record(
+        db_session,
+        workflow_id=workflow.id,
+        run_id="33333333-3333-4333-8333-333333333333",
+        source_name="无源时间数据",
+        index=2,
+    )
+    await db_session.flush()
+
+    response = await client.get(
+        f"/api/v1/workspaces/{workspace.id}/projects/{project.id}/record-graph"
+    )
+
+    assert response.status_code == 200
+    record_node = next(
+        node
+        for node in response.json()["data"]["nodes"]
+        if node["id"] == f"record:{record.id}"
+    )
+    assert record_node["source_published_at"] == "2026-07-23T21:51:21+08:00"
+    assert record_node["created_at"] != record_node["source_published_at"]
+    missing_time_node = next(
+        node
+        for node in response.json()["data"]["nodes"]
+        if node["id"] == f"record:{record_without_source_time.id}"
+    )
+    assert missing_time_node["source_published_at"] is None
+    assert missing_time_node["created_at"] is not None
+
+
+@pytest.mark.asyncio
+async def test_project_graph_prefers_exact_source_display_time_over_date_only_time(
+    client, db_session
+):
+    workspace, project, workflow = await _project(
+        db_session, name="公告项目", slug="announcement-freshness"
+    )
+    record = await _record(
+        db_session,
+        workflow_id=workflow.id,
+        run_id="44444444-4444-4444-8444-444444444444",
+        source_name="交易所公告",
+        index=1,
+    )
+    record.raw_data = {
+        "title": "公司公告",
+        "time": "2026-07-24 00:00:00",
+        "noticeDate": "2026-07-24 00:00:00",
+        "displayTime": "2026-07-23 21:23:02:245",
+    }
+    record.normalized_data = {
+        **record.normalized_data,
+        "published_at": "2026-07-24 00:00:00",
+    }
+    await db_session.flush()
+
+    response = await client.get(
+        f"/api/v1/workspaces/{workspace.id}/projects/{project.id}/record-graph"
+    )
+
+    assert response.status_code == 200
+    record_node = next(
+        node
+        for node in response.json()["data"]["nodes"]
+        if node["id"] == f"record:{record.id}"
+    )
+    assert record_node["source_published_at"] == "2026-07-23 21:23:02:245"
+
+
+@pytest.mark.asyncio
 async def test_project_graph_respects_visible_node_budget(client, db_session):
     workspace, project, workflow = await _project(
         db_session, name="大规模项目", slug="large"

@@ -43,6 +43,43 @@ export type WorkflowOpenCLIAdapterNodesResponse = {
   nodes: WorkflowOpenCLIAdapterNode[]
 }
 
+type FeaturedOpenCLISource = {
+  id: string
+  label: string
+  description: string
+}
+
+const FEATURED_OPENCLI_SOURCES: FeaturedOpenCLISource[] = [
+  { id: "opencli.adapter.eastmoney.gridlist", label: "东方财富 · A 股行情全景", description: "实时市场行情、成交额与涨跌幅数据" },
+  { id: "opencli.adapter.cls.telegraph", label: "财联社 · 实时电报", description: "财经突发与盘中快讯" },
+  { id: "opencli.adapter.sinafinance.news", label: "新浪财经 · 财经新闻", description: "财经新闻与市场资讯" },
+  { id: "opencli.adapter.jin10.kuaixun", label: "金十数据 · 财经快讯", description: "宏观、外汇和财经快讯" },
+  { id: "opencli.adapter.cninfo.disclosure", label: "巨潮资讯 · 上市公司公告", description: "A 股公司公告与披露信息" },
+  { id: "opencli.adapter.wallstreetcn.live", label: "华尔街见闻 · 实时快讯", description: "全球市场实时资讯" },
+  { id: "opencli.adapter.bilibili.search", label: "哔哩哔哩 · 内容搜索", description: "视频内容与公开讨论搜索" },
+  { id: "opencli.adapter.xiaohongshu.search", label: "小红书 · 内容搜索", description: "公开内容与消费趋势搜索" },
+]
+
+export function featuredOpenCLIAdapterNodes(
+  nodes: WorkflowOpenCLIAdapterNode[],
+): WorkflowOpenCLIAdapterNode[] {
+  const byId = new Map(nodes.map((node) => [node.id, node]))
+  return FEATURED_OPENCLI_SOURCES.flatMap((featured) => {
+    const node = byId.get(featured.id)
+    return node ? [node] : []
+  })
+}
+
+export function openCLIAdapterNodePresentation(
+  node: WorkflowOpenCLIAdapterNode,
+): { label: string; description: string } {
+  const featured = FEATURED_OPENCLI_SOURCES.find((candidate) => candidate.id === node.id)
+  return featured ?? {
+    label: node.label,
+    description: node.description || `实时执行 opencli ${node.site} ${node.command}`,
+  }
+}
+
 export async function fetchWorkflowOpenCLIAdapterNodes(
   options: {
     authorization?: string | null
@@ -81,6 +118,7 @@ export function workflowCatalogItemForOpenCLIAdapterNode(
   node: WorkflowOpenCLIAdapterNode,
   requiredValues: Record<string, string> = {},
 ): WorkflowNodeCatalogItem {
+  const presentation = openCLIAdapterNodePresentation(node)
   const args = { ...((node.params.args as Record<string, unknown> | undefined) ?? {}) }
   const positionalArgs = Array.isArray(node.params.positional_args)
     ? [...node.params.positional_args]
@@ -95,8 +133,8 @@ export function workflowCatalogItemForOpenCLIAdapterNode(
   return {
     id: node.catalogId,
     idPrefix: `source-opencli-${safeIdPart(node.site)}-${safeIdPart(node.command)}`,
-    label: node.label,
-    description: node.description || `实时执行 opencli ${node.site} ${node.command}`,
+    label: presentation.label,
+    description: presentation.description,
     category: "source",
     profile: "intelligence",
     kind: "source",

@@ -4,12 +4,14 @@ from sqlalchemy import String, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.models.record import CollectedRecord
+from backend.models.studio import StudioWorkflow
 
 
 async def list_records(
     session: AsyncSession,
     source_id: Optional[str] = None,
     task_id: Optional[str] = None,
+    project_id: Optional[str] = None,
     status: Optional[str] = None,
     search: Optional[str] = None,
     page: int = 1,
@@ -23,6 +25,12 @@ async def list_records(
         filters.append(CollectedRecord.source_id == source_id)
     if task_id:
         filters.append(CollectedRecord.task_id == task_id)
+    if project_id:
+        project_workflows = select(StudioWorkflow.id).where(
+            StudioWorkflow.project_id == project_id,
+            StudioWorkflow.archived.is_(False),
+        )
+        filters.append(CollectedRecord.workflow_id.in_(project_workflows))
     if status:
         filters.append(CollectedRecord.status == status)
     if search:

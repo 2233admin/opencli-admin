@@ -68,7 +68,10 @@ test('sidebar consolidates tasks, notifications, automation, and agents into cle
 test('records use a scalable source-to-table explorer with pagination and raw evidence detail', async () => {
   const records = await read('app/(app)/records/page.tsx')
 
-  assert.match(records, /lg:grid-cols-\[17rem_minmax\(0,1fr\)\]/)
+  assert.match(records, /lg:grid-cols-\[15rem_minmax\(0,1fr\)\]/)
+  assert.doesNotMatch(records, /grid min-h-\[38rem\] overflow-hidden/)
+  assert.match(records, /min-h-\[20rem\]/)
+  assert.match(records, /min-h-\[32rem\]/)
   assert.match(records, /aria-label="成果数据集"/)
   assert.match(records, /useSources\(\{ page: 1, limit: 100 \}\)/)
   assert.match(records, /limit: PAGE_SIZE/)

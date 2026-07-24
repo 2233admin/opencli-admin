@@ -56,6 +56,10 @@ const NODE_TEXT: Record<string, Record<WorkflowLanguage, LocalizedNodeText>> = {
     "zh-CN": { label: "重要性路由", description: "按分数和条件路由到 Inbox/Notify" },
     "en-US": { label: "Importance Router", description: "Route scored items to Inbox or Notify" },
   },
+  "intelligence.control.record-acceptance": {
+    "zh-CN": { label: "记录准入门禁", description: "通过 schema、去重、质量和 lineage 检查后接收记录" },
+    "en-US": { label: "Record Acceptance Gate", description: "Accept records after schema, dedupe, quality, and lineage checks" },
+  },
   "intelligence.output.inbox": {
     "zh-CN": { label: "复核收件箱", description: "保存到人工复核队列" },
     "en-US": { label: "Inbox Store", description: "Store items in the human review queue" },
@@ -75,6 +79,10 @@ const NODE_TEXT: Record<string, Record<WorkflowLanguage, LocalizedNodeText>> = {
   "package.intelligence.pipeline": {
     "zh-CN": { label: "情报流水线", description: "封装定时抓取、标准化、摘要评分、复核和通知的情报流水线" },
     "en-US": { label: "Intelligence Pipeline", description: "Package source, normalize, summary, scoring, review, and delivery" },
+  },
+  "package.processing.record-hygiene": {
+    "zh-CN": { label: "记录清洗与准入", description: "默认清洗管线：标准化、去重并通过记录准入门禁" },
+    "en-US": { label: "Record Hygiene & Acceptance", description: "Default cleaning pipeline with normalize, dedupe, and record acceptance" },
   },
   "package.opencli.multi-source-hda": {
     "zh-CN": { label: "OpenCLI 多源 HDA", description: "封装可扩展 OpenCLI 来源槽并行 fanout 和内部标准化" },
