@@ -35,6 +35,26 @@ export type WorkflowOpenCLIHDATraceResponse = {
   dispatches: WorkflowOpenCLIHDATraceDispatchItem[]
 }
 
+export function findOpenCLIHDAWorkflowPackageNodeId(project: WorkflowProject): string | null {
+  const visit = (nodes: unknown[], parentPath: string[]): string | null => {
+    for (const value of nodes) {
+      const node = readRecord(value)
+      const id = typeof node?.id === "string" ? node.id : null
+      if (!node || !id) continue
+      const nodePath = [...parentPath, id]
+      const params = readRecord(node.params)
+      if (params?.template === "opencli-multi-source") return nodePath.join("::")
+      const internals = readRecord(node.internals)
+      const children = Array.isArray(internals?.nodes) ? internals.nodes : []
+      const nested = visit(children, nodePath)
+      if (nested) return nested
+    }
+    return null
+  }
+
+  return visit(project.nodes, [])
+}
+
 type ApiResponse<T> = {
   success: boolean
   data?: T | null
@@ -73,4 +93,9 @@ export async function traceOpenCLIHDAWorkflow(
   }
 
   return payload.data
+}
+
+function readRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null
+  return value as Record<string, unknown>
 }

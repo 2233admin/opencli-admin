@@ -5,10 +5,25 @@ export async function proxyWorkflowEvidenceBatchRequest(
   runId: string,
   suffix = "",
 ): Promise<Response> {
+  const root = `${BACKEND_URL}/api/v1/workflows/runs/${encodeURIComponent(runId)}/evidence-batches`
+  return proxyWorkflowEvidenceRequest(req, `${root}${suffix}`)
+}
+
+export async function proxyWorkflowEvidenceProjectionRequest(
+  req: Request,
+  runId: string,
+): Promise<Response> {
+  const root = `${BACKEND_URL}/api/v1/workflows/runs/${encodeURIComponent(runId)}/projection`
+  return proxyWorkflowEvidenceRequest(req, root)
+}
+
+async function proxyWorkflowEvidenceRequest(
+  req: Request,
+  root: string,
+): Promise<Response> {
   try {
-    const root = `${BACKEND_URL}/api/v1/workflows/runs/${encodeURIComponent(runId)}/evidence-batches`
     const search = new URL(req.url).searchParams.toString()
-    const response = await fetch(`${root}${suffix}${search ? `?${search}` : ""}`, {
+    const response = await fetch(`${root}${search ? `?${search}` : ""}`, {
       headers: {
         ...(req.headers.get("authorization")
           ? { Authorization: req.headers.get("authorization") as string }

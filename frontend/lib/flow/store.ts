@@ -37,7 +37,13 @@ import { PACKAGED_WORKFLOW_PROJECT } from "../workflow/collection-pipeline"
 import type { WorkflowProject } from "../workflow/schema"
 import { parseWorkflowProject, type AdapterBinding, type WorkflowProfile, type WorkflowProjectNode } from "../workflow/schema"
 import { workflowNodeToReactFlow, workflowProjectToReactFlow } from "../workflow/to-react-flow"
-import { addCatalogNodeToWorkflowProject, type WorkflowNodeCatalogItem } from "../workflow/node-catalog"
+import {
+  addCatalogNodeToWorkflowProject,
+  buildOpenCLIMultiSourceHDAInternals,
+  isOpenCLISourceSlotArray,
+  opencliAdaptersForSourceSlots,
+  type WorkflowNodeCatalogItem,
+} from "../workflow/node-catalog"
 import { getNodeInternals, type NodeInternals, type NodeInternalStep } from "../workflow/node-internals"
 import { getPrimitiveByStepCapability, primitiveToNodeData, type WorkflowPrimitive } from "../workflow/node-primitives"
 import { createParameterInterfaceFromInternals, setParameterInterfaceFieldValue } from "../workflow/parameter-interface"
@@ -849,7 +855,11 @@ export const useFlowStore = create<FlowState>((set, get) => ({
       ...(isShape ? { width: 140, height: 100, style: { width: 140, height: 100 } } : {}),
     }
     // 分组容器必须排在数组最前，保证 React Flow 的 parent-before-child 顺序
-    set((state) => ({ nodes: isGroup ? [newNode, ...state.nodes] : [...state.nodes, newNode] }))
+    set((state) => ({
+      nodes: isGroup
+        ? [{ ...newNode, selected: true }, ...state.nodes.map((node) => ({ ...node, selected: false }))]
+        : [...state.nodes.map((node) => ({ ...node, selected: false })), { ...newNode, selected: true }],
+    }))
   },
 
   addPrimitiveNode: (item, position, runtimeCapability, options) => {
@@ -938,20 +948,35 @@ export const useFlowStore = create<FlowState>((set, get) => ({
     set((state) => {
       const target = findProjectNodeByCanvasId(state.workflowProject, nodeId)
       if (!target) return {}
+      const nextParams = { ...target.params, ...paramsPatch }
+      const nextSources =
+        nextParams.template === "opencli-multi-source" && isOpenCLISourceSlotArray(nextParams.sources)
+          ? nextParams.sources
+          : undefined
+      const sourceAdapters = nextSources ? opencliAdaptersForSourceSlots(nextSources) : []
+      const sourceAdapterIds = new Set(sourceAdapters.map((adapter) => adapter.id))
 
       const nextProject = parseWorkflowProject({
         ...state.workflowProject,
-        adapters: state.workflowProject.adapters.map((adapter) => {
-          if (!target.adapter || adapter.id !== target.adapter || !adapterPatch) return adapter
-          return {
-            ...adapter,
-            ...(adapterPatch.mode ? { mode: adapterPatch.mode } : {}),
-            ...(adapterPatch.config ? { config: { ...adapter.config, ...adapterPatch.config } } : {}),
-          }
-        }),
+        adapters: [
+          ...state.workflowProject.adapters.map((adapter) => {
+            if (!target.adapter || adapter.id !== target.adapter || !adapterPatch) return adapter
+            return {
+              ...adapter,
+              ...(adapterPatch.mode ? { mode: adapterPatch.mode } : {}),
+              ...(adapterPatch.config ? { config: { ...adapter.config, ...adapterPatch.config } } : {}),
+            }
+          }),
+          ...sourceAdapters.filter(
+            (adapter) =>
+              sourceAdapterIds.has(adapter.id) &&
+              !state.workflowProject.adapters.some((existing) => existing.id === adapter.id),
+          ),
+        ],
         nodes: updateCanonicalProjectNodeByCanvasId(state.workflowProject, nodeId, (node) => ({
           ...node,
           params: { ...node.params, ...paramsPatch },
+          ...(nextSources ? { internals: buildOpenCLIMultiSourceHDAInternals(nextSources) } : {}),
         })).nodes,
       })
       const nextNode = findProjectNodeByCanvasId(nextProject, nodeId)

@@ -13,7 +13,13 @@ import { getNodeDisplayId, localizeNodeText } from "@/lib/workflow/node-i18n"
 import { getNodeVisualSignature } from "@/lib/workflow/node-visuals"
 import { runtimeStatusLabel, runtimeStatusTone } from "@/lib/workflow/capabilities"
 import { buildCanonicalNodeViewContract } from "@/lib/workflow/canonical-node-contract"
+import { businessNodeName } from "@/lib/workflow/business-node-experience"
 import type { AgentProposal } from "@/lib/workflow/proposal"
+import type {
+  WorkflowCapability,
+  WorkflowNodeKind,
+  WorkflowProjectNode,
+} from "@/lib/workflow/schema"
 import { cn } from "@/lib/utils"
 
 const statusLabels: Record<string, string> = {
@@ -197,6 +203,19 @@ function readCanonical(data: WorkflowNodeType["data"]): CanonicalNodeData | unde
     : undefined
 }
 
+function implementationParams(node: WorkflowProjectNode | undefined): Record<string, unknown> | undefined {
+  if (!node) return undefined
+  const operator = node.params.operator
+  if (!operator || typeof operator !== "object" || Array.isArray(operator)) return undefined
+  const implementationNodeId = (operator as Record<string, unknown>).implementationNodeId
+  if (typeof implementationNodeId !== "string") return undefined
+  const implementation = (node.internals?.nodes ?? []).find((candidate) => {
+    if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) return false
+    return (candidate as { id?: unknown }).id === implementationNodeId
+  }) as WorkflowProjectNode | undefined
+  return implementation?.params
+}
+
 function isCollectionNeedData(data: WorkflowNodeType["data"]): boolean {
   const canonical = readCanonical(data)
   if (canonical?.catalogId === COLLECTION_NEED_CATALOG_ID) return true
@@ -283,6 +302,7 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<WorkflowNodeTyp
   const internalLocked = data.internalLocked === true
   const internalDraft = data.internalDraft === true
   const workflowProject = useFlowStore((s) => s.workflowProject)
+  const networkStackLength = useFlowStore((s) => s.networkStack.length)
   const updateWorkflowNodeParams = useFlowStore((s) => s.updateWorkflowNodeParams)
   const queueAgentProposal = useFlowStore((s) => s.queueAgentProposal)
   const contextualZoom = useSettingsStore((s) => s.contextualZoom)
@@ -291,6 +311,7 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<WorkflowNodeTyp
   const canonical = readCanonical(data)
   const projectNode = workflowProject.nodes.find((candidate) => candidate.id === id)
   const nodeViewContract = buildCanonicalNodeViewContract(projectNode, data, id)
+  const isBusinessLevel = networkStackLength === 0
   const displayId = getNodeDisplayId(data)
   const isCollectionNeed = displayId === COLLECTION_NEED_CATALOG_ID || isCollectionNeedData(data)
   const demandParams = canonical?.params
@@ -337,6 +358,12 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<WorkflowNodeTyp
   const localized = prefersCustomLabel
     ? { label: data.label, description: data.description }
     : localizeNodeText(displayId, { label: data.label, description: data.description }, language)
+  const businessLabel = businessNodeName({
+    label: localized.label,
+    kind: nodeViewContract.identity.kind as WorkflowNodeKind,
+    capability: nodeViewContract.identity.capability as WorkflowCapability,
+    params: implementationParams(projectNode) ?? canonical?.params,
+  })
   const visual = getNodeVisualSignature(data)
   const mapBadges = readMapBadges(data)
   const evidenceBatchItemCount = data.runtimeEvidenceBatches?.reduce((sum, batch) => sum + batch.itemCount, 0) ?? 0
@@ -394,14 +421,14 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<WorkflowNodeTyp
         data-runtime-status={data.runtimeCapability?.status ?? "unknown"}
         data-selected={selected ? "true" : "false"}
         data-package-state={internalLocked ? "locked" : internalDraft ? "draft" : "canonical"}
-        aria-label={`${nodeViewContract.identity.label}, ${nodeViewContract.identity.kind}, ${runtimeStatusLabel(nodeViewContract.status.capability)}`}
+        aria-label={`${isBusinessLevel ? businessLabel : nodeViewContract.identity.label}, ${nodeViewContract.identity.kind}, ${runtimeStatusLabel(nodeViewContract.status.capability)}`}
         className={cn(
           "workflow-node-card flex size-12 items-center justify-center bg-card text-card-foreground ring-1 transition-colors",
           selected ? "ring-foreground/40" : "ring-border",
           proposalFocused && "ring-2 ring-[#ff7a17]/45",
         )}
         style={nodeStyle}
-        title={`${nodeViewContract.identity.label} · ${nodeViewContract.identity.kind} · ${runtimeStatusLabel(nodeViewContract.status.capability)} · ${primitiveInputs.length} in / ${outputs.length} out`}
+        title={`${isBusinessLevel ? businessLabel : nodeViewContract.identity.label} · ${nodeViewContract.identity.kind} · ${runtimeStatusLabel(nodeViewContract.status.capability)} · ${primitiveInputs.length} in / ${outputs.length} out`}
       >
         <span className="workflow-node-mini-code">{visual.code}</span>
         <Handle type="target" id={primitiveInputs[0]?.id} position={Position.Top} className={handleCls} />
@@ -426,7 +453,7 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<WorkflowNodeTyp
       data-runtime-status={data.runtimeCapability?.status ?? "unknown"}
       data-selected={selected ? "true" : "false"}
         data-package-state={internalLocked ? "locked" : internalDraft ? "draft" : "canonical"}
-      aria-label={`${nodeViewContract.identity.label}, ${nodeViewContract.identity.kind}, ${runtimeStatusLabel(nodeViewContract.status.capability)}`}
+      aria-label={`${isBusinessLevel ? businessLabel : nodeViewContract.identity.label}, ${nodeViewContract.identity.kind}, ${runtimeStatusLabel(nodeViewContract.status.capability)}`}
       className={cn(
         "workflow-node-card group relative overflow-hidden bg-card text-card-foreground transition-colors",
         "w-[204px]",
@@ -462,7 +489,7 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<WorkflowNodeTyp
             </span>
           </div>
 
-          <p className="mt-1 truncate text-[13px] font-medium leading-tight">{localized.label}</p>
+          <p className="mt-1 truncate text-[13px] font-medium leading-tight">{isBusinessLevel ? businessLabel : localized.label}</p>
 
           {detail === "high" && summary && !prefersCustomLabel ? (
             <code className="mt-1 block truncate font-mono text-[10px] leading-tight text-muted-foreground">

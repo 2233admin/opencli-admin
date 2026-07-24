@@ -27,7 +27,7 @@ const VISUALS: Record<string, NodeVisualSignature> = {
   "intelligence.output.webhook": sig("WHK", "!", "var(--chart-1)", "pulse"),
   "intelligence.output.turbopush-publish": sig("TPB", ">", "var(--state-action)", "pulse"),
   "package.intelligence.pipeline": sig("PKI", "P", "var(--chart-2)", "solid"),
-  "package.opencli.multi-source-hda": sig("HDA", "H", "var(--chart-4)", "split"),
+  "package.opencli.multi-source-hda": sig("COL", "C", "var(--chart-4)", "split"),
   "package.ops.event": sig("OPS", "O", "var(--chart-4)", "solid"),
   "package.ops.monitor-guard": sig("MON", "M", "var(--chart-4)", "gate"),
   "package.ops.alert-response": sig("ALT", "!", "var(--chart-1)", "pulse"),

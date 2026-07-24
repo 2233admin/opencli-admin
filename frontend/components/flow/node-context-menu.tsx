@@ -60,14 +60,14 @@ export function NodeContextMenu({
         className="flex w-full items-center justify-between px-3 py-1.5 text-left hover:bg-[#4a4a4a] hover:text-white"
         onClick={() => onDiveIntoNetwork(menu.nodeId)}
       >
-        <span>Dive into Network</span>
+        <span>{showDopOperators ? "查看 Agent 执行方式" : "进入下一层实现"}</span>
         <span className="text-[#a8a8a8]">Enter</span>
       </button>
       {showDopOperators ? (
         <>
           <div className="my-1 border-t border-[#626262]" />
           <div className="px-3 py-1 font-mono text-[9px] uppercase tracking-[0.18em] text-[#a8a8a8]">
-            DOP Operators
+            可添加的业务步骤
           </div>
           <div className="max-h-64 overflow-y-auto">
             {dopNodeMenuItems.map((item) => {
@@ -104,9 +104,9 @@ export function NodeContextMenu({
           </div>
         </>
       ) : null}
-      <div className="group/atoms relative">
+      {!showDopOperators ? <div className="group/atoms relative">
         <div className="flex w-full items-center justify-between px-3 py-1.5 text-left font-semibold text-white hover:bg-[#4a4a4a]">
-          <span>Add Internal Primitive</span>
+          <span>添加内部组件</span>
           <span className="text-[#a8a8a8]">›</span>
         </div>
         <div className="pointer-events-none absolute left-full top-0 ml-1 hidden min-w-60 rounded-sm border border-border bg-[#383838] py-1 text-xs text-[#d8d8d8] shadow-xl group-hover/atoms:pointer-events-auto group-hover/atoms:block">
@@ -154,14 +154,14 @@ export function NodeContextMenu({
             </div>
           ))}
         </div>
-      </div>
+      </div> : null}
       <div className="my-1 border-t border-[#626262]" />
       <button
         type="button"
         className="flex w-full items-center justify-between px-3 py-1.5 text-left hover:bg-[#4a4a4a] hover:text-white"
         onClick={() => onSelectComponent(menu.nodeId)}
       >
-        <span>Select Connected Component</span>
+        <span>{showDopOperators ? "选择当前业务链路" : "选择当前实现链路"}</span>
         <span className="text-[#a8a8a8]">Strudel</span>
       </button>
       <div className="my-1 border-t border-[#626262]" />
@@ -170,7 +170,7 @@ export function NodeContextMenu({
         className="flex w-full items-center justify-between px-3 py-1.5 text-left hover:bg-[#4a4a4a] hover:text-white"
         onClick={onShowParameters}
       >
-        <span>Parameters and Channels</span>
+        <span>{showDopOperators ? "编辑业务设置" : "参数与通道"}</span>
         <span className="text-[#a8a8a8]">›</span>
       </button>
       <button
@@ -178,10 +178,10 @@ export function NodeContextMenu({
         className="flex w-full items-center justify-between px-3 py-1.5 text-left hover:bg-[#4a4a4a] hover:text-white"
         onClick={onShowNodeInfo}
       >
-        <span>Show Node Information...</span>
+        <span>{showDopOperators ? "查看步骤说明" : "查看节点说明"}</span>
       </button>
       <div className="my-1 border-t border-[#626262]" />
-      <div className="px-3 py-1.5 text-[#cfcfcf]">Help...</div>
+      <div className="px-3 py-1.5 text-[#cfcfcf]">{showDopOperators ? "业务节点由你配置，Agent 负责执行。" : "高级编辑仅影响当前实现层。"}</div>
     </div>
   )
 }

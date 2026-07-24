@@ -19,17 +19,11 @@ No DB table, no persistence: ``list_presets()`` is a pure(-ish) function of
 """
 
 import asyncio
-import json
-import logging
-import os
 from typing import Protocol
 
 from pydantic import BaseModel
 
-logger = logging.getLogger(__name__)
-
-# Same override knob opencli_channel.py uses for the binary path.
-_OPENCLI_BIN = os.environ.get("OPENCLI_BIN", "opencli")
+from backend.workflow.opencli_adapter_nodes import get_opencli_adapter_catalog
 
 # Cap on how many opencli presets we surface — the real catalog has 1000+
 # read-only, no-required-arg commands (issue 06 research: 709 at time of
@@ -61,63 +55,12 @@ class OpencliCatalogProvider(Protocol):
 
 
 class RealOpencliCatalogProvider:
-    """Asks the actual opencli binary for its site/command catalog via
-    ``opencli list -f json`` (the same machine-readable listing subcommand
-    ``opencli --help`` advertises; verified against opencli 1.8.4).
-
-    Best-effort: any failure (binary missing, non-zero exit, unparseable
-    output, timeout) logs and returns an empty catalog rather than raising —
-    a preset endpoint must not 500 just because the opencli binary isn't
-    installed on this host. No fake data is ever substituted; an empty
-    catalog simply yields zero opencli presets.
-    """
+    """Derive presets from the same OpenCLI registry used by workflow nodes."""
 
     async def get_catalog(self) -> list[OpencliCommandMeta]:
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                _OPENCLI_BIN, "list", "-f", "json",
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=15)
-        except TimeoutError:
-            logger.warning("opencli list -f json timed out; serving empty opencli catalog")
-            return []
-        except FileNotFoundError:
-            logger.info(
-                "opencli binary not found (%r); serving empty opencli catalog", _OPENCLI_BIN
-            )
-            return []
-        except Exception as exc:
-            logger.warning("opencli list -f json failed to launch: %s", exc)
-            return []
-
-        if proc.returncode != 0:
-            logger.warning(
-                "opencli list -f json exited %s; serving empty opencli catalog. stderr=%s",
-                proc.returncode, stderr.decode(errors="replace")[:500],
-            )
-            return []
-
-        raw = stdout.decode(errors="replace")
-        json_start = next((i for i, ch in enumerate(raw) if ch in ("{", "[")), None)
-        if json_start is None:
-            logger.warning("opencli list -f json produced no JSON; serving empty opencli catalog")
-            return []
-
-        try:
-            data = json.loads(raw[json_start:])
-        except Exception as exc:
-            logger.warning("opencli list -f json output unparseable: %s", exc)
-            return []
-
-        if not isinstance(data, list):
-            return []
-
+        data = await asyncio.to_thread(get_opencli_adapter_catalog, refresh=True)
         catalog: list[OpencliCommandMeta] = []
         for entry in data:
-            if not isinstance(entry, dict):
-                continue
             site = entry.get("site")
             name = entry.get("name")
             if not site or not name:

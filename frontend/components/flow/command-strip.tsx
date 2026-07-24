@@ -115,6 +115,7 @@ export function CommandStrip({
   onToggleAgentDrawer,
   nodeManagementOpen,
   onToggleNodeManagement,
+  documentState,
 }: {
   onOpenPalette: () => void
   onExported?: (msg: string) => void
@@ -130,6 +131,7 @@ export function CommandStrip({
   onToggleAgentDrawer?: () => void
   nodeManagementOpen?: boolean
   onToggleNodeManagement?: () => void
+  documentState?: "loading" | "saving" | "saved" | "error" | "conflict"
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { getNodes } = useReactFlow()
@@ -162,6 +164,20 @@ export function CommandStrip({
   const clearDrawings = useFlowStore((s) => s.clearDrawings)
 
   const isDirty = canUndo
+  const persistenceLabel = documentState
+    ? {
+        loading: "加载中",
+        saving: "保存中",
+        saved: "已保存",
+        error: "保存失败",
+        conflict: "保存冲突",
+      }[documentState]
+    : isDirty
+      ? "未保存"
+      : "已保存"
+  const persistenceNeedsAttention = documentState
+    ? documentState === "saving" || documentState === "error" || documentState === "conflict"
+    : isDirty
   const [shareUrlLoaded, setShareUrlLoaded] = useState(false)
 
   useEffect(() => {
@@ -333,7 +349,7 @@ export function CommandStrip({
           <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
             <span>{nodeCount} 个节点</span>
             <span>·</span>
-            <span className={cn(isDirty && "text-[#ff7a17]")}>{isDirty ? "未保存" : "已保存"}</span>
+            <span className={cn(persistenceNeedsAttention && "text-[#ff7a17]")}>{persistenceLabel}</span>
           </div>
         </div>
       </nav>

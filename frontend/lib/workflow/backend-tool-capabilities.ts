@@ -19,8 +19,15 @@ export type WorkflowToolCapability = {
   inputPorts: WorkflowToolCapabilityPort[]
   outputPorts: WorkflowToolCapabilityPort[]
   executor: {
-    mode: "fixture"
+    mode:
+      | "fixture"
+      | "okx_market_ticker_snapshot"
+      | "joyai_vl_interaction"
+      | "situation_awareness"
+      | "swarm_simulation"
+      | "native_intelligence"
     description?: string | null
+    params?: Record<string, unknown>
   }
   tags: string[]
   manifest: Record<string, unknown>

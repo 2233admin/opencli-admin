@@ -21,10 +21,14 @@ from backend.schemas.workflow import (
     WorkflowRuntimePreview,
 )
 from backend.workflow.hda_templates import materialize_hda_templates
+from backend.workflow.native_intelligence_executor import (
+    NATIVE_INTELLIGENCE_ACTION_BY_TOOL_ID,
+)
 from backend.workflow.node_registry import (
     forbidden_node_definition_keys,
     resolve_node_origin,
 )
+from backend.workflow.runtime_contracts import runtime_io_contract
 from backend.workflow.runtime_registry import resolve_runtime_metadata
 
 INTERNAL_ID_SEPARATOR = "::"
@@ -81,7 +85,7 @@ _PORT_CONTRACTS: dict[str, tuple[list[_PortContract], list[_PortContract]]] = {
     ),
     "intelligence.output.collection-result": (
         [_PortContract("in", "input", "recordCandidate[]")],
-        [_PortContract("out", "output", "storedItems[]", required=False)],
+        [_PortContract("out", "output", "items[]", required=False)],
     ),
     "intelligence.output.inbox": (
         # recordCandidate[] like its kind-level fallback (kind=inbox/sink +
@@ -96,6 +100,18 @@ _PORT_CONTRACTS: dict[str, tuple[list[_PortContract], list[_PortContract]]] = {
         [_PortContract("payload", "output", "notificationPayload", required=False)],
     ),
     "external.tool.capability": (
+        [_PortContract("in", "input", "unknown", required=False)],
+        [_PortContract("out", "output", "unknown", required=False)],
+    ),
+    "package.intelligence.situation-awareness": (
+        [_PortContract("in", "input", "unknown", required=False)],
+        [_PortContract("out", "output", "unknown", required=False)],
+    ),
+    "package.simulation.swarm-forecast": (
+        [_PortContract("in", "input", "unknown", required=False)],
+        [_PortContract("out", "output", "unknown", required=False)],
+    ),
+    "package.intelligence.native-lifecycle": (
         [_PortContract("in", "input", "unknown", required=False)],
         [_PortContract("out", "output", "unknown", required=False)],
     ),
@@ -432,6 +448,9 @@ def _validate_typed_edges(
 def _node_port_contracts(
     node: WorkflowProjectNode,
 ) -> tuple[list[_PortContract], list[_PortContract]] | None:
+    native_contract = _native_intelligence_port_contracts(node)
+    if native_contract is not None:
+        return native_contract
     ui = node.ui or {}
     catalog_id = _read_string(ui.get("catalogId"))
     if catalog_id in _PORT_CONTRACTS:
@@ -467,6 +486,32 @@ def _node_port_contracts(
         )
         (inputs if direction == "input" else outputs).append(port)
     return inputs, outputs
+
+
+def _native_intelligence_port_contracts(
+    node: WorkflowProjectNode,
+) -> tuple[list[_PortContract], list[_PortContract]] | None:
+    tool_capability = node.params.get("toolCapability")
+    if not isinstance(tool_capability, dict):
+        return None
+    tool_id = _read_string(tool_capability.get("id"))
+    action = NATIVE_INTELLIGENCE_ACTION_BY_TOOL_ID.get(tool_id or "")
+    if action is None:
+        return None
+    binding_id = f"workflow.native-intelligence.{action.name.replace('.', '-')}"
+    contract = runtime_io_contract(binding_id)
+    if contract is None:
+        return None
+    return (
+        [
+            _PortContract(name, "input", type_)
+            for name, type_ in contract.input_ports
+        ],
+        [
+            _PortContract(name, "output", type_)
+            for name, type_ in contract.output_ports
+        ],
+    )
 
 
 def _inferred_node_port_contracts(
@@ -753,7 +798,7 @@ def _compile_node_tree(
     if not _is_structural_container(node):
         return
 
-    bound_internal_nodes = _bind_internal_parameters(node)
+    bound_internal_nodes = _bind_internal_parameters(node, node_path=node_path)
     internal_depends_on = _expanded_dependency_map(
         bound_internal_nodes,
         node.internals.edges,
@@ -845,11 +890,37 @@ def _package_metadata(
     }
 
 
-def _bind_internal_parameters(node: WorkflowProjectNode) -> list[WorkflowProjectNode]:
+def _resolve_internal_binding_id(
+    binding_node_id: str,
+    internal_node_ids: set[str],
+    *,
+    package_aliases: tuple[str, ...],
+) -> str | None:
+    if binding_node_id in internal_node_ids:
+        return binding_node_id
+
+    for package_alias in package_aliases:
+        for separator in ("__", INTERNAL_ID_SEPARATOR):
+            prefix = f"{package_alias}{separator}"
+            if not binding_node_id.startswith(prefix):
+                continue
+            candidate = binding_node_id[len(prefix) :]
+            if candidate in internal_node_ids:
+                return candidate
+    return None
+
+
+def _bind_internal_parameters(
+    node: WorkflowProjectNode,
+    *,
+    node_path: tuple[str, ...],
+) -> list[WorkflowProjectNode]:
     if not node.internals:
         return []
 
     internal_by_id = {internal_node.id: internal_node for internal_node in node.internals.nodes}
+    internal_node_ids = set(internal_by_id)
+    package_aliases = tuple(dict.fromkeys((node.id, _node_path_id(node_path))))
     params_by_node = {
         internal_node.id: dict(internal_node.params) for internal_node in node.internals.nodes
     }
@@ -860,7 +931,14 @@ def _bind_internal_parameters(node: WorkflowProjectNode) -> list[WorkflowProject
             value = node.params.get(field.id, field.value)
             if value is None:
                 continue
-            params_by_node[field.binding.nodeId][field.binding.fieldId] = value
+            binding_node_id = _resolve_internal_binding_id(
+                field.binding.nodeId,
+                internal_node_ids,
+                package_aliases=package_aliases,
+            )
+            if binding_node_id is None:
+                continue
+            params_by_node[binding_node_id][field.binding.fieldId] = value
 
     return [
         internal_by_id[internal_node.id].model_copy(
@@ -913,6 +991,7 @@ def _validate_package_internals(
             )
 
     internal_node_ids = {internal_node.id for internal_node in node.internals.nodes}
+    package_aliases = tuple(dict.fromkeys((node.id, package_node_id)))
     for edge in node.internals.edges:
         if edge.source not in internal_node_ids:
             errors.append(
@@ -1016,7 +1095,12 @@ def _validate_package_internals(
 
     if node.parameterInterface:
         for field in node.parameterInterface.fields:
-            if field.binding.nodeId not in internal_node_ids:
+            binding_node_id = _resolve_internal_binding_id(
+                field.binding.nodeId,
+                internal_node_ids,
+                package_aliases=package_aliases,
+            )
+            if binding_node_id is None:
                 errors.append(
                     WorkflowCompileError(
                         code="invalid_parameter_binding",

@@ -15,6 +15,7 @@ import pytest
 from backend.channels.registry import get_channel
 from backend.plan_ir.presets import (
     OpencliCommandMeta,
+    RealOpencliCatalogProvider,
     list_presets,
     list_presets_grouped,
 )
@@ -227,6 +228,44 @@ async def test_apply_opinion_monitor_preset_creates_sources_schedules_and_feishu
 
 
 # ── unit coverage of the presets module directly ────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_real_opencli_preset_provider_uses_shared_adapter_registry(monkeypatch):
+    import backend.plan_ir.presets as presets_module
+
+    calls: list[bool] = []
+
+    def fixture_catalog(*, refresh: bool = False):
+        calls.append(refresh)
+        return (
+            {
+                "site": "douyin",
+                "name": "tophot",
+                "description": "Douyin hot topics",
+                "access": "read",
+                "args": [],
+            },
+        )
+
+    monkeypatch.setattr(
+        presets_module,
+        "get_opencli_adapter_catalog",
+        fixture_catalog,
+    )
+
+    catalog = await RealOpencliCatalogProvider().get_catalog()
+
+    assert calls == [True]
+    assert [item.model_dump() for item in catalog] == [
+        {
+            "site": "douyin",
+            "name": "tophot",
+            "description": "Douyin hot topics",
+            "access": "read",
+            "required_args": False,
+        }
+    ]
 
 
 @pytest.mark.asyncio

@@ -56,6 +56,7 @@ export function WorkflowEditorSession({ forceStandalone = false }: WorkflowEdito
   const importWorkflowProject = useFlowStore((state) => state.importWorkflowProject)
   const [workflowId, setWorkflowId] = useState<string | null>(null)
   const [documentState, setDocumentState] = useState<'loading' | 'saving' | 'saved' | 'error' | 'conflict'>('loading')
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [savedRevision, setSavedRevision] = useState<number | null>(null)
   const [validationRunId, setValidationRunId] = useState<string | null>(null)
   const [releaseState, setReleaseState] = useState<'idle' | 'validating' | 'validated' | 'publishing' | 'published' | 'blocked'>('idle')
@@ -116,6 +117,7 @@ export function WorkflowEditorSession({ forceStandalone = false }: WorkflowEdito
     lastSavedFingerprint.current = null
     saveBlocked.current = false
     setDocumentState('loading')
+    setLoadError(null)
     ;(async () => {
       try {
         if (!resolvedWorkflowId) throw new Error('项目中没有可编辑的工作流')
@@ -131,8 +133,16 @@ export function WorkflowEditorSession({ forceStandalone = false }: WorkflowEdito
         setDocumentState('saved')
       } catch (reason) {
         if (!active) return
+        const message = reason instanceof Error ? reason.message : '工作流加载失败'
+        console.error('[WorkflowEditorSession] failed to load workflow draft', {
+          workspaceId,
+          projectId,
+          workflowId: resolvedWorkflowId,
+          reason,
+        })
+        setLoadError(message)
         setDocumentState('error')
-        toast.error(reason instanceof Error ? reason.message : '工作流加载失败')
+        toast.error(message)
       }
     })()
     return () => {
@@ -241,6 +251,7 @@ export function WorkflowEditorSession({ forceStandalone = false }: WorkflowEdito
         <div className="grid h-full place-items-center">
           <div className="space-y-3 text-center">
             <p className="text-sm text-destructive">工作流加载失败</p>
+            {loadError ? <p className="max-w-lg text-xs text-muted-foreground" role="alert">{loadError}</p> : null}
             <Button variant="outline" onClick={() => window.location.reload()}>
               <RefreshCw className="size-3.5" />
               重新加载
@@ -249,7 +260,7 @@ export function WorkflowEditorSession({ forceStandalone = false }: WorkflowEdito
         </div>
       ) : (
         <ErrorBoundary label="WorkflowEditor">
-          <WorkflowEditor />
+          <WorkflowEditor documentState={documentState} />
         </ErrorBoundary>
       )}
       {workspaceId && projectId && workflowId ? (

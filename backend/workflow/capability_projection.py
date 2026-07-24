@@ -7,6 +7,8 @@ visible nodes are blocked until a real binding is added.
 
 from __future__ import annotations
 
+from collections import Counter
+
 from backend.channels.registry import list_channel_types
 from backend.notifiers.registry import list_notifier_types
 from backend.schemas.workflow import (
@@ -17,11 +19,15 @@ from backend.schemas.workflow import (
     WorkflowNodeKind,
     WorkflowRuntimeCapability,
 )
+from backend.workflow.native_intelligence_executor import (
+    NATIVE_INTELLIGENCE_LIFECYCLE_ACTIONS,
+)
 from backend.workflow.node_registry import WORKFLOW_PRIMITIVE_IDS
 from backend.workflow.opencli_adapter_nodes import get_opencli_adapter_node_summary
 from backend.workflow.runtime_contracts import runtime_io_contract_manifest
 from backend.workflow.runtime_registry import (
     COLLECTION_OUTPUT_BINDING_ID,
+    DEDUPE_BINDING_ID,
     DEMAND_DRAFT_BINDING_ID,
     EXTERNAL_TOOL_BINDING_ID,
     MERGE_BINDING_ID,
@@ -93,6 +99,80 @@ def _capability(
 
 
 def _catalog_capabilities() -> list[WorkflowRuntimeCapability]:
+    expected_native_children = {
+        action: f"tool.intelligence.native.{action}"
+        for action in NATIVE_INTELLIGENCE_LIFECYCLE_ACTIONS
+    }
+    expected_native_ids = set(expected_native_children.values())
+    native_tools = [
+        tool
+        for tool in list_workflow_tool_capabilities().tools
+        if tool.executor.mode == "native_intelligence"
+        and (
+            tool.executor.params.get("action") in expected_native_children
+            or tool.id in expected_native_ids
+        )
+    ]
+    native_actions = [
+        action
+        if isinstance(action := tool.executor.params.get("action"), str)
+        else "<missing>"
+        for tool in native_tools
+    ]
+    native_ids = [tool.id for tool in native_tools]
+    action_counts = Counter(native_actions)
+    id_counts = Counter(native_ids)
+    missing_actions = sorted(set(expected_native_children) - set(native_actions))
+    extra_actions = sorted(set(native_actions) - set(expected_native_children))
+    duplicate_actions = sorted(
+        action for action, count in action_counts.items() if count > 1
+    )
+    missing_tool_ids = sorted(expected_native_ids - set(native_ids))
+    extra_tool_ids = sorted(set(native_ids) - expected_native_ids)
+    duplicate_tool_ids = sorted(
+        tool_id for tool_id, count in id_counts.items() if count > 1
+    )
+    expected_pairs = {
+        (tool_id, action) for action, tool_id in expected_native_children.items()
+    }
+    actual_pairs = set(zip(native_ids, native_actions, strict=True))
+    missing_children = [
+        {"id": tool_id, "action": action}
+        for tool_id, action in sorted(expected_pairs - actual_pairs)
+    ]
+    extra_children = [
+        {"id": tool_id, "action": action}
+        for tool_id, action in sorted(actual_pairs - expected_pairs)
+    ]
+    native_blocked = [tool for tool in native_tools if tool.status != "runnable"]
+    native_action_set_invalid = bool(
+        missing_actions
+        or extra_actions
+        or duplicate_actions
+        or missing_tool_ids
+        or extra_tool_ids
+        or duplicate_tool_ids
+        or missing_children
+        or extra_children
+    )
+    native_package_status: WorkflowCapabilityStatus = (
+        "runnable"
+        if not native_action_set_invalid and not native_blocked
+        else "blocked"
+    )
+    native_package_missing = [
+        reason
+        for tool in native_blocked
+        for reason in (
+            tool.manifest.get("readiness", {}).get("missingReasons", [])
+            if isinstance(tool.manifest.get("readiness"), dict)
+            else ["child_readiness_missing"]
+        )
+        if isinstance(reason, str)
+    ]
+    if native_package_status != "runnable":
+        native_package_missing.append("missing_native_intelligence_action_set")
+    native_package_missing = sorted(set(native_package_missing))
     return [
         _capability(
             id="intelligence.input.collection-need",
@@ -234,11 +314,36 @@ def _catalog_capabilities() -> list[WorkflowRuntimeCapability]:
                 probes=["normalizer_import_available"],
             ),
         ),
-        _blocked_catalog(
-            "intelligence.processing.dedupe",
-            "Dedupe Items",
-            "agent",
-            "dedupe",
+        _capability(
+            id="intelligence.processing.dedupe",
+            label="Dedupe Items",
+            surface="catalog",
+            status="runnable",
+            backend_available=True,
+            kind="agent",
+            capability="dedupe",
+            provider="workflow",
+            runtime_binding=DEDUPE_BINDING_ID,
+            reason=(
+                "Deterministically removes duplicate Record Candidates by the "
+                "configured business key while preserving lineage."
+            ),
+            tags=["transform", "dedupe", "record-candidate", "lineage"],
+            source="backend.workflow.runtime_registry",
+            manifest=_manifest(
+                schema="capability.transform.dedupe.v1",
+                input_ports=[_port("in", "recordCandidate[]")],
+                output_ports=[_port("out", "recordCandidate[]")],
+                resources=[],
+                permissions=[],
+                runtime_binding=DEDUPE_BINDING_ID,
+                trace_events=[
+                    "partial:deduplicatedCandidateCount",
+                    "partial:rejectedCount",
+                    "completed",
+                ],
+                probes=["dedupe_runtime_binding_available"],
+            ),
         ),
         _capability(
             id="intelligence.flow.merge",
@@ -340,7 +445,7 @@ def _catalog_capabilities() -> list[WorkflowRuntimeCapability]:
             manifest=_manifest(
                 schema="capability.output.collection-result.v1",
                 input_ports=[_port("in", "recordCandidate[]")],
-                output_ports=[_port("out", "storedItems[]")],
+                output_ports=[_port("out", "items[]")],
                 resources=["run_trace"],
                 permissions=[],
                 runtime_binding=COLLECTION_OUTPUT_BINDING_ID,
@@ -471,7 +576,7 @@ def _catalog_capabilities() -> list[WorkflowRuntimeCapability]:
         ),
         _capability(
             id="package.opencli.multi-source-hda",
-            label="OpenCLI Multi-source Package",
+            label="多站点数据采集",
             surface="catalog",
             status="runnable",
             backend_available=True,
@@ -486,6 +591,86 @@ def _catalog_capabilities() -> list[WorkflowRuntimeCapability]:
             missing=["canvas_resource_resolution", "projection_workbench"],
             tags=["package", "hda", "opencli"],
             source="backend.workflow.opencli_hda_tracer",
+        ),
+        _capability(
+            id="package.processing.record-hygiene",
+            label="记录清洗与准入",
+            surface="catalog",
+            status="runnable",
+            backend_available=True,
+            kind="agent",
+            capability="normalize",
+            provider="workflow",
+            runtime_binding=DEDUPE_BINDING_ID,
+            reason="Expands into native normalize, deterministic dedupe, and Record acceptance nodes.",
+            missing=[],
+            tags=["package", "hda", "normalize", "dedupe", "record-acceptance"],
+            source="backend.workflow.runtime_registry",
+        ),
+        _capability(
+            id="package.intelligence.situation-awareness",
+            label="近 30 天事态感知",
+            surface="catalog",
+            status="runnable",
+            backend_available=True,
+            kind="agent",
+            capability="normalize",
+            provider="opencli-admin",
+            runtime_binding=EXTERNAL_TOOL_BINDING_ID,
+            reason="Materializes to the registered situation-awareness Tool Capability.",
+            missing=[],
+            tags=["package", "hda", "research", "situation-awareness"],
+            source="backend.workflow.hda_templates",
+        ),
+        _capability(
+            id="package.simulation.swarm-forecast",
+            label="群体智能推演",
+            surface="catalog",
+            status="runnable",
+            backend_available=True,
+            kind="agent",
+            capability="normalize",
+            provider="opencli-admin",
+            runtime_binding=EXTERNAL_TOOL_BINDING_ID,
+            reason="Materializes to the registered local or MiroFish swarm Tool Capability.",
+            missing=["mirofish_provider_credentials_when_selected"],
+            tags=["package", "hda", "simulation", "swarm", "mirofish"],
+            source="backend.workflow.hda_templates",
+        ),
+        _capability(
+            id="package.intelligence.native-lifecycle",
+            label="Native Intelligence Lifecycle",
+            surface="catalog",
+            status=native_package_status,
+            backend_available=native_package_status == "runnable",
+            kind="agent",
+            capability="normalize",
+            provider="opencli-admin",
+            runtime_binding=EXTERNAL_TOOL_BINDING_ID,
+            reason=(
+                "Credential-free HDA composed from machine-certified native lifecycle "
+                "Tool Capabilities on the WorkflowRun/Event spine."
+            ),
+            missing=native_package_missing,
+            tags=["package", "hda", "intelligence", "native", "offline"],
+            source="backend.workflow.hda_templates",
+            manifest={
+                "readiness": {
+                    "status": native_package_status,
+                    "childCount": len(native_tools),
+                    "expectedChildCount": len(expected_native_children),
+                    "blockedChildren": sorted({tool.id for tool in native_blocked}),
+                    "missingReasons": native_package_missing,
+                    "missingActions": missing_actions,
+                    "extraActions": extra_actions,
+                    "duplicateActions": duplicate_actions,
+                    "missingToolIds": missing_tool_ids,
+                    "extraToolIds": extra_tool_ids,
+                    "duplicateToolIds": duplicate_tool_ids,
+                    "missingChildren": missing_children,
+                    "extraChildren": extra_children,
+                }
+            },
         ),
         _blocked_catalog(
             "package.dispatch.fanout",
@@ -603,28 +788,28 @@ def _primitive_capabilities() -> list[WorkflowRuntimeCapability]:
             id="primitive.core.webhook-trigger",
             label="Webhook Trigger",
             surface="primitive",
-            status="blocked",
+            status="runnable",
             backend_available=True,
             kind="schedule",
             capability="trigger",
             runtime_binding=WEBHOOK_TRIGGER_BINDING_ID,
-            reason="The workflow webhook input contract is compilable; HTTP ingress "
-            "and run dispatch remain a separate backend slice.",
-            missing=["workflow_webhook_ingress"],
+            reason="The workflow webhook input contract has HTTP ingress "
+            "and run dispatch.",
+            missing=[],
             tags=["primitive", "webhook", "trigger"],
         ),
         "primitive.ops.trigger-webhook": _capability(
             id="primitive.ops.trigger-webhook",
             label="Webhook Trigger",
             surface="primitive",
-            status="blocked",
+            status="runnable",
             backend_available=True,
             kind="schedule",
             capability="trigger",
             runtime_binding=WEBHOOK_TRIGGER_BINDING_ID,
-            reason="The workflow webhook input contract is compilable; HTTP ingress "
-            "and run dispatch remain a separate backend slice.",
-            missing=["workflow_webhook_ingress"],
+            reason="The workflow webhook input contract has HTTP ingress "
+            "and run dispatch.",
+            missing=[],
             tags=["primitive", "webhook", "trigger"],
         ),
         "primitive.ops.action-webhook": _capability(
@@ -789,14 +974,14 @@ def _trigger_capabilities() -> list[WorkflowRuntimeCapability]:
             id="trigger.webhook",
             label="Inbound webhook trigger",
             surface="trigger",
-            status="blocked",
+            status="runnable",
             backend_available=True,
             kind="schedule",
             capability="trigger",
             runtime_binding=WEBHOOK_TRIGGER_BINDING_ID,
-            reason="The workflow webhook input contract is registered; HTTP ingress "
-            "and run dispatch remain a separate backend slice.",
-            missing=["workflow_webhook_ingress"],
+            reason="The workflow webhook input contract has HTTP ingress "
+            "and run dispatch.",
+            missing=[],
             tags=["trigger", "webhook"],
         ),
     ]

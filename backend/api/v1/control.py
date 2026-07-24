@@ -19,15 +19,15 @@ the thing it's monitoring is unhealthy defeats the point of having it.
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.control import kill_switch
 from backend.control.collectors import odp_metrics
 from backend.control.outcomes import evaluate_pending_outcomes
-from backend.control import kill_switch
 from backend.control.report import bucket_by_state_action, mode_breakdown, tally
 from backend.database import get_db
 from backend.models.control_action import ControlActionRecord
@@ -50,8 +50,30 @@ from backend.schemas.odp_state import (
     StreamGroupState,
 )
 from backend.services import control_ledger_service
+from backend.workflow.native_intelligence_metrics import (
+    counter_snapshot,
+    outbox_snapshot,
+)
 
 router = APIRouter(prefix="/control", tags=["control"])
+
+
+@router.get(
+    "/native-intelligence-state",
+    response_model=ApiResponse[dict[str, Any]],
+)
+async def get_native_intelligence_state(
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse:
+    """Process-scoped low-cardinality counters plus durable outbox health."""
+
+    return ApiResponse.ok(
+        {
+            "schema": "native-intelligence.metrics.v1",
+            "counters": counter_snapshot(),
+            "outbox": await outbox_snapshot(db),
+        }
+    )
 
 
 @router.get("/odp-state", response_model=ApiResponse[OdpSystemState])
@@ -155,9 +177,9 @@ async def trigger_outcome_evaluation(db: AsyncSession = Depends(get_db)) -> ApiR
 
 @router.get("/actions", response_model=ApiResponse[list[ControlActionRecordRead]])
 async def list_control_actions(
-    source_id: Optional[str] = None,
-    mode: Optional[str] = None,
-    outcome: Optional[str] = None,
+    source_id: str | None = None,
+    mode: str | None = None,
+    outcome: str | None = None,
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),

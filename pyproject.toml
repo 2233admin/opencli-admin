@@ -90,6 +90,7 @@ testpaths = ["tests"]
 addopts = "--cov=backend --cov-report=term-missing --cov-fail-under=80"
 markers = [
     "live: tests that require a running API server and opencli daemon, or a local Chrome reachable over CDP (deselect with -m 'not live')",
+    "postgres_conformance: tests that require TEST_DATABASE_URL_PG and a disposable PostgreSQL test database",
 ]
 
 [tool.coverage.run]

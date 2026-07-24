@@ -66,7 +66,7 @@ async def create_workflow(
         await db.flush()
     except IntegrityError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, "Workflow name already exists") from exc
-    graph = {**body.graph, "id": row.id}
+    graph = {**body.graph.model_dump(mode="json", exclude_none=True), "id": row.id}
     db.add(
         StudioWorkflowDraft(
             workflow_id=row.id,
@@ -121,7 +121,10 @@ async def update_draft(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Workflow draft not found")
     if row.revision != body.revision:
         raise HTTPException(status.HTTP_409_CONFLICT, "Workflow draft revision conflict")
-    row.graph = {**body.graph, "id": workflow_id}
+    row.graph = {
+        **body.graph.model_dump(mode="json", exclude_none=True),
+        "id": workflow_id,
+    }
     row.revision += 1
     row.updated_by_user_id = LOCAL_USER_ID
     await db.flush()

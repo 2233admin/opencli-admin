@@ -10,10 +10,16 @@ import { useSettingsStore } from "@/lib/flow/settings-store"
 import type { WorkflowNode, WorkflowEdge, ToolMode } from "@/lib/flow/types"
 import { CommandStrip } from "./command-strip"
 import { CommandPalette } from "./command-palette"
-import { getWorkflowNodeCatalog } from "@/lib/workflow/node-catalog"
+import {
+  getWorkflowNodeCatalog,
+  nativeIntelligenceCatalogItems,
+} from "@/lib/workflow/node-catalog"
+import { mergeWorkflowNodeCatalog } from "@/lib/workflow/opencli-adapter-catalog"
 import { getWorkflowPrimitives } from "@/lib/workflow/node-primitives"
 import { groupPrimitivesForNodeMenu } from "@/lib/workflow/node-menu"
 import { useWorkflowCapabilities } from "@/lib/workflow/use-workflow-capabilities"
+import { useOpenCLIAdapterCatalog } from "@/lib/workflow/use-opencli-adapter-catalog"
+import { useWorkflowToolCapabilities } from "@/lib/workflow/use-workflow-tool-capabilities"
 import { useWorkflowKeyboardShortcuts } from "./workflow-keyboard-shortcuts"
 import {
   useCanvasViewportCompaction,
@@ -42,7 +48,11 @@ function buildPrimitiveMenuGroups() {
   return groupPrimitivesForNodeMenu(getWorkflowPrimitives())
 }
 
-function EditorCanvas() {
+function EditorCanvas({
+  documentState,
+}: {
+  documentState?: "loading" | "saving" | "saved" | "error" | "conflict"
+}) {
   const {
     addNodeFromPalette,
     addPrimitiveToNodeNetwork,
@@ -112,9 +122,33 @@ function EditorCanvas() {
   const [compactViewport, setCompactViewport] = useState(false)
   const [nodeMenu, setNodeMenu] = useState<NodeMenuState | null>(null)
   const { capabilities } = useWorkflowCapabilities(true)
+  const {
+    items: openCLIAdapterCatalogItems,
+    error: openCLIAdapterCatalogError,
+    loading: openCLIAdapterCatalogLoading,
+  } = useOpenCLIAdapterCatalog(true)
+  const {
+    tools: nativeIntelligenceTools,
+    error: nativeIntelligenceToolsError,
+    loading: nativeIntelligenceToolsLoading,
+  } = useWorkflowToolCapabilities(true)
   const dopNodeMenuItems = useMemo(
-    () => getWorkflowNodeCatalog(workflowProject.profile, capabilities),
-    [workflowProject.profile, capabilities],
+    () =>
+      mergeWorkflowNodeCatalog(
+        [
+          ...getWorkflowNodeCatalog(workflowProject.profile, capabilities),
+          ...(workflowProject.profile === "intelligence"
+            ? nativeIntelligenceCatalogItems(nativeIntelligenceTools)
+            : []),
+        ],
+        openCLIAdapterCatalogItems.filter((item) => item.profile === workflowProject.profile),
+      ),
+    [
+      workflowProject.profile,
+      capabilities,
+      openCLIAdapterCatalogItems,
+      nativeIntelligenceTools,
+    ],
   )
   const [primitiveMenuGroups] = useState(buildPrimitiveMenuGroups)
 
@@ -269,6 +303,7 @@ function EditorCanvas() {
   return (
     <div data-health="workflow-editor" className="flex h-full min-h-0 flex-1 flex-col">
       <CommandStrip
+        documentState={documentState}
         onOpenPalette={openNodePicker}
         onExported={showToast}
         collab={settings.collabProvider !== "off"}
@@ -350,22 +385,31 @@ function EditorCanvas() {
       </div>
 
       <CommandPalette
+        adapterCatalogError={openCLIAdapterCatalogError ?? nativeIntelligenceToolsError}
+        adapterCatalogLoading={openCLIAdapterCatalogLoading || nativeIntelligenceToolsLoading}
+        catalogItems={dopNodeMenuItems}
         open={paletteOpen}
         onClose={() => {
           setPaletteOpen(false)
           setPaletteAnchor(null)
         }}
         onMessage={showToast}
+        onNodeCreated={() => setInspectorOpen(true)}
         getAnchor={() => screenToFlowPosition(paletteAnchor ?? mousePos.current)}
+        screenAnchor={paletteAnchor}
       />
     </div>
   )
 }
 
-export function WorkflowEditor() {
+export function WorkflowEditor({
+  documentState,
+}: {
+  documentState?: "loading" | "saving" | "saved" | "error" | "conflict"
+} = {}) {
   return (
     <ReactFlowProvider>
-      <EditorCanvas />
+      <EditorCanvas documentState={documentState} />
     </ReactFlowProvider>
   )
 }

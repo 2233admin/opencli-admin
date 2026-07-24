@@ -85,10 +85,11 @@ export function useWorkflowNodeMenuActions(options: {
       }
       const text = localizeNodeText(item.id, { label: item.label, description: item.description }, language)
       addWorkflowNodeFromCatalog(item, screenToFlowPosition({ x: nodeMenu.x + 26, y: nodeMenu.y + 26 }))
+      setInspectorOpen(true)
       showToast(`已添加一级业务节点：${text.label}`)
       setNodeMenu(null)
     },
-    [addWorkflowNodeFromCatalog, language, nodeMenu, screenToFlowPosition, setNodeMenu, showToast],
+    [addWorkflowNodeFromCatalog, language, nodeMenu, screenToFlowPosition, setInspectorOpen, setNodeMenu, showToast],
   )
 
   const addPrimitiveFromMenu = useCallback(

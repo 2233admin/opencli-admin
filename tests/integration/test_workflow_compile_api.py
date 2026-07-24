@@ -613,7 +613,14 @@ async def test_compile_preserves_node_ids_in_runtime_and_plan_ir(client):
 
 
 @pytest.mark.asyncio
-async def test_compile_expands_package_internals_and_binds_public_params(client):
+@pytest.mark.parametrize(
+    "binding_node_id",
+    ["internal-fetch", "multi-source-hda__internal-fetch"],
+)
+async def test_compile_expands_package_internals_and_binds_public_params(
+    client,
+    binding_node_id,
+):
     project = _valid_workflow_project()
     project["nodes"] = [
         {
@@ -636,7 +643,7 @@ async def test_compile_expands_package_internals_and_binds_public_params(client)
                         "groupId": "public",
                         "type": "number",
                         "binding": {
-                            "nodeId": "internal-fetch",
+                            "nodeId": binding_node_id,
                             "source": "params",
                             "fieldId": "limit",
                         },
@@ -695,6 +702,23 @@ async def test_compile_expands_package_internals_and_binds_public_params(client)
     assert internal_fetch["depends_on"] == []
     assert runtime["edges"][0]["id"] == "multi-source-hda::internal-fetch-normalize"
     assert [node["id"] for node in runtime["plan_ir"]["nodes"]] == runtime["node_ids"]
+
+
+@pytest.mark.asyncio
+async def test_compile_accepts_legacy_record_hygiene_catalog_id(client):
+    project = _valid_workflow_project()
+    project["nodes"][0]["ui"] = {"catalogId": "package.processing.record-hygiene"}
+
+    response = await client.post("/api/v1/workflows/compile", json={"project": project})
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["valid"] is True
+    assert data["plan"]["runtime"]["nodes"][0]["runtime"]["origin"] == {
+        "kind": "node_library",
+        "catalog_id": "package.processing.record-hygiene",
+        "notes": [],
+    }
 
 
 @pytest.mark.asyncio
@@ -1127,6 +1151,12 @@ async def test_compile_materializes_opencli_hda_sources_from_ai_params_in_parall
     assert collection_output["runtime"]["binding"]["binding_id"] == (
         "workflow.collection-output.items"
     )
+    plan_nodes = {
+        node["id"]: node for node in runtime["plan_ir"]["nodes"]
+    }
+    assert plan_nodes["multi-source-opencli::collection-output"]["outputs"] == [
+        {"name": "out", "type": "items[]"}
+    ]
     assert source_bili["runtime"]["origin"]["catalog_id"] == "intelligence.source.opencli-slot"
     assert source_bili["runtime"]["binding"]["function_id"] == "odp.collect::opencli_snapshot"
     assert source_xhs["runtime"]["binding"]["input"] == {
@@ -1146,6 +1176,73 @@ async def test_compile_materializes_opencli_hda_sources_from_ai_params_in_parall
         "multi-source-opencli::source-bili",
         "multi-source-opencli::source-xhs",
         "multi-source-opencli::internal-normalize",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_compile_connects_collection_output_to_downstream_normalize(client):
+    project = _valid_workflow_project()
+    project["nodes"] = [
+        {
+            "id": "collection-package",
+            "kind": "agent",
+            "capability": "normalize",
+            "topicCollapse": {
+                "groupId": "collection-package",
+                "nodeCount": 1,
+                "mode": "locked",
+                "packageInternal": True,
+            },
+            "ui": {"catalogId": "package.opencli.multi-source-hda"},
+            "internals": {
+                "locked": True,
+                "nodes": [
+                    {
+                        "id": "collection-output",
+                        "kind": "inbox",
+                        "capability": "store",
+                        "params": {"queue": "opencli-hda-output", "archive": False},
+                        "ui": {
+                            "catalogId": "intelligence.output.collection-result",
+                        },
+                    }
+                ],
+                "edges": [],
+            },
+        },
+        {
+            "id": "downstream-normalize",
+            "kind": "agent",
+            "capability": "normalize",
+            "params": {"language": "zh-CN"},
+            "ui": {"catalogId": "intelligence.processing.normalize"},
+        },
+    ]
+    project["edges"] = [
+        {
+            "id": "collection-normalize",
+            "source": "collection-package",
+            "target": "downstream-normalize",
+            "sourcePort": "out",
+            "targetPort": "in",
+        }
+    ]
+    project["adapters"] = []
+
+    response = await client.post("/api/v1/workflows/compile", json={"project": project})
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["valid"] is True
+    assert data["errors"] == []
+    assert data["plan"]["runtime"]["plan_ir"]["edges"] == [
+        {
+            "id": "collection-normalize",
+            "source_node": "collection-package::collection-output",
+            "source_port": "out",
+            "target_node": "downstream-normalize",
+            "target_port": "in",
+        }
     ]
 
 

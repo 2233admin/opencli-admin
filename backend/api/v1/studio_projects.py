@@ -104,7 +104,10 @@ async def bootstrap_project(
             db.add(workflow)
             await db.flush()
 
-            graph = {**body.workflow.graph.model_dump(mode="json"), "id": workflow.id}
+            graph = {
+                **body.workflow.graph.model_dump(mode="json", exclude_none=True),
+                "id": workflow.id,
+            }
             draft = StudioWorkflowDraft(
                 workflow_id=workflow.id,
                 graph=graph,

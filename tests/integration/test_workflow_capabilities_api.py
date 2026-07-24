@@ -1,6 +1,14 @@
+import json
+import subprocess
+
 import pytest
 
+from backend.workflow import opencli_adapter_nodes
+from backend.workflow.native_intelligence_executor import (
+    NATIVE_INTELLIGENCE_LIFECYCLE_ACTIONS,
+)
 from backend.workflow.opencli_adapter_nodes import list_opencli_adapter_nodes
+from backend.workflow.tool_capabilities import list_workflow_tool_capabilities
 
 
 def _fixture_opencli_catalog() -> tuple[dict, ...]:
@@ -100,6 +108,38 @@ def _webhook_notify_project() -> dict:
     }
 
 
+def _native_lifecycle_tools():
+    return [
+        tool
+        for tool in list_workflow_tool_capabilities().tools
+        if tool.executor.mode == "native_intelligence"
+        and tool.executor.params.get("action") in NATIVE_INTELLIGENCE_LIFECYCLE_ACTIONS
+    ]
+
+
+async def _native_lifecycle_capability(client, monkeypatch, tools):
+    registry = list_workflow_tool_capabilities()
+    native_ids = {tool.id for tool in _native_lifecycle_tools()}
+    monkeypatch.setattr(
+        "backend.workflow.capability_projection.list_workflow_tool_capabilities",
+        lambda: registry.model_copy(
+            update={
+                "tools": [
+                    tool for tool in registry.tools if tool.id not in native_ids
+                ]
+                + tools
+            }
+        ),
+    )
+    response = await client.get("/api/v1/workflows/capabilities")
+    assert response.status_code == 200
+    return next(
+        item
+        for item in response.json()["data"]["catalog"]
+        if item["id"] == "package.intelligence.native-lifecycle"
+    )
+
+
 @pytest.mark.asyncio
 async def test_compile_reports_webhook_notify_contract_without_live_delivery(client):
     response = await client.post(
@@ -142,6 +182,104 @@ async def test_compile_reports_webhook_notify_contract_without_live_delivery(cli
             "waits for EvidenceBatch projection and a configured webhook URL."
         ),
     }
+
+
+@pytest.mark.asyncio
+async def test_native_lifecycle_readiness_requires_exact_complete_action_set(
+    client, monkeypatch
+):
+    tools = _native_lifecycle_tools()
+
+    capability = await _native_lifecycle_capability(client, monkeypatch, tools)
+
+    assert capability["status"] == "runnable"
+    assert capability["backendAvailable"] is True
+    assert capability["missing"] == []
+    assert capability["manifest"]["readiness"] == {
+        "status": "runnable",
+        "childCount": 18,
+        "expectedChildCount": 18,
+        "blockedChildren": [],
+        "missingReasons": [],
+        "missingActions": [],
+        "extraActions": [],
+        "duplicateActions": [],
+        "missingToolIds": [],
+        "extraToolIds": [],
+        "duplicateToolIds": [],
+        "missingChildren": [],
+        "extraChildren": [],
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("case", "expected_detail"),
+    [
+        ("missing", ("missingActions", ["report.answers"])),
+        ("duplicate", ("duplicateActions", ["report.answers"])),
+        ("extra", ("extraActions", ["unexpected.lifecycle.action"])),
+        (
+            "wrong_id",
+            (
+                "extraToolIds",
+                ["tool.intelligence.native.report.answers.unexpected"],
+            ),
+        ),
+        (
+            "blocked",
+            (
+                "blockedChildren",
+                ["tool.intelligence.native.report.answers"],
+            ),
+        ),
+    ],
+)
+async def test_native_lifecycle_readiness_fails_closed_for_invalid_action_set(
+    client, monkeypatch, case, expected_detail
+):
+    tools = _native_lifecycle_tools()
+    target = next(
+        tool
+        for tool in tools
+        if tool.executor.params.get("action") == "report.answers"
+    )
+    if case == "missing":
+        tools.remove(target)
+    elif case == "duplicate":
+        tools.append(target.model_copy(deep=True))
+    elif case == "extra":
+        tools[tools.index(target)] = target.model_copy(
+            update={
+                "executor": target.executor.model_copy(
+                    update={"params": {"action": "unexpected.lifecycle.action"}}
+                ),
+            },
+            deep=True,
+        )
+    elif case == "wrong_id":
+        tools[tools.index(target)] = target.model_copy(
+            update={"id": "tool.intelligence.native.report.answers.unexpected"},
+            deep=True,
+        )
+    elif case == "blocked":
+        manifest = dict(target.manifest)
+        manifest["readiness"] = {
+            "status": "blocked",
+            "missingReasons": ["test_child_readiness_blocked"],
+        }
+        tools[tools.index(target)] = target.model_copy(
+            update={"status": "blocked", "manifest": manifest},
+            deep=True,
+        )
+
+    capability = await _native_lifecycle_capability(client, monkeypatch, tools)
+
+    assert capability["status"] == "blocked"
+    assert capability["backendAvailable"] is False
+    assert "missing_native_intelligence_action_set" in capability["missing"]
+    detail_key, detail_value = expected_detail
+    assert capability["manifest"]["readiness"][detail_key] == detail_value
 
 
 @pytest.mark.asyncio
@@ -203,6 +341,14 @@ async def test_workflow_capabilities_project_real_backend_surfaces(client, monke
     assert catalog["intelligence.source.pool"]["backendAvailable"] is True
     assert catalog["intelligence.source.pool"]["runtimeBinding"] == (
         "workflow.source-pool.parallel-fanout"
+    )
+    assert catalog["intelligence.processing.dedupe"]["status"] == "runnable"
+    assert catalog["intelligence.processing.dedupe"]["runtimeBinding"] == (
+        "workflow.transform.dedupe"
+    )
+    assert catalog["package.processing.record-hygiene"]["status"] == "runnable"
+    assert catalog["package.processing.record-hygiene"]["runtimeBinding"] == (
+        "workflow.transform.dedupe"
     )
     assert catalog["intelligence.output.collection-result"]["status"] == "runnable"
     assert catalog["intelligence.output.collection-result"]["backendAvailable"] is True
@@ -305,7 +451,7 @@ async def test_workflow_capabilities_project_real_backend_surfaces(client, monke
     assert "evidencebatch_projection_input" in notifiers["webhook"]["missing"]
 
     primitives = {item["id"]: item for item in data["primitives"]}
-    assert primitives["primitive.ops.trigger-webhook"]["status"] == "blocked"
+    assert primitives["primitive.ops.trigger-webhook"]["status"] == "runnable"
     assert primitives["primitive.ops.trigger-webhook"]["backendAvailable"] is True
     assert primitives["primitive.ops.trigger-webhook"]["runtimeBinding"] == (
         "workflow.trigger.webhook_input"
@@ -313,18 +459,23 @@ async def test_workflow_capabilities_project_real_backend_surfaces(client, monke
     assert primitives["primitive.ops.trigger-webhook"]["manifest"]["contract"][
         "outputShape"
     ]["ports"] == [{"name": "request", "type": "webhookRequest"}]
-    assert primitives["primitive.ops.trigger-webhook"]["missing"] == [
-        "workflow_webhook_ingress"
-    ]
+    assert primitives["primitive.ops.trigger-webhook"]["missing"] == []
 
     triggers = {item["id"]: item for item in data["triggers"]}
     assert triggers["trigger.manual"]["status"] == "runnable"
     assert triggers["trigger.manual"]["missing"] == []
-    assert triggers["trigger.webhook"]["status"] == "blocked"
+    assert triggers["trigger.webhook"]["status"] == "runnable"
+    assert triggers["trigger.webhook"]["missing"] == []
     assert triggers["trigger.webhook"]["runtimeBinding"] == "workflow.trigger.webhook_input"
     assert triggers["trigger.webhook"]["manifest"]["contract"]["status"] == (
         "dispatch_only"
     )
+    assert triggers["trigger.webhook"]["manifest"]["contract"]["configGate"] == {
+        "required": []
+    }
+    assert "workflow-webhook-ingress-api" in triggers["trigger.webhook"]["manifest"][
+        "contract"
+    ]["fixtureCoverage"]["cases"]
 
     resources = {item["id"]: item for item in data["resources"]}
     fleet_resource = resources["resource.workflow-fleet-runtime"]
@@ -408,6 +559,36 @@ def test_opencli_adapter_nodes_classify_manifest_entries(monkeypatch):
         "sourceSlotRequiresParams": 1,
         "toolCapabilityReviewRequired": 1,
     }
+
+
+def test_opencli_adapter_nodes_refresh_after_opencli_catalog_changes(monkeypatch):
+    catalogs = iter(
+        [
+            [{"site": "bbc", "name": "news", "access": "read", "args": []}],
+            [{"site": "douyin", "name": "tophot", "access": "read", "args": []}],
+        ]
+    )
+
+    def fake_run(*args, **kwargs):
+        return subprocess.CompletedProcess(
+            args=args[0],
+            returncode=0,
+            stdout=json.dumps(next(catalogs)),
+            stderr="",
+        )
+
+    monkeypatch.setattr(opencli_adapter_nodes, "resolve_opencli_bin", lambda: "opencli-test")
+    monkeypatch.setattr(opencli_adapter_nodes.subprocess, "run", fake_run)
+    opencli_adapter_nodes.refresh_opencli_adapter_catalog()
+
+    first = list_opencli_adapter_nodes(refresh=True)
+    cached = list_opencli_adapter_nodes()
+    refreshed = list_opencli_adapter_nodes(refresh=True)
+
+    assert [node.id for node in first.nodes] == ["opencli.adapter.bbc.news"]
+    assert [node.id for node in cached.nodes] == ["opencli.adapter.bbc.news"]
+    assert [node.id for node in refreshed.nodes] == ["opencli.adapter.douyin.tophot"]
+    opencli_adapter_nodes.refresh_opencli_adapter_catalog()
 
 
 @pytest.mark.asyncio

@@ -6,6 +6,7 @@ import pytest
 from sqlalchemy import select
 
 from backend import browser_pool
+from backend.channels.base import ChannelResult
 from backend.models.browser import BrowserBinding, BrowserInstance
 from backend.models.edge_node import EdgeNode
 from backend.models.record import CollectedRecord
@@ -240,6 +241,16 @@ def _native_first_loop_project() -> dict:
                 "ui": {"catalogId": "intelligence.control.record-acceptance"},
             },
             {
+                "id": "dedupe-candidates",
+                "kind": "agent",
+                "capability": "dedupe",
+                "params": {
+                    "key": "title+source+publishedAt",
+                    "window": "24h",
+                },
+                "ui": {"catalogId": "intelligence.processing.dedupe"},
+            },
+            {
                 "id": "record-sink",
                 "kind": "sink",
                 "capability": "store",
@@ -277,8 +288,15 @@ def _native_first_loop_project() -> dict:
                 "targetPort": "in2",
             },
             {
-                "id": "e-merge-accept",
+                "id": "e-merge-dedupe",
                 "source": "merge-candidates",
+                "target": "dedupe-candidates",
+                "sourcePort": "out",
+                "targetPort": "in",
+            },
+            {
+                "id": "e-dedupe-accept",
+                "source": "dedupe-candidates",
                 "target": "accept-records",
                 "sourcePort": "out",
                 "targetPort": "candidates",
@@ -387,6 +405,28 @@ def _fleet_trace_opencli_catalog() -> tuple[dict, ...]:
                 }
             ],
             "columns": ["id", "text"],
+        },
+    )
+
+
+def _local_opencli_catalog() -> tuple[dict, ...]:
+    return (
+        {
+            "site": "hn-live-case",
+            "name": "top",
+            "description": "Live Hacker News top stories",
+            "access": "read",
+            "browser": False,
+            "strategy": "public",
+            "args": [
+                {
+                    "name": "limit",
+                    "type": "int",
+                    "required": False,
+                    "default": 3,
+                }
+            ],
+            "columns": ["rank", "id", "title", "score", "author", "comments", "url"],
         },
     )
 
@@ -786,6 +826,185 @@ async def test_workflow_run_trace_records_fleet_match_for_opencli_source(
 
 
 @pytest.mark.asyncio
+async def test_workflow_run_executes_non_browser_opencli_adapter_locally(
+    client,
+    db_session,
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        "backend.workflow.opencli_adapter_nodes._load_opencli_catalog",
+        _local_opencli_catalog,
+    )
+    collected: list[tuple[dict, dict]] = []
+
+    async def fake_collect(self, config, parameters):
+        collected.append((config, parameters))
+        return ChannelResult.ok(
+            [
+                {
+                    "rank": 1,
+                    "id": 123,
+                    "title": "Live adapter result",
+                    "score": 42,
+                    "author": "opencli",
+                    "comments": 7,
+                    "url": "https://news.ycombinator.com/item?id=123",
+                }
+            ],
+            site=config["site"],
+            command=config["command"],
+        )
+
+    monkeypatch.setattr(
+        "backend.channels.opencli_channel.OpenCLIChannel.collect",
+        fake_collect,
+    )
+    project = _multi_source_opencli_hda_project()
+    package = project["nodes"][0]
+    package["topicCollapse"]["nodeCount"] = 6
+    internals = package["internals"]
+    for source in internals["nodes"][1:3]:
+        source["params"].update(
+            {
+                "site": "hn-live-case",
+                "command": "top",
+                "args": {"limit": 1},
+                "opencliAdapterNodeId": "opencli.adapter.hn-live-case.top",
+            }
+        )
+    internals["nodes"][-1] = {
+        "id": "accept-records",
+        "kind": "control",
+        "capability": "accept",
+        "params": {
+            "mode": "automatic_with_review",
+            "schema": "record.v1",
+            "dedupe": "required",
+            "lineageRequired": True,
+            "minQuality": 0,
+        },
+        "ui": {"catalogId": "intelligence.control.record-acceptance"},
+    }
+    internals["nodes"].append(
+        {
+            "id": "record-sink",
+            "kind": "sink",
+            "capability": "store",
+            "params": {
+                "target": "records",
+                "writeMode": "append",
+                "preserveLineage": True,
+            },
+            "ui": {"catalogId": "intelligence.sink.records"},
+        }
+    )
+    internals["edges"][-1].update(
+        {
+            "id": "normalize-accept",
+            "target": "accept-records",
+            "sourcePort": "out",
+            "targetPort": "candidates",
+        }
+    )
+    internals["edges"].append(
+        {
+            "id": "accept-sink",
+            "source": "accept-records",
+            "target": "record-sink",
+            "sourcePort": "records",
+            "targetPort": "records",
+        }
+    )
+
+    response = await client.post(
+        "/api/v1/workflows/runs",
+        json={
+            "project": project,
+            "packageNodeId": "multi-source-opencli",
+            "runId": "run-local-opencli-adapter",
+            "traceId": "trace-local-opencli-adapter",
+        },
+    )
+
+    assert response.status_code == 202
+    assert response.json()["data"]["status"] == "completed"
+    events = (await client.get("/api/v1/workflows/runs/run-local-opencli-adapter/events")).json()[
+        "data"
+    ]
+    source_partial = next(
+        event
+        for event in events
+        if event["nodeId"] == "multi-source-opencli::source-bilibili"
+        and event["eventType"] == "partial"
+    )
+    assert source_partial["message"] == ("OpenCLI source items collected through local OpenCLI")
+    assert source_partial["details"]["itemCount"] == 1
+    assert source_partial["details"]["agentDispatch"] == {
+        "attempted": True,
+        "success": True,
+        "protocol": "local",
+        "endpoint": "local-opencli",
+        "mode": "direct",
+        "site": "hn-live-case",
+        "command": "top",
+        "format": "json",
+        "itemCount": 1,
+        "metadata": {"site": "hn-live-case", "command": "top"},
+    }
+    normalize_partial = next(
+        event
+        for event in events
+        if event["nodeId"] == "multi-source-opencli::internal-normalize"
+        and event["eventType"] == "partial"
+    )
+    assert normalize_partial["details"]["inputItemCount"] == 2
+    sink_partial = next(
+        event
+        for event in events
+        if event["nodeId"] == "multi-source-opencli::record-sink"
+        and event["eventType"] == "partial"
+    )
+    assert sink_partial["details"]["inputRecordCount"] == 2
+    assert sink_partial["details"]["storedRecordCount"] == 2
+    assert {ref["lineage"][0]["artifact"] for ref in sink_partial["details"]["storedRefs"]} == {
+        "opencliDispatch"
+    }
+    records = (
+        (await db_session.execute(select(CollectedRecord).order_by(CollectedRecord.created_at)))
+        .scalars()
+        .all()
+    )
+    assert len(records) == 2
+    assert {record.normalized_data["title"] for record in records} == {"Live adapter result"}
+    assert {record.raw_data["_workflowLineage"][0]["nodeId"] for record in records} == {
+        "multi-source-opencli::source-bilibili",
+        "multi-source-opencli::source-xiaohongshu",
+    }
+    assert collected == [
+        (
+            {
+                "site": "hn-live-case",
+                "command": "top",
+                "args": {"limit": 1},
+                "positional_args": [],
+                "format": "json",
+            },
+            {},
+        ),
+        (
+            {
+                "site": "hn-live-case",
+                "command": "top",
+                "args": {"limit": 1},
+                "positional_args": [],
+                "format": "json",
+            },
+            {},
+        ),
+    ]
+
+
+@pytest.mark.asyncio
 async def test_workflow_run_blocks_missing_opencli_profile_resource(
     client,
     monkeypatch,
@@ -865,6 +1084,7 @@ async def test_workflow_run_emits_native_first_loop_trace_events(client, db_sess
     states = {state["nodeId"]: state for state in data["nodeStates"]}
     assert states["normalize-bilibili"]["status"] == "completed"
     assert states["merge-candidates"]["status"] == "completed"
+    assert states["dedupe-candidates"]["status"] == "completed"
     assert states["accept-records"]["status"] == "completed"
     assert states["record-sink"]["status"] == "completed"
 
@@ -891,6 +1111,14 @@ async def test_workflow_run_emits_native_first_loop_trace_events(client, db_sess
         "normalize-bilibili",
         "normalize-xhs",
     ]
+
+    dedupe_partial = by_node["dedupe-candidates"][2]
+    assert dedupe_partial["details"]["bindingId"] == "workflow.transform.dedupe"
+    assert dedupe_partial["details"]["key"] == "title+source+publishedAt"
+    assert dedupe_partial["details"]["window"] == "24h"
+    assert dedupe_partial["details"]["inputCandidateCount"] == 2
+    assert dedupe_partial["details"]["deduplicatedCandidateCount"] == 2
+    assert dedupe_partial["details"]["rejectedCount"] == 0
 
     gate_partial = by_node["accept-records"][2]
     assert gate_partial["details"]["bindingId"] == "workflow.gate.record-acceptance"

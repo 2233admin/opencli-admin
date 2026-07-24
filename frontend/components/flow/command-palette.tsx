@@ -2,10 +2,23 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useReactFlow } from "@xyflow/react"
-import { Loader2, Sparkles, Network, Save, RotateCcw, CornerDownLeft } from "lucide-react"
+import {
+  Boxes,
+  CornerDownLeft,
+  Database,
+  Loader2,
+  Network,
+  Play,
+  Plus,
+  RotateCcw,
+  Save,
+  Sparkles,
+  StickyNote,
+  Wrench,
+} from "lucide-react"
 import { NODE_PALETTE } from "@/lib/flow/palette"
 import type { PaletteItem } from "@/lib/flow/types"
-import { getWorkflowNodeCatalog, type WorkflowNodeCatalogItem } from "@/lib/workflow/node-catalog"
+import type { WorkflowNodeCatalogItem } from "@/lib/workflow/node-catalog"
 import { getWorkflowPrimitives, type WorkflowPrimitive } from "@/lib/workflow/node-primitives"
 import { workflowNodeDepthFromNetworkStack, workflowNodeLayerAtDepth } from "@/lib/workflow/node-hierarchy"
 import { groupPrimitivesForNodeMenu } from "@/lib/workflow/node-menu"
@@ -40,18 +53,65 @@ const cmdIcons = {
   reset: RotateCcw,
 }
 
+const catalogCategoryLabels: Record<WorkflowNodeCatalogItem["category"], string> = {
+  trigger: "开始与触发",
+  source: "数据来源",
+  processing: "数据处理",
+  flow: "流程控制",
+  decision: "条件判断",
+  control: "质量与审批",
+  sink: "数据存储",
+  output: "结果交付",
+  package: "组合能力",
+}
+
+const commonOpenCLISites = [
+  "douyin",
+  "bilibili",
+  "xiaohongshu",
+  "weibo",
+  "zhihu",
+  "twitter",
+  "jin10",
+] as const
+
+type PaletteTab = "business" | "tools" | "sources" | "start" | "auxiliary"
+
+const paletteTabs: {
+  id: PaletteTab
+  label: string
+  icon: typeof Boxes
+}[] = [
+  { id: "business", label: "业务节点", icon: Boxes },
+  { id: "tools", label: "工具", icon: Wrench },
+  { id: "sources", label: "数据源", icon: Database },
+  { id: "start", label: "开始", icon: Play },
+  { id: "auxiliary", label: "辅助", icon: StickyNote },
+]
+
 export function CommandPalette({
+  adapterCatalogError,
+  adapterCatalogLoading,
+  catalogItems,
   open,
   onClose,
   onMessage,
+  onNodeCreated,
   getAnchor,
+  screenAnchor,
 }: {
+  adapterCatalogError?: string | null
+  adapterCatalogLoading?: boolean
+  catalogItems: WorkflowNodeCatalogItem[]
   open: boolean
   onClose: () => void
   onMessage?: (msg: string) => void
+  onNodeCreated?: () => void
   getAnchor?: () => { x: number; y: number }
+  screenAnchor?: { x: number; y: number } | null
 }) {
   const [query, setQuery] = useState("")
+  const [activeTab, setActiveTab] = useState<PaletteTab>("business")
   const [aiMode, setAiMode] = useState(false)
   const [aiPrompt, setAiPrompt] = useState("")
   const [loading, setLoading] = useState(false)
@@ -66,7 +126,6 @@ export function CommandPalette({
   const autoLayout = useFlowStore((s) => s.autoLayout)
   const save = useFlowStore((s) => s.save)
   const reset = useFlowStore((s) => s.reset)
-  const workflowProfile = useFlowStore((s) => s.workflowProject.profile)
   const networkStackLength = useFlowStore((s) => s.networkStack.length)
   const inNodeNetwork = networkStackLength > 0
   const nodeDepth = workflowNodeDepthFromNetworkStack(networkStackLength)
@@ -77,11 +136,12 @@ export function CommandPalette({
   useEffect(() => {
     if (open) {
       setQuery("")
+      setActiveTab(inNodeNetwork ? "tools" : "business")
       setAiMode(false)
       setAiPrompt("")
       requestAnimationFrame(() => inputRef.current?.focus())
     }
-  }, [open])
+  }, [inNodeNetwork, open])
 
   useEffect(() => {
     if (aiMode) requestAnimationFrame(() => aiRef.current?.focus())
@@ -102,9 +162,10 @@ export function CommandPalette({
         })
       addNodeFromPalette(item, position)
       onMessage?.(`已添加节点：${item.label}`)
+      onNodeCreated?.()
       onClose()
     },
-    [getAnchor, screenToFlowPosition, addNodeFromPalette, onMessage, onClose],
+    [getAnchor, screenToFlowPosition, addNodeFromPalette, onMessage, onNodeCreated, onClose],
   )
 
   const addCatalogOperator = useCallback(
@@ -123,9 +184,10 @@ export function CommandPalette({
           ? `已添加一级业务节点：${text.label} (${runtimeStatusLabel(status)})`
           : `已添加一级业务节点：${text.label}`,
       )
+      onNodeCreated?.()
       onClose()
     },
-    [getAnchor, screenToFlowPosition, addWorkflowNodeFromCatalog, language, onMessage, onClose],
+    [getAnchor, screenToFlowPosition, addWorkflowNodeFromCatalog, language, onMessage, onNodeCreated, onClose],
   )
 
   const addPrimitive = useCallback(
@@ -139,9 +201,10 @@ export function CommandPalette({
       addPrimitiveNode(item, position, primitiveRuntimeCapability(capabilities, item.id))
       const text = localizeNodeText(item.id, { label: item.label, description: item.description }, language)
       onMessage?.(`已添加底层组件：${text.label}`)
+      onNodeCreated?.()
       onClose()
     },
-    [getAnchor, screenToFlowPosition, addPrimitiveNode, capabilities, language, onMessage, onClose],
+    [getAnchor, screenToFlowPosition, addPrimitiveNode, capabilities, language, onMessage, onNodeCreated, onClose],
   )
 
   const generate = useCallback(
@@ -225,26 +288,35 @@ export function CommandPalette({
   )
 
   const q = query.trim().toLowerCase()
+  const availableTabs = inNodeNetwork
+    ? paletteTabs.filter((tab) => tab.id === "tools" || tab.id === "auxiliary")
+    : paletteTabs
   const catalogOperators = inNodeNetwork
     ? []
-    : getWorkflowNodeCatalog(workflowProfile, capabilities).filter((item) => item.category === "package")
-  const filteredCatalogOperators = q
-    ? catalogOperators.filter(
-        (item) => {
-          const text = localizeNodeText(item.id, { label: item.label, description: item.description }, language)
-          return (
+    : prioritizeCommonSources(
+        catalogItems.filter((item) => paletteTabForCatalogItem(item) === activeTab),
+      )
+  const filteredCatalogOperators = q && !q.startsWith(">")
+    ? catalogOperators.filter((item) => {
+        const text = localizeNodeText(item.id, { label: item.label, description: item.description }, language)
+        return (
           item.label.toLowerCase().includes(q) ||
           text.label.toLowerCase().includes(q) ||
           (text.description ?? "").toLowerCase().includes(q) ||
           item.kind.toLowerCase().includes(q) ||
           item.capability.toLowerCase().includes(q) ||
           item.keywords.some((keyword) => keyword.toLowerCase().includes(q))
-          )
-        },
-      )
-    : catalogOperators
-  const primitiveOperators = (inNodeNetwork ? getWorkflowPrimitives() : []).filter((item) => {
-    if (!q) return true
+        )
+      })
+    : q.startsWith(">")
+      ? []
+      : catalogOperators
+  const visibleCatalogOperators = filteredCatalogOperators.slice(0, 200)
+  const hiddenCatalogCount = filteredCatalogOperators.length - visibleCatalogOperators.length
+  const primitiveOperators = (
+    inNodeNetwork && activeTab === "tools" ? getWorkflowPrimitives() : []
+  ).filter((item) => {
+    if (!q || q.startsWith(">")) return !q.startsWith(">")
     const text = localizeNodeText(item.id, { label: item.label, description: item.description }, language)
     return (
       item.label.toLowerCase().includes(q) ||
@@ -258,18 +330,30 @@ export function CommandPalette({
   const auxiliaryOperators = NODE_PALETTE.filter(
     (item) => item.category === "annotation" || item.category === "shape",
   )
-  const filteredOperators = q
+  const filteredOperators = activeTab === "auxiliary" && !q.startsWith(">")
+    ? q
     ? auxiliaryOperators.filter(
         (i) => i.label.toLowerCase().includes(q) || i.nodeType.toLowerCase().includes(q),
       )
     : auxiliaryOperators
-  const filteredCommands = q ? commands.filter((c) => c.label.toLowerCase().includes(q)) : []
-
+    : []
+  const commandQuery = q.startsWith(">") ? q.slice(1).trim() : null
+  const filteredCommands = commandQuery === null
+    ? []
+    : commands.filter((c) => c.label.toLowerCase().includes(commandQuery))
+  const visibleCatalogGroups = Array.from(
+    visibleCatalogOperators.reduce((groups, item) => {
+      const items = groups.get(item.category) ?? []
+      items.push(item)
+      groups.set(item.category, items)
+      return groups
+    }, new Map<WorkflowNodeCatalogItem["category"], WorkflowNodeCatalogItem[]>()),
+  )
   if (!open) return null
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-background/85 pt-[15vh]"
+      className="fixed inset-0 z-50 bg-background/35"
       onClick={close}
       onKeyDown={(e) => {
         if (e.key === "Escape") close()
@@ -279,44 +363,112 @@ export function CommandPalette({
       aria-label="节点选择器"
     >
       <div
-        className="w-[36rem] max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border bg-popover shadow-2xl"
+        className="absolute w-[25rem] max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border bg-popover shadow-2xl"
+        style={{
+          left: screenAnchor
+            ? Math.max(16, Math.min(screenAnchor.x, window.innerWidth - 416))
+            : Math.max(16, window.innerWidth / 2 - 200),
+          top: screenAnchor
+            ? Math.max(72, Math.min(screenAnchor.y, window.innerHeight - 560))
+            : Math.max(72, window.innerHeight * 0.12),
+        }}
         onClick={(e) => e.stopPropagation()}
       >
         {!aiMode ? (
           <>
-            <div className="flex items-center gap-2 border-b px-4 py-3">
-              <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
-                ⌘K
-              </span>
-              <input
-                ref={inputRef}
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.nativeEvent.isComposing) {
-                    if (filteredCatalogOperators[0]) {
-                      addCatalogOperator(filteredCatalogOperators[0])
-                    } else if (primitiveOperators[0]) {
-                      addPrimitive(primitiveOperators[0])
-                    } else if (filteredOperators[0]) {
-                      addOperator(filteredOperators[0])
-                    } else if (filteredCommands[0]) {
-                      const first = filteredCommands[0]
-                      if (first.id === "ai") setAiMode(true)
-                      else first.run?.()
-                    }
-                  }
-                }}
-                placeholder="搜索节点或操作…"
-                className="w-full bg-transparent text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none"
-                aria-label="搜索命令或节点"
-              />
-              <kbd className="rounded-sm border px-1.5 py-0.5 font-mono text-[9px] text-muted-foreground">
-                ESC
-              </kbd>
+            <div className="px-4 py-3">
+              <div className="flex items-center gap-2">
+                <Plus className="size-4 text-[#ff7a17]" />
+                <span className="text-sm font-medium text-foreground">添加节点</span>
+                <span className="ml-auto text-[11px] text-muted-foreground">
+                  选择后直接进入配置
+                </span>
+              </div>
             </div>
 
-            <div className="max-h-[50vh] overflow-y-auto py-2">
+            <div
+              className="flex min-w-0 gap-0.5 border-b bg-muted/25 px-1 pt-1"
+              role="tablist"
+              aria-label="节点一级菜单"
+            >
+              {availableTabs.map((tab) => {
+                const Icon = tab.icon
+                const selected = activeTab === tab.id
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={selected}
+                    aria-controls="node-selector-panel"
+                    onClick={() => {
+                      setActiveTab(tab.id)
+                      setQuery("")
+                      requestAnimationFrame(() => inputRef.current?.focus())
+                    }}
+                    className={cn(
+                      "relative flex min-w-0 flex-1 items-center justify-center gap-1 rounded-t-lg px-1.5 py-2 text-[11px] transition-colors",
+                      selected
+                        ? "bg-popover font-medium text-[#ff7a17]"
+                        : "text-muted-foreground hover:bg-background/55 hover:text-foreground",
+                    )}
+                  >
+                    <Icon className="size-3.5 shrink-0" />
+                    <span className="truncate">{tab.label}</span>
+                    {selected ? (
+                      <span className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-[#ff7a17]" />
+                    ) : null}
+                  </button>
+                )
+              })}
+            </div>
+
+            <div className="border-b p-2">
+              <div className="flex items-center gap-2 rounded-md border bg-background/65 px-3 py-2">
+                <input
+                  ref={inputRef}
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+                      if (visibleCatalogOperators[0]) {
+                        addCatalogOperator(visibleCatalogOperators[0])
+                      } else if (primitiveOperators[0]) {
+                        addPrimitive(primitiveOperators[0])
+                      } else if (filteredOperators[0]) {
+                        addOperator(filteredOperators[0])
+                      } else if (filteredCommands[0]) {
+                        const first = filteredCommands[0]
+                        if (first.id === "ai") setAiMode(true)
+                        else first.run?.()
+                      }
+                    }
+                  }}
+                  placeholder={`搜索${availableTabs.find((tab) => tab.id === activeTab)?.label ?? "节点"}；输入 > 搜索画布操作`}
+                  className="w-full bg-transparent text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none"
+                  aria-label="搜索命令或节点"
+                />
+                <kbd className="rounded-sm border px-1.5 py-0.5 font-mono text-[9px] text-muted-foreground">
+                  ESC
+                </kbd>
+              </div>
+            </div>
+
+            <div
+              id="node-selector-panel"
+              role="tabpanel"
+              className="max-h-[50vh] min-h-28 overflow-y-auto py-2"
+            >
+              {adapterCatalogLoading && (activeTab === "tools" || activeTab === "sources") ? (
+                <p className="px-4 py-2 text-xs text-muted-foreground">
+                  正在同步 OpenCLI 内置适配器…
+                </p>
+              ) : null}
+              {adapterCatalogError && (activeTab === "tools" || activeTab === "sources") ? (
+                <p className="px-4 py-2 text-xs text-destructive" title={adapterCatalogError}>
+                  OpenCLI 内置适配器目录暂不可用，已保留静态节点。
+                </p>
+              ) : null}
               {filteredCommands.length > 0 ? (
                 <>
                   <p className="px-4 py-1 font-mono text-[9px] uppercase tracking-[0.2em] text-muted-foreground/60">
@@ -348,35 +500,51 @@ export function CommandPalette({
                 </>
               ) : null}
 
-              {filteredCatalogOperators.length > 0 ? (
+              {visibleCatalogGroups.length > 0 ? (
                 <>
-                  <p className="px-4 pb-1 pt-3 font-mono text-[9px] uppercase tracking-[0.2em] text-muted-foreground/60">
-                    一级业务节点 · Dify 风格
-                  </p>
-                  {filteredCatalogOperators.map((item) => {
-                    const Icon = getIcon(item.icon)
-                    const text = localizeNodeText(item.id, { label: item.label, description: item.description }, language)
-                    return (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onClick={() => addCatalogOperator(item)}
-                        className="flex w-full items-center gap-3 px-4 py-2 text-left transition-colors hover:bg-accent"
-                      >
-                        <Icon className="size-3.5 text-[#ff7a17]" />
-                        <span className="min-w-0 flex-1 truncate text-sm">{text.label}</span>
-                        <span
-                          className={cn(
-                            "rounded-[3px] border px-1 py-0.5 font-mono text-[8px] uppercase tracking-wider",
-                            runtimeStatusTone(item.runtimeCapability?.status),
-                          )}
-                          title={item.runtimeCapability?.reason ?? item.capability}
-                        >
-                          {runtimeStatusLabel(item.runtimeCapability?.status)}
-                        </span>
-                      </button>
-                    )
-                  })}
+                  {visibleCatalogGroups.map(([category, items]) => (
+                    <section key={category} className="pb-1">
+                      <p className="border-y border-border/60 bg-muted/25 px-4 py-1.5 text-[11px] font-medium text-muted-foreground">
+                        {catalogCategoryLabels[category]}
+                      </p>
+                      {items.map((item) => {
+                        const Icon = getIcon(item.icon)
+                        const text = localizeNodeText(item.id, { label: item.label, description: item.description }, language)
+                        return (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => addCatalogOperator(item)}
+                            className="group flex w-full items-start gap-3 px-4 py-2.5 text-left transition-colors hover:bg-accent"
+                          >
+                            <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md border bg-background/70">
+                              <Icon className="size-3.5 text-[#ff7a17]" />
+                            </span>
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-sm font-medium text-foreground">{text.label}</span>
+                              <span className="mt-0.5 block line-clamp-1 text-[11px] leading-relaxed text-muted-foreground">
+                                {text.description}
+                              </span>
+                            </span>
+                            <span
+                              className={cn(
+                                "mt-1 rounded-[3px] border px-1 py-0.5 font-mono text-[8px] uppercase tracking-wider",
+                                runtimeStatusTone(item.runtimeCapability?.status),
+                              )}
+                              title={item.runtimeCapability?.reason ?? item.capability}
+                            >
+                              {runtimeStatusLabel(item.runtimeCapability?.status)}
+                            </span>
+                          </button>
+                        )
+                      })}
+                    </section>
+                  ))}
+                  {hiddenCatalogCount > 0 ? (
+                    <p className="px-4 py-2 text-xs text-muted-foreground">
+                      还有 {hiddenCatalogCount} 个结果，请继续输入关键词筛选。
+                    </p>
+                  ) : null}
                 </>
               ) : null}
 
@@ -507,4 +675,28 @@ export function CommandPalette({
       </div>
     </div>
   )
+}
+
+function paletteTabForCatalogItem(item: WorkflowNodeCatalogItem): PaletteTab {
+  if (item.category === "package") return "business"
+  if (item.category === "trigger") return "start"
+  if (item.category === "source") return "sources"
+  return "tools"
+}
+
+function prioritizeCommonSources(items: WorkflowNodeCatalogItem[]): WorkflowNodeCatalogItem[] {
+  return items
+    .map((item, index) => ({
+      item,
+      index,
+      rank: commonOpenCLISites.findIndex((site) =>
+        item.id.startsWith(`opencli.adapter.${site}.`),
+      ),
+    }))
+    .sort((left, right) => {
+      const leftRank = left.rank < 0 ? Number.MAX_SAFE_INTEGER : left.rank
+      const rightRank = right.rank < 0 ? Number.MAX_SAFE_INTEGER : right.rank
+      return leftRank - rightRank || left.index - right.index
+    })
+    .map(({ item }) => item)
 }

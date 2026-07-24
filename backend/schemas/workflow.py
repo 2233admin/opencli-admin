@@ -8,14 +8,22 @@ validate and preview execution without persisting or dispatching work.
 
 from __future__ import annotations
 
-from typing import Any, Literal, Optional
+from typing import Annotated, Any, Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from backend.schemas.plan_ir import PlanGraph
 
 WORKFLOW_COMPILE_VERSION = "1.1.0"
 WORKFLOW_NODE_PATH_SEPARATOR = "::"
+RunId = Annotated[
+    str,
+    Field(
+        min_length=1,
+        max_length=36,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]{0,35}$",
+    ),
+]
 
 
 def _normalize_workflow_node_path(
@@ -145,6 +153,8 @@ class WorkflowParameterInterface(BaseModel):
 
 
 class WorkflowProjectNode(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
     id: str = Field(..., min_length=1)
     kind: WorkflowNodeKind
     capability: WorkflowCapability
@@ -216,6 +226,8 @@ class WorkflowAgentPermissions(BaseModel):
 
 
 class WorkflowProject(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
     id: str = Field(..., min_length=1)
     name: str = Field(..., min_length=1)
     profile: WorkflowProfile
@@ -390,7 +402,14 @@ class WorkflowToolCapabilityPort(BaseModel):
 
 
 class WorkflowToolCapabilityExecutor(BaseModel):
-    mode: Literal["fixture", "okx_market_ticker_snapshot", "joyai_vl_interaction"]
+    mode: Literal[
+        "fixture",
+        "okx_market_ticker_snapshot",
+        "joyai_vl_interaction",
+        "situation_awareness",
+        "swarm_simulation",
+        "native_intelligence",
+    ]
     description: Optional[str] = None
     params: dict[str, Any] = Field(default_factory=dict)
 
@@ -516,7 +535,7 @@ class WorkflowFleetCapabilityMatchResponse(BaseModel):
 class WorkflowOpenCLIHDATraceRequest(BaseModel):
     project: WorkflowProject
     packageNodeId: Optional[str] = None
-    runId: Optional[str] = None
+    runId: Optional[RunId] = None
     traceId: Optional[str] = None
 
 
@@ -592,7 +611,7 @@ class WorkflowRunInput(BaseModel):
 class WorkflowRunStartRequest(BaseModel):
     project: WorkflowProject
     packageNodeId: Optional[str] = None
-    runId: Optional[str] = None
+    runId: Optional[RunId] = None
     traceId: Optional[str] = None
     sourceOutputs: dict[str, list[dict[str, Any]]] = Field(default_factory=dict)
     trigger: WorkflowRunTrigger = Field(default_factory=WorkflowRunTrigger)
@@ -607,7 +626,7 @@ class WorkflowWebhookIngressRequest(BaseModel):
     )
     requestId: Optional[str] = None
     idempotencyKey: Optional[str] = None
-    runId: Optional[str] = None
+    runId: Optional[RunId] = None
     traceId: Optional[str] = None
     responseMode: WorkflowRunResponseMode = "async"
 

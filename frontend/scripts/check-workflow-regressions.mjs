@@ -83,8 +83,142 @@ test('node workflow lives inside workspace while the legacy canvas route redirec
   assert.doesNotMatch(navigation, /BUILD_WORKFLOW_PATH|\/build\/workflow/)
 })
 
+test('L1 business nodes use business names and business-first source configuration', async () => {
+  const [{ businessNodeName }, sourceConfig, nodeSource, inspectorSource, menuSource, catalogSource, i18nSource, internalsSource] = await Promise.all([
+    importTypeScript('lib/workflow/business-node-experience.ts'),
+    importTypeScript('lib/workflow/source-business-config.ts'),
+    readSource('components/flow/nodes/workflow-node.tsx'),
+    readSource('components/flow/inspector.tsx'),
+    readSource('components/flow/node-context-menu.tsx'),
+    readSource('lib/workflow/node-catalog.ts'),
+    readSource('lib/workflow/node-i18n.ts'),
+    readSource('lib/workflow/node-internals.ts'),
+  ])
+
+  assert.equal(businessNodeName({
+    label: 'A 股多源真实采集',
+    kind: 'agent',
+    capability: 'normalize',
+    params: { template: 'opencli-multi-source' },
+  }), '采集 A 股市场数据')
+  assert.equal(businessNodeName({
+    label: '多站点数据',
+    kind: 'agent',
+    capability: 'normalize',
+    params: {
+      template: 'opencli-multi-source',
+      sources: [{ label: '沪深京 A 股行情全景', args: { market: 'hs-a' } }],
+    },
+  }), '采集 A 股市场数据')
+  assert.equal(businessNodeName({
+    label: '记录清洗与准入',
+    kind: 'agent',
+    capability: 'normalize',
+    params: { template: 'record-hygiene' },
+  }), '核验并准入数据')
+  assert.equal(businessNodeName({
+    label: 'A 股金融数据集',
+    kind: 'sink',
+    capability: 'store',
+  }), '更新 A 股金融数据集')
+  assert.equal(businessNodeName({
+    label: '采集沪深公告与研报',
+    kind: 'agent',
+    capability: 'normalize',
+    params: { template: 'opencli-multi-source' },
+  }), '采集沪深公告与研报')
+  assert.equal(businessNodeName({
+    label: '盘前更新',
+    kind: 'schedule',
+    capability: 'trigger',
+  }), '盘前更新')
+  assert.match(nodeSource, /businessLabel/)
+  assert.match(inspectorSource, /title=\{isBusinessLevel \? businessLabel : data\.label\}/)
+  assert.match(inspectorSource, /节点名称/)
+  assert.match(inspectorSource, /节点说明/)
+  assert.match(inspectorSource, /<OpenCLISourceEditor/)
+  assert.match(inspectorSource, /添加数据源/)
+  assert.match(inspectorSource, /管理数据源/)
+  assert.match(inspectorSource, /采集主题/)
+  assert.match(inspectorSource, /市场范围/)
+  assert.match(inspectorSource, /高级设置/)
+  assert.match(inspectorSource, /useSources/)
+  assert.doesNotMatch(inspectorSource, /label: "新数据来源"/)
+  assert.match(inspectorSource, /firstStringParam/)
+  assert.doesNotMatch(inspectorSource, /JIN10 macro news sample with policy\/market impact/)
+  assert.doesNotMatch(inspectorSource, /3-bullet macro brief, impact score, source refs, and risk note/)
+  assert.match(menuSource, /查看 Agent 执行方式/)
+  assert.match(menuSource, /编辑业务设置/)
+  assert.match(catalogSource, /label: "多站点数据采集"/)
+  assert.match(i18nSource, /label: "多站点数据采集"/)
+  assert.match(internalsSource, /title: "多站点采集执行"/)
+
+  const registered = sourceConfig.openCLISlotFromDataSource({
+    id: 'source-1',
+    name: '东方财富行情',
+    channel_type: 'opencli',
+    channel_config: { site: 'eastmoney', command: 'quote', args: { market: 'hs-a', limit: 20 } },
+    enabled: true,
+    tags: ['finance-market'],
+    created_at: '2026-07-24T00:00:00Z',
+    updated_at: '2026-07-24T00:00:00Z',
+  })
+  assert.deepEqual(registered, {
+    id: 'registered-source-1',
+    label: '东方财富行情',
+    sourceGroup: 'finance-market',
+    site: 'eastmoney',
+    command: 'quote',
+    args: { market: 'hs-a', limit: 20 },
+    format: undefined,
+  })
+  assert.equal(sourceConfig.openCLISlotFromDataSource({
+    id: 'source-2',
+    name: '未启用',
+    channel_type: 'opencli',
+    channel_config: { site: 'eastmoney', command: 'quote', args: {} },
+    enabled: false,
+    tags: [],
+    created_at: '2026-07-24T00:00:00Z',
+    updated_at: '2026-07-24T00:00:00Z',
+  }), undefined)
+
+  const sourceSlots = [
+    { id: 'one', label: 'A', sourceGroup: 'social', site: 'x', command: 'search', args: { query: 'AI' } },
+    { id: 'two', label: 'B', sourceGroup: 'video', site: 'b', command: 'search', args: { keyword: 'AI' } },
+  ]
+  assert.equal(sourceConfig.sourceBusinessQuery(sourceSlots), 'AI')
+  assert.deepEqual(
+    sourceConfig.updateSourceBusinessQuery(sourceSlots, '机器人').map((source) => source.args),
+    [{ query: '机器人' }, { keyword: '机器人' }],
+  )
+})
+
+test('workflow event replay tolerates the post-run commit visibility race', async () => {
+  const { replayWorkflowRunEventStream } = await importTypeScript('lib/workflow/backend-runs.ts')
+  const originalFetch = globalThis.fetch
+  let attempts = 0
+  globalThis.fetch = async () => {
+    attempts += 1
+    if (attempts === 1) {
+      return Response.json({ message: 'Workflow run not found' }, { status: 404 })
+    }
+    return new Response(
+      'event: run_state\ndata: {"workflowId":"wf","runId":"run","traceId":"trace","valid":true,"status":"completed","startedAt":"2026-07-24T00:00:00Z","updatedAt":"2026-07-24T00:00:01Z","eventCount":0,"nodeStates":[],"errors":[]}\n\n',
+      { status: 200, headers: { 'Content-Type': 'text/event-stream' } },
+    )
+  }
+  try {
+    const replay = await replayWorkflowRunEventStream('run')
+    assert.equal(attempts, 2)
+    assert.equal(replay.projection?.status, 'completed')
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
 test('studio creation is transactional and the editor anchors to the project primary workflow', async () => {
-  const [types, endpoints, hooks, studio, templates, newProject, session, lifecycle] = await Promise.all([
+  const [types, endpoints, hooks, studio, templates, newProject, session, lifecycle, editor, commandStrip] = await Promise.all([
     readSource('lib/api/types.ts'),
     readSource('lib/api/endpoints.ts'),
     readSource('lib/api/hooks.ts'),
@@ -93,6 +227,8 @@ test('studio creation is transactional and the editor anchors to the project pri
     readSource('app/(app)/studio/new/page.tsx'),
     readSource('components/flow/workflow-editor-session.tsx'),
     readSource('components/studio/workflow-lifecycle-strip.logic.ts'),
+    readSource('components/flow/workflow-editor.tsx'),
+    readSource('components/flow/command-strip.tsx'),
   ])
 
   assert.match(types, /primary_workflow_id: string \| null/)
@@ -107,6 +243,13 @@ test('studio creation is transactional and the editor anchors to the project pri
   assert.match(session, /project\?\.primary_workflow_id/)
   assert.doesNotMatch(session, /projectWorkflows\.data\?\.\[0\]\?\.id/)
   assert.match(session, /if \(!active\) return/)
+  assert.match(session, /setLoadError\(message\)/)
+  assert.match(session, /<WorkflowEditor documentState=\{documentState\}/)
+  assert.match(editor, /documentState=\{documentState\}/)
+  assert.match(commandStrip, /documentState === "saving"/)
+  assert.doesNotMatch(commandStrip, /\{isDirty \? "未保存" : "已保存"\}/)
+  assert.match(session, /console\.error\('\[WorkflowEditorSession\] failed to load workflow draft'/)
+  assert.match(session, /role="alert"/)
   assert.doesNotMatch(lifecycle, /activate|激活|待后端接入/)
   assert.doesNotMatch(newProject, /可激活|正式激活|检查并激活/)
 })
@@ -185,16 +328,18 @@ test('the production studio adopts the selected project-workspace concept with r
   assert.match(studio, /get\('create'\) === 'workflow'/)
   assert.match(studio, /setCreateTemplate\('collection-to-consumption'\)/)
   assert.match(studio, /aria-label="项目浏览工具栏"/)
-  assert.match(studio, /aria-label="Dify 应用类型筛选"/)
-  assert.match(studio, /PROJECT_APP_TYPE_LABELS\.chatbot/)
-  assert.match(studio, /PROJECT_APP_TYPE_LABELS\['text-generator'\]/)
+  assert.match(studio, /placeholder="搜索名称、描述或标识"/)
+  assert.match(studio, /aria-label="项目排序"/)
+  assert.doesNotMatch(studio, /PROJECT_TYPE_FILTERS|Dify 应用类型筛选/)
+  assert.doesNotMatch(studio, /const \[type, setType\]|const \[creator, setCreator\]/)
+  assert.doesNotMatch(studio, /全部创建者|创建者 \{project\.created_by_user_id/)
   assert.match(studio, /const selectedWorkspace = workspaces\.data\?\.find/)
   assert.match(studio, /workspaces\.data\?\.length[\s\S]*> 1/)
   assert.match(studio, /<SelectValue>\{selectedWorkspace\?\.name \?\? '选择工作区'\}<\/SelectValue>/)
   assert.match(studio, /aria-label="当前工作区"/)
   assert.doesNotMatch(studio, /<SelectValue placeholder="选择工作区"\s*\/>/)
-  assert.match(studio, /projectMatchesAppType\(project, type\)/)
-  assert.match(studio, /PROJECT_APP_TYPE_LABELS\[project\.app_type\]/)
+  assert.doesNotMatch(studio, /projectMatchesAppType\(project, type\)/)
+  assert.doesNotMatch(studio, /PROJECT_APP_TYPE_LABELS\[project\.app_type\]/)
   assert.doesNotMatch(studio, /inferProjectType/)
   assert.match(studio, /\{visibleProjects\.length\} 个项目/)
   assert.match(studio, /project\.updated_at/)
@@ -240,42 +385,222 @@ test('workflow validation waits for the runtime capability catalog', async () =>
 })
 
 test('workflow adopts the Dify-style add-node path while preserving the four-layer hierarchy', async () => {
-  const [editor, surface, palette] = await Promise.all([
+  const [editor, surface, palette, dropdownMenu] = await Promise.all([
     readSource('components/flow/workflow-editor.tsx'),
     readSource('components/flow/workflow-canvas-surface.tsx'),
     readSource('components/flow/command-palette.tsx'),
+    readSource('components/ui/dropdown-menu.tsx'),
   ])
 
   assert.match(editor, /const onPaneContextMenu/)
   assert.match(editor, /setPaletteAnchor\(\{ x: event\.clientX, y: event\.clientY \}\)/)
+  assert.match(editor, /useOpenCLIAdapterCatalog\(true\)/)
+  assert.match(editor, /mergeWorkflowNodeCatalog/)
   assert.match(surface, /onPaneContextMenu=\{props\.onPaneContextMenu\}/)
-  assert.match(palette, /item\.category === ["']package["']/)
-  assert.match(palette, /inNodeNetwork \? getWorkflowPrimitives\(\) : \[\]/)
+  assert.match(palette, /catalogItems/)
+  assert.doesNotMatch(palette, /getWorkflowNodeCatalog/)
+  assert.doesNotMatch(palette, /filter\(\(item\) => item\.category !== ["']package["']\)/)
+  assert.match(palette, /inNodeNetwork && activeTab === "tools" \? getWorkflowPrimitives\(\) : \[\]/)
   assert.match(palette, /item\.category === ["']annotation["'] \|\| item\.category === ["']shape["']/)
-  assert.match(palette, /一级业务节点 · Dify 风格/)
+  assert.match(palette, /选择后直接进入配置/)
+  assert.match(palette, /输入 > 搜索画布操作/)
+  assert.match(palette, /catalogCategoryLabels/)
+  assert.match(palette, /role="tablist"/)
+  assert.match(palette, /aria-label="节点一级菜单"/)
+  assert.match(palette, /role="tab"/)
+  assert.match(palette, /aria-selected=\{selected\}/)
+  assert.match(palette, /label: "业务节点"/)
+  assert.match(palette, /label: "工具"/)
+  assert.match(palette, /label: "数据源"/)
+  assert.match(palette, /label: "开始"/)
+  assert.match(palette, /label: "辅助"/)
+  assert.match(palette, /paletteTabForCatalogItem\(item\) === activeTab/)
+  assert.match(palette, /if \(item\.category === "package"\) return "business"/)
+  assert.match(palette, /if \(item\.category === "source"\) return "sources"/)
+  assert.match(palette, /if \(item\.category === "trigger"\) return "start"/)
+  assert.doesNotMatch(palette, /defaultCatalogItems/)
+  assert.match(palette, /commonOpenCLISites/)
+  assert.match(palette, /prioritizeCommonSources/)
+  assert.match(palette, /还有 \{hiddenCatalogCount\} 个结果/)
+  assert.match(palette, /onNodeCreated\?\.\(\)/)
+  assert.match(editor, /onNodeCreated=\{\(\) => setInspectorOpen\(true\)\}/)
   assert.match(palette, /L\{nodeDepth\} · \{nodeLayer\.label\}/)
   assert.match(palette, /groupPrimitivesForNodeMenu\(primitiveOperators\)/)
   assert.match(palette, /group\.label/)
+  const labelComponent = sourceSection(
+    dropdownMenu,
+    'function DropdownMenuLabel(',
+    'function DropdownMenuItem(',
+  )
+  assert.match(labelComponent, /React\.ComponentProps<"div">/)
+  assert.doesNotMatch(labelComponent, /MenuPrimitive\.GroupLabel/)
+})
+
+test('Dify-style node creation selects the node and editable OpenCLI sources rebuild package internals', async () => {
+  const [{ useFlowStore }, { WORKFLOW_NODE_CATALOG }] = await Promise.all([
+    importTypeScript('lib/flow/store.ts'),
+    importTypeScript('lib/workflow/node-catalog.ts'),
+  ])
+  const packageItem = WORKFLOW_NODE_CATALOG.find((item) => item.id === 'package.opencli.multi-source-hda')
+  assert.ok(packageItem)
+
+  useFlowStore.getState().importWorkflowProject(workflowProjectFixture([
+    canonicalTestNode('existing'),
+  ]))
+  useFlowStore.getState().addWorkflowNodeFromCatalog(packageItem, { x: 240, y: 120 })
+
+  let current = useFlowStore.getState()
+  const created = current.nodes.find((node) => node.id !== 'existing')
+  assert.ok(created)
+  assert.equal(created.selected, true)
+  assert.equal(current.nodes.find((node) => node.id === 'existing')?.selected, false)
+  const createdProjectNode = current.workflowProject.nodes.find((node) => node.id === created.id)
+  assert.equal(createdProjectNode?.ui?.catalogId, 'package.opencli.multi-source-hda')
+  assert.equal(createdProjectNode?.ui?.preferCustomLabel, true)
+
+  const sources = [{
+    id: 'jin10',
+    label: '金十宏观快讯',
+    sourceGroup: 'finance-news',
+    site: 'jin10',
+    command: 'flash',
+    args: { limit: 20 },
+  }]
+  const implementationId = createdProjectNode?.params.operator?.implementationNodeId
+  assert.equal(typeof implementationId, 'string')
+  current.updateWorkflowNodeParams(`${created.id}__${implementationId}`, { sources })
+  current = useFlowStore.getState()
+  const projectNode = current.workflowProject.nodes
+    .find((node) => node.id === created.id)
+    ?.internals?.nodes.find((node) => node.id === implementationId)
+
+  assert.deepEqual(projectNode?.params.sources, sources)
+  assert.equal(
+    projectNode?.internals?.nodes.some((node) => node.id === 'source-jin10'),
+    true,
+    `expected rebuilt internals, received: ${projectNode?.internals?.nodes.map((node) => node.id).join(', ')}`,
+  )
+  assert.equal(projectNode?.internals?.nodes.some((node) => node.ui?.label === '金十宏观快讯'), true)
+  assert.equal(current.workflowProject.adapters.some((adapter) => adapter.id === 'opencli-jin10'), true)
+})
+
+test('OpenCLI adapter commands become built-in catalog nodes without site hardcoding', async () => {
+  const {
+    mergeWorkflowNodeCatalog,
+    openCLIAdapterNodeToCatalogItem,
+  } = await importTypeScript('lib/workflow/opencli-adapter-catalog.ts')
+  const { addCatalogNodeToWorkflowProject } = await importTypeScript('lib/workflow/node-catalog.ts')
+
+  const douyinSearchNode = {
+    id: 'opencli.adapter.douyin.search',
+    label: 'douyin · search',
+    description: 'Search Douyin videos',
+    status: 'blocked',
+    site: 'douyin',
+    command: 'search',
+    access: 'read',
+    browser: true,
+    strategy: 'cookie',
+    domain: 'www.douyin.com',
+    catalogId: 'intelligence.source.opencli-slot',
+    kind: 'source',
+    capability: 'fetch',
+    requiredArgs: ['query'],
+    args: [{
+      name: 'query',
+      type: 'str',
+      required: true,
+      valueRequired: true,
+      positional: false,
+      choices: [],
+    }],
+    adapter: {
+      id: 'opencli-douyin',
+      type: 'source',
+      provider: 'opencli',
+      mode: 'live',
+      config: { channel: 'opencli' },
+    },
+    params: {
+      site: 'douyin',
+      command: 'search',
+      format: 'json',
+      args: {},
+    },
+    manifest: {
+      schema: 'opencli.adapter-node.v1',
+      runtime: { binding: 'iii.collector-opencli.snapshot' },
+    },
+  }
+  const douyinSearch = openCLIAdapterNodeToCatalogItem(douyinSearchNode)
+
+  assert.equal(douyinSearch.id, 'opencli.adapter.douyin.search')
+  assert.equal(douyinSearch.category, 'source')
+  assert.equal(douyinSearch.adapter, 'opencli-douyin')
+  assert.equal(douyinSearch.requiredAdapters[0].provider, 'opencli')
+  assert.equal(douyinSearch.params.opencliAdapterNodeId, 'opencli.adapter.douyin.search')
+  assert.equal(douyinSearch.runtimeCapability.status, 'blocked')
+  assert.deepEqual(douyinSearch.runtimeCapability.missing, ['parameter:query'])
+  assert.ok(douyinSearch.keywords.includes('douyin'))
+
+  const merged = mergeWorkflowNodeCatalog(
+    [{ ...douyinSearch, label: 'stale hardcoded label' }],
+    [douyinSearch],
+  )
+  assert.equal(merged.length, 1)
+  assert.equal(merged[0].label, 'douyin · search')
+
+  const douyinTophot = openCLIAdapterNodeToCatalogItem({
+    ...douyinSearchNode,
+    id: 'opencli.adapter.douyin.tophot',
+    label: 'douyin · tophot',
+    command: 'tophot',
+    status: 'runnable',
+    requiredArgs: [],
+    args: [],
+    params: {
+      site: 'douyin',
+      command: 'tophot',
+      format: 'json',
+      args: {},
+    },
+  })
+  const project = addCatalogNodeToWorkflowProject(
+    workflowProjectFixture([]),
+    douyinTophot,
+    'opencli-douyin-tophot',
+    { x: 120, y: 80 },
+  )
+  assert.equal(project.adapters[0].id, 'opencli-douyin')
+  assert.equal(project.nodes[0].adapter, 'opencli-douyin')
+  assert.equal(project.nodes[0].params.site, 'douyin')
+  assert.equal(project.nodes[0].params.command, 'tophot')
+  assert.equal(project.nodes[0].params.opencliAdapterNodeId, 'opencli.adapter.douyin.tophot')
 })
 
 test('the default canvas is an operator network with recursive four-layer lookup', async () => {
-  const [pipeline, store, commandStrip, editor, settings, hierarchy] = await Promise.all([
+  const [pipeline, store, commandStrip, editor, settings, hierarchy, { PACKAGED_WORKFLOW_PROJECT }] = await Promise.all([
     readSource('lib/workflow/collection-pipeline.ts'),
     readSource('lib/flow/store.ts'),
     readSource('components/flow/command-strip.tsx'),
     readSource('components/flow/workflow-editor.tsx'),
     readSource('lib/flow/settings-store.ts'),
     readSource('lib/workflow/node-hierarchy.ts'),
+    importTypeScript('lib/workflow/collection-pipeline.ts'),
   ])
-  const packaged = sourceSection(pipeline, 'export function buildPackagedWorkflowProject()', 'export const PACKAGED_WORKFLOW_PROJECT')
+  const packaged = sourceSection(pipeline, 'export function buildPackagedWorkflowProject(', 'export const PACKAGED_WORKFLOW_PROJECT')
 
-  for (const packageId of ['package.opencli.multi-source-hda', 'package.intelligence.pipeline', 'package.review.human-review', 'package.dispatch.fanout']) {
+  for (const packageId of ['package.opencli.multi-source-hda', 'package.intelligence.pipeline', 'package.review.human-review']) {
     assert.match(packaged, new RegExp(packageId.replaceAll('.', '\\.')))
   }
   assert.match(packaged, /createOperatorNodeFromCatalog/)
-  for (const operatorId of ['source-operator', 'intelligence-operator', 'review-operator', 'dispatch-operator']) {
+  for (const operatorId of ['source-operator', 'intelligence-operator', 'review-operator']) {
     assert.match(packaged, new RegExp(operatorId))
   }
+  assert.deepStrictEqual(
+    PACKAGED_WORKFLOW_PROJECT.nodes.map((node) => node.id),
+    ['source-operator', 'intelligence-operator', 'review-operator'],
+  )
   assert.match(store, /const initialWorkflowProject = PACKAGED_WORKFLOW_PROJECT/)
   assert.match(store, /function findProjectNodeByCanvasId[\s\S]*scopedInternalId\(scopedId, child\.id\)/)
   assert.match(store, /materializeProjectInternals\(projectNode, node, nodeId, ["']network["']\)/)
@@ -289,6 +614,200 @@ test('the default canvas is an operator network with recursive four-layer lookup
   }
   assert.match(editor, /useState\(false\)[\s\S]*setInspectorOpen\(true\)/)
   assert.match(settings, /showMiniMap:\s*false/)
+})
+
+test('Studio preview only calls the OpenCLI HDA tracer for graphs that contain that package', async () => {
+  const [
+    { findOpenCLIHDAWorkflowPackageNodeId },
+    { PACKAGED_WORKFLOW_PROJECT },
+    { studioGraphForTemplate },
+  ] = await Promise.all([
+    importTypeScript('lib/workflow/backend-opencli-hda-trace.ts'),
+    importTypeScript('lib/workflow/collection-pipeline.ts'),
+    importTypeScript('lib/workflow/studio-templates.ts'),
+  ])
+  const nativeTemplate = studioGraphForTemplate('native-intelligence-lifecycle', 'Native preview')
+
+  assert.equal(typeof findOpenCLIHDAWorkflowPackageNodeId, 'function')
+  assert.equal(
+    findOpenCLIHDAWorkflowPackageNodeId(PACKAGED_WORKFLOW_PROJECT),
+    'source-operator::source-package',
+  )
+  assert.equal(findOpenCLIHDAWorkflowPackageNodeId(nativeTemplate), null)
+})
+
+test('native lifecycle Preview exposes 18 non-mutating action readiness records', async () => {
+  const [
+    {
+      NATIVE_INTELLIGENCE_LIFECYCLE_ACTIONS,
+      buildNativeIntelligencePreviewEvidence,
+    },
+    { studioGraphForTemplate },
+    panel,
+  ] = await Promise.all([
+    importTypeScript('lib/workflow/native-intelligence-preview.ts'),
+    importTypeScript('lib/workflow/studio-templates.ts'),
+    readSource('components/flow/run-trace-panel.tsx'),
+  ])
+  const project = studioGraphForTemplate('native-intelligence-lifecycle', 'Native preview')
+  const tools = NATIVE_INTELLIGENCE_LIFECYCLE_ACTIONS.map((action) => ({
+    id: `tool.intelligence.native.${action}`,
+    label: action,
+    status: 'runnable',
+    provider: 'opencli-admin',
+    inputPorts: [{ name: 'in', type: 'record[]' }],
+    outputPorts: [{ name: 'out', type: 'record[]' }],
+    executor: { mode: 'native_intelligence', params: { action } },
+    tags: ['native', 'offline'],
+    manifest: { readiness: { status: 'runnable', missingReasons: [] } },
+  }))
+  const capabilities = {
+    version: '1.1.0',
+    catalog: [{
+      id: 'package.intelligence.native-lifecycle',
+      label: 'Native Intelligence Lifecycle',
+      surface: 'catalog',
+      status: 'runnable',
+      backendAvailable: true,
+      missing: [],
+      tags: ['native'],
+      manifest: {
+        readiness: {
+          status: 'runnable',
+          childCount: 18,
+          expectedChildCount: 18,
+          blockedChildren: [],
+          missingReasons: [],
+        },
+      },
+    }],
+    primitives: [],
+    channels: [],
+    notifiers: [],
+    triggers: [],
+    resources: [],
+  }
+  const compile = {
+    valid: true,
+    errors: [],
+    plan: {
+      runtime: {
+        node_ids: ['native-intelligence-lifecycle'],
+        nodes: [{ id: 'native-intelligence-lifecycle', runtime: {} }],
+      },
+    },
+  }
+
+  const ready = buildNativeIntelligencePreviewEvidence({
+    project,
+    compile,
+    capabilities,
+    tools,
+  })
+
+  assert.ok(ready)
+  assert.equal(ready.status, 'ready')
+  assert.equal(ready.mutates, false)
+  assert.equal(ready.dispatch, 'none')
+  assert.equal(ready.expectedActionCount, 18)
+  assert.equal(ready.actions.length, 18)
+  assert.deepStrictEqual(ready.compiledNodeIds, ['native-intelligence-lifecycle'])
+  assert.equal(ready.readiness.status, 'runnable')
+
+  const blockedTools = tools.map((tool, index) => index === 17
+    ? {
+        ...tool,
+        status: 'blocked',
+        manifest: {
+          readiness: {
+            status: 'blocked',
+            missingReasons: ['database_session'],
+          },
+        },
+      }
+    : tool)
+  const blocked = buildNativeIntelligencePreviewEvidence({
+    project,
+    compile,
+    capabilities: {
+      ...capabilities,
+      catalog: [{
+        ...capabilities.catalog[0],
+        status: 'blocked',
+        backendAvailable: false,
+        missing: ['database_session'],
+        manifest: {
+          readiness: {
+            status: 'blocked',
+            childCount: 18,
+            expectedChildCount: 18,
+            blockedChildren: ['tool.intelligence.native.close'],
+            missingReasons: ['database_session'],
+          },
+        },
+      }],
+    },
+    tools: blockedTools,
+  })
+
+  assert.ok(blocked)
+  assert.equal(blocked.status, 'blocked')
+  assert.deepStrictEqual(blocked.blockedActions, ['close'])
+  assert.deepStrictEqual(blocked.missingReasons, ['database_session'])
+  assert.match(panel, /fetchWorkflowCapabilities\(\{\s*authorization\s*\}\)/)
+  assert.match(panel, /fetchWorkflowToolCapabilities\(\{\s*authorization\s*\}\)/)
+  assert.match(panel, /Capability\/readiness evidence only[\s\S]*does not execute or mutate/)
+})
+
+test('legacy WorkflowProject extensions survive frontend parse and serialization', async () => {
+  const [
+    { parseWorkflowProject },
+    { studioGraphForTemplate },
+  ] = await Promise.all([
+    importTypeScript('lib/workflow/schema.ts'),
+    importTypeScript('lib/workflow/studio-templates.ts'),
+  ])
+  const legacy = studioGraphForTemplate('native-intelligence-lifecycle', 'Legacy graph')
+  legacy.legacyExtension = {
+    schema: 'legacy-extension.v0',
+    nullableValue: null,
+  }
+  legacy.nodes[0].legacyNodeExtension = {
+    owner: 'legacy-canvas',
+    nullableValue: null,
+  }
+
+  const parsed = parseWorkflowProject(JSON.parse(JSON.stringify(legacy)))
+  const serialized = JSON.parse(JSON.stringify(parsed))
+
+  assert.deepStrictEqual(serialized.legacyExtension, legacy.legacyExtension)
+  assert.deepStrictEqual(
+    serialized.nodes[0].legacyNodeExtension,
+    legacy.nodes[0].legacyNodeExtension,
+  )
+})
+
+test('the explicit Webhook delivery template retains its real configuration gate', async () => {
+  const { PACKAGED_WORKFLOW_PROJECT } = await importTypeScript('lib/workflow/collection-pipeline.ts')
+  const { studioGraphForTemplate } = await importTypeScript('lib/workflow/studio-templates.ts')
+  const delivery = studioGraphForTemplate('webhook-delivery', 'Configured delivery')
+
+  assert.equal(PACKAGED_WORKFLOW_PROJECT.nodes.some((node) => node.id === 'dispatch-operator'), false)
+  assert.deepStrictEqual(delivery.nodes.map((node) => node.id), ['dispatch-operator'])
+  assert.equal(delivery.agentPermissions.canSendNotifications, false)
+  assert.equal(delivery.adapters[0]?.provider, 'webhook')
+  assert.equal(delivery.adapters[0]?.config.url, undefined)
+})
+
+test('Studio EvidenceBatch projection proxy targets the run projection API', async () => {
+  const [proxy, route] = await Promise.all([
+    readSource('app/api/workflow/evidence-batch-proxy.ts'),
+    readSource('app/api/workflow/runs/[runId]/evidence-batches/projection/route.ts'),
+  ])
+
+  assert.match(proxy, /\/runs\/\$\{encodeURIComponent\(runId\)\}\/projection/)
+  assert.match(route, /proxyWorkflowEvidenceProjectionRequest\(req,\s*runId\)/)
+  assert.doesNotMatch(route, /proxyWorkflowEvidenceBatchRequest\(req,\s*runId,\s*["']\/projection["']\)/)
 })
 
 test('the actual packaged default project satisfies backend node and typed-port contracts', async () => {
@@ -312,10 +831,14 @@ test('the actual packaged default project satisfies backend node and typed-port 
       targetPort,
     })),
     [
+      { source: 'source-pool', target: 'source-douyin', sourcePort: 'out', targetPort: 'in' },
       { source: 'source-pool', target: 'source-bilibili', sourcePort: 'out', targetPort: 'in' },
       { source: 'source-pool', target: 'source-xiaohongshu', sourcePort: 'out', targetPort: 'in' },
+      { source: 'source-pool', target: 'source-twitter', sourcePort: 'out', targetPort: 'in' },
+      { source: 'source-douyin', target: 'internal-normalize', sourcePort: 'out', targetPort: 'in' },
       { source: 'source-bilibili', target: 'internal-normalize', sourcePort: 'out', targetPort: 'in' },
       { source: 'source-xiaohongshu', target: 'internal-normalize', sourcePort: 'out', targetPort: 'in' },
+      { source: 'source-twitter', target: 'internal-normalize', sourcePort: 'out', targetPort: 'in' },
       { source: 'internal-normalize', target: 'collection-output', sourcePort: 'out', targetPort: 'in' },
     ],
   )
@@ -337,6 +860,62 @@ test('the actual packaged default project satisfies backend node and typed-port 
 
   assert.equal(backendCheck.status, 0, `${backendCheck.stdout}\n${backendCheck.stderr}`)
   assert.equal(JSON.parse(backendCheck.stdout).valid, true)
+})
+
+test('adding the native lifecycle package to a nonempty canvas defers bindings until materialization', async () => {
+  const [
+    { PACKAGED_WORKFLOW_PROJECT },
+    { WORKFLOW_NODE_CATALOG, addCatalogNodeToWorkflowProject },
+  ] = await Promise.all([
+    importTypeScript('lib/workflow/collection-pipeline.ts'),
+    importTypeScript('lib/workflow/node-catalog.ts'),
+  ])
+  const nativePackage = WORKFLOW_NODE_CATALOG.find(
+    (item) => item.id === 'package.intelligence.native-lifecycle',
+  )
+  assert.ok(nativePackage)
+
+  const project = addCatalogNodeToWorkflowProject(
+    PACKAGED_WORKFLOW_PROJECT,
+    nativePackage,
+    'editor-native-lifecycle',
+    { x: 1600, y: 320 },
+  )
+  const operator = project.nodes.find((node) => node.id === 'editor-native-lifecycle')
+  const implementation = operator?.internals?.nodes.find(
+    (node) => node.id === 'editor-native-lifecycle-implementation',
+  )
+  assert.ok(implementation, 'the package implementation must remain isolated under its operator')
+  assert.equal(implementation.parameterInterface, undefined)
+  assert.equal(implementation.params.template, 'native-intelligence-lifecycle')
+  assert.equal(project.nodes.length, PACKAGED_WORKFLOW_PROJECT.nodes.length + 1)
+  assert.equal(operator.internals.nodes.length, 1)
+
+  const repositoryRoot = path.resolve(frontendRoot, '..')
+  const windowsRepositoryPython = path.join(repositoryRoot, '.venv', 'Scripts', 'python.exe')
+  const unixRepositoryPython = path.join(repositoryRoot, '.venv', 'bin', 'python')
+  const pythonExecutable = existsSync(windowsRepositoryPython)
+    ? windowsRepositoryPython
+    : (process.env.PYTHON ?? (existsSync(unixRepositoryPython) ? unixRepositoryPython : 'python'))
+  const backendCheck = spawnSync(pythonExecutable, ['-c', [
+    'import json, sys',
+    'from backend.schemas.workflow import WorkflowProject',
+    'from backend.workflow.compiler import compile_workflow_project',
+    'project = WorkflowProject.model_validate(json.load(sys.stdin))',
+    'result = compile_workflow_project(project)',
+    'print(result.model_dump_json())',
+    'raise SystemExit(0 if result.valid else 1)',
+  ].join('; ')], {
+    cwd: repositoryRoot,
+    input: JSON.stringify(project),
+    encoding: 'utf8',
+    maxBuffer: 1024 * 1024,
+  })
+
+  assert.equal(backendCheck.status, 0, `${backendCheck.stdout}\n${backendCheck.stderr}`)
+  const compileResult = JSON.parse(backendCheck.stdout)
+  assert.equal(compileResult.valid, true)
+  assert.doesNotMatch(JSON.stringify(compileResult.errors), /invalid_parameter_binding/)
 })
 
 test('editor selector remains shallow-stable for an unchanged store snapshot', async () => {
@@ -457,6 +1036,119 @@ test('EvidenceBatch workbench consumes projection, list, selection, and detail s
   assert.match(workbench, /batches\.map/)
   assert.match(workbench, /onSelectBatch\(batch\.batchId\)/)
   assert.match(workbench, /state\.detail\s*\?\s*<EvidenceBatchDetailCard/)
+})
+
+test('native intelligence tools project all granular backend capabilities into Studio', async () => {
+  const { nativeIntelligenceCatalogItems } = await importTypeScript('lib/workflow/node-catalog.ts')
+  const tools = Array.from({ length: 29 }, (_, index) => ({
+    id: `tool.intelligence.native.action-${index}`,
+    label: `Native action ${index}`,
+    description: `Action ${index}`,
+    status: index === 28 ? 'blocked' : 'runnable',
+    provider: 'opencli-admin',
+    inputPorts: [{ name: 'in', type: 'intelligenceSessionEnvelope' }],
+    outputPorts: [{ name: 'out', type: 'intelligenceSessionEnvelope' }],
+    executor: {
+      mode: 'native_intelligence',
+      params: { action: `action-${index}` },
+    },
+    tags: ['native', 'offline'],
+    manifest: {
+      readiness: {
+        missingReasons: index === 28 ? ['contract_complete'] : [],
+      },
+      runtimeContract: {
+        bindingId: `workflow.native-intelligence.action-${index}`,
+      },
+    },
+  }))
+  const items = nativeIntelligenceCatalogItems(tools)
+
+  assert.equal(items.length, 29)
+  assert.equal(items[0].id, 'intelligence.native.action-0')
+  assert.equal(items[0].runtimeCapability.status, 'runnable')
+  assert.equal(items[28].runtimeCapability.status, 'blocked')
+  assert.deepEqual(items[28].runtimeCapability.missing, ['contract_complete'])
+  assert.equal(
+    items[0].runtimeContract.bindingId,
+    'workflow.native-intelligence.action-0',
+  )
+})
+
+test('native lifecycle template and Run Trace expose bounded query and Q&A results', async () => {
+  const [templates, catalog, panel, preview] = await Promise.all([
+    readSource('lib/workflow/studio-templates.ts'),
+    readSource('lib/workflow/node-catalog.ts'),
+    readSource('components/flow/run-trace-panel.tsx'),
+    importTypeScript('lib/workflow/native-intelligence-result-preview.ts'),
+  ])
+  const eventCard = sourceSection(panel, 'function RunEventCard(', 'function BackendRuntimePreview(')
+
+  assert.match(templates, /template:\s*'native-intelligence-lifecycle'/)
+  assert.match(templates, /credentialFree:\s*true/)
+  assert.match(templates, /canFetchNetwork:\s*false/)
+  assert.match(catalog, /groupId:\s*"native-intelligence-lifecycle-package"[\s\S]*nodeCount:\s*21/)
+  for (const action of [
+    'simulation.timeline',
+    'simulation.stats',
+    'interviews.history',
+    'report.progress',
+    'report.read',
+    'report.ask',
+    'report.answers',
+  ]) {
+    assert.ok(panel.includes(`"${action}"`), `Run Trace must inspect ${action}`)
+  }
+  assert.match(eventCard, /formatNativeIntelligenceResultPreview\(nativeResult\)/)
+  assert.doesNotMatch(eventCard, /JSON\.stringify\(nativeResult/)
+
+  const giant = {
+    status: 'completed',
+    sessionId: 'session-bounded-preview',
+    query: 'why '.repeat(2_000),
+    report: {
+      sections: Array.from({ length: 100 }, (_, index) => ({
+        heading: `Section ${index}`,
+        body: `report-${index}-`.repeat(300),
+      })),
+    },
+    answers: Array.from({ length: 80 }, (_, index) => ({
+      payload: {
+        question: `Question ${index}`,
+        answer: index === 0 ? 'grounded answer retained' : `Answer ${index}`.repeat(200),
+      },
+      artifactId: `answer-${index}`,
+      groundingArtifactIds: Array.from({ length: 30 }, (__, item) => `ground-${index}-${item}`),
+    })),
+    timeline: Array.from({ length: 120 }, (_, index) => ({
+      round: index,
+      event: `timeline-${index}-`.repeat(200),
+    })),
+  }
+  const before = structuredClone(giant)
+  const formatted = preview.formatNativeIntelligenceResultPreview(giant)
+
+  assert.ok(formatted.length <= preview.NATIVE_RESULT_PREVIEW_MAX_CHARS)
+  assert.match(formatted, /session-bounded-preview/)
+  assert.match(formatted, /grounded answer retained/)
+  assert.match(formatted, /ground-0-0/)
+  assert.match(formatted, /\$count/)
+  assert.match(formatted, /\$truncated/)
+  assert.deepStrictEqual(giant, before, 'preview formatting must not mutate the result')
+
+  const small = {
+    status: 'completed',
+    sessionId: 'session-small',
+    artifacts: [{
+      artifactId: 'report-1',
+      groundingArtifactIds: ['research-1'],
+      payload: { answer: 'small grounded answer' },
+    }],
+  }
+  assert.equal(
+    preview.formatNativeIntelligenceResultPreview(small),
+    JSON.stringify(small, null, 2),
+  )
 })
 
 test('L2-L4 network edits persist in the canonical workflow graph across scope re-entry', async () => {

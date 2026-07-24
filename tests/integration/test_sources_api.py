@@ -37,6 +37,21 @@ async def test_create_source(client, sample_source_data):
 
 
 @pytest.mark.asyncio
+async def test_create_browser_act_source(client):
+    response = await client.post(
+        "/api/v1/sources",
+        json={
+            "name": "BrowserAct source",
+            "channel_type": "browser_act",
+            "channel_config": {"pack_id": "lead-generation/example"},
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["data"]["channel_type"] == "browser_act"
+
+
+@pytest.mark.asyncio
 async def test_get_source(client, sample_source_data):
     create_resp = await client.post("/api/v1/sources", json=sample_source_data)
     source_id = create_resp.json()["data"]["id"]

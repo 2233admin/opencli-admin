@@ -104,11 +104,12 @@ async def match_workflow_fleet_target(
     "/opencli-adapter-nodes",
     response_model=ApiResponse[workflow_schemas.WorkflowOpenCLIAdapterNodesResponse],
 )
-async def get_opencli_adapter_nodes(
+def get_opencli_adapter_nodes(
     site: str | None = None,
     q: str | None = None,
     include_write: bool = Query(True, alias="includeWrite"),
     limit: int = Query(2000, ge=1, le=5000),
+    refresh: bool = False,
 ) -> ApiResponse[workflow_schemas.WorkflowOpenCLIAdapterNodesResponse]:
     """Return OpenCLI adapter commands projected as node-capability manifests."""
 
@@ -118,6 +119,7 @@ async def get_opencli_adapter_nodes(
             q=q,
             include_write=include_write,
             limit=limit,
+            refresh=refresh,
         )
     )
 

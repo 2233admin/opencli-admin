@@ -1,6 +1,6 @@
 'use client'
 
-import { Bot, Building2, ChevronDown, FileText, FileUp, FolderKanban, MessageCircle, MessagesSquare, Plus, Search, Sparkles, Workflow } from 'lucide-react'
+import { Bot, Building2, ChevronDown, FileUp, FolderKanban, Plus, Search, Sparkles } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -16,26 +16,15 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useBootstrapWorkspaceProject, useCreateProjectWorkflow, useMyWorkspaces, useWorkspaceProjects } from '@/lib/api/hooks'
 import { formatRelative } from '@/lib/format'
-import { PROJECT_APP_TYPE_LABELS, projectAppTypeForDifyMode, projectMatchesAppType, type ProjectAppTypeFilter } from '@/lib/studio/app-types'
+import { projectAppTypeForDifyMode } from '@/lib/studio/app-types'
 import { translateWorkflowDsl, type WorkflowImportResult } from '@/lib/workflow/codec'
 import { studioAppTypeForTemplate, studioGraphForTemplate, studioSlug, type StudioTemplateId } from '@/lib/workflow/studio-templates'
-
-const PROJECT_TYPE_FILTERS = [
-  { value: 'all', label: '全部', icon: FolderKanban },
-  { value: 'chatbot', label: PROJECT_APP_TYPE_LABELS.chatbot, icon: MessageCircle },
-  { value: 'agent', label: PROJECT_APP_TYPE_LABELS.agent, icon: Bot },
-  { value: 'chatflow', label: PROJECT_APP_TYPE_LABELS.chatflow, icon: MessagesSquare },
-  { value: 'workflow', label: PROJECT_APP_TYPE_LABELS.workflow, icon: Workflow },
-  { value: 'text-generator', label: PROJECT_APP_TYPE_LABELS['text-generator'], icon: FileText },
-] as const satisfies ReadonlyArray<{ value: ProjectAppTypeFilter; label: string; icon: typeof FolderKanban }>
 
 export default function StudioPage() {
   const router = useRouter()
   const workspaces = useMyWorkspaces()
   const [workspaceId, setWorkspaceId] = useState<string | null>(null)
   const [search, setSearch] = useState('')
-  const [type, setType] = useState<ProjectAppTypeFilter>('all')
-  const [creator, setCreator] = useState('all')
   const [sort, setSort] = useState('updated-desc')
   const [createTemplate, setCreateTemplate] = useState<StudioTemplateId | null>(null)
   const [projectName, setProjectName] = useState('')
@@ -71,7 +60,7 @@ export default function StudioPage() {
     const query = search.trim().toLowerCase()
     const result = (projects.data ?? []).filter((project) => {
       const haystack = `${project.name} ${project.description ?? ''} ${project.slug}`.toLowerCase()
-      return (!query || haystack.includes(query)) && projectMatchesAppType(project, type) && (creator === 'all' || project.created_by_user_id === creator)
+      return !query || haystack.includes(query)
     })
     return result.sort((left, right) => {
       if (sort === 'name') return left.name.localeCompare(right.name, 'zh-CN')
@@ -79,9 +68,8 @@ export default function StudioPage() {
       const direction = sort === 'created-asc' ? 1 : -1
       return left[field].localeCompare(right[field]) * direction
     })
-  }, [creator, projects.data, search, sort, type])
+  }, [projects.data, search, sort])
 
-  const creators = useMemo(() => Array.from(new Set((projects.data ?? []).map((project) => project.created_by_user_id))), [projects.data])
   const selectedWorkspace = workspaces.data?.find((workspace) => workspace.id === workspaceId)
 
   async function submitCreate() {
@@ -191,21 +179,8 @@ export default function StudioPage() {
             <Search className="pointer-events-none absolute left-3 top-2.5 size-4 text-muted-foreground" aria-hidden />
             <Input value={search} onChange={(event) => setSearch(event.target.value)} className="rounded-lg pl-9" placeholder="搜索名称、描述或标识" />
           </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-1.5" aria-label="Dify 应用类型筛选">
-          <span className="px-1 text-2xs text-muted-foreground">应用类型</span>
-          {PROJECT_TYPE_FILTERS.map(({ value, label, icon: Icon }) => (
-            <Button key={value} type="button" size="sm" variant={type === value ? 'secondary' : 'ghost'} className="h-8 rounded-lg px-2.5 text-xs" onClick={() => setType(value)}>
-              <Icon className="size-3.5" aria-hidden />{label}
-            </Button>
-          ))}
-          <span className="mx-1 hidden h-4 w-px bg-border sm:block" aria-hidden />
-          <Select value={creator} onValueChange={(value) => setCreator(value ?? 'all')}>
-            <SelectTrigger className="h-8 rounded-lg border-0 bg-transparent text-xs shadow-none"><SelectValue>{creator === 'all' ? '创建者' : creator.slice(0, 8)}</SelectValue></SelectTrigger>
-            <SelectContent><SelectItem value="all">全部创建者</SelectItem>{creators.map((id) => <SelectItem key={id} value={id}>{id.slice(0, 8)}</SelectItem>)}</SelectContent>
-          </Select>
           <Select value={sort} onValueChange={(value) => setSort(value ?? 'updated-desc')}>
-            <SelectTrigger className="h-8 rounded-lg border-0 bg-transparent text-xs shadow-none sm:ml-auto"><SelectValue>{SORT_LABELS[sort]}</SelectValue></SelectTrigger>
+            <SelectTrigger className="h-9 min-w-28 rounded-lg bg-transparent text-xs shadow-none" aria-label="项目排序"><SelectValue>{SORT_LABELS[sort]}</SelectValue></SelectTrigger>
             <SelectContent><SelectItem value="updated-desc">最近修改</SelectItem><SelectItem value="created-asc">最早创建</SelectItem><SelectItem value="name">名称</SelectItem></SelectContent>
           </Select>
         </div>
@@ -223,15 +198,14 @@ export default function StudioPage() {
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">{Array.from({ length: 4 }).map((_, index) => <div key={index} className="h-40 animate-pulse rounded-xl bg-muted" />)}</div>
       ) : visibleProjects.length ? (
         <section aria-label="项目列表">
-          <div className="mb-3 flex items-center justify-between gap-3 text-xs"><span className="font-medium">{visibleProjects.length} 个项目</span><span className="text-muted-foreground">{SORT_LABELS[sort]}</span></div>
+          <div className="mb-3 text-xs font-medium">{visibleProjects.length} 个项目</div>
           <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
           {visibleProjects.map((project) => (
             <Link key={project.id} href={`/studio/workflow?workspace=${workspaceId}&project=${project.id}`} className="group min-w-0 rounded-xl border border-border/80 bg-card/30 p-3.5 transition-[border-color,background-color,transform] hover:-translate-y-0.5 hover:border-foreground/25 hover:bg-card/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
-              <div className="flex items-start justify-between gap-3"><div className="grid size-9 place-items-center rounded-lg bg-muted text-muted-foreground transition-colors group-hover:text-foreground"><FolderKanban className="size-4" aria-hidden /></div><Badge variant={project.archived ? 'secondary' : 'outline'}>{project.archived ? '已归档' : project.slug}</Badge></div>
-              <div className="mt-4 flex items-center gap-2"><span className="eyebrow-mono">{PROJECT_APP_TYPE_LABELS[project.app_type]}</span><span className="truncate font-mono text-[10px] text-muted-foreground">{project.slug}</span></div>
-              <h2 className="mt-1 truncate text-sm font-semibold">{project.name}</h2>
+              <div className="flex items-start justify-between gap-3"><div className="grid size-9 place-items-center rounded-lg bg-muted text-muted-foreground transition-colors group-hover:text-foreground"><FolderKanban className="size-4" aria-hidden /></div>{project.archived ? <Badge variant="secondary">已归档</Badge> : null}</div>
+              <h2 className="mt-4 truncate text-sm font-semibold">{project.name}</h2>
               <p className="mt-1 line-clamp-2 min-h-10 text-xs leading-5 text-muted-foreground">{project.description || '数据节点项目'}</p>
-              <div className="mt-3 flex items-center justify-between border-t border-border/70 pt-2.5 text-[10px] text-muted-foreground"><span>创建者 {project.created_by_user_id.slice(0, 8)}</span><span>{formatRelative(project.updated_at)}</span></div>
+              <div className="mt-3 flex items-center justify-between gap-3 border-t border-border/70 pt-2.5 text-[10px] text-muted-foreground"><span className="truncate font-mono">{project.slug}</span><span className="shrink-0">{formatRelative(project.updated_at)}</span></div>
             </Link>
           ))}
           </div>
@@ -240,8 +214,8 @@ export default function StudioPage() {
         <div className="flex min-h-[420px] items-center justify-center rounded-xl border border-dashed bg-muted/10 px-4">
           <div className="w-full max-w-xl text-center">
             <div className="mx-auto grid size-11 place-items-center rounded-xl border bg-background"><Bot className="size-5 text-muted-foreground" /></div>
-            <h2 className="mt-4 text-sm font-medium">创建你的第一个数据应用</h2>
-            <p className="mt-1 text-xs text-muted-foreground">从成熟模板开始、创建空白节点图，或者导入 Dify / n8n DSL。</p>
+            <h2 className="mt-4 text-sm font-medium">创建你的第一个项目</h2>
+            <p className="mt-1 text-xs text-muted-foreground">从模板开始、让 Agent 创建，或者导入现有工作流。</p>
             <div className="mt-5 grid gap-2 text-left">
               <CreateChoice title="与 Agent 创建项目" description="描述目标，由 Agent 生成第一版节点工作流。" href={workspaceId ? `/studio/new?workspace=${workspaceId}` : undefined} icon={Bot} />
               <CreateChoice title="从应用模板创建" description="选择预设的数据链路，最快体验 OpenCLI。" href={workspaceId ? `/studio/templates?workspace=${workspaceId}` : undefined} icon={Sparkles} />

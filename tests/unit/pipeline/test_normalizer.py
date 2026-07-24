@@ -1,7 +1,5 @@
 """Unit tests for the pipeline normalizer."""
 
-import pytest
-
 from backend.pipeline.normalizer import normalize_item, normalize_items
 
 
@@ -66,9 +64,16 @@ def test_normalize_items_batch():
 
 # ── opencli site-specific field mapping tests ─────────────────────────────────
 
+
 def test_weibo_word_maps_to_title():
     """weibo hot: uses 'word' as the topic name."""
-    raw = {"rank": 1, "word": "福建一鸭子活吞41只小鸡", "hot_value": 126652, "category": "民生新闻", "url": "https://s.weibo.com/..."}
+    raw = {
+        "rank": 1,
+        "word": "福建一鸭子活吞41只小鸡",
+        "hot_value": 126652,
+        "category": "民生新闻",
+        "url": "https://s.weibo.com/...",
+    }
     normalized, _ = normalize_item(raw, "weibo-src")
     assert normalized["title"] == "福建一鸭子活吞41只小鸡"
     assert "extra_hot_value" in normalized
@@ -88,7 +93,14 @@ def test_twitter_trending_topic_maps_to_title():
 
 def test_youtube_channel_maps_to_author():
     """youtube search: uses 'channel' as the uploader."""
-    raw = {"rank": 1, "title": "Python Tutorial", "channel": "TechChannel", "views": "1.2M", "duration": "15:30", "url": "https://youtube.com/..."}
+    raw = {
+        "rank": 1,
+        "title": "Python Tutorial",
+        "channel": "TechChannel",
+        "views": "1.2M",
+        "duration": "15:30",
+        "url": "https://youtube.com/...",
+    }
     normalized, _ = normalize_item(raw, "yt-src")
     assert normalized["author"] == "TechChannel"
     assert "extra_channel" not in normalized
@@ -96,15 +108,39 @@ def test_youtube_channel_maps_to_author():
 
 def test_linkedin_listed_maps_to_published_at():
     """linkedin search: uses 'listed' as the posting date."""
-    raw = {"rank": 1, "title": "AI Engineer", "company": "ACME", "location": "Remote", "listed": "2 days ago", "salary": "$150K", "url": "https://linkedin.com/..."}
+    raw = {
+        "rank": 1,
+        "title": "AI Engineer",
+        "company": "ACME",
+        "location": "Remote",
+        "listed": "2 days ago",
+        "salary": "$150K",
+        "url": "https://linkedin.com/...",
+    }
     normalized, _ = normalize_item(raw, "li-src")
     assert normalized["published_at"] == "2 days ago"
+
+
+def test_douyin_create_time_epoch_maps_to_published_at():
+    normalized, _ = normalize_item(
+        {"title": "Douyin item", "create_time": 1784512800},
+        "douyin",
+    )
+
+    assert normalized["published_at"] == "1784512800"
+    assert "extra_create_time" not in normalized
     assert "extra_listed" not in normalized
 
 
 def test_xueqiu_text_maps_to_content():
     """xueqiu feed: uses 'text' as post content (no title)."""
-    raw = {"rank": 1, "author": "某投资者", "text": "今日大盘分析...", "likes": 42, "url": "https://xueqiu.com/..."}
+    raw = {
+        "rank": 1,
+        "author": "某投资者",
+        "text": "今日大盘分析...",
+        "likes": 42,
+        "url": "https://xueqiu.com/...",
+    }
     normalized, _ = normalize_item(raw, "xueqiu-src")
     assert normalized["content"] == "今日大盘分析..."
     assert normalized["author"] == "某投资者"

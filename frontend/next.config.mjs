@@ -11,6 +11,7 @@ const VIEW_TRANSITIONS_ENABLED = process.env.NEXT_PUBLIC_ENABLE_VIEW_TRANSITIONS
 
 const nextConfig = {
   allowedDevOrigins: ['127.0.0.1'],
+  distDir: process.env.OPENCLI_NEXT_DIST_DIR ?? '.next',
   experimental: {
     viewTransition: VIEW_TRANSITIONS_ENABLED,
   },

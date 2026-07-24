@@ -1,12 +1,16 @@
 import {
   parseWorkflowProject,
   type AdapterBinding,
-  type WorkflowCapability,
-  type WorkflowNodeKind,
   type WorkflowProject,
   type WorkflowProjectEdge,
   type WorkflowProjectNode,
 } from "./schema"
+import {
+  DIFY_NODE_MAPPING_VERSION,
+  isDifyCapabilityGap,
+  resolveDifyNodeMapping,
+  type DifyNodeMapping,
+} from "./dify-node-mapping"
 
 type JsonRecord = Record<string, unknown>
 
@@ -17,22 +21,20 @@ type DifyDsl = {
   workflow: JsonRecord
 }
 
-type NodeMapping = {
-  kind: WorkflowNodeKind
-  capability: WorkflowCapability
-  icon: string
-  color: string
+type NodeMapping = DifyNodeMapping & {
   adapter?: Pick<AdapterBinding, "type" | "mode">
 }
 
 export type DifyTranslationReport = {
   source: "dify"
+  mappingVersion: typeof DIFY_NODE_MAPPING_VERSION
   workflowName: string
   appMode?: string
   nodeCount: number
   edgeCount: number
   adapterCount: number
   unsupportedEdgeCount: number
+  capabilityGapCount: number
 }
 
 export type DifyTranslationResult =
@@ -123,6 +125,12 @@ export function translateDifyWorkflowToWorkflowProject(input: unknown): DifyTran
       edgeCount: translatedEdges.edges.length,
       adapterCount: project.adapters.length,
       unsupportedEdgeCount: translatedEdges.unsupportedEdgeCount,
+      mappingVersion: DIFY_NODE_MAPPING_VERSION,
+      capabilityGapCount: nodeEntries.filter((entry) => {
+        const data = isRecord(entry.data) ? entry.data : {}
+        const nodeType = readString(data.type) ?? readString(entry.type) ?? "unknown"
+        return isDifyCapabilityGap(resolveDifyNodeMapping(nodeType))
+      }).length,
     },
   }
 }
@@ -186,38 +194,14 @@ function translateNode(
 }
 
 function classifyNode(type: string): NodeMapping {
-  const value = type.toLowerCase()
-  if (["start", "trigger", "trigger-webhook"].includes(value)) {
-    return { kind: "schedule", capability: "trigger", icon: "Play", color: "var(--chart-1)" }
-  }
-  if (["if-else", "question-classifier", "iteration", "loop"].includes(value)) {
-    return { kind: "router", capability: "route", icon: "GitBranch", color: "var(--chart-5)" }
-  }
-  if (["llm", "agent"].includes(value)) {
-    return {
-      kind: "agent",
-      capability: "summarize",
-      icon: "Sparkles",
-      color: "var(--chart-2)",
-      adapter: { type: "agent", mode: "mock" },
-    }
-  }
-  if (["knowledge-retrieval", "http-request", "tool"].includes(value)) {
-    return {
-      kind: "source",
-      capability: "fetch",
-      icon: "Globe",
-      color: "var(--chart-4)",
-      adapter: { type: "source", mode: "fixture" },
-    }
-  }
-  if (["answer", "end"].includes(value)) {
-    return { kind: "notify", capability: "send", icon: "Send", color: "var(--chart-1)" }
-  }
-  if (["code", "template-transform", "variable-aggregator", "parameter-extractor", "document-extractor"].includes(value)) {
-    return { kind: "agent", capability: "normalize", icon: "ArrowRightLeft", color: "var(--chart-2)" }
-  }
-  return { kind: "action", capability: "send", icon: "Play", color: "var(--chart-3)" }
+  const mapping = resolveDifyNodeMapping(type)
+  const adapter =
+    mapping.id === "llm" || mapping.id === "agent"
+      ? { type: "agent" as const, mode: "mock" as const }
+      : mapping.id === "retrieval" || mapping.id === "http"
+        ? { type: "source" as const, mode: "fixture" as const }
+        : undefined
+  return { ...mapping, adapter }
 }
 
 function translateEdges(

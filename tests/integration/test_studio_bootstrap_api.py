@@ -35,6 +35,23 @@ async def test_studio_project_bootstrap_creates_primary_workflow_and_draft(clien
     assert data["primary_workflow"]["project_id"] == data["project"]["id"]
     assert data["draft"]["revision"] == 1
     assert data["draft"]["graph"]["id"] == data["primary_workflow"]["id"]
+    assert all(
+        value is not None
+        for node in data["draft"]["graph"]["nodes"]
+        for value in node.values()
+    )
+
+    draft_url = (
+        f"/api/v1/workspaces/{workspace_id}/projects/{data['project']['id']}"
+        f"/workflows/{data['primary_workflow']['id']}/draft"
+    )
+    persisted_draft = (await client.get(draft_url)).json()["data"]
+    assert persisted_draft["graph"] == data["draft"]["graph"]
+    assert all(
+        value is not None
+        for node in persisted_draft["graph"]["nodes"]
+        for value in node.values()
+    )
 
     projects = (await client.get(f"/api/v1/workspaces/{workspace_id}/projects")).json()[
         "data"

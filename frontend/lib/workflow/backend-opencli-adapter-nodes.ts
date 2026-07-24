@@ -50,6 +50,7 @@ export async function fetchWorkflowOpenCLIAdapterNodes(
     q?: string
     includeWrite?: boolean
     limit?: number
+    refresh?: boolean
   } = {},
 ): Promise<WorkflowOpenCLIAdapterNodesResponse> {
   const params = new URLSearchParams()
@@ -59,6 +60,7 @@ export async function fetchWorkflowOpenCLIAdapterNodes(
     params.set("includeWrite", String(options.includeWrite))
   }
   if (typeof options.limit === "number") params.set("limit", String(options.limit))
+  if (typeof options.refresh === "boolean") params.set("refresh", String(options.refresh))
   const query = params.toString()
   const response = await fetch(`/api/workflow/opencli-adapter-nodes${query ? `?${query}` : ""}`, {
     headers: {

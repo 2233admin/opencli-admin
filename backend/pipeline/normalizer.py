@@ -31,6 +31,7 @@ _AUTHOR_KEYS = (
 )
 _DATE_KEYS = (
     "created_at",   # twitter, bilibili
+    "create_time",  # douyin epoch seconds
     "published_at", # generic
     "published",    # generic RSS
     "date",         # reuters
@@ -52,8 +53,10 @@ def _first(item: dict, keys: tuple[str, ...]) -> str:
     lower_map = {k.lower(): v for k, v in item.items()}
     for key in keys:
         val = lower_map.get(key.lower())
-        if val and isinstance(val, str):
+        if isinstance(val, str) and val:
             return val
+        if isinstance(val, int | float) and not isinstance(val, bool):
+            return str(val)
     return ""
 
 
