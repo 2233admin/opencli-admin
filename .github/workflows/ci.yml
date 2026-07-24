@@ -63,17 +63,11 @@ jobs:
       - name: Backend syntax check
         run: python -m compileall backend
 
-      # Coverage visibility, not a gate: pyproject.toml bakes in
-      # `--cov-fail-under=80` via [tool.pytest.ini_options].addopts, but the
-      # current suite sits at ~70% total. Enforcing 80% here would turn CI red
-      # immediately for pre-existing gaps, not for anything this PR changes.
-      # `--cov-fail-under=0` overrides the pyproject default (last CLI value
-      # wins) so the job stays green while the report is printed every run.
-      # TODO(ratchet): once real coverage is measured for a few weeks, raise
-      # this floor incrementally (e.g. 70 -> 75 -> 80) instead of jumping
-      # straight to the pyproject target.
-      - name: Unit tests (with coverage report)
-        run: pytest tests/unit -m "not live" --cov=backend --cov-report=term-missing --cov-fail-under=0
+      # Keep pull requests on the same enforced coverage baseline as local
+      # verification. The full non-live suite currently clears the 80% floor;
+      # never override the project-level gate with a visibility-only threshold.
+      - name: Full backend test suite (80% coverage gate)
+        run: pytest -m "not live" --cov-fail-under=80
 
   migrations:
     runs-on: ubuntu-latest
