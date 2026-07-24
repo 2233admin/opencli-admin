@@ -73,7 +73,14 @@
       "distribution": "builtin",
       "label": "RSS / Atom",
       "lifecycle": "active",
-      "operationIds": [],
+      "operationIds": [
+        "create_feed_generator_api_v1_providers_feed_generators_post",
+        "delete_feed_generator_api_v1_providers_feed_generators__feed_provider_id__delete",
+        "get_feed_generator_catalog_api_v1_providers_feed_generators__feed_provider_id__catalog_get",
+        "list_feed_generators_api_v1_providers_feed_generators_get",
+        "test_feed_generator_api_v1_providers_feed_generators__feed_provider_id__test_post",
+        "update_feed_generator_api_v1_providers_feed_generators__feed_provider_id__patch"
+      ],
       "owner": "opencli-admin",
       "pluginTypes": [
         "datasource"

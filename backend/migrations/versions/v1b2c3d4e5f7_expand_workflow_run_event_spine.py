@@ -10,7 +10,7 @@ the contract revision performs the later audit gate.
 """
 
 import sqlalchemy as sa
-from alembic import op
+from alembic import context, op
 
 revision = "v1b2c3d4e5f7"
 down_revision = "z5f6g7h8i9j0"
@@ -19,6 +19,12 @@ depends_on = None
 
 
 def upgrade() -> None:
+    connection = op.get_bind()
+    if not context.is_offline_mode():
+        table_names = set(sa.inspect(connection).get_table_names())
+        if not {"workflow_runs", "workflow_run_events"} <= table_names:
+            return
+
     op.add_column(
         "workflow_runs",
         sa.Column(
@@ -44,4 +50,16 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    if context.is_offline_mode():
+        op.drop_column("workflow_runs", "next_event_sequence")
+        return
+
+    connection = op.get_bind()
+    inspector = sa.inspect(connection)
+    if "workflow_runs" not in inspector.get_table_names():
+        return
+    if "next_event_sequence" not in {
+        column["name"] for column in inspector.get_columns("workflow_runs")
+    }:
+        return
     op.drop_column("workflow_runs", "next_event_sequence")

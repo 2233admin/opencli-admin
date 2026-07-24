@@ -5,7 +5,7 @@ Revises: x3d4e5f6g7h8
 """
 
 import sqlalchemy as sa
-from alembic import op
+from alembic import context, op
 
 revision = "y4e5f6g7h8i9"
 down_revision = "x3d4e5f6g7h8"
@@ -24,8 +24,15 @@ LEGACY_PACK_ID = "opencli.insight-rss-starter"
 
 def upgrade() -> None:
     """Remove only rows materialized by the abandoned product-owned source pack."""
+    bind = op.get_bind()
+    if (
+        not context.is_offline_mode()
+        and "data_sources" not in sa.inspect(bind).get_table_names()
+    ):
+        return
+
     pack_marker = f"%{LEGACY_PACK_ID}%"
-    op.get_bind().execute(
+    bind.execute(
         sa.delete(data_sources).where(
             sa.or_(
                 sa.cast(data_sources.c.channel_config, sa.Text()).like(pack_marker),

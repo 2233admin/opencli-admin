@@ -432,7 +432,7 @@ async def get_install_script(request: Request) -> PlainTextResponse:
         Path("/app/scripts/install-agent.sh"),
     ]:
         if candidate.exists():
-            content = candidate.read_text()
+            content = candidate.read_text(encoding="utf-8")
             content = _render_install_script(content, base_url, settings)
             return PlainTextResponse(content, media_type="text/plain")
 

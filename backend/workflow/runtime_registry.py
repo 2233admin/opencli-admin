@@ -486,30 +486,6 @@ def _resolve_merge_node(node: WorkflowProjectNode, *, node_id: str) -> dict[str,
     }
 
 
-def _resolve_dedupe_node(node: WorkflowProjectNode, *, node_id: str) -> dict[str, Any]:
-    key = _read_string(node.params.get("key")) or "contentHash"
-    window = _read_string(node.params.get("window")) or "24h"
-    return {
-        "binding": {
-            "status": "bound",
-            "binding_id": DEDUPE_BINDING_ID,
-            "runtime": "workflow",
-            "channel": "transform",
-            "input": {
-                "key": key,
-                "window": window,
-                "inputPort": "recordCandidate[]",
-                "outputPort": "recordCandidate[]",
-            },
-        },
-        "dedupe": {
-            "node_id": node_id,
-            "key": key,
-            "window": window,
-        },
-    }
-
-
 def _resolve_router_route_node(node: WorkflowProjectNode, *, node_id: str) -> dict[str, Any]:
     expression = _read_string(node.params.get("expression")) or "true"
     return {

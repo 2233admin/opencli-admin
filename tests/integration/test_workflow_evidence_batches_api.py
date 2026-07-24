@@ -187,7 +187,7 @@ async def test_failed_and_blocked_nodes_remain_typed_in_evidence_projection(
     client,
     monkeypatch,
 ):
-    async def failed_dispatch(dispatch, fleet_match):
+    async def failed_dispatch(dispatch, fleet_match, *, node=None):
         return [], {
             "attempted": True,
             "success": False,

@@ -6,7 +6,7 @@ Create Date: 2026-07-23
 """
 
 import sqlalchemy as sa
-from alembic import op
+from alembic import context, op
 
 revision = "w3c4d5e6f7g8"
 down_revision = "v2c3d4e5f6g7"
@@ -15,6 +15,12 @@ depends_on = None
 
 
 def upgrade() -> None:
+    if (
+        not context.is_offline_mode()
+        and "workflow_runs" not in sa.inspect(op.get_bind()).get_table_names()
+    ):
+        return
+
     op.create_table(
         "intelligence_sessions",
         sa.Column("created_by_run_id", sa.String(length=36), nullable=True),
@@ -239,6 +245,12 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    if (
+        not context.is_offline_mode()
+        and "intelligence_sessions" not in sa.inspect(op.get_bind()).get_table_names()
+    ):
+        return
+
     op.drop_index("ix_intelligence_outbox_session_id", table_name="intelligence_outbox")
     op.drop_index("ix_intelligence_outbox_event_id", table_name="intelligence_outbox")
     op.drop_index("ix_intelligence_outbox_delivery", table_name="intelligence_outbox")

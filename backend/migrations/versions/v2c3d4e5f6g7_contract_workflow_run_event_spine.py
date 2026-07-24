@@ -10,7 +10,7 @@ append-only service. The preflight aborts rather than repairing conflicts.
 """
 
 import sqlalchemy as sa
-from alembic import op
+from alembic import context, op
 
 revision = "v2c3d4e5f6g7"
 down_revision = "v1b2c3d4e5f7"
@@ -20,6 +20,11 @@ depends_on = None
 
 def upgrade() -> None:
     connection = op.get_bind()
+    if not context.is_offline_mode():
+        table_names = set(sa.inspect(connection).get_table_names())
+        if not {"workflow_runs", "workflow_run_events"} <= table_names:
+            return
+
     duplicate_sequences = connection.execute(
         sa.text(
             """
@@ -82,6 +87,24 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    if context.is_offline_mode():
+        op.drop_index(
+            "ux_workflow_run_events_run_id_sequence",
+            table_name="workflow_run_events",
+        )
+        op.drop_index("ix_workflow_run_events_event_id", table_name="workflow_run_events")
+        op.create_index(
+            "ix_workflow_run_events_event_id",
+            "workflow_run_events",
+            ["event_id"],
+            unique=False,
+        )
+        return
+
+    connection = op.get_bind()
+    if "workflow_run_events" not in sa.inspect(connection).get_table_names():
+        return
+
     op.drop_index(
         "ux_workflow_run_events_run_id_sequence",
         table_name="workflow_run_events",
